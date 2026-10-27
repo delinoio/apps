@@ -74,7 +74,7 @@ jobs:
         with: { distribution: temurin, java-version: "17" }
       - name: Install pinned Android SDK packages
         run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;37.0.0" "ndk;29.0.14206865"
           echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @apps/delitools mobile:android:init --ci

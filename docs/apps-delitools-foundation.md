@@ -44,6 +44,8 @@ Frontend builds and workflow fixtures do not establish device or store acceptanc
 
 ## Dependencies and Integrations
 
+Android release preparation installs SDK platform `platforms;android-37.0`, Build Tools `37.0.0` and NDK `29.0.14206865`. The platform package uses the minor-version suffix in Google's SDK repository; the unsuffixed `platforms;android-37` package is unavailable.
+
 `@packages/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
 
 Use the shared verified Tauri CLI wrapper. CEF notices remain attached to desktop packaging. Android requires Java 17, the Android SDK and NDK; iOS requires Xcode and an Apple Developer team. The release job explicitly selects the hosted image's Xcode 26.3 through `DEVELOPER_DIR` and verifies the iOS 26 SDK before project generation; it does not use the macOS image's default Xcode. Store uploads use Google's Android Publisher API and Apple's altool.

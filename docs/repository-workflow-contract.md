@@ -38,6 +38,8 @@ their existing identities.
 
 ## Worktree dependency sharing
 
+The root install lifecycle invokes the Git hook installer through `sh` explicitly, including on Windows hosts with Git for Windows. This keeps hook installation available when npm lifecycle commands use the Windows command processor.
+
 Root `pnpm-workspace.yaml` sets `virtualStoreType: global` so worktrees share installed package contents through pnpm's global virtual store. Each worktree retains its own `node_modules` links and dependency versions selected by its lockfile.
 
 Run `pnpm install` from each worktree root after checkout or dependency changes. pnpm reuses packages already present in the shared store. Run `pnpm store path` to locate the store; no machine-specific store path is committed. See the [pnpm worktree guide](https://pnpm.io/git-worktrees).
