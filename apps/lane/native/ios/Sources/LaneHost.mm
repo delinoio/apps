@@ -5,6 +5,7 @@
 #import "LaneWatch.h"
 #import "LaneReauthentication.h"
 #import "LaneDeletion.h"
+#import "LaneSyncUpload.h"
 #import <BackgroundTasks/BackgroundTasks.h>
 #import <UIKit/UIKit.h>
 #include "lane_store.h"
@@ -503,16 +504,34 @@ static BOOL UUID7(NSString *value) {
           // Never push old-generation data. An authenticated old-epoch pull may
           // carry an explicit ACCOUNT deletion; STALE_EPOCH alone never erases.
           if (!epochChanged && [pending[@"mutations"] count]) {
-            NSDictionary *push = [self->_transport callService:@"lane.v1.SyncService" method:@"PushChanges"
-              request:@{@"formatVersion": @3, @"epoch": pending[@"epoch"], @"deviceId": pending[@"deviceId"], @"mutations": pending[@"mutations"]} token:token];
-            if (push[@"error"]) { [self syncFailure:push[@"error"][@"reason"] space:space]; success = NO; break; }
-            __block BOOL applied = NO;
-            dispatch_sync(self->_storage, ^{
-              try {
-              if (![Response(self->_store->acquireSync(UTF8(space), UTF8(self->_owner)))[@"acquired"] boolValue]) return;
-              applied = [LaneJSON(String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{@"formatVersion": @3, @"epoch": pending[@"epoch"], @"owner": self->_owner, @"push": push})))))[@"ok"] boolValue]; } catch (...) {}
-            });
-            if (!applied) { success = NO; break; }
+            NSString *failure = LaneUploadPending(pending, info,
+              ^NSArray<NSDictionary *> *{
+                __block NSArray<NSDictionary *> *items = nil;
+                dispatch_sync(self->_storage, ^{
+                  try {
+                    if ([Response(self->_store->acquireSync(UTF8(space), UTF8(self->_owner)))[@"acquired"] boolValue])
+                      items = Response(self->_store->pendingSync(UTF8(space), UTF8(self->_owner)))[@"mutations"];
+                  } catch (...) {}
+                });
+                return items;
+              },
+              ^NSDictionary *(NSArray<NSDictionary *> *items) {
+                return [self->_transport callService:@"lane.v1.SyncService" method:@"PushChanges"
+                  request:@{@"formatVersion": @3, @"epoch": pending[@"epoch"],
+                    @"deviceId": pending[@"deviceId"], @"mutations": items} token:token];
+              },
+              ^BOOL(NSDictionary *response) {
+                __block BOOL applied = NO;
+                dispatch_sync(self->_storage, ^{
+                  try {
+                    if (![Response(self->_store->acquireSync(UTF8(space), UTF8(self->_owner)))[@"acquired"] boolValue]) return;
+                    applied = [LaneJSON(String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{@"formatVersion": @3,
+                      @"epoch": pending[@"epoch"], @"owner": self->_owner, @"push": response})))))[@"ok"] boolValue];
+                  } catch (...) {}
+                });
+                return applied;
+              });
+            if (failure) { [self syncFailure:failure space:space]; success = NO; break; }
           }
           NSDictionary *pull = [self->_transport callService:@"lane.v1.SyncService" method:@"PullChanges"
             request:@{@"formatVersion": @3, @"epoch": pending[@"epoch"], @"cursor": pending[@"cursor"] ?: @"", @"pageSize": @100} token:token];

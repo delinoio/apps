@@ -33,6 +33,7 @@ NSDictionary *LaneConnectFailure(NSData *body, NSInteger status) {
   NSDictionary *json = LaneJSON([[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding]);
   NSString *reason = status == 401 ? @"UNAUTHENTICATED" : status == 403 ? @"FORBIDDEN" : status == 429 ? @"RATE_LIMITED" : status == 413 ? @"ITEM_TOO_LARGE" : @"DEPENDENCY_UNAVAILABLE";
   NSMutableDictionary *error = [LaneJSON(LaneFailure(reason, status >= 500 || status == 429))[@"error"] mutableCopy];
+  error[@"httpStatus"] = @(status);
   if (![json[@"details"] isKindOfClass:NSArray.class]) return @{@"ok": @NO, @"error": error};
   for (id item in json[@"details"]) {
     if (![item isKindOfClass:NSDictionary.class] || ![item[@"type"] isEqual:@"lane.v1.ErrorDetail"] || ![item[@"value"] isKindOfClass:NSString.class]) continue;
