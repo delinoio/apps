@@ -2093,6 +2093,90 @@ async fn shared_planning_list_vectors_execute_database_domain() {
     f.close().await;
 }
 
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn shared_completed_list_vectors_execute_database_domain() {
+    let doc = fixtures("completed-list");
+    let mut f = Fixture::new().await;
+    let versions = doc["dataset"]["versions"].as_array().unwrap();
+    let rows = doc["dataset"]["rows"].as_array().unwrap();
+    for row in rows {
+        let selected = string(row, "selectedVersionId");
+        let version = versions
+            .iter()
+            .find(|version| string(version, "versionId") == selected)
+            .unwrap();
+        sqlx::query("INSERT INTO lane_entities(account_id,id,kind,repository_id,accepted_version_id) VALUES($1,$2,2,$3,$4)")
+            .bind(&f.p.account_id).bind(string(version, "entityId"))
+            .bind(string(&version["task"], "repositoryId")).bind(selected)
+            .execute(&mut f.db).await.unwrap();
+    }
+    for version in versions {
+        sqlx::query("INSERT INTO lane_versions(account_id,version_id,entity_id,envelope) VALUES($1,$2,$3,$4)")
+            .bind(&f.p.account_id).bind(string(version, "versionId"))
+            .bind(string(version, "entityId")).bind(version)
+            .execute(&mut f.db).await.unwrap();
+    }
+    for row in rows {
+        let selected = string(row, "selectedVersionId");
+        let version = versions
+            .iter()
+            .find(|version| string(version, "versionId") == selected)
+            .unwrap();
+        for head in row["headVersionIds"].as_array().unwrap() {
+            sqlx::query("INSERT INTO lane_heads(account_id,entity_id,version_id) VALUES($1,$2,$3)")
+                .bind(&f.p.account_id)
+                .bind(string(version, "entityId"))
+                .bind(head.as_str().unwrap())
+                .execute(&mut f.db)
+                .await
+                .unwrap();
+        }
+    }
+    for case in doc["listCases"].as_array().unwrap() {
+        let mut request = case["input"]["request"].clone();
+        let mut pages = Vec::new();
+        loop {
+            let response = f
+                .call("ListTasks", request.clone())
+                .await
+                .unwrap_or_else(|error| panic!("{}: {error:?}", case["id"]));
+            pages.push(
+                response["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|item| string(&item["version"], "entityId").to_owned())
+                    .collect::<Vec<_>>(),
+            );
+            let cursor = string(&response, "nextCursor");
+            if cursor.is_empty() {
+                break;
+            }
+            request["page"]["cursor"] = json!(cursor);
+        }
+        let expected: Vec<Vec<String>> =
+            serde_json::from_value(case["expected"]["pages"].clone()).unwrap();
+        assert_eq!(pages, expected, "{}", case["id"]);
+    }
+    for case in doc["invalidCases"].as_array().unwrap() {
+        assert_eq!(
+            f.call("ListTasks", case["request"].clone())
+                .await
+                .unwrap_err()
+                .reason,
+            1,
+            "{}",
+            case["id"]
+        );
+    }
+    let first = f.call("ListTasks", json!({"page":{"size":2},"completed":{"selection":"COMPLETED_SELECTION_LAST_24_HOURS","cutoff":"2026-10-27T12:00:00Z"}})).await.unwrap();
+    let cursor = string(&first, "nextCursor");
+    assert!(!cursor.is_empty());
+    assert_eq!(f.call("ListTasks", json!({"page":{"size":2,"cursor":cursor},"completed":{"selection":"COMPLETED_SELECTION_LAST_24_HOURS","cutoff":"2026-10-27T13:00:00Z"}})).await.unwrap_err().reason, 1);
+    f.close().await;
+}
+
 const LABEL: &str = "019a0000-0000-7000-8000-0000000000a1";
 const MILESTONE: &str = "019a0000-0000-7000-8000-0000000000a2";
 const CYCLE: &str = "019a0000-0000-7000-8000-0000000000a3";
