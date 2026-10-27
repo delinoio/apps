@@ -13,3 +13,9 @@ xcrun --sdk macosx clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Wno-unused-param
   "${test_root}/../Sources/LaneDeletion.mm" \
   -framework Foundation -framework Security -o "${test_output}/credentials-test"
 "${test_output}/credentials-test"
+xcrun --sdk macosx clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Wno-unused-parameter \
+  -I "${test_root}/../Sources" \
+  "${test_root}/image-data-test.mm" \
+  "${test_root}/../Sources/LaneHTTPSImageData.mm" \
+  -framework Foundation -o "${test_output}/image-data-test"
+"${test_output}/image-data-test"
