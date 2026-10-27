@@ -91,6 +91,10 @@ export function TaskEditor({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [resolve, setResolve] = useState(false);
   const [resolution, setResolution] = useState<EntityVersion>();
+  const [selectedHeadId, setSelectedHeadId] = useState<string>();
+  const [compareFocusId] = useState(
+    () => "compare-conflict-" + Math.random().toString(36).slice(2),
+  );
   // Head set the user reviewed when the resolution session began. The resolution is
   // always submitted against this snapshot, never against a later refreshed `current`.
   const [reviewedHeads, setReviewedHeads] = useState<string[]>();
@@ -98,6 +102,7 @@ export function TaskEditor({
   // inspection and explicit reuse after the current versions are reviewed again.
   const [retained, setRetained] = useState<EntityVersion>();
   const resolutionStaleNow = resolutionStale(reviewedHeads, current);
+  const currentHeads = current ? heads(current) : [];
   // Preserve the request across an unchanged retry, including response loss.
   const [attempt, setAttempt] = useState<{ key: string; requestId: string }>();
   // Proposal decisions and prompt restorations keep their request identity across
@@ -114,6 +119,18 @@ export function TaskEditor({
   const [attempted, setAttempted] = useState(false);
   // Guards double submission before React re-renders the disabled state.
   const submitting = useRef(false);
+  const editResolution = (
+    patch: Partial<NonNullable<ReturnType<typeof taskOf>>>,
+  ) => {
+    if (submitting.current || !resolution || !taskOf(resolution)) return;
+    setResolution({
+      ...resolution,
+      body: {
+        case: "task",
+        value: createUITask({ ...taskOf(resolution)!, ...patch }),
+      },
+    });
+  };
   useEffect(() => {
     setPointsText(pointsOf(draft.task.storyPoints));
   }, [draft.id, draft.base]);
@@ -566,12 +583,14 @@ export function TaskEditor({
         )}
         {conflicted(current) && (
           <Button
+            id={compareFocusId}
             onClick={() => {
               // Reopening keeps an existing session; a stale one stays blocked until
               // the user explicitly reviews the current versions.
               if (!reviewedHeads) {
                 setReviewedHeads(headIds(current));
-                setResolution(heads(current!)[0]);
+                setResolution(currentHeads[0]);
+                setSelectedHeadId(currentHeads[0]?.versionId);
               }
               setResolve(true);
             }}
@@ -692,12 +711,24 @@ export function TaskEditor({
         <Dialog
           title="Resolve whole-task conflict"
           onClose={() => setResolve(false)}
+          focusHeading
+          returnFocusId={compareFocusId}
+          className="conflict-dialog"
         >
-          <Notice>
-            Compare every field. Select a complete version, optionally edit it,
-            then save a new resolution. A resolution is saved only against the
-            versions you reviewed.
-          </Notice>
+          <text className="conflict-instructions">
+            Compare the current versions, choose a complete version, then edit
+            Your resolution. Saving creates one new version.
+          </text>
+          <view
+            className="conflict-review-notice"
+            accessibility-element
+            accessibility-traits="text"
+          >
+            <text>
+              Save checks exactly the versions you reviewed. Changes to the head
+              set require another review.
+            </text>
+          </view>
           {resolutionStaleNow && (
             <Notice>
               {headIds(current).length < 2
@@ -712,14 +743,112 @@ export function TaskEditor({
               onClick={() => {
                 if (resolution) setRetained(resolution);
                 setResolution(undefined);
+                setSelectedHeadId(undefined);
                 setReviewedHeads(headIds(current));
               }}
             >
               Review current versions
             </Button>
           )}
+          <view className="conflict-section">
+            <text className="heading" accessibility-heading>
+              Current versions
+            </text>
+            <view className="conflict-heads">
+              {currentHeads.map((v, index) => (
+                <view
+                  className={`conflict-head ${selectedHeadId === v.versionId ? "selected" : ""}`}
+                  data-selected={
+                    selectedHeadId === v.versionId ? "true" : "false"
+                  }
+                  key={v.versionId}
+                >
+                  <view className="row between wrap">
+                    <text
+                      className="conflict-version-title"
+                      accessibility-heading
+                    >
+                      Version {index + 1}
+                    </text>
+                    {selectedHeadId === v.versionId && (
+                      <text
+                        className="conflict-selected"
+                        accessibility-element
+                        accessibility-traits="text"
+                      >
+                        ✓ Selected
+                      </text>
+                    )}
+                  </view>
+                  <text className="conflict-value" text-selection>
+                    Version ID: {v.versionId}
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Origin: {v.origin?.deviceName || "Not set"}
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Title: {taskOf(v)?.title}
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Description: {taskOf(v)?.description || "No description"}
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Prompt:{" "}
+                    {taskOf(v)?.prompt === undefined
+                      ? "Not set"
+                      : taskOf(v)?.prompt === ""
+                        ? "Empty"
+                        : taskOf(v)?.prompt}
+                  </text>
+                  <Captures
+                    adapter={adapter}
+                    taskId={draft.id}
+                    captures={taskOf(v)?.captures || []}
+                  />
+                  <text className="conflict-value" text-selection>
+                    Progress:{" "}
+                    {
+                      progressOptions.find(
+                        ([value]) => value === taskOf(v)?.progress,
+                      )?.[1]
+                    }
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Proposal:{" "}
+                    {
+                      proposalOptions.find(
+                        ([value]) => value === taskOf(v)?.proposal,
+                      )?.[1]
+                    }
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Repository:{" "}
+                    {repositoryName(
+                      repositories.find(
+                        (r) => r.version?.entityId === taskOf(v)?.repositoryId,
+                      )?.version,
+                    )}
+                  </text>
+                  {taskOf(v) && (
+                    <PlanningSummary task={taskOf(v)!} lookup={lookup} />
+                  )}
+                  <Button
+                    pressed={selectedHeadId === v.versionId}
+                    disabled={resolutionStaleNow || busy}
+                    onClick={() => {
+                      if (submitting.current) return;
+                      setResolution(v);
+                      setSelectedHeadId(v.versionId);
+                    }}
+                  >
+                    Use this version
+                  </Button>
+                </view>
+              ))}
+            </view>
+          </view>
           {!resolutionStaleNow && retained && taskOf(retained) && (
-            <view className="card">
+            <view className="card conflict-retained">
               <text>Retained resolution from an earlier review</text>
               <text text-selection>Title: {taskOf(retained)?.title}</text>
               <text text-selection>
@@ -733,237 +862,158 @@ export function TaskEditor({
                     ? "Empty"
                     : taskOf(retained)?.prompt}
               </text>
-              <Button onClick={() => setResolution(retained)}>
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  if (submitting.current) return;
+                  setResolution(retained);
+                  setSelectedHeadId(undefined);
+                }}
+              >
                 Use retained resolution
               </Button>
             </view>
           )}
-          {heads(current).map((v) => (
-            <view className="card" key={v.versionId}>
-              <text>
-                {v.versionId} · {v.origin?.deviceName}
-              </text>
-              <text text-selection>Title: {taskOf(v)?.title}</text>
-              <text text-selection>Description: {taskOf(v)?.description}</text>
-              <text text-selection>
-                Prompt:{" "}
-                {taskOf(v)?.prompt === undefined
-                  ? "Not set"
-                  : taskOf(v)?.prompt === ""
-                    ? "Empty"
-                    : taskOf(v)?.prompt}
-              </text>
-              <Captures
-                adapter={adapter}
-                taskId={draft.id}
-                captures={taskOf(v)?.captures || []}
-              />
-              <text>
-                Progress:{" "}
-                {
-                  progressOptions.find(
-                    ([value]) => value === taskOf(v)?.progress,
-                  )?.[1]
-                }
-              </text>
-              <text>
-                Proposal:{" "}
-                {
-                  proposalOptions.find(
-                    ([value]) => value === taskOf(v)?.proposal,
-                  )?.[1]
-                }
-              </text>
-              <text>
-                Repository:{" "}
-                {repositoryName(
-                  repositories.find(
-                    (r) => r.version?.entityId === taskOf(v)?.repositoryId,
-                  )?.version,
-                )}
-              </text>
-              {taskOf(v) && (
-                <PlanningSummary task={taskOf(v)!} lookup={lookup} />
-              )}
-              <Button
-                primary={resolution?.versionId === v.versionId}
-                disabled={resolutionStaleNow}
-                onClick={() => setResolution(v)}
+          <view className="conflict-resolution">
+            <text className="heading" accessibility-heading>
+              Your resolution
+            </text>
+            <text className="muted">
+              {selectedHeadId
+                ? currentHeads.some((v) => v.versionId === selectedHeadId)
+                  ? `Started from Version ${currentHeads.findIndex((v) => v.versionId === selectedHeadId) + 1}`
+                  : "Started from a previous version"
+                : resolution
+                  ? "Retained resolution from an earlier review"
+                  : "Choose a current version or explicitly use the retained resolution."}
+            </text>
+            {resolution && taskOf(resolution) && (
+              <>
+                <Field
+                  label="Resolved title"
+                  value={taskOf(resolution)!.title}
+                  disabled={busy}
+                  onChange={(title) => editResolution({ title })}
+                />
+                <Field
+                  label="Resolved description"
+                  multiline
+                  value={taskOf(resolution)!.description}
+                  disabled={busy}
+                  onChange={(description) => editResolution({ description })}
+                />
+                <Choices
+                  label="Resolved prompt presence"
+                  exclusive
+                  disabled={busy}
+                  value={
+                    taskOf(resolution)!.prompt === undefined
+                      ? "absent"
+                      : "present"
+                  }
+                  options={[
+                    ["absent", "No prompt"],
+                    ["present", "Include prompt"],
+                  ]}
+                  onChange={(value) =>
+                    editResolution({
+                      prompt: promptForPresence(
+                        taskOf(resolution)!.prompt,
+                        value,
+                      ),
+                    })
+                  }
+                />
+                <text className="muted">
+                  Typing into Resolved prompt includes it. An included empty
+                  prompt is different from No prompt.
+                </text>
+                <Field
+                  label="Resolved prompt"
+                  multiline
+                  value={taskOf(resolution)!.prompt || ""}
+                  disabled={busy}
+                  onChange={(prompt) => editResolution({ prompt })}
+                />
+                <view className="conflict-status-groups">
+                  <Choices
+                    label="Resolved progress"
+                    disabled={busy}
+                    value={taskOf(resolution)!.progress}
+                    options={progressOptions}
+                    onChange={(progress) => editResolution({ progress })}
+                  />
+                  <Choices
+                    label="Resolved proposal"
+                    disabled={busy}
+                    value={taskOf(resolution)!.proposal}
+                    options={proposalOptions}
+                    onChange={(proposal) => editResolution({ proposal })}
+                  />
+                </view>
+                <Choices
+                  label="Resolved repository"
+                  disabled={busy}
+                  value={taskOf(resolution)!.repositoryId}
+                  options={repositories.map(
+                    (r) =>
+                      [r.version!.entityId, repositoryName(r.version)] as const,
+                  )}
+                  onChange={(repositoryId) => editResolution({ repositoryId })}
+                />
+              </>
+            )}
+          </view>
+          <view className="conflict-footer">
+            <text className="muted">
+              Save resolution creates a new whole-task version.
+            </text>
+            <Button
+              primary
+              disabled={
+                busy || !resolution || !reviewedHeads || resolutionStaleNow
+              }
+              onClick={() =>
+                void run(async (completion) => {
+                  if (!reviewedHeads || resolutionStale(reviewedHeads, current))
+                    throw new Error(
+                      "The task changed after you started this resolution. Review the current versions before saving.",
+                    );
+                  const r = await adapter.call(
+                    LaneService.method.resolveConflict,
+                    {
+                      meta: meta(),
+                      id: draft.id,
+                      expectedHeadIds: reviewedHeads,
+                      resolved: resolution,
+                    },
+                  );
+                  if (!r.result || r.result.result === ResultKind.CONFLICT)
+                    throw new Error(
+                      "The conflict changed. Your resolution is retained. Review the current versions before resolving again.",
+                    );
+                  setResolve(false);
+                  setReviewedHeads(undefined);
+                  setRetained(undefined);
+                  setResolution(undefined);
+                  setSelectedHeadId(undefined);
+                  completion.saved(r.result);
+                })
+              }
+            >
+              {busy ? "Saving…" : "Save resolution"}
+            </Button>
+            {busy && <Notice>Saving resolution…</Notice>}
+            {error && (
+              <view
+                className="notice conflict-error"
+                accessibility-element
+                accessibility-traits="text"
               >
-                Use this version
-              </Button>
-            </view>
-          ))}
-          {resolution && taskOf(resolution) && (
-            <>
-              <Field
-                label="Resolved title"
-                value={taskOf(resolution)!.title}
-                onChange={(title) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        title,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Field
-                label="Resolved description"
-                multiline
-                value={taskOf(resolution)!.description}
-                onChange={(description) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        description,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Choices
-                label="Resolved prompt presence"
-                value={
-                  taskOf(resolution)!.prompt === undefined
-                    ? "absent"
-                    : "present"
-                }
-                options={[
-                  ["absent", "No prompt"],
-                  ["present", "Include prompt"],
-                ]}
-                onChange={(value) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        prompt:
-                          value === "absent"
-                            ? undefined
-                            : taskOf(resolution)!.prompt || "",
-                      }),
-                    },
-                  })
-                }
-              />
-              <Field
-                label="Resolved prompt"
-                multiline
-                value={taskOf(resolution)!.prompt || ""}
-                onChange={(prompt) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        prompt,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Choices
-                label="Resolved progress"
-                value={taskOf(resolution)!.progress}
-                options={progressOptions}
-                onChange={(progress) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        progress,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Choices
-                label="Resolved proposal"
-                value={taskOf(resolution)!.proposal}
-                options={proposalOptions}
-                onChange={(proposal) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        proposal,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Choices
-                label="Resolved repository"
-                value={taskOf(resolution)!.repositoryId}
-                options={repositories.map(
-                  (r) =>
-                    [r.version!.entityId, repositoryName(r.version)] as const,
-                )}
-                onChange={(repositoryId) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        repositoryId,
-                      }),
-                    },
-                  })
-                }
-              />
-            </>
-          )}
-          <Button
-            primary
-            disabled={
-              busy || !resolution || !reviewedHeads || resolutionStaleNow
-            }
-            onClick={() =>
-              void run(async (completion) => {
-                if (!reviewedHeads || resolutionStale(reviewedHeads, current))
-                  throw new Error(
-                    "The task changed after you started this resolution. Review the current versions before saving.",
-                  );
-                const r = await adapter.call(
-                  LaneService.method.resolveConflict,
-                  {
-                    meta: meta(),
-                    id: draft.id,
-                    expectedHeadIds: reviewedHeads,
-                    resolved: resolution,
-                  },
-                );
-                if (!r.result || r.result.result === ResultKind.CONFLICT)
-                  throw new Error(
-                    "The conflict changed. Your resolution is retained. Review the current versions before resolving again.",
-                  );
-                setResolve(false);
-                setReviewedHeads(undefined);
-                setRetained(undefined);
-                setResolution(undefined);
-                completion.saved(r.result);
-              })
-            }
-          >
-            Save resolution
-          </Button>
-          {error && <Notice>{error}</Notice>}
+                <text>{error}</text>
+              </view>
+            )}
+          </view>
         </Dialog>
       )}
     </view>
