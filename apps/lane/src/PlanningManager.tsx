@@ -283,7 +283,7 @@ export function PlanningManager({
               data-pressed={String(editing?.id === item.id)}
               accessibility-element
               accessibility-traits="button"
-              accessibility-label={`Edit ${noun[kind]} ${item.name}`}
+              accessibility-label={`Edit ${noun[kind]} ${item.name}${item.conflicted ? ", Conflict" : ""}`}
               accessibility-value={
                 editing?.id === item.id ? "Selected" : undefined
               }
