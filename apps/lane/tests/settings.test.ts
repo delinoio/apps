@@ -47,6 +47,7 @@ async function open(
     permission: 2,
   },
   remote?: (name: string, request: unknown) => Promise<unknown>,
+  mobile = false,
 ) {
   const calls: Call[] = [];
   const handlers: Record<string, (request: any) => Promise<unknown>> = {
@@ -76,6 +77,7 @@ async function open(
   const view = bundle.runtime.mount(bundle.Settings, {
     adapter,
     onReset: () => {},
+    mobile,
   });
   await view.settle();
   const buttons = (label?: string) => {
@@ -563,6 +565,9 @@ test("Settings keeps the approved section order and full deletion scope", async 
     ).length,
     0,
   );
+  const mobile = await open("native", undefined, undefined, true);
+  assert.equal(bundle.captured.updates?.desktop, false);
+  assert.ok(mobile.button("Reset development data"));
 });
 
 test("online list failures remain distinct from empty results and local preferences stay usable", async () => {

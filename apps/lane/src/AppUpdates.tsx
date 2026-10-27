@@ -52,7 +52,7 @@ export function AppUpdates({
       void updateAction(UpdateAction.Cancel).catch(() => {});
     };
   }, [desktop]);
-  const busy = starting || (!!status && updateBusy(status.phase));
+  const busy = desktop && (starting || (!!status && updateBusy(status.phase)));
   useEffect(() => {
     "background only";
     onBusyChange(busy);
@@ -70,7 +70,7 @@ export function AppUpdates({
     );
   const start = async () => {
     "background only";
-    if (startingRef.current || busy || settingsBusy) return;
+    if (!desktop || startingRef.current || busy || settingsBusy) return;
     if (settingsDirty()) {
       setError("Save your notification changes before updating Lane.");
       return;
