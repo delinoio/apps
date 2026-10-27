@@ -32,6 +32,19 @@ jobs:
           # Checkout removes its persisted credential in the post-job cleanup.
           token: ${{ steps.bot.outputs.token }}
           persist-credentials: true
+      - name: Verify release bot API and Git access
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Check the issued token, not only the App installation settings.
+          # Keep credentials and HTTP traces out of the diagnostic output.
+          gh api graphql \
+            -f query='{ repository(owner: "delinoio", name: "apps") { viewerPermission } }' \
+            --jq '{event: "release_bot_api_access", permission: .data.repository.viewerPermission}'
+          # Exercise Git receive authentication without updating any ref.
+          # API access alone does not establish that checkout credentials can push.
+          git push --dry-run origin HEAD:refs/heads/main
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
