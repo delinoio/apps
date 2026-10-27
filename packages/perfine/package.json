@@ -1,6 +1,6 @@
 {
   "name": "perfine",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Profile-backed local performance optimization",
   "license": "Apache-2.0",
   "type": "module",
@@ -30,9 +30,9 @@
     "release:verify": "node scripts/release.mjs verify"
   },
   "optionalDependencies": {
-    "@delinoio/perfine-linux-x64": "0.2.0",
-    "@delinoio/perfine-darwin-x64": "0.2.0",
-    "@delinoio/perfine-darwin-arm64": "0.2.0",
-    "@delinoio/perfine-win32-x64": "0.2.0"
+    "@delinoio/perfine-linux-x64": "0.2.1",
+    "@delinoio/perfine-darwin-x64": "0.2.1",
+    "@delinoio/perfine-darwin-arm64": "0.2.1",
+    "@delinoio/perfine-win32-x64": "0.2.1"
   }
 }

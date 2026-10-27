@@ -1,54 +1,54 @@
 {
   "schema": 1,
-  "runId": "40437934352",
-  "base": "26ef9302f24942cb9e7d96bc1326457219f6a354",
+  "runId": "40441767494",
+  "base": "4b90fe43492d852b555ff3461d2c805260117a35",
   "versions": {
-    "delino": "0.2.0",
-    "delitools": "0.2.0",
-    "devbase": "0.2.0",
-    "lane": "0.2.0",
-    "perfine": "0.2.0"
+    "delino": "0.2.1",
+    "delitools": "0.2.1",
+    "devbase": "0.2.1",
+    "lane": "0.2.1",
+    "perfine": "0.2.1"
   },
   "components": [
     {
       "component": "delino",
-      "apps": ["delino-docs", "delino-site", "git-tracker"],
+      "apps": ["git-tracker"],
       "binaries": false,
       "mobile": false,
-      "version": "0.2.0",
-      "tag": "delino@v0.2.0"
+      "version": "0.2.1",
+      "tag": "delino@v0.2.1"
     },
     {
       "component": "delitools",
       "apps": ["delitools"],
       "binaries": false,
       "mobile": true,
-      "version": "0.2.0",
-      "tag": "delitools@v0.2.0"
+      "version": "0.2.1",
+      "tag": "delitools@v0.2.1"
     },
     {
       "component": "devbase",
       "apps": ["devbase"],
       "binaries": false,
       "mobile": false,
-      "version": "0.2.0",
-      "tag": "devbase@v0.2.0"
+      "version": "0.2.1",
+      "tag": "devbase@v0.2.1"
     },
     {
       "component": "lane",
       "apps": ["lane"],
       "binaries": true,
       "mobile": false,
-      "version": "0.2.0",
-      "tag": "lane@v0.2.0"
+      "version": "0.2.1",
+      "tag": "lane@v0.2.1"
     },
     {
       "component": "perfine",
       "apps": [],
       "binaries": true,
       "mobile": false,
-      "version": "0.2.0",
-      "tag": "perfine@v0.2.0"
+      "version": "0.2.1",
+      "tag": "perfine@v0.2.1"
     }
   ],
   "servers": [
@@ -56,240 +56,8 @@
     "delitools-api",
     "devbase-api",
     "git-tracker-api",
-    "lane-api",
-    "perfine-api"
+    "lane-api"
   ],
-  "records": [
-    "initial-release-delcore-api",
-    "initial-release-delino-docs",
-    "initial-release-delino-site",
-    "initial-release-delitools-api",
-    "initial-release-delitools",
-    "initial-release-devbase-api",
-    "initial-release-devbase",
-    "initial-release-git-tracker-api",
-    "initial-release-git-tracker",
-    "initial-release-lane-api",
-    "initial-release-lane-cli",
-    "initial-release-lane",
-    "initial-release-perfine-api",
-    "initial-release-perfine",
-    "introduce-changeset-tooling",
-    "lane-abandoned-save-completion",
-    "lane-api-consent-origin",
-    "lane-api-device-sync-time",
-    "lane-api-mcp-capture-inputs",
-    "lane-api-preserve-repository-ports",
-    "lane-api-web-login-destination",
-    "lane-api-webhook-endpoint",
-    "lane-api-webhook-repository-aliases",
-    "lane-bind-resolution-to-reviewed-heads",
-    "lane-chrome-extension-reject-synthetic-selection",
-    "lane-chrome-extension-unknown-tab-url",
-    "lane-chrome-extension-web-store-matching",
-    "lane-chrome-extension-worker-startup",
-    "lane-desktop-updates",
-    "lane-events-detail-read-ownership",
-    "lane-events-invalidation-reload",
-    "lane-events-load-ownership",
-    "lane-load-more-tasks-once",
-    "lane-macos-log-expiry",
-    "lane-macos-push-registration-recovery",
-    "lane-preserve-generic-notification-content",
-    "lane-preserve-prompt-on-include",
-    "lane-preserve-repository-ssh-ports",
-    "lane-prompt-history-membership",
-    "lane-realqa-reconnect-status",
-    "lane-receiver-save-lock",
-    "lane-repository-save-lifetime",
-    "lane-specialized-action-retries",
-    "lane-store-subscriber-fanout",
-    "lane-task-delete-failure-notice",
-    "lane-task-history-declared-parent",
-    "lane-task-open-ownership",
-    "lane-web-disabled-preferences",
-    "lane-web-login-destination",
-    "lane-web-push-activation",
-    "lane-web-session-reconcile",
-    "lane-windows-disconnect-numeric-retention",
-    "unify-lane-release-identity"
-  ],
-  "publicNotes": [
-    {
-      "packages": ["@servers/delcore-api"],
-      "note": "### Initial release\n\nWelcome to Delcore API! This is our first release."
-    },
-    {
-      "packages": ["@apps/delino-site"],
-      "note": "### Initial release\n\nWelcome to Delino! This is our first release."
-    },
-    {
-      "packages": ["@servers/delitools-api"],
-      "note": "### Initial release\n\nWelcome to DeliTools API! This is our first release."
-    },
-    {
-      "packages": ["@apps/delitools"],
-      "note": "### Initial release\n\nWelcome to DeliTools! This is our first release."
-    },
-    {
-      "packages": ["@servers/devbase-api"],
-      "note": "### Initial release\n\nWelcome to DevBase API! This is our first release."
-    },
-    {
-      "packages": ["@apps/devbase"],
-      "note": "### Initial release\n\nWelcome to DevBase! This is our first release."
-    },
-    {
-      "packages": ["@servers/git-tracker-api"],
-      "note": "### Initial release\n\nWelcome to Git Tracker API! This is our first release."
-    },
-    {
-      "packages": ["@apps/git-tracker"],
-      "note": "### Initial release\n\nWelcome to Git Tracker! This is our first release."
-    },
-    {
-      "packages": ["@servers/lane-api"],
-      "note": "### Initial release\n\nWelcome to Lane API! This is our first release."
-    },
-    {
-      "packages": ["@delinoio/lane"],
-      "note": "### Initial release\n\nWelcome to Lane CLI! This is our first release."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "### Initial release\n\nWelcome to Lane! This is our first release."
-    },
-    {
-      "packages": ["@servers/perfine-api"],
-      "note": "### Initial release\n\nWelcome to Perfine API! This is our first release."
-    },
-    {
-      "packages": ["@actions/perfine", "perfine"],
-      "note": "### Initial release\n\nWelcome to Perfine! This is our first release."
-    },
-    {
-      "packages": ["@apps/delino-docs"],
-      "note": "### Initial release\n\nWelcome to Delino! This is our first release."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Fixed a case where a slow save could replace the task you were editing after you\nhad already moved on. Your unsaved input and current page now stay as you left them,\nwhile the list still refreshes with the saved change."
-    },
-    {
-      "packages": ["@servers/lane-api"],
-      "note": "New Lane webhook receivers show an endpoint that accepts signed deliveries. If a sender\nuses an endpoint issued earlier that lacks `/webhooks`, add `/webhooks` before the\nreceiver ID in its configuration; the signing key does not change."
-    },
-    {
-      "packages": ["@servers/lane-api"],
-      "note": "Deleting a Lane repository now also removes the webhook receivers and events that were\nconnected to it through a synchronized duplicate of that repository, and filtering\nwebhook receivers and events by either repository ID shows the same results."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "When a conflicting task changes while you are resolving it, Lane keeps your edited\nresolution visible but no longer saves it over the newer versions. Review the current\nversions, then choose or reuse your resolution to save it."
-    },
-    {
-      "packages": ["@apps/lane-chrome-extension"],
-      "note": "Lane's element selector now ignores selections made by the web page itself, so\nonly the element you choose is captured."
-    },
-    {
-      "packages": ["@apps/lane-chrome-extension"],
-      "note": "When Chrome has not yet given RealQA access to the current tab, Lane now asks you\nto click the RealQA extension on that page instead of saying the page is unsupported."
-    },
-    {
-      "packages": ["@apps/lane-chrome-extension"],
-      "note": "RealQA no longer treats ordinary websites whose address merely resembles the\nChrome Web Store as unsupported pages."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Update Lane from Settings with one button. See download progress, retry failed\nupdates, and let Lane restart when installation is ready. If the updated app\ncannot start, Lane attempts to restore the previous version."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Inspecting an event in Events now always shows the event you chose last. A slow\nearlier inspection no longer replaces the details, reopens a dialog you closed or shows\nan outdated error."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Events and webhook receivers now update on their own when new events arrive, an event\nchanges state or a receiver changes, without pressing Refresh events. Your filters and\nany receiver you are editing stay as they are."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Events now always show results for the repository and state filters you selected. Slow\nresponses from an earlier filter no longer replace the list, and Load more events no\nlonger continues from a previous filter."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Tapping \"Load more tasks\" repeatedly no longer shows the same tasks more than once. If loading\nmore tasks fails, the tasks already shown stay on screen and you can try again."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Lane on macOS now keeps notifications working after reconnecting an account or recovering from a temporary connection problem, without turning notifications off and on again."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Saving notification settings in Lane no longer switches a Generic notice back to Repository and title."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Selecting Include prompt again on a task that already has a prompt no longer clears the prompt text."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Saving only the display name of a repository that uses a nondefault SSH port such as `:443` no longer changes its URL to a different repository, and resolving conflicts or synchronizing such a repository no longer fails with an invalid-input error."
-    },
-    {
-      "packages": ["@servers/lane-api"],
-      "note": "Prompt history now lists exactly the task versions that change the prompt or its\ncaptures, including edits saved from an older version and conflict resolutions."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Lane now shows the Chrome connection as connected right after an approved Chrome\nprofile reconnects, without needing another action in Settings."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Webhook receiver fields are now locked while a save is in progress, so changes made during the save are no longer lost when the editor closes."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Saving a repository no longer loses text you type while the save is running, and a slow save can no longer close a different repository you opened meanwhile. Retrying an unchanged repository save after a lost connection now completes the original save instead of reporting a conflict or a duplicate repository."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Fixed a case where retrying Accept proposal, Reject proposal or Restore this prompt after a reported failure could create a second competing version and lock the task as conflicted. Retrying the same action now returns the result that was already saved."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Lane on desktop now refreshes the URL connection list and the capture composer's URL rules after another process changes them, without discarding unsaved edits or reassigning an already matched draft."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Fixed task deletion failures being hidden behind the confirmation. The message now\nappears in the \"Permanently delete task?\" dialog, where you can retry or close it\nwithout losing your unsaved edits."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Task history now shows only the changes each version made. After a conflict, a version\nno longer appears to undo another editor's change that it never replaced."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Fixed a case where a slow task response could replace the task you were editing or\nswitch you back to Tasks. Your unsaved input and current page now stay as you left them."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Turning off notifications, or choosing the generic notice while they are off, in Lane on the web is now saved and still applies after you reload."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Opening a Lane web notification or repository link while signed out now takes you to\nthe linked task or repository after you sign in. If you sign in with a different\naccount than the link was meant for, Lane explains the mismatch instead of opening it."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Turning on notifications in Lane on the web now works the first time, without needing to try again."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "After you approve a different account or re-approve Lane in the sign-in popup, the\noriginal Lane tab now switches to the new session when you return to it instead of\nfailing to save until you reload. If Lane cannot confirm your session, your input is\nkept and you can retry the connection explicitly."
-    },
-    {
-      "packages": ["@apps/lane"],
-      "note": "Disconnecting Lane on Windows now reports success when you keep or remove local data, and Settings closes the confirmation as expected."
-    }
-  ]
+  "records": ["release-shared-environments"],
+  "publicNotes": []
 }
