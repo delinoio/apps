@@ -163,10 +163,11 @@ const taskResult = (state, t) =>
   t.entityId === state.conflictTask && state.heads
     ? // Explicit head set: several versions are a conflict, a single one is resolved.
       (() => {
-        const all = state.heads.map(({ versionId, title }) => ({
+        const all = state.heads.map(({ versionId, title, task, origin }) => ({
           ...t,
           versionId,
-          task: { ...t.task, title },
+          origin: origin ?? t.origin,
+          task: { ...t.task, ...task, title },
         }));
         return {
           result:
