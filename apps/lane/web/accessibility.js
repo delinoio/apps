@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // web-core preserves Lynx accessibility attributes but does not map them to
 // browser semantics. Remove this adapter when that mapping exists upstream.
+export const focusAccessibleTarget = (node) => {
+  // x-text delegates rendering to an inner box; its host cannot take focus.
+  const target =
+    node?.shadowRoot?.querySelector("input,textarea,#inner-box") || node;
+  if (target?.id === "inner-box" || target?.id === "lane-workspace")
+    target.tabIndex = -1;
+  target?.focus();
+};
+
 export function installAccessibility(view) {
   let previousDialog;
   let previousApp;
@@ -22,14 +31,7 @@ export function installAccessibility(view) {
         e.getAttribute("aria-disabled") !== "true" &&
         !e.hasAttribute("disabled"),
     );
-  const focus = (node) => {
-    // x-text delegates rendering to an inner box; its host cannot take focus.
-    const target =
-      node?.shadowRoot?.querySelector("input,textarea,#inner-box") || node;
-    if (target?.id === "inner-box" || target?.id === "lane-workspace")
-      target.tabIndex = -1;
-    target?.focus();
-  };
+  const focus = focusAccessibleTarget;
   const update = () => {
     const root = view.shadowRoot;
     if (!root) return;

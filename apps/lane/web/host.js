@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./runtime/static/js/client.js";
-import { installAccessibility } from "./accessibility.js";
+import {
+  focusAccessibleTarget,
+  installAccessibility,
+} from "./accessibility.js";
 import {
   AuthRequestError,
   OnlineLane,
@@ -119,7 +122,7 @@ const restoreViewFocus = () => {
     view.shadowRoot?.querySelector('[role="heading"]') ||
     view;
   if (target === view) view.tabIndex = -1;
-  target.focus();
+  focusAccessibleTarget(target);
   lastViewFocus = undefined;
 };
 const online = new OnlineLane({

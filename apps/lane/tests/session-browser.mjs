@@ -229,7 +229,7 @@ try {
 
   // Scenario 4 (transient): the view is hidden but its input survives, no business
   // request is sent, and only an explicit retry recovers.
-  await title.focus();
+  await page.locator("body").focus();
   await control("session-mode?mode=503");
   await control("log-reset");
   await returnFocus();
@@ -237,6 +237,7 @@ try {
   await page
     .getByText("Account request failed (503)", { exact: false })
     .waitFor();
+  await page.locator("#gate-heading").focus();
   assert.equal(await gate.getAttribute("data-state"), "error");
   assert.equal(
     await page.getByRole("heading", { name: "Unable to connect" }).count(),
@@ -313,6 +314,17 @@ try {
   await retryButton.click();
   await gate.waitFor({ state: "hidden" });
   assert.equal(await gate.getAttribute("aria-busy"), "false");
+  assert.equal(
+    await page.evaluate(() => {
+      let active =
+        document.querySelector("lynx-view")?.shadowRoot?.activeElement;
+      while (active?.shadowRoot?.activeElement)
+        active = active.shadowRoot.activeElement;
+      return active?.id;
+    }),
+    "inner-box",
+    "fallback recovery focus uses the focusable heading target",
+  );
   // Reconnection invalidates every retained pane. Finish those authorized reads
   // before resetting the log for the next rejected-session scenario.
   await page.waitForLoadState("networkidle");
