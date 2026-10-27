@@ -108,7 +108,10 @@ const restoreViewFocus = () => {
   const gateWasFocused = gate.contains(document.activeElement);
   gate.hidden = true;
   view.hidden = false;
-  if (!gateWasFocused) return;
+  if (!gateWasFocused) {
+    lastViewFocus = undefined;
+    return;
+  }
   const target =
     (lastViewFocus?.isConnected && lastViewFocus) ||
     view.shadowRoot?.querySelector('[role="heading"]') ||
