@@ -11,6 +11,7 @@ import {
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { build } from "esbuild";
+import { desktopTarCommand } from "./desktop-archive.mjs";
 // Keep the relay's independently bundled runtime on the repository Node 24 line.
 // The October 2026 security release supersedes the development machine runtime.
 // See https://nodejs.org/en/blog/vulnerability/october-2026-security-releases.
@@ -55,10 +56,14 @@ export async function packageChromeRelay({
     if (createHash("sha256").update(bytes).digest("hex") !== sha256)
       throw new Error("The Node relay runtime checksum does not match.");
     writeFileSync(archivePath, bytes);
-    const extracted = spawnSync("tar", ["-xf", archivePath, "-C", cache], {
-      stdio: "inherit",
-      shell: false,
-    });
+    const extracted = spawnSync(
+      desktopTarCommand(),
+      ["-xf", archivePath, "-C", cache],
+      {
+        stdio: "inherit",
+        shell: false,
+      },
+    );
     if (extracted.status !== 0)
       throw new Error("Could not extract the Node relay runtime.");
     cpSync(

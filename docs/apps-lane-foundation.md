@@ -628,8 +628,11 @@ value leaves Chrome registration and the connection service disabled; it does
 not produce a placeholder store listing.
 
 Windows builds require Node 24, CMake, Visual Studio with the MSVC C++ desktop
-toolchain, and a Windows 10/11 SDK containing `Windows.winmd`. Install the frozen
-workspace from the root. On Windows, configure Git Bash as the pnpm script shell
+toolchain, and a Windows 10/11 SDK containing `Windows.winmd`. Keep the Windows
+`SystemRoot` environment intact. SDK NuGet and relay
+Node ZIP extraction uses `SystemRoot/System32/tar.exe` explicitly, because Git
+Bash can put GNU tar ahead of the Windows ZIP-capable bsdtar on `PATH`.
+Install the frozen workspace from the root. On Windows, configure Git Bash as the pnpm script shell
 for the root shell-based hook installer. Run `pnpm build:desktop` from
 `apps/lane`; the launcher selects the architecture of the Node/Lynxtron runtime.
 It resolves pinned official NuGet Foundation `1.8.260803002`, Runtime
