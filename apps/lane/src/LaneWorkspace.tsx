@@ -84,8 +84,9 @@ export function LaneWorkspace({
 }) {
   const [planningDirty, setPlanningDirty] = useState(false);
   const [taskError, setTaskError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
   const [repositoryError, setRepositoryError] = useState("");
-  const error = taskError || repositoryError;
+  const error = taskError || refreshError || repositoryError;
   const [loading, setLoading] = useState(true);
   const page = target.page ?? LanePage.Tasks;
   const [repository, setRepository] = useState(target.repositoryId ?? "");
@@ -164,6 +165,7 @@ export function LaneWorkspace({
     if (!adapter) return;
     let active = true;
     setRepositoryStatus("Loading repositories...");
+    setRepositoryError("");
     let repositoriesLoaded = false;
     void (async () => {
       try {
@@ -180,6 +182,7 @@ export function LaneWorkspace({
         if (active) {
           setRepositories(repos);
           setRepositoryStatus("");
+          setRepositoryError("");
         }
         let count = 0;
         after = "";
@@ -202,14 +205,17 @@ export function LaneWorkspace({
             setDraft((d) => (d ? receiveExternal(d, r.result!) : d));
           }
         }
-        if (active) setRepositoryError("");
+        if (active) setRefreshError("");
       } catch (e) {
         if (active) {
-          if (!repositoriesLoaded)
+          if (!repositoriesLoaded) {
             setRepositoryStatus("Repositories could not be refreshed.");
-          setRepositoryError(
-            e instanceof Error ? e.message : "Refresh failed.",
-          );
+            setRepositoryError(
+              e instanceof Error ? e.message : "Refresh failed.",
+            );
+          } else {
+            setRefreshError(e instanceof Error ? e.message : "Refresh failed.");
+          }
         }
       }
     })();
@@ -892,6 +898,8 @@ export function LaneWorkspace({
               busyChanged={setPageBusy}
               adapter={adapter}
               items={repositories}
+              status={repositoryStatus}
+              loadError={repositoryError}
               planning={planning}
               refresh={refresh}
               select={(id) => {

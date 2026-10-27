@@ -89,6 +89,8 @@ export function Field({
   focus = false,
   error,
   help,
+  focusOnShow = false,
+  accessibleHelp = false,
 }: {
   label: string;
   value: string;
@@ -99,6 +101,8 @@ export function Field({
   // Validation message shown in text next to the field, never by color alone.
   error?: string;
   help?: string;
+  focusOnShow?: boolean;
+  accessibleHelp?: boolean;
 }) {
   const [id] = useState(() => "field-" + Math.random().toString(36).slice(2));
   useEffect(() => {
@@ -120,8 +124,11 @@ export function Field({
   }, [id, focus]);
   const props = {
     id,
+    "data-dialog-default": focusOnShow ? "true" : undefined,
     className: `input ${multiline ? "multiline" : ""}`,
-    "accessibility-label": error ? `${label}. ${error}` : label,
+    "accessibility-label": [label, accessibleHelp ? help : undefined, error]
+      .filter(Boolean)
+      .join(". "),
     disabled,
     maxlength: 2147483647,
     bindinput: (e: { detail: { value: string } }) => onChange(e.detail.value),
@@ -130,7 +137,7 @@ export function Field({
     <view className="field" data-invalid={error ? "true" : undefined}>
       <text className="label">{label}</text>
       {multiline ? <textarea {...props} /> : <input {...props} />}
-      {help && !error && <text className="muted">{help}</text>}
+      {help && <text className="muted">{help}</text>}
       {error && <text className="validation">{error}</text>}
     </view>
   );
@@ -340,18 +347,20 @@ export function Dialog({
   title,
   children,
   onClose,
+  className = "",
+  closeFocus = false,
   focusHeading = false,
   footer,
   returnFocusId,
-  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  className?: string;
+  closeFocus?: boolean;
   focusHeading?: boolean;
   footer?: ReactNode;
   returnFocusId?: string;
-  className?: string;
 }) {
   const [headingId] = useState(
     () => "dialog-heading-" + Math.random().toString(36).slice(2),
@@ -401,7 +410,7 @@ export function Dialog({
             <text className="heading">{title}</text>
           )}
           <Button
-            focusOnShow={!focusHeading && !!returnFocusId}
+            focusOnShow={closeFocus || (!focusHeading && !!returnFocusId)}
             onClick={onClose}
           >
             Close
