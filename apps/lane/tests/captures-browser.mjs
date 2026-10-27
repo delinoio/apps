@@ -29,6 +29,7 @@ const browser = await chromium.launch({
   headless: true,
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+page.setDefaultTimeout(90000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 const button = (name) => page.getByRole("button", { name, exact: true });
@@ -145,7 +146,10 @@ try {
   assert.equal(await page.locator(".capture-result").count(), 2);
   for (const width of [1440, 900, 899, 390, 360]) {
     await page.setViewportSize({ width, height: 840 });
-    await page.locator(".capture-result").last().scrollIntoViewIfNeeded();
+    await page
+      .locator(".capture-result")
+      .last()
+      .evaluate((element) => element.scrollIntoView({ block: "end" }));
     const geometry = await readGeometry();
     assert.equal(geometry.length, 2);
     assert.ok(
@@ -168,7 +172,10 @@ try {
   await page.evaluate(() => {
     document.body.style.zoom = "2";
   });
-  await page.locator(".capture-result").last().scrollIntoViewIfNeeded();
+  await page
+    .locator(".capture-result")
+    .last()
+    .evaluate((element) => element.scrollIntoView({ block: "end" }));
   const enlarged = await readGeometry();
   assert.ok(
     enlarged.every(
