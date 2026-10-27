@@ -35,6 +35,7 @@ const selectedTab = () =>
   page.locator("#lane-root").getAttribute("data-selected-tab");
 const choosePace = async () => {
   await button("New tab").click();
+  await page.getByRole("heading", { name: "New tab" }).waitFor();
   await button("Pace").click();
   await page.getByText("Pace is not available yet.", { exact: true }).waitFor();
 };
