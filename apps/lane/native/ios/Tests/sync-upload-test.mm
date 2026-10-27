@@ -121,7 +121,7 @@ static void MockCases(void) {
       for (NSDictionary *item in items) {
         NSMutableDictionary *result = [@{@"requestId": item[@"meta"][@"requestId"]} mutableCopy];
         if ([item[@"version"][@"entityId"] isEqual:ID(23)])
-          result[@"error"] = @{@"reason": @"ERROR_REASON_ITEM_TOO_LARGE", @"retryable": @NO};
+          result[@"error"] = @{@"reason": @"ERROR_REASON_ITEM_TOO_LARGE", @"retryable": @YES};
         [results addObject:result];
       }
       return @{@"results": results};

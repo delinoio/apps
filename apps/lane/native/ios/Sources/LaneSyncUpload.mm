@@ -67,8 +67,13 @@ static NSDictionary *TooLargeResult(NSDictionary *item) {
     @"error": @{@"reason": @"ERROR_REASON_ITEM_TOO_LARGE", @"retryable": @NO}}]};
 }
 
+static BOOL AuthoritativeItemRejection(NSDictionary *error) {
+  return [error[@"reason"] isEqual:@"ERROR_REASON_ITEM_TOO_LARGE"];
+}
+
 static BOOL TransientItemError(NSDictionary *error) {
   NSString *reason = error[@"reason"];
+  if (AuthoritativeItemRejection(error)) return NO;
   return [error[@"retryable"] boolValue] || [@[@"ERROR_REASON_RATE_LIMITED",
     @"ERROR_REASON_DEPENDENCY_UNAVAILABLE", @"ERROR_REASON_UNAUTHENTICATED",
     @"ERROR_REASON_FORBIDDEN", @"ERROR_REASON_STALE_EPOCH",
