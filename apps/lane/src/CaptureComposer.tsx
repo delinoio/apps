@@ -8,10 +8,11 @@ import {
 } from "@repo/protos/lane/v1/lane_pb";
 import type { UI } from "./serializable";
 import { newId, type LaneAdapter } from "./adapter";
-import { Button, Choices, Field, Notice } from "./components";
-import { CaptureActions, RealQADialogs } from "./RealQA";
+import { Button, Choices, Dialog, Field, Notice } from "./components";
+import { RealQADialogs } from "./RealQA";
 import {
   EditTool,
+  captureModes,
   realqa,
   type CaptureDraft,
   type DraftImage,
@@ -36,10 +37,17 @@ export function CaptureComposer({
 }) {
   const draft = controller.state?.draft;
   const [repositories, setRepositories] = useState<UI<EntityResult>[]>([]);
+  const [repositoriesReady, setRepositoriesReady] = useState(false);
+  const [repositoryError, setRepositoryError] = useState("");
+  const [rulesError, setRulesError] = useState("");
+  const [lookupRetry, setLookupRetry] = useState(0);
+  const [captureMenu, setCaptureMenu] = useState(false);
+  const [returnToAddCapture, setReturnToAddCapture] = useState(false);
   const [selected, setSelected] = useState("");
   const [narrow, setNarrow] = useState(false);
   const [rules, setRules] =
     useState<{ prefix: string; repositoryId: string }[]>();
+  const [rulesReady, setRulesReady] = useState(false);
   const matched = useRef<string | undefined>(undefined);
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -61,43 +69,76 @@ export function CaptureComposer({
   useEffect(() => {
     if (!adapter) return;
     let active = true;
+    let repositoryRequest = 0;
+    let ruleRequest = 0;
     const loadRepositories = async () => {
       // Composer windows replace the tab tree, so their repository choices must
       // be loaded by the composer rather than by a retained Lane workspace.
-      const repositoryResults: UI<EntityResult>[] = [];
-      let repositoryCursor = "";
-      do {
-        const r = await adapter.call(LaneService.method.listRepositories, {
-          page: { size: 100, cursor: repositoryCursor },
-        });
-        if (!active) return;
-        repositoryResults.push(...r.items);
-        repositoryCursor = r.nextCursor;
-      } while (repositoryCursor);
-      setRepositories(repositoryResults);
+      const request = ++repositoryRequest;
+      setRepositoriesReady(false);
+      try {
+        const repositoryResults: UI<EntityResult>[] = [];
+        let repositoryCursor = "";
+        do {
+          const r = await adapter.call(LaneService.method.listRepositories, {
+            page: { size: 100, cursor: repositoryCursor },
+          });
+          if (!active || request !== repositoryRequest) return;
+          repositoryResults.push(...r.items);
+          repositoryCursor = r.nextCursor;
+        } while (repositoryCursor);
+        if (!active || request !== repositoryRequest) return;
+        setRepositories(repositoryResults);
+        setRepositoryError("");
+        setRepositoriesReady(true);
+      } catch (e) {
+        if (active && request === repositoryRequest) {
+          setRepositoryError(
+            e instanceof Error ? e.message : "Repository lookup failed.",
+          );
+          setRepositoriesReady(false);
+        }
+      }
     };
     const loadRules = async () => {
-      const all: { prefix: string; repositoryId: string }[] = [];
-      let cursor = "";
-      do {
-        const r = await adapter.call(CaptureService.method.listURLConnections, {
-          page: { size: 100, cursor },
-        });
-        for (const item of r.items) {
-          const value = connectionOf(item.version);
-          if (value && !conflicted(item) && !item.version?.deleted)
-            all.push(value);
+      const request = ++ruleRequest;
+      setRulesReady(false);
+      try {
+        const all: { prefix: string; repositoryId: string }[] = [];
+        let cursor = "";
+        do {
+          const r = await adapter.call(
+            CaptureService.method.listURLConnections,
+            {
+              page: { size: 100, cursor },
+            },
+          );
+          if (!active || request !== ruleRequest) return;
+          for (const item of r.items) {
+            const value = connectionOf(item.version);
+            if (value && !conflicted(item) && !item.version?.deleted)
+              all.push(value);
+          }
+          cursor = r.nextCursor;
+        } while (cursor);
+        if (!active || request !== ruleRequest) return;
+        setRules(all);
+        setRulesError("");
+        setRulesReady(true);
+      } catch (e) {
+        if (active && request === ruleRequest) {
+          setRulesError(
+            e instanceof Error ? e.message : "URL connection lookup failed.",
+          );
+          setRulesReady(false);
         }
-        cursor = r.nextCursor;
-      } while (cursor);
-      if (active) setRules(all);
+      }
     };
     const load = () => {
       // Either lookup can fail independently; a slow repository list must not
       // suppress URL-rule selection or warnings for the current capture.
-      void Promise.all([loadRepositories(), loadRules()]).catch((e) => {
-        if (active) setSaveError(e.message);
-      });
+      void loadRepositories();
+      void loadRules();
     };
     load();
     const stop = adapter.subscribe(load);
@@ -105,7 +146,7 @@ export function CaptureComposer({
       active = false;
       stop();
     };
-  }, [adapter]);
+  }, [adapter, lookupRetry]);
   useEffect(() => {
     if (!draft || !rules || !draft.images.length) return;
     const key = draft.id || draft.images[0].id;
@@ -122,7 +163,8 @@ export function CaptureComposer({
     void controller.updateDraft(patch);
   };
   const save = async () => {
-    if (saveLock.current || !adapter || !draft || invalid) return;
+    if (saveLock.current || !adapter || !draft || invalid || !repositoriesReady)
+      return;
     const spaceId = adapter.spaceId;
     saveLock.current = true;
     setSaving(true);
@@ -219,13 +261,17 @@ export function CaptureComposer({
           e.key === "Escape" &&
           !controller.sources &&
           !controller.discard &&
+          !captureMenu &&
           !saving
         )
           controller.setDiscard(true);
       }}
     >
       <view className="row between composer-header">
-        <text className="heading">RealQA</text>
+        <view className="composer-brand">
+          <text className="heading">RealQA</text>
+          <text className="muted">Capture a problem</text>
+        </view>
         <Button disabled={saving} onClick={() => controller.setDiscard(true)}>
           Close
         </Button>
@@ -233,7 +279,9 @@ export function CaptureComposer({
       <scroll-view className="composer-scroll" scroll-orientation="vertical">
         <view className="composer-columns">
           <view className="composer-editor">
-            {image ? (
+            {!draft ? (
+              <Notice>Loading captures…</Notice>
+            ) : image ? (
               <ImageEditor
                 key={image.id}
                 image={image}
@@ -243,91 +291,147 @@ export function CaptureComposer({
             ) : (
               <Notice>No captures yet. Add a capture to start.</Notice>
             )}
-            <view className="row wrap thumbnails">
-              {draft?.images.map((item, index) => (
-                <view className="capture-thumbnail" key={item.id}>
-                  <image
-                    src={`data:image/png;base64,${item.png}`}
-                    mode="aspectFit"
-                    className="thumbnail-image"
-                    accessibility-label={`Capture ${index + 1}`}
-                  />
-                  <Button
-                    primary={item.id === image?.id}
-                    disabled={saving}
-                    onClick={() => setSelected(item.id)}
-                  >{`Capture ${index + 1} of ${draft.images.length}`}</Button>
-                  <view className="row wrap">
+            <view className="composer-captures">
+              <text className="heading">Captures</text>
+              {image && (
+                <text className="muted composer-identity">
+                  Selected capture ID: {image.id}
+                </text>
+              )}
+              <view className="row wrap thumbnails">
+                {draft?.images.map((item, index) => (
+                  <view className="capture-thumbnail" key={item.id}>
+                    <image
+                      src={`data:image/png;base64,${item.png}`}
+                      mode="aspectFit"
+                      className="thumbnail-image"
+                      accessibility-label={`Capture ${index + 1}`}
+                    />
                     <Button
-                      disabled={saving || controller.busy || index === 0}
-                      onClick={() =>
-                        void controller.run(() =>
-                          realqa({
-                            op: "reorderImages",
-                            ids: move(
-                              draft.images.map((i) => i.id),
-                              index,
-                              -1,
-                            ),
-                          }),
-                        )
-                      }
-                    >
-                      Move earlier
-                    </Button>
-                    <Button
-                      disabled={
-                        saving ||
-                        controller.busy ||
-                        index === draft.images.length - 1
-                      }
-                      onClick={() =>
-                        void controller.run(() =>
-                          realqa({
-                            op: "reorderImages",
-                            ids: move(
-                              draft.images.map((i) => i.id),
-                              index,
-                              1,
-                            ),
-                          }),
-                        )
-                      }
-                    >
-                      Move later
-                    </Button>
-                    <Button
-                      disabled={saving || controller.busy}
-                      onClick={() =>
-                        void controller.run(() =>
-                          realqa({ op: "removeImage", imageId: item.id }),
-                        )
-                      }
-                    >
-                      Remove capture
-                    </Button>
+                      pressed={item.id === image?.id}
+                      label={`Capture ${index + 1} of ${draft.images.length}${item.id === image?.id ? ", selected" : ""}`}
+                      disabled={saving}
+                      onClick={() => setSelected(item.id)}
+                    >{`Capture ${index + 1} of ${draft.images.length}`}</Button>
+                    <view className="row wrap">
+                      <Button
+                        label={`Move capture ${index + 1} earlier`}
+                        disabled={saving || controller.busy || index === 0}
+                        onClick={() =>
+                          void controller.run(() =>
+                            realqa({
+                              op: "reorderImages",
+                              ids: move(
+                                draft.images.map((i) => i.id),
+                                index,
+                                -1,
+                              ),
+                            }),
+                          )
+                        }
+                      >
+                        Move earlier
+                      </Button>
+                      <Button
+                        label={`Move capture ${index + 1} later`}
+                        disabled={
+                          saving ||
+                          controller.busy ||
+                          index === draft.images.length - 1
+                        }
+                        onClick={() =>
+                          void controller.run(() =>
+                            realqa({
+                              op: "reorderImages",
+                              ids: move(
+                                draft.images.map((i) => i.id),
+                                index,
+                                1,
+                              ),
+                            }),
+                          )
+                        }
+                      >
+                        Move later
+                      </Button>
+                      <Button
+                        label={`Remove capture ${index + 1}`}
+                        disabled={saving || controller.busy}
+                        onClick={() =>
+                          void controller.run(() =>
+                            realqa({ op: "removeImage", imageId: item.id }),
+                          )
+                        }
+                      >
+                        Remove capture
+                      </Button>
+                    </view>
                   </view>
-                </view>
-              ))}
+                ))}
+              </view>
             </view>
-            <text className="label">Add capture</text>
             {validation.images && (
               <text className="validation">{validation.images}</text>
             )}
-            {!saving && <CaptureActions controller={controller} />}
+            <Button
+              disabled={saving || controller.busy}
+              expanded={captureMenu}
+              focusOnShow={returnToAddCapture && !captureMenu}
+              onClick={() => {
+                setReturnToAddCapture(false);
+                setCaptureMenu(true);
+              }}
+            >
+              Add capture
+            </Button>
           </view>
           <view className="composer-form">
+            <text className="heading">Task details</text>
             {!adapter && (
               <Notice>
                 Lane storage is unavailable. Open the main Lane window to
                 resolve the storage error before saving.
               </Notice>
             )}
+            {adapter && !repositoriesReady && !repositoryError && (
+              <Notice>Loading repositories…</Notice>
+            )}
+            {repositoryError && (
+              <Notice>
+                Repository choices could not load: {repositoryError} Your draft
+                is retained.
+              </Notice>
+            )}
+            {repositoryError && (
+              <Button
+                disabled={saving}
+                onClick={() => setLookupRetry((value) => value + 1)}
+              >
+                Retry repository lookup
+              </Button>
+            )}
+            {adapter && !rulesReady && !rulesError && (
+              <Notice>Loading URL connections…</Notice>
+            )}
+            {rulesError && (
+              <Notice>
+                URL connections could not load: {rulesError} Select a repository
+                manually or retry.
+              </Notice>
+            )}
+            {rulesError && (
+              <Button
+                disabled={saving}
+                onClick={() => setLookupRetry((value) => value + 1)}
+              >
+                Retry URL connection lookup
+              </Button>
+            )}
             <Choices
               label="Repository"
               value={draft?.repositoryId || ""}
               options={options}
-              disabled={saving}
+              disabled={saving || !repositoriesReady}
               onChange={(repositoryId) => update({ repositoryId })}
             />
             {validation.repository && (
@@ -353,6 +457,11 @@ export function CaptureComposer({
             {image && (
               <view className="section">
                 <text className="heading">Capture details</text>
+                <text className="muted">
+                  Capture{" "}
+                  {draft?.images.findIndex((item) => item.id === image.id)! + 1}{" "}
+                  of {draft?.images.length}
+                </text>
                 {warning && (
                   <Notice>
                     A capture matches a different repository. Your selected
@@ -394,16 +503,51 @@ export function CaptureComposer({
             )}
             {controller.error && <Notice>{controller.error}</Notice>}
             {saveError && <Notice>{saveError} Your draft is retained.</Notice>}
-            <Button
-              primary
-              disabled={saving || controller.busy || !adapter || invalid}
-              onClick={() => void save()}
-            >
-              {saving ? "Saving…" : saveError ? "Retry" : "Save to Lane"}
-            </Button>
+            <text className="muted">
+              Unsaved captures and layers stay in memory until you save or
+              discard this draft.
+            </text>
+            {!!draft?.images.length && (
+              <Button
+                primary
+                disabled={
+                  saving ||
+                  controller.busy ||
+                  !adapter ||
+                  !repositoriesReady ||
+                  invalid
+                }
+                onClick={() => void save()}
+              >
+                {saving ? "Saving…" : saveError ? "Retry" : "Save to Lane"}
+              </Button>
+            )}
           </view>
         </view>
       </scroll-view>
+      {captureMenu && (
+        <Dialog
+          title="Add capture"
+          onClose={() => {
+            setCaptureMenu(false);
+            setReturnToAddCapture(true);
+          }}
+        >
+          {captureModes.map(([mode, label]) => (
+            <Button
+              key={mode}
+              disabled={saving || controller.busy}
+              onClick={() => {
+                setCaptureMenu(false);
+                setReturnToAddCapture(true);
+                void controller.capture(mode);
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </Dialog>
+      )}
       <RealQADialogs controller={controller} />
     </view>
   );
@@ -425,6 +569,7 @@ function ImageEditor({
   disabled: boolean;
 }) {
   const [tool, setTool] = useState(EditTool.Arrow);
+  const [coordinatesExpanded, setCoordinatesExpanded] = useState(false);
   const [text, setText] = useState("");
   const [color, setColor] = useState("#075AFF");
   const [box, setBox] = useState({
@@ -441,19 +586,32 @@ function ImageEditor({
     if (disabled || controller.busy) return;
     setError("");
     try {
+      if (Object.values(box).some((value) => !value.trim()))
+        throw new Error(
+          "Enter valid pixel coordinates and positive dimensions.",
+        );
       const x = Number(box.x),
         y = Number(box.y),
         width = Number(box.width),
         height = Number(box.height);
+      const needsPoints = tool === EditTool.Draw || tool === EditTool.Arrow;
       const line =
         path ||
-        points
-          .trim()
-          .split(/\s+/)
-          .map((pair) => {
-            const [x, y] = pair.split(",").map(Number);
-            return { x, y };
-          });
+        (needsPoints
+          ? points
+              .trim()
+              .split(/\s+/)
+              .map((pair) => {
+                if (!/^-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$/.test(pair))
+                  throw new Error(
+                    "Enter points as x,y pairs separated by spaces.",
+                  );
+                const [pointX, pointY] = pair.split(",").map(Number);
+                return { x: pointX, y: pointY };
+              })
+          : []);
+      if (needsPoints && line.length < 2)
+        throw new Error("Enter at least two x,y points.");
       if (
         ![x, y, width, height].every(Number.isFinite) ||
         width <= 0 ||
@@ -537,7 +695,10 @@ function ImageEditor({
             key={value}
             primary={tool === value}
             disabled={disabled}
-            onClick={() => setTool(value)}
+            onClick={() => {
+              setTool(value);
+              if (value === EditTool.Text) setCoordinatesExpanded(true);
+            }}
           >
             {
               {
@@ -607,52 +768,68 @@ function ImageEditor({
         coordinates below and apply. Layers remain in memory until saved or
         discarded.
       </text>
-      <view className="row wrap">
-        {(["x", "y", "width", "height"] as const).map((key) => (
-          <Field
-            key={key}
-            label={key}
-            value={box[key]}
-            disabled={disabled}
-            onChange={(value) => setBox({ ...box, [key]: value })}
-          />
-        ))}
-      </view>
-      {(tool === EditTool.Draw || tool === EditTool.Arrow) && (
-        <Field
-          label="Points (x,y pairs separated by spaces)"
-          value={points}
-          disabled={disabled}
-          onChange={setPoints}
-        />
-      )}
-      {tool === EditTool.Text && (
-        <Field
-          label="Annotation text"
-          value={text}
-          disabled={disabled}
-          onChange={setText}
-        />
-      )}
-      <Field
-        label="Annotation color"
-        value={color}
+      <Button
+        expanded={coordinatesExpanded}
         disabled={disabled}
-        onChange={setColor}
-      />
-      <Button disabled={disabled || controller.busy} onClick={() => apply()}>
-        Apply tool
+        onClick={() => setCoordinatesExpanded((value) => !value)}
+      >
+        Pixel coordinates
       </Button>
+      {coordinatesExpanded && (
+        <view className="composer-coordinates">
+          <view className="composer-coordinate-grid">
+            {(["x", "y", "width", "height"] as const).map((key) => (
+              <Field
+                key={key}
+                label={key}
+                value={box[key]}
+                disabled={disabled}
+                onChange={(value) => setBox({ ...box, [key]: value })}
+              />
+            ))}
+          </view>
+          {(tool === EditTool.Draw || tool === EditTool.Arrow) && (
+            <Field
+              label="Points (x,y pairs separated by spaces)"
+              value={points}
+              disabled={disabled}
+              onChange={setPoints}
+            />
+          )}
+          {tool === EditTool.Text && (
+            <Field
+              label="Annotation text"
+              focus
+              value={text}
+              disabled={disabled}
+              onChange={setText}
+            />
+          )}
+          <Field
+            label="Annotation color"
+            value={color}
+            disabled={disabled}
+            onChange={setColor}
+          />
+          <Button
+            disabled={disabled || controller.busy}
+            onClick={() => apply()}
+          >
+            Apply tool
+          </Button>
+        </view>
+      )}
       {error && <Notice>{error}</Notice>}
       <text className="label">Annotation layers (back to front)</text>
       {!image.layers.length && <text>No annotation layers</text>}
       {image.layers.map((layer, index) => (
-        <view className="row wrap" key={index}>
+        <view className="row wrap composer-layer" key={index}>
           <text>
             {index + 1}. {layer.type}
             {layer.text ? `: ${layer.text}` : ""}
           </text>
           <Button
+            label={`Move layer ${index + 1} up`}
             disabled={
               disabled || controller.busy || index === image.layers.length - 1
             }
@@ -670,6 +847,7 @@ function ImageEditor({
             Move up
           </Button>
           <Button
+            label={`Move layer ${index + 1} down`}
             disabled={disabled || controller.busy || index === 0}
             onClick={() =>
               void controller.run(() =>
@@ -685,6 +863,7 @@ function ImageEditor({
             Move down
           </Button>
           <Button
+            label={`Remove layer ${index + 1}`}
             disabled={disabled || controller.busy}
             onClick={() =>
               void controller.run(() =>
