@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "@lynx-js/react";
+import { useEffect, useState } from "@lynx-js/react";
 import type { UI } from "./serializable";
 import type { Task as ProtoTask } from "@repo/protos/lane/v1/lane_pb";
 import { Button, Field, Notice } from "./components";
@@ -31,6 +31,15 @@ const sections: { kind: Kind; title: string; single: boolean; noun: string }[] =
   ];
 const MAX_RESULTS = 8;
 
+function focus(id: string) {
+  "background only";
+  lynx
+    .createSelectorQuery()
+    .select(`#${id}`)
+    .invoke({ method: "setFocus", params: { focus: true } })
+    .exec();
+}
+
 function TaskPicker({
   title,
   options,
@@ -51,6 +60,7 @@ function TaskPicker({
   // Titles need not be unique, so refining the search cannot always separate
   // matches: let the user reveal further results page by page.
   const [shown, setShown] = useState(MAX_RESULTS);
+  const [index, setIndex] = useState(-1);
   const needle = query.trim().toLowerCase();
   const matches = options
     .filter(
@@ -59,6 +69,21 @@ function TaskPicker({
         (!needle || o.title.toLowerCase().includes(needle)),
     )
     .sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+  const visible = matches.slice(0, shown);
+  const key = (pressed: string) => {
+    if (pressed === "Escape") {
+      onClose();
+      return true;
+    }
+    if ((pressed === "ArrowDown" || pressed === "ArrowUp") && visible.length) {
+      setIndex(
+        (index + (pressed === "ArrowDown" ? 1 : -1) + visible.length) %
+          visible.length,
+      );
+      return true;
+    }
+    return false;
+  };
   return (
     <view className="picker">
       <Field
@@ -67,7 +92,9 @@ function TaskPicker({
         onChange={(value) => {
           setQuery(value);
           setShown(MAX_RESULTS);
+          setIndex(-1);
         }}
+        onKeyDown={key}
         disabled={disabled}
         focus
       />
@@ -78,11 +105,13 @@ function TaskPicker({
             : "No matching tasks in this repository."}
         </text>
       ) : (
-        matches.slice(0, shown).map((m) => (
+        visible.map((m, optionIndex) => (
           <Button
             key={m.id}
             label={`Add ${m.title} to ${title}`}
             disabled={disabled}
+            focusOnShow={index === optionIndex}
+            onKeyDown={key}
             onClick={() => onPick(m.id)}
           >
             {m.title}
@@ -94,12 +123,18 @@ function TaskPicker({
           <text className="muted">
             {matches.length - shown} more tasks match.
           </text>
-          <Button onClick={() => setShown(shown + MAX_RESULTS)}>
+          <Button
+            disabled={disabled}
+            onKeyDown={key}
+            onClick={() => setShown(shown + MAX_RESULTS)}
+          >
             Show more matching tasks
           </Button>
         </>
       )}
-      <Button onClick={onClose}>Cancel adding</Button>
+      <Button onKeyDown={key} onClick={onClose}>
+        Cancel adding
+      </Button>
     </view>
   );
 }
@@ -113,6 +148,8 @@ export function TaskRelationships({
   ownId,
   moved,
   openTask,
+  openControl,
+  setOpenControl,
 }: {
   draft: Draft;
   setDraft: (draft: Draft) => void;
@@ -122,8 +159,19 @@ export function TaskRelationships({
   ownId: string;
   moved: boolean;
   openTask: (id: string) => void;
+  openControl: string | undefined;
+  setOpenControl: (control: string | undefined) => void;
 }) {
   const [adding, setAdding] = useState<Kind>();
+  const [menuIndex, setMenuIndex] = useState(0);
+  const [triggerId] = useState(
+    () => `task-relationship-${Math.random().toString(36).slice(2)}`,
+  );
+  const menuOpen = openControl === "relationship";
+  useEffect(() => {
+    "background only";
+    if (openControl && adding) setAdding(undefined);
+  }, [openControl, adding]);
   const task = draft.task;
   const unavailable = !task.repositoryId || moved;
   const candidates = options.tasks.filter((t) => t.id !== ownId);
@@ -167,11 +215,96 @@ export function TaskRelationships({
     }
   };
   const derived = (kind: Kind) => kind === "subtasks" || kind === "blocks";
+  const canAdd = (kind: Kind, single: boolean) =>
+    !disabled &&
+    !unavailable &&
+    options.status === "ready" &&
+    !(derived(kind) && !draft.relations) &&
+    !(single && get(kind).length > 0);
+  const availableIndexes = sections.flatMap((section, index) =>
+    canAdd(section.kind, section.single) ? [index] : [],
+  );
+  const closeMenu = () => {
+    setOpenControl(undefined);
+    focus(triggerId);
+  };
+  const menuKey = (key: string) => {
+    if (key === "Escape" && menuOpen) {
+      closeMenu();
+      return true;
+    }
+    if (
+      (key === "ArrowDown" || key === "ArrowUp") &&
+      menuOpen &&
+      availableIndexes.length
+    ) {
+      const current = availableIndexes.indexOf(menuIndex);
+      const next =
+        (current + (key === "ArrowDown" ? 1 : -1) + availableIndexes.length) %
+        availableIndexes.length;
+      setMenuIndex(availableIndexes[next]);
+      return true;
+    }
+    return false;
+  };
+  const closePicker = () => {
+    setAdding(undefined);
+    focus(triggerId);
+  };
   return (
     <view className="planning-section">
-      <text className="heading" accessibility-heading>
-        Relationships
-      </text>
+      <view className="row between wrap">
+        <text className="heading" accessibility-heading>
+          Relationships
+        </text>
+        <Button
+          elementId={triggerId}
+          label="Add relationship"
+          expanded={menuOpen}
+          disabled={disabled || unavailable || options.status !== "ready"}
+          onKeyDown={(key) => {
+            if (menuKey(key)) return true;
+            if (key === "ArrowDown" && !menuOpen && availableIndexes.length) {
+              setMenuIndex(availableIndexes[0]);
+              setOpenControl("relationship");
+              return true;
+            }
+            return false;
+          }}
+          onClick={() => {
+            if (menuOpen) closeMenu();
+            else {
+              setMenuIndex(availableIndexes[0] ?? 0);
+              setOpenControl("relationship");
+            }
+          }}
+        >
+          +
+        </Button>
+      </view>
+      {menuOpen && (
+        <scroll-view
+          className="task-select-options"
+          scroll-orientation="vertical"
+        >
+          {sections.map(({ kind, single, noun }, index) => (
+            <Button
+              key={kind}
+              label={`Add ${noun}`}
+              disabled={!canAdd(kind, single)}
+              focusOnShow={menuIndex === index && canAdd(kind, single)}
+              onKeyDown={menuKey}
+              onClick={() => {
+                if (!canAdd(kind, single)) return;
+                setOpenControl(undefined);
+                setAdding(kind);
+              }}
+            >
+              {`Add ${noun}`}
+            </Button>
+          ))}
+        </scroll-view>
+      )}
       <text className="muted">
         Links describe work only: they never change progress, proposals or
         completion. Linked tasks must be in the same repository. Changes stay in
@@ -195,12 +328,11 @@ export function TaskRelationships({
           <Button onClick={options.retry}>Retry loading tasks</Button>
         </Notice>
       )}
-      {sections.map(({ kind, title, single, noun }) => {
+      {sections.map(({ kind, title, single }) => {
         const ids = get(kind);
         const pending =
           derived(kind) && !draft.relations && options.status !== "error";
         const picking = adding === kind;
-        const canAdd = !(single && ids.length > 0);
         return (
           <view className="relation" key={kind}>
             <text className="label" accessibility-heading>
@@ -259,26 +391,11 @@ export function TaskRelationships({
                   // A save in flight already built its request from the current draft.
                   if (disabled || unavailable) return;
                   set(kind, single ? [id] : [...ids, id]);
-                  setAdding(undefined);
+                  closePicker();
                 }}
-                onClose={() => setAdding(undefined)}
+                onClose={closePicker}
               />
-            ) : (
-              canAdd && (
-                <Button
-                  disabled={
-                    disabled ||
-                    unavailable ||
-                    options.status !== "ready" ||
-                    (derived(kind) && !draft.relations)
-                  }
-                  label={`Add ${noun}`}
-                  onClick={() => setAdding(kind)}
-                >
-                  {`Add ${noun}`}
-                </Button>
-              )
-            )}
+            ) : null}
           </view>
         );
       })}

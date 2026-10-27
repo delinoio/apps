@@ -33,6 +33,10 @@ const browser = await chromium.launch({
   slowMo: 50,
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const capture = async (options) => {
+  if (process.env.LANE_SKIP_VALIDATION_SCREENSHOTS !== "1")
+    await page.screenshot(options);
+};
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
@@ -93,6 +97,30 @@ const waitList = async (accept) => {
 const settle = (ms = 250) => page.waitForTimeout(ms);
 const pressed = async (name) =>
   (await button(name).getAttribute("aria-pressed")) === "true";
+const editorControl = (label) =>
+  page.locator(".editor .task-select").filter({
+    has: page.locator(".label").getByText(label, { exact: true }),
+  });
+const editorSelected = async (label, value) =>
+  (await editorControl(label)
+    .getByRole("button")
+    .first()
+    .getAttribute("aria-label")) === `${label}: ${value}`;
+const chooseEditorValue = async (label, value) => {
+  await editorControl(label).getByRole("button").first().click();
+  await editorControl(label)
+    .getByRole("button", { name: `${label}: ${value}`, exact: true })
+    .last()
+    .click();
+};
+const chooseEditorLabel = async (name) => {
+  await button(/Labels: \d+ selected/).click();
+  await button(`Labels: ${name}`).click();
+};
+const addRelationship = async (name) => {
+  await button("Add relationship").click();
+  await button(name).click();
+};
 // Every rendered element must stay inside the viewport width (no horizontal scrolling).
 const overflow = () =>
   page.locator("lynx-view").evaluate((view) => {
@@ -139,7 +167,7 @@ try {
   await text("apps / Backend", true).first().waitFor();
   // In the all-repository list repository-owned values name their repository.
   await text("docs / Backend", true).waitFor();
-  await page.screenshot({ path: join(evidence, "desktop-task-list.png") });
+  await capture({ path: join(evidence, "desktop-task-list.png") });
 
   // The web runtime drops aria-*="false"; an expanded region is exposed as "true" only.
   assert.notEqual(
@@ -337,8 +365,8 @@ try {
   // ---- Task editor: properties, relationships, validation, retained drafts ------
   await openTask("Improve empty states");
   await heading("Relationships").waitFor();
-  assert.equal(await pressed("Priority: High"), true);
-  assert.equal(await pressed("Labels: Backend"), true);
+  assert.equal(await editorSelected("Priority", "High"), true);
+  assert.equal(await button("Remove Backend from Labels").count(), 1);
   const startBox = box("Start date (YYYY-MM-DD)");
   const dueBox = box("Due date (YYYY-MM-DD)");
   assert.equal(await dueBox.inputValue(), "2026-11-20");
@@ -355,15 +383,15 @@ try {
     "two-column fields when the editor has sufficient width",
   );
   await heading("Properties").scrollIntoViewIfNeeded();
-  await page.screenshot({ path: join(evidence, "desktop-task-editor.png") });
+  await capture({ path: join(evidence, "desktop-task-editor.png") });
   await heading("Relationships").scrollIntoViewIfNeeded();
-  await page.screenshot({
+  await capture({
     path: join(evidence, "desktop-task-relationships.png"),
   });
 
-  await button("Type: Bug").click();
-  await button("Labels: Frontend").click();
-  await button("Cycle: Sprint 1 (2026-11-02 to 2026-11-15)").click();
+  await chooseEditorValue("Type", "Bug");
+  await chooseEditorLabel("Frontend");
+  await chooseEditorValue("Cycle", "Sprint 1 (2026-11-02 to 2026-11-15)");
   await startBox.fill("2026-12-01");
   await box("Story points (whole number)").fill("1.5");
   await saveButton().click();
@@ -378,7 +406,7 @@ try {
     "invalid drafts are not sent",
   );
   assert.equal(
-    await pressed("Type: Bug"),
+    await editorSelected("Type", "Bug"),
     true,
     "draft retained after validation failure",
   );
@@ -386,12 +414,12 @@ try {
   await box("Story points (whole number)").fill("0");
 
   // Relationships: search-select same-repository tasks by title.
-  await button("Add parent").click();
+  await addRelationship("Add parent");
   await box("Search tasks for Parent").fill("launch");
   await button("Add Plan the launch to Parent").click();
   await text("Plan the launch").first().waitFor();
   await button("Change parent").waitFor();
-  await button("Add subtask").click();
+  await addRelationship("Add subtask");
   await box("Search tasks for Subtasks").fill("onboarding");
   assert.equal(
     await button("Add Fix docs typo to Subtasks").count(),
@@ -399,20 +427,17 @@ try {
     "other repositories are not offered",
   );
   await button("Add Write onboarding guide to Subtasks").click();
-  await button("Add dependency").click();
+  await addRelationship("Add dependency");
   await button("Add Plan the launch to Depends on").click();
-  await button("Add related task").click();
+  await addRelationship("Add related task");
   await button("Add Write onboarding guide to Related").click();
-  await button("Add original task").click();
+  await addRelationship("Add original task");
   await button("Add Plan the launch to Duplicate of").click();
 
   // Selecting the current repository again keeps every draft change and relationship.
-  await page
-    .locator(".editor")
-    .getByRole("button", { name: "apps", exact: true })
-    .click();
+  await chooseEditorValue("Repository / move task", "apps");
   await settle();
-  assert.equal(await pressed("Type: Bug"), true);
+  assert.equal(await editorSelected("Type", "Bug"), true);
   await button("Change parent").waitFor();
   await button("Remove Plan the launch from Parent").waitFor();
   assert.equal(await box("Story points (whole number)").inputValue(), "0");
@@ -431,14 +456,14 @@ try {
   await text("This parent would create a loop", false).waitFor();
   await text("Your changes are not saved.", false).waitFor();
   assert.equal(await box("Title").inputValue(), "Improve empty states");
-  assert.equal(await pressed("Type: Bug"), true);
+  assert.equal(await editorSelected("Type", "Bug"), true);
   assert.equal(await button("Retry Save").count(), 1);
   const failed = await last("SaveTask");
 
   // Retry keeps the request ID (idempotent), applies once and disables duplicate clicks.
   await plan({ delayMs: 400 });
   await clearRequests();
-  await button("Retry Save").click();
+  await saveButton().click();
   await button("Saving…").waitFor();
   assert.equal(await button("Saving…").getAttribute("aria-disabled"), "true");
   await button("Saving…")
@@ -480,7 +505,7 @@ try {
   await plan({ delayMs: 400 });
   await clearRequests();
   await button("Remove Write onboarding guide from Related").click();
-  await button("Add related task").click();
+  await addRelationship("Add related task");
   await box("Search tasks for Related").waitFor();
   await saveButton().click();
   await button("Saving…").waitFor();
@@ -542,7 +567,7 @@ try {
   await saveButton().click();
   await settle(700);
   assert.deepEqual((await last("SaveTask")).task.relatedTaskIds ?? [], []);
-  await button("Add related task").click();
+  await addRelationship("Add related task");
   await button("Add Write onboarding guide to Related").click();
 
   // Related tasks open their own tabs without discarding the relationship draft.
@@ -602,10 +627,7 @@ try {
   await page
     .getByRole("tab", { name: "Only a title, Unsaved changes", exact: true })
     .waitFor();
-  await page
-    .locator(".editor")
-    .getByRole("button", { name: "apps", exact: true })
-    .click();
+  await chooseEditorValue("Repository / move task", "apps");
   await clearRequests();
   const createdReply = page.waitForResponse((response) =>
     response.url().endsWith("/lane.v1.LaneService/CreateTask"),
@@ -854,7 +876,7 @@ try {
   await page.route("**/lane.v1.LaneService/ListTasks", twins);
   await button("Close Only a title").click();
   await openTask("Only a title");
-  await button("Add related task").click();
+  await addRelationship("Add related task");
   await box("Search tasks for Related").fill("twin");
   const twin = button("Add Twin task to Related");
   await twin.first().waitFor();
@@ -906,7 +928,7 @@ try {
   await button("Labels, milestones and cycles").first().click();
   await text("Labels (2)", false).waitFor();
   await text("Backend · #075AFF", false).waitFor();
-  await page.screenshot({
+  await capture({
     path: join(evidence, "desktop-planning-labels.png"),
   });
   await button("New label").click();
@@ -1185,10 +1207,10 @@ try {
       assert.ok(b.y > a.y + 10, `fields stack in one column at ${width}px`);
     }
     await heading("Properties").scrollIntoViewIfNeeded();
-    await page.screenshot({ path: join(evidence, `editor-${width}.png`) });
+    await capture({ path: join(evidence, `editor-${width}.png`) });
   }
 } catch (error) {
-  await page.screenshot({ path: join(evidence, "failure.png") });
+  await capture({ path: join(evidence, "failure.png") });
   console.error(
     await page
       .locator("lynx-view")

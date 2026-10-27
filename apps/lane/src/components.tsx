@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "@lynx-js/react";
 import { parseMarkdown, type MarkdownSpan } from "./markdown";
 import { hostAction } from "./runtime";
 export function Button({
+  elementId,
   children,
   onClick,
   disabled = false,
@@ -12,7 +13,9 @@ export function Button({
   label,
   swatch,
   focusOnShow = false,
+  onKeyDown,
 }: {
+  elementId?: string;
   children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
@@ -25,21 +28,23 @@ export function Button({
   // Decorative color next to the text; the name always stays visible.
   swatch?: string;
   focusOnShow?: boolean;
+  onKeyDown?: (key: string) => boolean;
 }) {
   const [id] = useState(() => "button-" + Math.random().toString(36).slice(2));
+  const targetId = elementId ?? id;
   useEffect(() => {
     "background only";
     if (focusOnShow)
       lynx
         .createSelectorQuery()
-        .select(`#${id}`)
+        .select(`#${targetId}`)
         .invoke({ method: "setFocus", params: { focus: true } })
         .exec();
-  }, [focusOnShow, id]);
+  }, [focusOnShow, targetId]);
   const selected = pressed ?? primary;
   return (
     <view
-      id={id}
+      id={targetId}
       data-dialog-default={focusOnShow ? "true" : undefined}
       className={`button ${primary || pressed ? "primary" : ""} ${disabled ? "disabled" : ""}`}
       data-pressed={pressed === undefined ? undefined : String(pressed)}
@@ -61,6 +66,7 @@ export function Button({
         if (!disabled) onClick?.();
       }}
       bindkeydown={(e) => {
+        if (onKeyDown?.(e.key)) return;
         if (!disabled && (e.key === "Enter" || e.key === " ")) onClick?.();
       }}
     >
@@ -84,6 +90,7 @@ export function Field({
   focus = false,
   error,
   help,
+  onKeyDown,
 }: {
   label: string;
   value: string;
@@ -94,6 +101,7 @@ export function Field({
   // Validation message shown in text next to the field, never by color alone.
   error?: string;
   help?: string;
+  onKeyDown?: (key: string) => void;
 }) {
   const [id] = useState(() => "field-" + Math.random().toString(36).slice(2));
   useEffect(() => {
@@ -120,6 +128,7 @@ export function Field({
     disabled,
     maxlength: 2147483647,
     bindinput: (e: { detail: { value: string } }) => onChange(e.detail.value),
+    bindkeydown: (e: { key: string }) => onKeyDown?.(e.key),
   };
   return (
     <view className="field" data-invalid={error ? "true" : undefined}>

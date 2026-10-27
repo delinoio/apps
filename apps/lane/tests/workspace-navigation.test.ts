@@ -276,8 +276,7 @@ test("mobile repository scope opens the destination tab without changing the ori
     assert.ok(
       nodes().some(
         (n) =>
-          n.props["accessibility-label"] === "repo-a" &&
-          n.props.className?.includes("primary"),
+          n.props["accessibility-label"] === "Repository / move task: repo-a",
       ),
       "the original tab still creates tasks in repository A",
     );

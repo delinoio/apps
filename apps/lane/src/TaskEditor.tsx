@@ -16,6 +16,7 @@ import { RequestAttempt, SpecializedAction } from "./requestAttempt";
 import { Button, Choices, Dialog, Field, Markdown, Notice } from "./components";
 import { TaskProperties } from "./TaskProperties";
 import { TaskRelationships } from "./TaskRelationships";
+import { TaskSelect } from "./TaskControls";
 import {
   deriveRelations,
   describeError,
@@ -79,6 +80,7 @@ export function TaskEditor({
 }) {
   const [tab, setTab] = useState("Description");
   const [preview, setPreview] = useState(false);
+  const [openControl, setOpenControl] = useState<string>();
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     busyChanged?.(busy);
@@ -401,14 +403,20 @@ export function TaskEditor({
             action.
           </text>
         )}
-        <Choices
+        <TaskSelect
+          control="progress"
+          openControl={openControl}
+          setOpenControl={setOpenControl}
           label="Progress"
           value={draft.task.progress}
           options={progressOptions}
           onChange={(progress) => edit({ progress })}
           disabled={busy || readOnly}
         />
-        <Choices
+        <TaskSelect
+          control="repository"
+          openControl={openControl}
+          setOpenControl={setOpenControl}
           label="Repository / move task"
           value={draft.task.repositoryId}
           options={[
@@ -427,6 +435,7 @@ export function TaskEditor({
           <Field
             label="Repository URL"
             value={repositoryUrl}
+            disabled={busy || readOnly}
             onChange={(value) => {
               setRepositoryUrl(value);
               setDraft({ ...draft, dirty: true });
@@ -524,6 +533,8 @@ export function TaskEditor({
           }}
           errors={fieldErrors}
           moved={moved}
+          openControl={openControl}
+          setOpenControl={setOpenControl}
         />
         <TaskRelationships
           draft={draft}
@@ -533,6 +544,8 @@ export function TaskEditor({
           options={options}
           ownId={draft.id}
           moved={moved}
+          openControl={openControl}
+          setOpenControl={setOpenControl}
           openTask={openTask}
         />
         {error && <Notice>{error} Your input is retained.</Notice>}
