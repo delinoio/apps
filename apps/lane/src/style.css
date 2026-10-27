@@ -230,6 +230,108 @@ text {
   margin-top: 16px;
   margin-bottom: 16px;
 }
+.repository-directory {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+  background-color: #f7f9fc;
+}
+.repository-header {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.repository-header-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+.repository-header .heading {
+  font-size: 1.625rem;
+  margin-bottom: 0;
+}
+.repository-row,
+.repository-empty,
+.repository-status {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+  padding: 18px;
+  gap: 12px;
+  border: 1px solid #e4e8ef;
+  border-radius: 10px;
+  background-color: #fff;
+}
+.repository-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+.repository-name {
+  font-size: 1rem;
+  font-weight: 650;
+  white-space: normal;
+  word-break: break-all;
+}
+.repository-url {
+  color: #526079;
+  white-space: normal;
+  word-break: break-all;
+}
+.repository-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.repository-actions .button {
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 1;
+}
+.repository-actions .button text {
+  white-space: normal;
+}
+.repository-placeholder {
+  height: 72px;
+  border-radius: 8px;
+  background-color: #f0f3f8;
+}
+.repository-dialog {
+  width: 560px;
+  max-width: 100%;
+  height: auto;
+  max-height: calc(100vh - 32px);
+  padding: 28px;
+  box-shadow: 0 12px 36px #17203326;
+}
+.repository-dialog .heading {
+  min-width: 0;
+  white-space: normal;
+}
+.repository-dialog .button {
+  min-height: 44px;
+}
+.repository-dialog .field {
+  min-width: 0;
+}
+.repository-dialog-footer {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  padding-top: 8px;
+}
 .overlay {
   position: fixed;
   z-index: 3;
@@ -308,6 +410,19 @@ text {
 }
 .mobile .dialog {
   padding: 16px;
+}
+.mobile .repository-directory {
+  padding: 16px;
+}
+.mobile .repository-row,
+.mobile .repository-empty,
+.mobile .repository-status {
+  padding: 16px;
+}
+.mobile .repository-dialog {
+  width: 100%;
+  max-height: calc(100vh - 24px);
+  padding: 24px;
 }
 .bold {
   font-weight: 700;

@@ -339,6 +339,9 @@ The following behavior is authoritative for all Lane entry points. The linked do
 
 ### Repositories
 
+- Show the repository directory with a heading, the organizational-URL explanation, an Add repository action and bordered rows. Each row shows the display name, normalized URL, and visible actions for tasks, planning, editing, deletion and conflict resolution when needed. Wrap actions and long URLs within the available width, including narrow screens and enlarged text.
+- Open Add and Edit in a centered, scrollable modal no wider than 560px. Focus Repository URL first, show the HTTPS/SSH equivalence helper and URL-change warning, and save only through the explicit Save action. Close and Escape immediately end the editor lifetime, even with unsaved input or a submitted save. A submitted mutation continues; its late result may refresh lists but cannot change a newer editor.
+- Distinguish initial loading, successful empty results and refresh failures. Keep existing rows and the current editor input after a refresh failure, with an explicit retry. A failed save retains the form and its retry identity. Lock both fields and repeat Save while a save is pending. Show unavailable or conflicting entities without claiming success. The delete confirmation focuses Close first and retains its exact destructive scope.
 - Identify repositories by normalized URL host and repository path. Treat HTTPS/SSH URL forms and a terminal `.git` difference as equivalent. The URL is an organizational identifier: do not fetch repository contents or verify Git-host access.
 - When task creation names an unregistered repository URL, register it and create the task.
 - Default the displayed name to URL host/path; allow a separate user-defined display name.

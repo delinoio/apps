@@ -157,6 +157,7 @@ export function LaneWorkspace({
     if (!adapter) return;
     let active = true;
     setRepositoryStatus("Loading repositories...");
+    setRepositoryError("");
     let repositoriesLoaded = false;
     void (async () => {
       try {
@@ -173,6 +174,7 @@ export function LaneWorkspace({
         if (active) {
           setRepositories(repos);
           setRepositoryStatus("");
+          setRepositoryError("");
         }
         let count = 0;
         after = "";
@@ -195,14 +197,16 @@ export function LaneWorkspace({
             setDraft((d) => (d ? receiveExternal(d, r.result!) : d));
           }
         }
-        if (active) setRepositoryError("");
       } catch (e) {
         if (active) {
-          if (!repositoriesLoaded)
+          if (!repositoriesLoaded) {
             setRepositoryStatus("Repositories could not be refreshed.");
-          setRepositoryError(
-            e instanceof Error ? e.message : "Refresh failed.",
-          );
+            setRepositoryError(
+              e instanceof Error ? e.message : "Refresh failed.",
+            );
+          } else {
+            setTaskError(e instanceof Error ? e.message : "Refresh failed.");
+          }
         }
       }
     })();
@@ -769,6 +773,8 @@ export function LaneWorkspace({
               busyChanged={setPageBusy}
               adapter={adapter}
               items={repositories}
+              status={repositoryStatus}
+              loadError={repositoryError}
               planning={planning}
               refresh={refresh}
               select={(id) => {
