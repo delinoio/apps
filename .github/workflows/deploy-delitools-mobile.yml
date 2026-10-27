@@ -170,6 +170,8 @@ jobs:
     if: ${{ inputs.publish && (inputs.platform == 'all' || inputs.platform == 'android') }}
     runs-on: ubuntu-latest
     environment: release-publish
+    env:
+      DELITOOLS_BUILD_NUMBER: ${{ inputs.build_number }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with: { ref: "${{ inputs.revision }}", persist-credentials: false }

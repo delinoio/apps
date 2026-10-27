@@ -98,6 +98,10 @@ for (const [platform, stepName, filename] of [
 }
 
 test("DeliTools verifies the protected Android upload identity before retaining candidates", () => {
+  assert.equal(
+    workflow.jobs["android-publish"].env.DELITOOLS_BUILD_NUMBER,
+    "${{ inputs.build_number }}",
+  );
   const job = workflow.jobs.android;
   assert.equal(
     job.env.DELITOOLS_ANDROID_CERTIFICATE_SHA256,
