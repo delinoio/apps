@@ -11,7 +11,14 @@ import {
 } from "@repo/protos/lane/v1/lane_pb";
 import { newId, type LaneAdapter } from "./adapter";
 
-import { Button, Choices, Field, MenuChoices, Notice } from "./components";
+import {
+  Button,
+  Choices,
+  CompactSelect,
+  Field,
+  MenuChoices,
+  Notice,
+} from "./components";
 import {
   blankTask,
   conflicted,
@@ -111,6 +118,9 @@ export function LaneWorkspace({
   }, [active, page]);
   const [progress, setProgress] = useState<Progress>(Progress.UNSPECIFIED);
   const [proposal, setProposal] = useState<Proposal>(Proposal.UNSPECIFIED);
+  const [openRepositorySelect, setOpenRepositorySelect] = useState<
+    "progress" | "proposal"
+  >();
   const [filter, setFilter] = useState<FilterState>(emptyFilter);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortKey, setSortKey] = useState<TaskSortKey>(TaskSortKey.UNSPECIFIED);
@@ -348,6 +358,7 @@ export function LaneWorkspace({
           (result) => result.version?.entityId === target.repositoryId,
         )?.version
       : undefined;
+  const repositoryList = target.kind === TabKind.Repository;
   const title =
     draft?.task.title ||
     (target.kind === TabKind.NewTask
@@ -479,7 +490,7 @@ export function LaneWorkspace({
           <view className="task-workspace">
             {(!mobile || !draft) && (
               <view
-                className={`task-list ${page === "Proposals" ? "proposal-list" : ""}`}
+                className={`task-list ${repositoryList ? "repository-task-list" : ""} ${page === "Proposals" ? "proposal-list" : ""}`}
               >
                 <scroll-view
                   className="rows"
@@ -490,9 +501,17 @@ export function LaneWorkspace({
                   }}
                 >
                   <view className="task-list-content">
-                    <view className="row between">
-                      <view>
-                        <text className="heading">
+                    <view
+                      className={`row between ${repositoryList ? "repository-list-header" : ""}`}
+                    >
+                      <view className="repository-list-heading">
+                        {repositoryList && (
+                          <text className="repository-context">Repository</text>
+                        )}
+                        <text
+                          className="heading"
+                          accessibility-heading={repositoryList || undefined}
+                        >
                           {repository
                             ? repositoryName(
                                 repositories.find(
@@ -569,10 +588,49 @@ export function LaneWorkspace({
                     )}
                     <view
                       className={
-                        page === "Proposals" ? "proposal-controls" : undefined
+                        repositoryList
+                          ? "repository-query-band"
+                          : page === "Proposals"
+                            ? "proposal-controls"
+                            : undefined
                       }
                     >
-                      {page === "Proposals" ? (
+                      {repositoryList ? (
+                        <view className="repository-query-selects">
+                          <CompactSelect
+                            label="Progress filter"
+                            value={progress}
+                            options={[
+                              [Progress.UNSPECIFIED, "All"],
+                              ...progressOptions,
+                            ]}
+                            onChange={setProgress}
+                            active={active}
+                            open={openRepositorySelect === "progress"}
+                            onOpenChange={(open) =>
+                              setOpenRepositorySelect(
+                                open ? "progress" : undefined,
+                              )
+                            }
+                          />
+                          <CompactSelect
+                            label="Proposal filter"
+                            value={proposal}
+                            options={[
+                              [Proposal.UNSPECIFIED, "All"],
+                              ...proposalOptions,
+                            ]}
+                            onChange={setProposal}
+                            active={active}
+                            open={openRepositorySelect === "proposal"}
+                            onOpenChange={(open) =>
+                              setOpenRepositorySelect(
+                                open ? "proposal" : undefined,
+                              )
+                            }
+                          />
+                        </view>
+                      ) : page === "Proposals" ? (
                         <>
                           <MenuChoices
                             label="Proposal disposition"
@@ -629,6 +687,8 @@ export function LaneWorkspace({
                       setSortKey={setSortKey}
                       sortDirection={sortDirection}
                       setSortDirection={setSortDirection}
+                      compact={repositoryList}
+                      active={active}
                       separateSort={page === "Proposals"}
                     />
                     {page === "Proposals" && (
@@ -710,10 +770,88 @@ export function LaneWorkspace({
                           )}
                         </view>
                       ) : (
-                        tasks.map((r) => {
-                          const t = taskOf(r.version);
-                          return (
-                            t && (
+                        <>
+                          {repositoryList && (
+                            <view
+                              className="repository-task-columns"
+                              accessibility-elements-hidden
+                            >
+                              <text className="repository-task-heading">
+                                Task
+                              </text>
+                              <text className="repository-progress-heading">
+                                Progress
+                              </text>
+                              <text className="repository-details-heading">
+                                Details
+                              </text>
+                            </view>
+                          )}
+                          {tasks.map((r) => {
+                            const t = taskOf(r.version);
+                            return !t ? null : repositoryList ? (
+                              <view
+                                className={`task-row repository-task-row ${draft?.id === r.version?.entityId ? "selected" : ""}`}
+                                key={r.version?.entityId}
+                              >
+                                <text className="repository-cell-label task-label">
+                                  Task
+                                </text>
+                                <view className="repository-task-cell">
+                                  <Button
+                                    label={`Task: ${t.title}`}
+                                    onClick={() =>
+                                      onOpen({
+                                        kind: TabKind.Task,
+                                        taskId: r.version!.entityId,
+                                        repositoryId: repository,
+                                        label: t.title,
+                                      })
+                                    }
+                                  >
+                                    {t.title}
+                                  </Button>
+                                </view>
+                                <text className="repository-cell-label progress-label">
+                                  Progress
+                                </text>
+                                <view className="repository-progress-cell">
+                                  <text
+                                    className="badge"
+                                    accessibility-label={`Progress: ${progressOptions.find(([v]) => v === t.progress)?.[1] ?? "Unknown"}`}
+                                  >
+                                    {
+                                      progressOptions.find(
+                                        ([v]) => v === t.progress,
+                                      )?.[1]
+                                    }
+                                  </text>
+                                </view>
+                                <text className="repository-cell-label details-label">
+                                  Details
+                                </text>
+                                <view
+                                  className="repository-details-cell"
+                                  accessibility-label="Details"
+                                >
+                                  {t.proposal === Proposal.PENDING && (
+                                    <text className="badge repository-status">
+                                      Proposal
+                                    </text>
+                                  )}
+                                  {conflicted(r) && (
+                                    <text className="badge repository-status">
+                                      Conflict
+                                    </text>
+                                  )}
+                                  <TaskMetadataLine
+                                    task={t}
+                                    lookup={lookup}
+                                    qualify={false}
+                                  />
+                                </view>
+                              </view>
+                            ) : (
                               <view
                                 className={`task-row ${page === "Proposals" ? "proposal-row" : ""} ${draft?.id === r.version?.entityId ? "selected" : ""}`}
                                 key={r.version?.entityId}
@@ -793,9 +931,9 @@ export function LaneWorkspace({
                                   </>
                                 )}
                               </view>
-                            )
-                          );
-                        })
+                            );
+                          })}
+                        </>
                       )}
                       {/* A failed continuation keeps the loaded rows and shows its error here; the first page failing still uses the full error view above. */}
                       {listError && tasks.length > 0 && (
