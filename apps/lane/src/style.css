@@ -454,18 +454,72 @@ text {
 .mobile .nav-spacer {
   display: none;
 }
-.captures,
-.capture-result {
+.captures {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   width: 100%;
   min-width: 0;
 }
+.capture-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 20px;
+  border-color: #e4e8ef;
+  border-radius: 12px;
+  background-color: #fff;
+}
+.capture-position {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #172033;
+}
+.capture-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  height: 320px;
+  background-color: #f3f5f8;
+  border-radius: 8px;
+}
 .capture-image {
   width: 100%;
-  height: 320px;
+  height: 100%;
+}
+.capture-stage .notice {
+  max-width: 100%;
+  margin: 0;
+}
+.capture-retry .button {
+  min-height: 44px;
 }
 .capture-metadata {
-  word-break: break-all;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   width: 100%;
+  min-width: 0;
+}
+.capture-metadata-label {
+  width: 112px;
+  flex-shrink: 0;
+  color: #526079;
+  font-size: 0.875rem;
+}
+.capture-metadata-value {
+  flex: 1;
+  min-width: 0;
+  color: #172033;
+  font-size: 0.875rem;
+  white-space: normal;
+  word-break: break-all;
 }
 .realqa-home {
   max-width: 1100px;
@@ -632,8 +686,20 @@ text {
 .validation {
   color: #a32a25;
 }
-.mobile .capture-image {
+.mobile .capture-result {
+  padding: 12px;
+}
+.mobile .capture-stage {
   height: 220px;
+}
+.mobile .capture-metadata {
+  flex-direction: column;
+}
+.mobile .capture-metadata-label {
+  width: 100%;
+}
+.mobile .capture-metadata-value {
+  width: 100%;
 }
 /* Align the toolbar and repository label so scrolling the toolbar into view
    does not leave the first form label above the composer's scroll boundary. */
