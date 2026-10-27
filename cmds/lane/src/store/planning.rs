@@ -487,11 +487,25 @@ pub(super) fn write_task(
         links.extend(opt(&t, key).map(str::to_owned));
     }
     let edit = |key: &str| sorted_unique(list(edits, key));
-    for key in ["addSubtaskIds", "addBlockedTaskIds"] {
+    for key in [
+        "addSubtaskIds",
+        "removeSubtaskIds",
+        "addBlockedTaskIds",
+        "removeBlockedTaskIds",
+    ] {
         links.extend(edit(key));
     }
     if let Some(link) = links.iter().find(|l| *l == id) {
         return Err(violation(Violation::SelfLink, link));
+    }
+    for key in ["removeSubtaskIds", "removeBlockedTaskIds"] {
+        for target in edit(key) {
+            if entity_info(c, &target)?
+                .is_some_and(|(kind, _, deleted)| kind == KIND_TASK && deleted)
+            {
+                return Err(Failure::new("NOT_FOUND", "A removed task does not exist."));
+            }
+        }
     }
     for link in &links {
         let live_elsewhere = !work.contains_key(link)

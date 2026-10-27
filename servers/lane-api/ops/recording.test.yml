@@ -3,6 +3,22 @@ rule_files: [recording.yml]
 evaluation_interval: 30s
 fuzzy_compare: true
 tests:
+  - name: backend-failed MCP tool results count in the five-minute server-error ratio
+    interval: 30s
+    input_series:
+      - series: lane_api_requests_total{outcome="success"}
+        values: "0+0x40"
+      - series: lane_api_requests_total{outcome="server_error"}
+        values: "0+2x40"
+      - series: lane_api_requests_total{outcome="timeout"}
+        values: "0+0x40"
+    promql_expr_test:
+      - expr: lane:api_samples:5m
+        eval_time: 15m
+        exp_samples: [{ labels: "lane:api_samples:5m", value: 20 }]
+      - expr: lane:api_errors:ratio5m
+        eval_time: 15m
+        exp_samples: [{ labels: "lane:api_errors:ratio5m", value: 1 }]
   - interval: 30s
     input_series:
       - series: lane_api_requests_total{outcome="success"}

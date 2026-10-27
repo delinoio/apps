@@ -2,6 +2,7 @@
 //! Component integration tests use real PostgreSQL and the real entity domain.
 //! Run with LANE_TEST_DATABASE_URL pointing to a disposable PostgreSQL database.
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use delino_protocol::lane::v1::CompleteEventRequest;
 use hmac::{Hmac, Mac};
 use lane_api::{
     Principal, account_lock, entities, id, string,
@@ -188,6 +189,33 @@ fn sign(secret: &str, raw: &[u8], timestamp: &str) -> String {
 fn task(repository: &str, title: &str) -> Value {
     json!({"meta":{"requestId":id()},"id":id(),"repository":{"id":repository},"title":title})
 }
+fn typed_completion(q: &Value) -> Value {
+    serde_json::to_value(serde_json::from_value::<CompleteEventRequest>(q.clone()).unwrap())
+        .unwrap()
+}
+
+async fn completion_counts(f: &mut Fixture) -> Vec<i64> {
+    let mut counts = Vec::new();
+    for table in [
+        "lane_entities",
+        "lane_versions",
+        "lane_entity_receipts",
+        "lane_webhook_receipts",
+        "lane_webhook_processing",
+        "lane_changes",
+    ] {
+        counts.push(
+            sqlx::query_scalar::<_, i64>(&format!(
+                "SELECT count(*) FROM {table} WHERE account_id=$1"
+            ))
+            .bind(&f.principal.account_id)
+            .fetch_one(&mut f.db)
+            .await
+            .unwrap(),
+        );
+    }
+    counts
+}
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
@@ -309,6 +337,160 @@ async fn completion_is_atomic_and_replay_survives_reopen_and_deletion() {
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn completion_replays_canonical_planning_sets_without_new_effects() {
+    let mut f = Fixture::new().await;
+    let labels = [id(), id()];
+    let referenced = [id(), id()];
+    let changed = [id(), id()];
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &f.principal.account_id)
+        .await
+        .unwrap();
+    for label in &labels {
+        entities::dispatch(
+            &mut tx,
+            &f.principal,
+            "CreatePlanningItem",
+            &json!({
+            "meta":{"requestId":id()},"id":label,"item":{"label":{
+                "repositoryId":f.repository,"name":label,"color":"#abcdef"}}}),
+            usize::MAX,
+        )
+        .await
+        .unwrap();
+    }
+    for endpoint in referenced.iter().chain(changed.iter()) {
+        let mut seed = task(&f.repository, endpoint);
+        seed["id"] = json!(endpoint);
+        entities::dispatch(&mut tx, &f.principal, "CreateTask", &seed, usize::MAX)
+            .await
+            .unwrap();
+    }
+    tx.commit().await.unwrap();
+    let event = f.event().await;
+    let token = f.claim(&event).await;
+    let mut q = mutation(&event);
+    q["leaseToken"] = json!(token);
+    let mut first = task(&f.repository, "planned");
+    for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+        first[key] = if key == "labelIds" {
+            json!([labels[1], labels[0]])
+        } else {
+            json!([referenced[1], referenced[0]])
+        };
+    }
+    first["relationshipEdits"] = json!({
+        "addSubtaskIds":[changed[1],changed[0]],
+        "removeSubtaskIds":[referenced[1],referenced[0]],
+        "addBlockedTaskIds":[changed[1],changed[0]],
+        "removeBlockedTaskIds":[referenced[1],referenced[0]]
+    });
+    q["tasks"] = json!([first, task(&f.repository, "second")]);
+    q = typed_completion(&q);
+    let completed = f
+        .call("CompleteEvent", &typed_completion(&q))
+        .await
+        .unwrap();
+    assert_eq!(completed["tasks"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        completed["processing"]["taskIds"],
+        json!([q["tasks"][0]["id"], q["tasks"][1]["id"]])
+    );
+    let stable = completion_counts(&mut f).await;
+    assert_eq!(stable[4], 1);
+    assert_eq!(f.call("CompleteEvent", &q).await.unwrap(), completed);
+    let mut equivalent = q.clone();
+    for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+        let ids = if key == "labelIds" {
+            &labels
+        } else {
+            &referenced
+        };
+        equivalent["tasks"][0][key] = json!([ids[0], ids[1], ids[0]]);
+        assert_eq!(
+            f.call("CompleteEvent", &typed_completion(&equivalent))
+                .await
+                .unwrap(),
+            completed
+        );
+        assert_eq!(completion_counts(&mut f).await, stable);
+    }
+    for key in [
+        "addSubtaskIds",
+        "removeSubtaskIds",
+        "addBlockedTaskIds",
+        "removeBlockedTaskIds",
+    ] {
+        let ids = if key.starts_with("add") {
+            &changed
+        } else {
+            &referenced
+        };
+        equivalent["tasks"][0]["relationshipEdits"][key] = json!([ids[0], ids[1], ids[0]]);
+        assert_eq!(
+            f.call("CompleteEvent", &typed_completion(&equivalent))
+                .await
+                .unwrap(),
+            completed
+        );
+        assert_eq!(completion_counts(&mut f).await, stable);
+    }
+    for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+        let mut altered = equivalent.clone();
+        altered["tasks"][0][key] = json!([]);
+        assert_eq!(
+            f.call("CompleteEvent", &altered).await.unwrap_err().code,
+            connectrpc::ErrorCode::AlreadyExists
+        );
+    }
+    for key in [
+        "addSubtaskIds",
+        "removeSubtaskIds",
+        "addBlockedTaskIds",
+        "removeBlockedTaskIds",
+    ] {
+        let mut altered = equivalent.clone();
+        altered["tasks"][0]["relationshipEdits"][key] = json!([]);
+        assert_eq!(
+            f.call("CompleteEvent", &altered).await.unwrap_err().code,
+            connectrpc::ErrorCode::AlreadyExists
+        );
+    }
+    for variant in 0..5 {
+        let mut altered = equivalent.clone();
+        match variant {
+            0 => altered["tasks"][0]["title"] = json!("changed"),
+            1 => altered["tasks"][0]["id"] = json!(id()),
+            2 => altered["tasks"][0]["meta"]["requestId"] = json!(id()),
+            3 => altered["tasks"][0]["prompt"] = json!(""),
+            _ => altered["tasks"].as_array_mut().unwrap().reverse(),
+        }
+        assert_eq!(
+            f.call("CompleteEvent", &altered).await.unwrap_err().code,
+            connectrpc::ErrorCode::AlreadyExists
+        );
+    }
+    assert_eq!(completion_counts(&mut f).await, stable);
+    let mut reopen = mutation(&event);
+    reopen["expectedRevision"] = completed["event"]["revision"].clone();
+    f.call("ReopenEvent", &reopen).await.unwrap();
+    assert_eq!(
+        f.call("CompleteEvent", &equivalent).await.unwrap(),
+        completed
+    );
+    assert_eq!(
+        f.call("GetEvent", &json!({"id":event})).await.unwrap()["event"]["state"],
+        "EVENT_STATE_PENDING"
+    );
+    f.call("DeleteEvent", &mutation(&event)).await.unwrap();
+    let redacted = f.call("CompleteEvent", &equivalent).await.unwrap();
+    assert_eq!(redacted["event"]["state"], "EVENT_STATE_DELETED");
+    assert!(redacted.get("tasks").is_none());
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
 async fn completion_tasks_follow_the_planning_rules_and_roll_back_together() {
     let mut f = Fixture::new().await;
     let label = id();
@@ -331,6 +513,7 @@ async fn completion_tasks_follow_the_planning_rules_and_roll_back_together() {
     let mut bad = task(&f.repository, "bad");
     bad["labelIds"] = json!([id()]);
     q["tasks"] = json!([first, second, bad]);
+    let before = completion_counts(&mut f).await;
     let rejected = f.call("CompleteEvent", &q).await.unwrap_err();
     assert_eq!(
         lane_api::planning::violation_of(&rejected).map(|v| v.name()),
@@ -341,6 +524,8 @@ async fn completion_tasks_follow_the_planning_rules_and_roll_back_together() {
         .await
         .unwrap();
     assert_eq!(tasks, 0);
+    assert_eq!(completion_counts(&mut f).await, before);
+    assert_eq!(state(&mut f, &event).await, "LEASED");
     q["tasks"] = json!([q["tasks"][0], q["tasks"][1]]);
     let completed = f.call("CompleteEvent", &q).await.unwrap();
     assert_eq!(
