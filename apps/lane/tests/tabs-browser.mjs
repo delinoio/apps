@@ -292,6 +292,32 @@ try {
   await button("Retry").click();
   await field("Title").waitFor();
   assert.equal(await field("Title").inputValue(), "Task B");
+  await button("Close Task B").click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelectorAll('[role="tab"]').length === 1,
+  );
+  await control("task-open", "hold=1");
+  const readsBeforeClose = (await control("task-open")).length;
+  await button("Task B").click();
+  await held("task-open", readsBeforeClose + 1);
+  await button("Close Task B").click();
+  await control("task-open", `release=${readsBeforeClose}:ok`);
+  await control("task-open", "hold=0");
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelectorAll('[role="tab"]').length === 1,
+  );
+  await page.waitForTimeout(200);
+  assert.equal(
+    await field("Title").count(),
+    0,
+    "a closed pane's late read cannot reopen an editor",
+  );
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({

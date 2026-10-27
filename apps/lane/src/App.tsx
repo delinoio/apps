@@ -210,6 +210,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       setError(e instanceof Error ? e.message : "Lane storage is unavailable.");
       return;
     }
+    const stopInvalidation = owned.subscribe(refresh);
     const stopHost = listenHost(setPendingRoute, setError, () => {
       dismissDiscard();
       resetTabs();
@@ -234,6 +235,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     return () => {
       active = false;
       stopHost();
+      stopInvalidation();
       owned.close();
     };
   }, [providedAdapter]);

@@ -559,13 +559,29 @@ try {
         .getAttribute("data-selected-tab") === "page-Tasks",
   );
   await button("+ New task").click();
+  await text("New task").first().waitFor();
+  await page.waitForFunction(() => {
+    const title = document
+      .querySelector("lynx-view")
+      .shadowRoot.querySelector(
+        '[data-active-tab="true"] x-input[accessibility-label="Title"]',
+      );
+    return title?.shadowRoot?.querySelector("input")?.value === "";
+  });
   await box("Title").fill("Only a title");
+  await page
+    .getByRole("tab", { name: "Only a title, Unsaved changes", exact: true })
+    .waitFor();
   await page
     .locator(".editor")
     .getByRole("button", { name: "apps", exact: true })
     .click();
   await clearRequests();
+  const createdReply = page.waitForResponse((response) =>
+    response.url().endsWith("/lane.v1.LaneService/CreateTask"),
+  );
   await saveButton().click();
+  await createdReply;
   await settle();
   const created = await last("CreateTask");
   assert.equal(created.title, "Only a title");
@@ -631,6 +647,8 @@ try {
 
     // Unchanged heads, including a reordered identical set, permit the edited resolution.
     await plan({ conflictTask: ids.taskB, heads: [h1, h2] });
+    await invalidate();
+    await settle(500);
     await button("All tasks").click();
     await page.waitForFunction(
       () =>
@@ -639,9 +657,16 @@ try {
           .shadowRoot.querySelector("#lane-root")
           .getAttribute("data-selected-tab") === "page-Tasks",
     );
-    await button("Offline edit").click();
+    await page.locator(`[data-workspace-tab="task-${ids.taskB}"]`).click();
+    await box("Title").waitFor();
     await button("Compare conflict").click();
     await resolver().waitFor();
+    // The retained editor also keeps the earlier review session. Explicitly
+    // review the new fixture heads instead of silently discarding that session.
+    if (await button("Review current versions").count()) {
+      await button("Review current versions").click();
+      await button("Use this version").first().click();
+    }
     await resolveField("Resolved title").fill("Reordered resolution");
     await plan({ heads: [h2, h1] });
     await invalidate();
@@ -791,6 +816,7 @@ try {
     await route.fulfill({ response, json: body });
   };
   await page.route("**/lane.v1.LaneService/ListTasks", twins);
+  await button("Close Only a title").click();
   await openTask("Only a title");
   await button("Add related task").click();
   await box("Search tasks for Related").fill("twin");

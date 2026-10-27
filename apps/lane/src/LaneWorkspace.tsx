@@ -81,7 +81,9 @@ export function LaneWorkspace({
   settingsTarget?: { section: SettingsSection; request: number };
 }) {
   const [planningDirty, setPlanningDirty] = useState(false);
-  const [error, setError] = useState("");
+  const [taskError, setTaskError] = useState("");
+  const [repositoryError, setRepositoryError] = useState("");
+  const error = taskError || repositoryError;
   const [loading, setLoading] = useState(true);
   const page = target.page ?? LanePage.Tasks;
   const [repository, setRepository] = useState(target.repositoryId ?? "");
@@ -143,9 +145,7 @@ export function LaneWorkspace({
   currentDraft.current = draft;
   const refresh = onChange;
   useEffect(() => {
-    const stop = adapter.subscribe(refresh);
     return () => {
-      stop();
       editorLifetime.supersede();
       advanceQueryGeneration();
     };
@@ -192,11 +192,14 @@ export function LaneWorkspace({
             setDraft((d) => (d ? receiveExternal(d, r.result!) : d));
           }
         }
+        if (active) setRepositoryError("");
       } catch (e) {
         if (active) {
           if (!repositoriesLoaded)
             setRepositoryStatus("Repositories could not be refreshed.");
-          setError(e instanceof Error ? e.message : "Refresh failed.");
+          setRepositoryError(
+            e instanceof Error ? e.message : "Refresh failed.",
+          );
         }
       }
     })();
@@ -286,7 +289,7 @@ export function LaneWorkspace({
   const openTask = async (id: string) => {
     if (!adapter) return;
     setTaskLoading(true);
-    setError("");
+    setTaskError("");
     await readTaskOwned(
       editorLifetime,
       async () => {
@@ -303,7 +306,7 @@ export function LaneWorkspace({
           setDraft(draftFor(result));
         },
         failed: (e) =>
-          setError(e instanceof Error ? e.message : "Task is unavailable."),
+          setTaskError(e instanceof Error ? e.message : "Task is unavailable."),
       },
     );
     setTaskLoading(false);
@@ -436,7 +439,9 @@ export function LaneWorkspace({
             {error}
             <Button
               onClick={() =>
-                target.taskId ? void openTask(target.taskId) : refresh()
+                taskError && target.taskId
+                  ? void openTask(target.taskId)
+                  : refresh()
               }
             >
               Retry
@@ -748,6 +753,7 @@ export function LaneWorkspace({
               adapter={adapter}
               repositories={repositories}
               revision={revision}
+              active={active}
               stateChanged={(dirty, busy) => {
                 setPlanningDirty(dirty);
                 setPageBusy(busy);
