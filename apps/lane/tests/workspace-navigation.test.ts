@@ -138,7 +138,7 @@ async function realqaMain() {
   await view.settle();
   tap(view.tree(), "Assign");
   await view.settle();
-  return view;
+  return Object.assign(view, { host: bundle.host });
 }
 
 test("utility section targets are applied only after accepting RealQA discard", async () => {
@@ -165,6 +165,34 @@ test("utility section targets are applied only after accepting RealQA discard", 
       "notifications:1",
       "cancel does not consume or apply an earlier section request",
     );
+  } finally {
+    view.unmount();
+  }
+});
+
+test("open-only host routes ask before leaving an edited RealQA view", async () => {
+  const view = await realqaMain();
+  const selectedApp = () =>
+    visibleNodes(view.tree()).find((n) => n.props.id === "lane-root")?.props[
+      "data-app"
+    ];
+  try {
+    view.host.route!({ kind: "open" });
+    await view.settle();
+    assert.equal(selectedApp(), "RealQA");
+    tap(view.tree(), "Keep editing");
+    await view.settle();
+    assert.equal(selectedApp(), "RealQA");
+    assert.ok(
+      visibleNodes(view.tree()).some(
+        (n) => n.props["accessibility-label"] === "Assign keyboard shortcut",
+      ),
+    );
+    view.host.route!({ kind: "open" });
+    await view.settle();
+    tap(view.tree(), "Discard changes");
+    await view.settle();
+    assert.equal(selectedApp(), "Lane");
   } finally {
     view.unmount();
   }

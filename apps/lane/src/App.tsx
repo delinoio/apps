@@ -122,6 +122,11 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     cancelDiscard.current?.();
     cancelDiscard.current = undefined;
   };
+  const leaveRealQA = (action: () => void) => {
+    if (state.current.miniApp === MiniApp.RealQA && state.current.realqaDirty)
+      setDiscard(() => action);
+    else action();
+  };
   const open = (target: TabTarget, section?: SettingsSection) => {
     const proceed = () => {
       const id = tabIdentity(target);
@@ -139,18 +144,15 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       setMiniApp(MiniApp.Lane);
       setOpenTabs(false);
     };
-    if (state.current.miniApp === MiniApp.RealQA && state.current.realqaDirty)
-      setDiscard(() => proceed);
-    else proceed();
+    leaveRealQA(proceed);
   };
   const selectApp = (app: MiniApp) => {
-    if (app === miniApp) return;
+    if (app === state.current.miniApp) return;
     const proceed = () => {
       setRealqaDirty(false);
       setMiniApp(app);
     };
-    if (realqaDirty) setDiscard(() => proceed);
-    else proceed();
+    leaveRealQA(proceed);
   };
   const removeTab = (id: string) => {
     const currentTabs = state.current.tabs;
@@ -258,7 +260,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           repositoryId: route.id,
           label: "Repository",
         });
-      else setMiniApp(MiniApp.Lane);
+      else selectApp(MiniApp.Lane);
     };
     if (route.spaceId && route.spaceId !== adapter.spaceId)
       guard(() => {

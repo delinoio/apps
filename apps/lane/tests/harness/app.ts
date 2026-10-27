@@ -12,12 +12,14 @@ const harness = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 export interface AppBundle {
   App: (props: any) => unknown;
   runtime: typeof import("./lynx-react.ts");
+  host: { route?: (route: any) => void };
 }
 
 // The host bridge needs native modules. The App only reaches it for the
 // adapter (provided by tests), host event subscriptions and shortcuts.
 const hostStub = `export const getAdapter = () => { throw new Error("host unavailable in tests"); };
-export const listenHost = () => () => {};
+export const host = { route: undefined };
+export const listenHost = (route) => { host.route = route; return () => { host.route = undefined; }; };
 export const hostAction = () => Promise.reject(new Error("host unavailable in tests"));
 export const listenReauthentication = () => () => {};`;
 
@@ -47,7 +49,8 @@ export async function loadApp(): Promise<AppBundle> {
   const result = await build({
     stdin: {
       contents: `export { App } from "./src/App.tsx";
-export * as runtime from "./tests/harness/lynx-react.ts";`,
+export * as runtime from "./tests/harness/lynx-react.ts";
+export { host } from "./src/runtime.ts";`,
       resolveDir: lane,
       sourcefile: "app-entry.ts",
       loader: "ts",
