@@ -101,3 +101,71 @@ test("a composer initialized before tab reads loads every repository page itself
     view.unmount();
   }
 });
+
+function tap(tree: HostNode[], label: string) {
+  const target = visibleNodes(tree).find(
+    (n) => n.props["accessibility-label"] === label && n.props.bindtap,
+  );
+  assert.ok(target, `visible action ${label}`);
+  target.props.bindtap();
+}
+async function realqaMain() {
+  const bundle = await loadApp();
+  (globalThis as any).NativeModules = {
+    bridge: {},
+    LaneHost: {
+      realqa: (_request: string, callback: (raw: string) => void) =>
+        callback(
+          JSON.stringify({
+            ok: true,
+            value: { window: "main", shortcuts: {}, draft: null },
+          }),
+        ),
+    },
+  };
+  const view = bundle.runtime.mount(bundle.App, {
+    providedAdapter: {
+      mode: "web",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      call: async () => ({ items: [], nextCursor: "" }),
+      local: async () => ({}),
+    },
+  });
+  await view.settle();
+  tap(view.tree(), "RealQA");
+  await view.settle();
+  tap(view.tree(), "Assign");
+  await view.settle();
+  return view;
+}
+
+test("utility section targets are applied only after accepting RealQA discard", async () => {
+  const view = await realqaMain();
+  const app = () =>
+    visibleNodes(view.tree()).find((n) => n.props.id === "lane-root");
+  try {
+    tap(view.tree(), "Account & sync");
+    await view.settle();
+    assert.equal(app()!.props["data-app"], "RealQA");
+    tap(view.tree(), "Keep editing");
+    await view.settle();
+    assert.equal(app()!.props["data-app"], "RealQA");
+    tap(view.tree(), "App settings");
+    await view.settle();
+    tap(view.tree(), "Discard changes");
+    await view.settle();
+    assert.equal(app()!.props["data-app"], "Lane");
+    const target = visibleNodes(view.tree()).find(
+      (n) => n.props["data-settings-target"],
+    );
+    assert.equal(
+      target?.props["data-settings-target"],
+      "notifications:1",
+      "cancel does not consume or apply an earlier section request",
+    );
+  } finally {
+    view.unmount();
+  }
+});

@@ -122,7 +122,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     cancelDiscard.current?.();
     cancelDiscard.current = undefined;
   };
-  const open = (target: TabTarget) => {
+  const open = (target: TabTarget, section?: SettingsSection) => {
     const proceed = () => {
       const id = tabIdentity(target);
       setTabs((previous) =>
@@ -131,7 +131,10 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           : [...previous, { id, target }],
       );
       setSelected(id);
-      if (target.page === LanePage.Settings) setSettingsTarget(undefined);
+      if (target.page === LanePage.Settings)
+        setSettingsTarget(
+          section ? { section, request: ++settingsRequest.current } : undefined,
+        );
       setRealqaDirty(false);
       setMiniApp(MiniApp.Lane);
       setOpenTabs(false);
@@ -198,8 +201,10 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       });
   };
   const openSettings = (section: SettingsSection) => {
-    open({ kind: TabKind.Page, page: LanePage.Settings, label: "Settings" });
-    setSettingsTarget({ section, request: ++settingsRequest.current });
+    open(
+      { kind: TabKind.Page, page: LanePage.Settings, label: "Settings" },
+      section,
+    );
   };
   useEffect(() => {
     "background only";
