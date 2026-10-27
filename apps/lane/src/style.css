@@ -389,7 +389,7 @@ text {
   border-radius: 8px;
   background-color: #f0f3f8;
 }
-.repository-dialog {
+.dialog.repository-dialog {
   width: 560px;
   max-width: 100%;
   height: auto;
