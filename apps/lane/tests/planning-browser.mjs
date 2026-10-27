@@ -905,7 +905,8 @@ try {
   await button("Repositories").click();
   await button("Labels, milestones and cycles").first().click();
   await text("Labels (2)", false).waitFor();
-  await text("Backend · #075AFF", false).waitFor();
+  await text("Backend").waitFor();
+  await text("#075AFF").waitFor();
   await page.screenshot({
     path: join(evidence, "desktop-planning-labels.png"),
   });
@@ -991,7 +992,8 @@ try {
   // Milestones and cycles tabs, plus empty-state creation.
   await button("Milestones tab").click();
   await button("Edit milestone v1 launch").waitFor();
-  await text("v1 launch · Open · Target 2026-12-01").waitFor();
+  await text("v1 launch").waitFor();
+  await text("Open · Target 2026-12-01").waitFor();
   await button("New milestone").click();
   await box("Target date (YYYY-MM-DD, optional)").fill("2026-02-30");
   await box("Name").fill("Beta");

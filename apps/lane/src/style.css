@@ -1538,10 +1538,19 @@ text {
   font-size: 0.85rem;
   margin-top: 4px;
 }
+.planning-section {
+  padding: 24px;
+}
+.planning-section.planning-wide {
+  padding: 32px;
+}
+.mobile .planning-section {
+  padding: 16px;
+}
 .planning-manager {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 24px;
   width: 100%;
 }
@@ -1549,32 +1558,104 @@ text {
 .planning-edit {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-width: 280px;
-  max-width: 760px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #e4e8ef;
+  border-radius: 12px;
+  background-color: #fff;
+  box-sizing: border-box;
+}
+.planning-list {
+  flex: 1 1 0;
+  max-width: 360px;
+  gap: 12px;
+}
+.planning-edit {
+  flex: 2 1 0;
   gap: 8px;
 }
-.mobile .planning-manager {
+.planning-manager.planning-stacked {
+  flex-direction: column;
+}
+.planning-stacked .planning-list,
+.planning-stacked .planning-edit {
+  flex: none;
+  max-width: none;
+  width: 100%;
+}
+.planning-stacked .field-grid {
   flex-direction: column;
   flex-wrap: nowrap;
 }
-.mobile .planning-list,
-.mobile .planning-edit {
+.planning-stacked .field-grid .field {
   min-width: 0;
   width: 100%;
+}
+.planning-list-heading .heading {
+  font-size: 1.1rem;
+}
+.planning-list-heading .button,
+.planning-actions .button {
+  min-height: 44px;
 }
 .planning-row {
   display: flex;
   flex-direction: row;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 0;
-  border-bottom: 1px solid #e7ebf1;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 64px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e4e8ef;
+  border-radius: 8px;
+  background-color: #fff;
 }
-.planning-row .button {
+.planning-row.selected {
+  background-color: #edf4ff;
+  border-color: #075aff;
+}
+.planning-row:focus {
+  border: 2px solid #075aff;
+}
+.planning-row-swatch {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  border: 1px solid #dce2ec;
+  border-radius: 4px;
+}
+.planning-row-copy {
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  justify-content: flex-start;
+  min-width: 0;
+  gap: 4px;
+}
+.planning-row .planning-row-name {
+  color: #172033;
+  font-size: 1rem;
+  font-weight: 600;
+  word-break: break-all;
+}
+.planning-row .planning-row-detail {
+  color: #526079;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+.planning-edit .input.multiline {
+  height: 140px;
+}
+.planning-actions {
+  padding-top: 16px;
+  border-top: 1px solid #e4e8ef;
+}
+.planning-delete .button {
+  border-color: transparent;
+  background-color: transparent;
+}
+.planning-delete .button text {
+  color: #b42318;
 }
 .history-change {
   margin-top: 16px;
