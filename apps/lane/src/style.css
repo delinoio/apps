@@ -796,7 +796,80 @@ text {
   justify-content: flex-start;
 }
 .history-change {
-  margin-top: 8px;
+  margin-top: 16px;
+}
+.history-dialog {
+  width: 760px;
+  max-height: 85%;
+}
+.history-dialog .dialog-scroll {
+  min-width: 0;
+}
+.history-intro {
+  color: #68758b;
+  margin-bottom: 12px;
+}
+.history-card {
+  border-radius: 14px;
+  min-width: 0;
+}
+.history-time {
+  font-size: 1rem;
+  font-weight: 650;
+}
+.history-origin {
+  color: #68758b;
+  margin-top: 4px;
+}
+.history-field {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.history-values {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+.history-value {
+  flex: 1;
+  min-width: 0;
+  background-color: #f5f7fa;
+  border-radius: 8px;
+  padding: 12px;
+}
+.history-value text {
+  word-break: break-all;
+}
+.history-value-label {
+  color: #68758b;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.history-footer {
+  border-top: 1px solid #e7ebf1;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.history-footer .button {
+  min-height: 44px;
+}
+.history-card .button {
+  min-height: 44px;
+  margin-top: 12px;
+}
+.mobile .history-dialog {
+  width: 100%;
+  padding: 16px;
+}
+.mobile .history-values {
+  flex-direction: column;
+}
+.mobile .history-card .button,
+.mobile .history-footer .button {
+  width: 100%;
 }
 .planning-tabs {
   margin-top: 16px;

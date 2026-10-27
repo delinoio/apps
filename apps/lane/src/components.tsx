@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "@lynx-js/react";
 import { parseMarkdown, type MarkdownSpan } from "./markdown";
 import { hostAction } from "./runtime";
 export function Button({
+  id: givenId,
   children,
   onClick,
   disabled = false,
@@ -13,6 +14,7 @@ export function Button({
   swatch,
   focusOnShow = false,
 }: {
+  id?: string;
   children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
@@ -26,7 +28,10 @@ export function Button({
   swatch?: string;
   focusOnShow?: boolean;
 }) {
-  const [id] = useState(() => "button-" + Math.random().toString(36).slice(2));
+  const [generatedId] = useState(
+    () => "button-" + Math.random().toString(36).slice(2),
+  );
+  const id = givenId ?? generatedId;
   useEffect(() => {
     "background only";
     if (focusOnShow)
@@ -229,18 +234,30 @@ export function Dialog({
   title,
   children,
   onClose,
+  footer,
+  className,
+  returnFocusId,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  footer?: ReactNode;
+  className?: string;
+  returnFocusId?: string;
 }) {
   useEffect(() => {
     "background only";
     openDialogs++;
     return () => {
       openDialogs--;
+      if (returnFocusId)
+        lynx
+          .createSelectorQuery()
+          .select(`#${returnFocusId}`)
+          .invoke({ method: "setFocus", params: { focus: true } })
+          .exec();
     };
-  }, []);
+  }, [returnFocusId]);
   return (
     <view
       className="overlay"
@@ -248,14 +265,17 @@ export function Dialog({
         if (e.key === "Escape") onClose();
       }}
     >
-      <view className="dialog" accessibility-label={title}>
+      <view className={`dialog ${className ?? ""}`} accessibility-label={title}>
         <view className="row between">
           <text className="heading">{title}</text>
-          <Button onClick={onClose}>Close</Button>
+          <Button focusOnShow={!!returnFocusId} onClick={onClose}>
+            Close
+          </Button>
         </view>
         <scroll-view className="dialog-scroll" scroll-orientation="vertical">
           {children}
         </scroll-view>
+        {footer}
       </view>
     </view>
   );

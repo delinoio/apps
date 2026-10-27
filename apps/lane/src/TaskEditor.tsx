@@ -5,13 +5,14 @@ import { useEffect, useRef, useState } from "@lynx-js/react";
 import { create } from "@bufbuild/protobuf";
 import {
   LaneService,
+  OriginKind,
   Proposal,
   TaskSchema,
   ResultKind,
   type EntityResult as ProtoEntityResult,
   type EntityVersion as ProtoEntityVersion,
 } from "@repo/protos/lane/v1/lane_pb";
-import { meta, newId, type LaneAdapter } from "./adapter";
+import { LaneError, meta, newId, type LaneAdapter } from "./adapter";
 import { RequestAttempt, SpecializedAction } from "./requestAttempt";
 import { Button, Choices, Dialog, Field, Markdown, Notice } from "./components";
 import { TaskProperties } from "./TaskProperties";
@@ -36,6 +37,7 @@ import {
   headIds,
   heads,
   historyEntryChanges,
+  historyBaseline,
   progressOptions,
   promptForPresence,
   proposalOptions,
@@ -46,6 +48,63 @@ import {
 } from "./model";
 import { hostAction } from "./runtime";
 import type { EditorCompletion } from "./editorLifetime";
+
+enum HistoryMode {
+  Task = "task",
+  Prompts = "prompts",
+}
+
+type HistorySession = {
+  mode: HistoryMode;
+  versions: EntityVersion[];
+  cursor: string;
+  loading: boolean;
+  loadingMore: boolean;
+  error: string;
+  retryable: boolean;
+  restoreError: string;
+  restoreErrorId: string;
+  restoreRetryable: boolean;
+  restoringId: string;
+};
+
+const historyFieldLabels: Record<string, string> = {
+  title: "Title",
+  description: "Description",
+  progress: "Progress",
+  proposal: "Proposal",
+  repositoryId: "Repository",
+};
+
+function historyOrigin(version: EntityVersion): string {
+  const kind = version.origin?.kind;
+  const name =
+    kind === OriginKind.APP
+      ? "App"
+      : kind === OriginKind.CLI
+        ? "CLI"
+        : kind === OriginKind.MCP
+          ? "MCP"
+          : "Unknown";
+  return [
+    name,
+    version.origin?.deviceName,
+    version.origin?.accountId || "Local account",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function historyRetryable(error: unknown): boolean {
+  if (!(error instanceof LaneError)) return true;
+  if (
+    /PERMISSION|UNAUTH|FORBIDDEN|CONFLICT|STALE|DELETED|NOT_FOUND/.test(
+      error.detail.reason,
+    )
+  )
+    return false;
+  return error.detail.retryable !== false;
+}
 export function TaskEditor({
   adapter,
   draft,
@@ -85,9 +144,14 @@ export function TaskEditor({
   }, [busy, busyChanged]);
   const [error, setError] = useState("");
   const [repositoryUrl, setRepositoryUrl] = useState("");
-  const [history, setHistory] = useState<EntityVersion[] | null>(null);
-  const [historyCursor, setHistoryCursor] = useState("");
-  const [prompts, setPrompts] = useState(false);
+  const [historySession, setHistorySession] = useState<HistorySession>();
+  const historyOwner = useRef({ generation: 0, pending: false, active: false });
+  // Retained task tabs can mount several editors; each dialog must return focus
+  // to its own launcher rather than a launcher in another tab.
+  const [historyTriggers] = useState(() => ({
+    task: `task-history-${Math.random().toString(36).slice(2)}`,
+    prompts: `prompt-versions-${Math.random().toString(36).slice(2)}`,
+  }));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [resolve, setResolve] = useState(false);
   const [resolution, setResolution] = useState<EntityVersion>();
@@ -114,6 +178,14 @@ export function TaskEditor({
   const [attempted, setAttempted] = useState(false);
   // Guards double submission before React re-renders the disabled state.
   const submitting = useRef(false);
+  useEffect(() => {
+    setHistorySession(undefined);
+    return () => {
+      historyOwner.current.generation++;
+      historyOwner.current.pending = false;
+      historyOwner.current.active = false;
+    };
+  }, [adapter, draft.id]);
   useEffect(() => {
     setPointsText(pointsOf(draft.task.storyPoints));
   }, [draft.id, draft.base]);
@@ -290,15 +362,154 @@ export function TaskEditor({
       await options.reload().catch(() => undefined);
       completion.saved(reply.result);
     });
-  const loadHistory = async (onlyPrompts: boolean, more = false) => {
-    const r = await adapter.call(LaneService.method.listHistory, {
-      id: draft.id,
-      promptsOnly: onlyPrompts,
-      page: { size: 100, cursor: more ? historyCursor : "" },
+  const closeHistory = () => {
+    historyOwner.current.generation++;
+    historyOwner.current.pending = false;
+    historyOwner.current.active = false;
+    setHistorySession(undefined);
+  };
+  const loadHistory = async (mode: HistoryMode, cursor = "") => {
+    if (historyOwner.current.pending) return;
+    historyOwner.current.pending = true;
+    const generation = historyOwner.current.generation;
+    const more = !!cursor;
+    setHistorySession((session) =>
+      session && session.mode === mode
+        ? {
+            ...session,
+            loading: !more,
+            loadingMore: more,
+            error: "",
+          }
+        : session,
+    );
+    try {
+      const reply = await adapter.call(LaneService.method.listHistory, {
+        id: draft.id,
+        promptsOnly: mode === HistoryMode.Prompts,
+        page: { size: 100, cursor },
+      });
+      if (historyOwner.current.generation !== generation) return;
+      setHistorySession((session) =>
+        session && session.mode === mode
+          ? {
+              ...session,
+              versions: more
+                ? [...session.versions, ...reply.versions]
+                : reply.versions,
+              cursor: reply.nextCursor,
+              loading: false,
+              loadingMore: false,
+              error: "",
+            }
+          : session,
+      );
+    } catch (cause) {
+      if (historyOwner.current.generation !== generation) return;
+      setHistorySession((session) =>
+        session && session.mode === mode
+          ? {
+              ...session,
+              loading: false,
+              loadingMore: false,
+              error: describeError(cause),
+              retryable: historyRetryable(cause),
+            }
+          : session,
+      );
+    } finally {
+      if (historyOwner.current.generation === generation)
+        historyOwner.current.pending = false;
+    }
+  };
+  const openHistory = (mode: HistoryMode) => {
+    if (submitting.current || historyOwner.current.active) return;
+    historyOwner.current.generation++;
+    historyOwner.current.active = true;
+    setHistorySession({
+      mode,
+      versions: [],
+      cursor: "",
+      loading: true,
+      loadingMore: false,
+      error: "",
+      retryable: false,
+      restoreError: "",
+      restoreErrorId: "",
+      restoreRetryable: false,
+      restoringId: "",
     });
-    setPrompts(onlyPrompts);
-    setHistory(more ? [...(history || []), ...r.versions] : r.versions);
-    setHistoryCursor(r.nextCursor);
+    void loadHistory(mode);
+  };
+  const restoreHistoryPrompt = async (version: EntityVersion) => {
+    if (
+      submitting.current ||
+      !historySession ||
+      historySession.mode !== HistoryMode.Prompts ||
+      readOnly ||
+      draft.dirty ||
+      busy
+    )
+      return;
+    submitting.current = true;
+    const generation = historyOwner.current.generation;
+    setBusy(true);
+    setHistorySession((session) =>
+      session
+        ? {
+            ...session,
+            restoringId: version.versionId,
+            restoreError: "",
+            restoreErrorId: "",
+            restoreRetryable: false,
+          }
+        : session,
+    );
+    const completion = beginCompletion();
+    try {
+      const reply = await actions.submit(
+        {
+          action: SpecializedAction.RestorePrompt,
+          id: draft.id,
+          expectedVersionId: draft.base,
+          sourceVersionId: version.versionId,
+        },
+        (requestId) =>
+          adapter.call(LaneService.method.restorePrompt, {
+            meta: { requestId },
+            id: draft.id,
+            expectedVersionId: draft.base,
+            sourceVersionId: version.versionId,
+          }),
+      );
+      if (!reply.result)
+        throw new Error("The server returned no task. Your input is retained.");
+      completion.saved(reply.result);
+      if (reply.result.result === ResultKind.CONFLICT)
+        throw new Error(
+          "The task changed. Resolve the conflict before restoring a prompt.",
+        );
+      if (historyOwner.current.generation === generation) closeHistory();
+    } catch (cause) {
+      if (historyOwner.current.generation === generation)
+        setHistorySession((session) =>
+          session
+            ? {
+                ...session,
+                restoreError: describeError(cause),
+                restoreErrorId: version.versionId,
+                restoreRetryable: historyRetryable(cause),
+              }
+            : session,
+        );
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+      if (historyOwner.current.generation === generation)
+        setHistorySession((session) =>
+          session ? { ...session, restoringId: "" } : session,
+        );
+    }
   };
   return (
     <view className="editor">
@@ -541,14 +752,16 @@ export function TaskEditor({
         {draft.base && (
           <>
             <Button
+              id={historyTriggers.task}
               disabled={busy}
-              onClick={() => void run(() => loadHistory(false))}
+              onClick={() => openHistory(HistoryMode.Task)}
             >
               History
             </Button>
             <Button
+              id={historyTriggers.prompts}
               disabled={busy}
-              onClick={() => void run(() => loadHistory(true))}
+              onClick={() => openHistory(HistoryMode.Prompts)}
             >
               Prompt versions
             </Button>
@@ -616,75 +829,178 @@ export function TaskEditor({
           </Button>
         </Dialog>
       )}
-      {history && (
+      {historySession && (
         <Dialog
-          title={prompts ? "Prompt versions" : "Task history"}
-          onClose={() => setHistory(null)}
+          title={
+            historySession.mode === HistoryMode.Prompts
+              ? "Prompt versions"
+              : "Task history"
+          }
+          className="history-dialog"
+          returnFocusId={
+            historySession.mode === HistoryMode.Prompts
+              ? historyTriggers.prompts
+              : historyTriggers.task
+          }
+          onClose={closeHistory}
+          footer={
+            <view className="history-footer">
+              {historySession.error && (
+                <Notice>{historySession.error} Your input is retained.</Notice>
+              )}
+              {historySession.error &&
+                historySession.retryable &&
+                !historySession.loading && (
+                  <Button
+                    disabled={historySession.loadingMore}
+                    onClick={() =>
+                      void loadHistory(
+                        historySession.mode,
+                        historySession.cursor,
+                      )
+                    }
+                  >
+                    Retry loading history
+                  </Button>
+                )}
+              {historySession.loadingMore && (
+                <text accessibility-live-region="polite">
+                  Loading more history…
+                </text>
+              )}
+              {historySession.cursor && !historySession.error && (
+                <Button
+                  disabled={
+                    historySession.loadingMore || historySession.loading
+                  }
+                  onClick={() =>
+                    void loadHistory(historySession.mode, historySession.cursor)
+                  }
+                >
+                  Load more history
+                </Button>
+              )}
+            </view>
+          }
         >
-          {history.map((version) => (
-            <view className="card" key={version.versionId}>
-              <text className="label">
-                {version.createdAt
-                  ? new Date(
-                      Number(version.createdAt.seconds) * 1000,
-                    ).toLocaleString()
-                  : ""}
+          {historySession.mode === HistoryMode.Task && (
+            <text className="history-intro">
+              Changes to this task, with time and origin.
+            </text>
+          )}
+          {historySession.loading && (
+            <text accessibility-live-region="polite">Loading history…</text>
+          )}
+          {!historySession.loading &&
+            !historySession.error &&
+            historySession.versions.length === 0 && (
+              <text className="empty">
+                {historySession.mode === HistoryMode.Prompts
+                  ? "No prompt versions available."
+                  : "No task history available."}
               </text>
-              <text className="muted">
-                {["Unknown", "App", "CLI", "MCP"][version.origin?.kind || 0]} ·{" "}
-                {version.origin?.deviceName} ·{" "}
-                {version.origin?.accountId || "Local account"}
-              </text>
-              {prompts ? (
+            )}
+          {historySession.versions.map((version) => (
+            <view className="card history-card" key={version.versionId}>
+              {version.createdAt && (
+                <text className="history-time">
+                  {new Date(
+                    Number(version.createdAt.seconds) * 1000,
+                  ).toLocaleString()}
+                </text>
+              )}
+              <text className="history-origin">{historyOrigin(version)}</text>
+              {historySession.mode === HistoryMode.Prompts ? (
                 <>
-                  <Markdown source={taskOf(version)?.prompt ?? "(No prompt)"} />
+                  {taskOf(version)?.prompt === undefined ? (
+                    <text className="muted">(No prompt)</text>
+                  ) : taskOf(version)?.prompt === "" ? (
+                    <text className="muted">Empty prompt</text>
+                  ) : (
+                    <Markdown source={taskOf(version)!.prompt!} />
+                  )}
                   <Captures
                     adapter={adapter}
                     taskId={draft.id}
                     captures={taskOf(version)?.captures || []}
                   />
                   <Button
-                    disabled={busy || readOnly || draft.dirty}
-                    onClick={() =>
-                      void run(async (completion) => {
-                        const r = await actions.submit(
-                          {
-                            action: SpecializedAction.RestorePrompt,
-                            id: draft.id,
-                            expectedVersionId: draft.base,
-                            sourceVersionId: version.versionId,
-                          },
-                          (requestId) =>
-                            adapter.call(LaneService.method.restorePrompt, {
-                              meta: { requestId },
-                              id: draft.id,
-                              expectedVersionId: draft.base,
-                              sourceVersionId: version.versionId,
-                            }),
-                        );
-                        setHistory(null);
-                        completion.saved(r.result);
-                      })
+                    disabled={
+                      busy ||
+                      readOnly ||
+                      draft.dirty ||
+                      (historySession.restoreErrorId === version.versionId &&
+                        !historySession.restoreRetryable)
                     }
+                    onClick={() => void restoreHistoryPrompt(version)}
                   >
-                    Restore this prompt as a new version
+                    {historySession.restoringId === version.versionId
+                      ? "Restoring…"
+                      : historySession.restoreErrorId === version.versionId
+                        ? "Retry restoring this prompt"
+                        : "Restore this prompt as a new version"}
                   </Button>
+                  {historySession.restoreErrorId === version.versionId && (
+                    <Notice>
+                      {historySession.restoreError} Your input is retained.
+                    </Notice>
+                  )}
                 </>
               ) : (
-                historyEntryChanges(history, version, lookup).map((c) => (
-                  <view key={c.field}>
-                    <text className="label">{c.field}</text>
-                    <text text-selection>Before: {c.before}</text>
-                    <text text-selection>After: {c.after}</text>
-                  </view>
-                ))
+                <>
+                  {historyBaseline(historySession.versions, version).kind ===
+                    "pending" && (
+                    <text className="muted">
+                      Earlier version is not loaded yet.
+                    </text>
+                  )}
+                  {historyBaseline(historySession.versions, version).kind ===
+                    "merge" && (
+                    <text className="muted">
+                      This resolution has multiple parent versions.
+                    </text>
+                  )}
+                  {historyEntryChanges(
+                    historySession.versions,
+                    version,
+                    lookup,
+                  ).map((change) => (
+                    <view className="history-change" key={change.field}>
+                      <text className="history-field">
+                        {historyFieldLabels[change.field] ?? change.field}
+                      </text>
+                      <view className="history-values">
+                        <view className="history-value">
+                          <text className="history-value-label">Before</text>
+                          <text text-selection>{change.before}</text>
+                        </view>
+                        <view className="history-value">
+                          <text className="history-value-label">After</text>
+                          <text text-selection>{change.after}</text>
+                        </view>
+                      </view>
+                    </view>
+                  ))}
+                </>
               )}
             </view>
           ))}
-          {historyCursor && (
-            <Button onClick={() => void run(() => loadHistory(prompts, true))}>
-              Load more history
-            </Button>
+          {historySession.mode === HistoryMode.Prompts && (
+            <>
+              {draft.dirty && (
+                <Notice>Save your changes before restoring a prompt.</Notice>
+              )}
+              {conflicted(current) && (
+                <Notice>
+                  Resolve the task conflict before restoring a prompt.
+                </Notice>
+              )}
+              {draft.deleted && (
+                <Notice>
+                  This task was deleted. Its prompt cannot be restored.
+                </Notice>
+              )}
+            </>
           )}
         </Dialog>
       )}
