@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useState } from "@lynx-js/react";
+import { AppIcon, MiniApp, SettingsSection } from "./AppNavigation";
 import { Button } from "./components";
 import { TabKind, type WorkspaceReport, type WorkspaceTab } from "./tabs";
 
@@ -10,16 +11,19 @@ export function TabBar({
   select,
   close,
   create,
-  showAll,
+  openSettings,
+  fullTitles = false,
 }: {
+  fullTitles?: boolean;
   tabs: WorkspaceTab[];
   selected: string;
   reports: Record<string, WorkspaceReport>;
   select: (id: string) => void;
   close: (id: string) => void;
   create: () => void;
-  showAll: () => void;
+  openSettings: (section: SettingsSection) => void;
 }) {
+  const [height, setHeight] = useState(720);
   const [focused, setFocused] = useState(selected);
   useEffect(() => {
     "background only";
@@ -40,7 +44,7 @@ export function TabBar({
         ? 0
         : key === "End"
           ? tabs.length - 1
-          : (current + (key === "ArrowLeft" ? -1 : 1) + tabs.length) %
+          : (current + (key === "ArrowUp" ? -1 : 1) + tabs.length) %
             tabs.length;
     const target = tabs[next];
     if (!target) return;
@@ -51,89 +55,118 @@ export function TabBar({
       .invoke({ method: "setFocus", params: { focus: true } })
       .exec();
   };
+  // The outer scroller handles short windows; the minimum keeps tab rows
+  // reachable between the header and utility actions.
   return (
-    <view className="tab-bar">
-      <scroll-view
-        className="tab-scroll"
-        accessibility-label="Workspace tabs"
-        scroll-orientation="horizontal"
-        scroll-to-index={Math.max(0, index)}
-      >
-        {tabs.map((tab) => {
-          const report = reports[tab.id];
-          const title = report?.title || tab.target.label;
-          const active = tab.id === selected;
-          return (
-            <view
-              className={`workspace-tab ${active ? "selected" : ""}`}
-              key={tab.id}
-            >
-              <view
-                id={`tab-${tab.id}`}
-                className="button tab-select"
-                data-workspace-tab={tab.id}
-                data-tab-selected={String(active)}
-                data-tab-focus={String(tab.id === focused)}
-                accessibility-element
-                accessibility-traits="button"
-                accessibility-label={`${title}${report?.dirty ? ", Unsaved changes" : ""}`}
-                accessibility-value={active ? "Selected" : ""}
-                focusable={tab.id === focused}
-                bindtap={() => select(tab.id)}
-                bindkeydown={(event) => {
-                  if (NativeModules.LaneOnline) return;
-                  if (
-                    ["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                      event.key,
-                    )
-                  )
-                    moveFocus(tab.id, event.key);
-                  else if (event.key === "Enter" || event.key === " ")
-                    select(tab.id);
-                }}
-              >
-                <svg
-                  className="tab-symbol"
-                  accessibility-elements-hidden
-                  content={`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#68758b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${tab.target.kind === TabKind.Task || tab.target.kind === TabKind.NewTask ? '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>' : '<path d="M8 6h12M8 12h12M8 18h12M3 6h1M3 12h1M3 18h1"/>'}</svg>`}
-                />
-                <text className="tab-title" text-maxline="1">
-                  {title}
-                </text>
-                {report?.dirty && (
-                  <view className="tab-dirty" accessibility-elements-hidden />
-                )}
+    <view
+      className="tab-sidebar"
+      bindlayoutchange={(event) => setHeight(event.detail.height)}
+    >
+      <scroll-view className="tab-sidebar-scroll" scroll-orientation="vertical">
+        <view
+          className="tab-bar"
+          style={{ height: `${Math.max(height, 360)}px` }}
+        >
+          <view className="tab-heading">
+            <text className="heading">Tabs</text>
+            <Button primary label="New tab" onClick={create}>
+              + New tab
+            </Button>
+          </view>
+          <scroll-view
+            className="tab-scroll"
+            accessibility-label="Workspace tabs"
+            scroll-orientation="vertical"
+            scroll-to-index={Math.max(0, index)}
+          >
+            {tabs.map((tab) => {
+              const report = reports[tab.id];
+              const title = report?.title || tab.target.label;
+              const active = tab.id === selected;
+              return (
                 <view
-                  className="tab-tooltip"
-                  accessibility-elements-hidden
-                  user-interaction-enabled={false}
+                  className={`workspace-tab ${active ? "selected" : ""}`}
+                  key={tab.id}
                 >
-                  <text>
-                    {title}
-                    {report?.dirty ? " · Unsaved changes" : ""}
-                  </text>
+                  <view
+                    id={`tab-${tab.id}`}
+                    className="button tab-select"
+                    data-workspace-tab={tab.id}
+                    data-tab-selected={String(active)}
+                    data-tab-focus={String(tab.id === focused)}
+                    accessibility-element
+                    accessibility-traits="button"
+                    accessibility-label={`${title}${report?.dirty ? ", Unsaved changes" : ""}`}
+                    accessibility-value={active ? "Selected" : ""}
+                    focusable={tab.id === focused}
+                    bindtap={() => select(tab.id)}
+                    bindkeydown={(event) => {
+                      if (NativeModules.LaneOnline) return;
+                      if (
+                        ["ArrowUp", "ArrowDown", "Home", "End"].includes(
+                          event.key,
+                        )
+                      )
+                        moveFocus(tab.id, event.key);
+                      else if (event.key === "Enter" || event.key === " ")
+                        select(tab.id);
+                    }}
+                  >
+                    {tab.target.kind === TabKind.NewTab ? (
+                      <text className="tab-symbol">+</text>
+                    ) : (
+                      <AppIcon app={tab.target.app ?? MiniApp.Lane} />
+                    )}
+                    <text
+                      className="tab-title"
+                      text-maxline={fullTitles ? undefined : "1"}
+                    >
+                      {`${title}${fullTitles && report?.dirty ? " · Unsaved changes" : ""}`}
+                    </text>
+                    {report?.dirty && (
+                      <view
+                        className="tab-dirty"
+                        accessibility-elements-hidden
+                      />
+                    )}
+                    <view
+                      className="tab-tooltip"
+                      accessibility-elements-hidden
+                      user-interaction-enabled={false}
+                    >
+                      <text>
+                        {title}
+                        {report?.dirty ? " · Unsaved changes" : ""}
+                      </text>
+                    </view>
+                  </view>
+                  <Button
+                    label={`Close ${title}`}
+                    disabled={report?.busy}
+                    onClick={() => close(tab.id)}
+                  >
+                    ×
+                  </Button>
                 </view>
-              </view>
-              <Button
-                label={`Close ${title}`}
-                disabled={report?.busy}
-                onClick={() => close(tab.id)}
-              >
-                ×
-              </Button>
-            </view>
-          );
-        })}
+              );
+            })}
+          </scroll-view>
+          <view className="tab-actions">
+            <Button
+              label="Account & sync"
+              onClick={() => openSettings(SettingsSection.Account)}
+            >
+              Account & sync
+            </Button>
+            <Button
+              label="App settings"
+              onClick={() => openSettings(SettingsSection.Notifications)}
+            >
+              App settings
+            </Button>
+          </view>
+        </view>
       </scroll-view>
-      <view className="tab-actions">
-        <Button label="New tab" onClick={create}>
-          +
-        </Button>
-        <Button
-          label={`Open tabs (${tabs.length})`}
-          onClick={showAll}
-        >{`⌄ ${tabs.length}`}</Button>
-      </view>
     </view>
   );
 }

@@ -342,14 +342,17 @@ try {
   const startBox = box("Start date (YYYY-MM-DD)");
   const dueBox = box("Due date (YYYY-MM-DD)");
   assert.equal(await dueBox.inputValue(), "2026-11-20");
-  // Two columns at desktop width: start and due date share a row.
+  // The shared vertical tabs leave less editor width at 1440px. Verify two
+  // columns when the editor has room, as required by the responsive contract.
+  await page.setViewportSize({ width: 1800, height: 900 });
+  await settle();
   const [startRect, dueRect] = await Promise.all([
     startBox.boundingBox(),
     dueBox.boundingBox(),
   ]);
   assert.ok(
     Math.abs(startRect.y - dueRect.y) < 2 && startRect.x !== dueRect.x,
-    "two-column fields at 1440px",
+    "two-column fields when the editor has sufficient width",
   );
   await heading("Properties").scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(evidence, "desktop-task-editor.png") });

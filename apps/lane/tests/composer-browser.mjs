@@ -72,6 +72,7 @@ if(moduleName==='bridge') {
 const button = (name) => page.getByRole("button", { name, exact: true });
 try {
   await page.goto(base);
+  await button("New tab").click();
   await button("RealQA").click();
   await button("Full screen").waitFor();
   await page.screenshot({

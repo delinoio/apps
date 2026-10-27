@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { UI } from "./serializable";
 import type { EntityResult } from "@repo/protos/lane/v1/lane_pb";
+import type { MiniApp } from "./AppNavigation";
 import { LanePage } from "./navigation.ts";
 
 export enum TabKind {
+  App = "app",
+  NewTab = "new-tab",
   Page = "page",
   Repository = "repository",
   Task = "task",
@@ -12,6 +15,7 @@ export enum TabKind {
 export interface TabTarget {
   kind: TabKind;
   label: string;
+  app?: MiniApp;
   page?: LanePage;
   repositoryId?: string;
   taskId?: string;
@@ -35,6 +39,8 @@ export const allTasks = (): TabTarget => ({
   label: "All tasks",
 });
 export function tabIdentity(target: TabTarget): string {
+  if (target.kind === TabKind.App) return `app-${target.app}`;
+  if (target.kind === TabKind.NewTab) return "new-tab";
   // A saved new task keeps its mounted editor and becomes the same destination
   // as any later attempt to open that task through a list, relationship or link.
   if (target.kind === TabKind.Task || target.kind === TabKind.NewTask)

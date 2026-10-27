@@ -73,28 +73,37 @@ signing and store registration remain separate.
 
 ### Approved UI composition
 
-Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use an icon-only app rail to the left of the contextual sidebar. Lane, Pace and RealQA are equal app selectors in that order; Pace shows its own sidebar and `Coming soon` page. RealQA follows the [capture and attachment contract](apps-lane-realqa-contract.md). Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. Task Properties, Relationships, list Filters and sort, and repository Labels, Milestones and Cycles management follow the [task planning UI specification](#task-planning-ui-specification). These product constraints do not change the platform build/toolchain choices.
+Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use shared vertical tabs to the left of the contextual sidebar and open Lane, Pace and RealQA from the New tab chooser; Pace shows its own sidebar and `Coming soon` page. RealQA follows the [capture and attachment contract](apps-lane-realqa-contract.md). Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. Task Properties, Relationships, list Filters and sort, and repository Labels, Milestones and Cycles management follow the [task planning UI specification](#task-planning-ui-specification). These product constraints do not change the platform build/toolchain choices.
 
 ### Workspace tabs
 
-Each Lane tab owns its contextual sidebar and content. Only the 64-pixel app
-icon rail remains outside the tabbed area. Place one 56-pixel horizontal tab
-strip immediately to the right of the rail, spanning the sidebar and content.
-Below it, the active panel contains the 240-pixel sidebar and existing
-list/detail or page content. Preserve the English UI, white/gray surfaces,
+Lane, Pace and RealQA share one vertical tab system on the left. Remove the
+separate app icon rail and horizontal tab strip. At widths of at least 900 pixels,
+show a 240-pixel sidebar with a Tabs heading, New tab action, scrollable tab rows
+and bottom Account & sync and App settings actions. Each Lane tab retains its
+contextual sidebar and content. Preserve the English UI, white/gray surfaces,
 `#075aff` accent, outline controls and existing app artwork.
 
-Open tasks, new-task drafts, pages and repository lists in tabs. Start with one
-`All tasks` tab. Sidebar, command-menu, relationship, event and deep-link
-navigation opens the destination or selects its existing tab. A task has one
-tab identity, including after a new draft is saved. Page and repository tabs
-have distinct identities. `New task` opens a separate draft; the strip's `New
-tab` action opens the page/repository picker without mini-app destinations.
-The existing command shortcut retains its app destinations. The open-tabs menu
-shows the count, complete titles, selection and unsaved state, with selection
-and individual close actions. A repository tab keeps its repository identity:
-on mobile, choosing another repository selects or opens that repository tab;
-choosing `All repositories` selects the `All tasks` page.
+Open tasks, new-task drafts, pages, repository lists, Pace and RealQA in the same
+tab list. Start with one All tasks tab. Sidebar, command-menu, relationship, event
+and deep-link navigation opens the destination or selects its existing tab. A
+task has one identity, including after a new draft is saved. Page, repository
+and mini-app destinations have distinct identities. New task opens a separate
+draft. New tab opens or selects a chooser tab with Lane, Pace and RealQA cards
+in that order. Show Tasks and repositories, Coming soon and Capture and review
+as their descriptions. Selecting a card replaces the chooser with that
+mini-app's destination or selects its existing tab and removes the chooser.
+Lane returns to its previous available Lane destination, defaulting to All tasks.
+Pace retains its Coming soon placeholder. The command shortcut retains page,
+repository and app destinations without using the chooser.
+
+Below 900 pixels, a Tabs button opens the same vertical list in a dismissible
+dialog and shows the count, complete titles, selection and unsaved state, with
+selection and individual close actions. Keep New tab directly reachable beside
+Tabs. Escape dismisses the dialog and restores focus. Stack chooser cards at
+390 pixels without horizontal overflow. A repository tab keeps its repository
+identity: on mobile, choosing another repository opens or selects that tab;
+choosing All repositories selects the All tasks page.
 
 Keep each pane mounted while inactive so its sidebar selection and scroll,
 repository, search, filters, sort, list scroll, editor scroll and drafts survive
@@ -117,12 +126,12 @@ when that tab returns. Subscribe to shared data invalidation once per window.
 
 Tab labels show an icon, truncated title, a separate unsaved dot and close
 button. Expose the complete title and `Unsaved changes` in accessible names,
-hover/focus tooltips and the open-tabs menu. Use a white selected surface,
-stronger title and blue bottom rule; distinguish focus from selection. Activation
-and close targets are at least 44 pixels. Left/Right and Home/End move focus;
+hover/focus tooltips and the open-tabs menu. Use a pale-blue selected surface,
+stronger title and blue left rule; distinguish focus from selection. Activation
+and close targets are at least 44 pixels. Up/Down and Home/End move focus;
 Enter/Space activates. Tab proceeds to the remaining controls and content.
-Closing restores focus to the selected adjacent tab: choose the right neighbor,
-then the left. Closing the final tab opens a clean `All tasks` tab.
+Closing restores focus to the selected adjacent tab: choose the next row,
+then the previous row. Closing the final tab opens a clean `All tasks` tab.
 
 Closing an edited tab requires `Discard unsaved changes?`, with `Keep editing`
 and `Discard changes`. Escape cancels. Focus the safe action and trap focus in
@@ -248,7 +257,7 @@ exists, otherwise the workspace. Native hosts return focus to the workspace.
 
 Page destinations select Lane and the requested page tab. A repository destination
 selects its repository-list tab. Each existing destination keeps its own filters;
-a new destination starts with its default filters. App destinations preserve the
+a new destination starts with its default filters. App destinations open or select their shared tabs and preserve the
 existing return-to-Lane behavior. Lane destinations open or select tabs and preserve their drafts and filters.
 Apply the existing RealQA unsaved-edit confirmation when leaving RealQA.
 Cancellation retains its screen and draft. Opening or dismissing the menu alone
@@ -292,7 +301,7 @@ application icon. This represents assistance for human-led QA.
 `apps/lane/assets/realqa-icon.png` is its 128-pixel runtime derivative, embedded
 as a data URI so packaged native hosts need no remote image request. Regenerate
 it with `sips -z 128 128 apps/lane/assets/realqa-icon-source.png --out apps/lane/assets/realqa-icon.png`.
-Use the same artwork in the 24-pixel app rail and sidebar marks and the scaled
+Use the same artwork in the 24-pixel tab and sidebar marks and the scaled
 coming-soon mark, with rounded corners. Keep accessible names, selection markers,
 keyboard behavior and navigation unchanged. This does not change Lane platform
 icons or implement RealQA QA functionality.
@@ -303,7 +312,7 @@ icons or implement RealQA QA functionality.
 and pale-blue folded-ribbon speedometer on a cobalt-blue square background.
 `apps/lane/assets/pace-icon.png` is its 256-pixel runtime derivative, embedded
 as a data URI in the shared bundle for account-free native and web use. Use the
-same artwork in the app rail, contextual heading and coming-soon page. Keep the
+same artwork in tab rows, chooser cards, contextual heading and coming-soon page. Keep the
 24-pixel navigation footprint, rounded corners, selection marker and accessible
 app names. This artwork does not replace the Lane launcher icon.
 
@@ -320,11 +329,10 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Provide the first version free of charge. No paid plans or billing. No feature flag is needed because this is a new product made available to all logged-in users on the server; local use remains account-free. Task planning metadata adds no feature flag, paid plan, team role or entitlement.
 - Web domain: `lane.delino.io`. API domain: `lane.api.delino.io`.
 - Register `lane-dev://` for development builds and `lane://` for distribution builds. Support login callbacks, opening the app, and links to a repository or task. Do not include decision-item links.
-- Keep Lane, Pace and RealQA as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the approved folded-lanes artwork for Lane, the folded-ribbon speedometer artwork for Pace, and the approved checklist-and-cursor artwork for RealQA. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
-  Tooltips must fit the complete app name outside the trigger's bounds.
-- Anchor a separate utility group at the bottom of the rail, with an outline person button above an outline gear button. Use 44-by-44-pixel targets, 24-pixel gray `#68758b` icons, 9-pixel corners, a 12-pixel gap and 24-pixel bottom padding. Preserve the white rail, `#e4e8ef` divider, blue `#075aff` focus and pale-blue `#e8f0fe` hover treatment. Show complete English hover/focus tooltips on `#172033`: `Account & sync` and `App settings`. Expose the same accessible names and support Tab, Enter/Space and direct touch activation. Utility actions are navigation buttons without mini-app selected state.
-- Both utility actions open Lane's existing Settings page from any mini-app, retain repository/task filters and open or select the Settings tab while preserving Lane drafts. When leaving RealQA, use its existing unsaved-edit confirmation. Cancellation preserves that view and draft. Confirmation navigates and discards its unsaved draft. `Account & sync` reveals and focuses `Local data and synchronization` on native or `Online account` on web. `App settings` reveals and focuses `Notifications on this device`. Keep the contextual Settings entry and its default destination. Opening a destination must not connect synchronization, sign in, request notification permission, change preferences or delete data. Existing account errors and safeguards remain authoritative; local native notification preferences remain usable if account lists fail. On constrained heights, scroll the vertical rail so all five controls remain reachable without overlap; retain bottom anchoring when space permits.
-- At widths of at least 900 pixels, place the 240-pixel app-specific sidebar between the rail and content. Lane retains its navigation, repository list and connection status. Pace and RealQA each show their own name, icon and selected `Overview` item, without Lane navigation. Pace retains `Coming soon`; RealQA shows the capture/settings or read-only entry defined in its owning contract. Below 900 pixels, retain the left rail and show contextual navigation above the content, with scrollable content and wrapping text.
+- Lane, Pace and RealQA use the shared vertical workspace tabs and the New tab mini-app chooser described above. Preserve their approved folded-lanes, folded-ribbon speedometer and checklist-and-cursor artwork in tab rows and chooser cards. App names and selection remain accessible; there is no separate app icon rail.
+- Place Account & sync and App settings below the vertical tab list, with at least 44-pixel targets, visible keyboard focus and direct touch activation. These actions remain navigation controls without mini-app selected state.
+- Both utility actions open Lane's existing Settings page from any mini-app, retain repository/task filters and open or select the Settings tab while preserving Lane drafts. When leaving RealQA, use its existing unsaved-edit confirmation. Cancellation preserves that view and draft. Confirmation navigates and discards its unsaved draft. `Account & sync` reveals and focuses `Local data and synchronization` on native or `Online account` on web. `App settings` reveals and focuses `Notifications on this device`. Keep the contextual Settings entry and its default destination. Opening a destination must not connect synchronization, sign in, request notification permission, change preferences or delete data. Existing account errors and safeguards remain authoritative; local native notification preferences remain usable if account lists fail. On constrained heights, keep the tab list scrollable and utility controls reachable without overlap; retain bottom anchoring when space permits.
+- At widths of at least 900 pixels, place the 240-pixel app-specific sidebar between the shared tabs and content. Lane retains its navigation, repository list and connection status. Pace and RealQA each show their own name, icon and selected `Overview` item, without Lane navigation. Pace retains `Coming soon`; RealQA shows the capture/settings or read-only entry defined in its owning contract. Below 900 pixels, use the dismissible vertical tab list and show contextual navigation above the content, with scrollable content and wrapping text.
 - Unimplemented mini-apps show their icon and name, `Coming soon`, `<App> is not available yet.`, and `Back to Lane`, without requiring login, connectivity or a permission prompt for that page. Both the Lane selector and return button restore the previous Lane page and filters. Keep Lane's loading, error, authentication and permission behavior unchanged. Do not add release dates or sign-up flows. The former Perfine navigation entry is removed.
 - Lane app switching preserves its tabs and drafts. Apply the existing RealQA unsaved-edit confirmation before leaving its view. Cancel retains the current screen and draft; confirming discards that unsaved draft. App switching must support keyboard activation, visible focus and content-focus transfer. RealQA capture, composer, settings and saved-result behavior follow the [RealQA contract](apps-lane-realqa-contract.md).
 - User-facing app and CLI text is English only. Validate keyboard operation, screen readers, visible focus, state distinctions that do not rely on color, and text enlargement on every released GUI platform. Follow repository form-focus and Escape-to-close rules where applicable.
@@ -441,7 +449,7 @@ This text specification is authoritative without supporting images. Preview data
 4. **Responsive layout.** At widths of at least 900 pixels keep the existing desktop list/detail navigation and use two-column fields where space permits. Below 900 pixels keep the mobile list/detail navigation and stack fields and filters in one column. At 360 pixels wrap long names and labels and keep every control usable without horizontal scrolling.
 5. **Visual treatment.** English UI, white and gray surfaces, gray borders, dark text and the existing blue accent `#075AFF`. Keep the current design system and approved navigation. Color supplements text and is never the only state indicator.
 6. **States and recovery.** Show loading and empty-result states and an explicit retry for list and option failures. Keep drafts after failed saves. Explain field validation and relationship-conflict causes in text. Disable duplicate submission while saving. Preserve the existing authentication, permission, deletion and whole-task-conflict states. Web offline saves fail with retained input; native, local CLI and local MCP saves remain local.
-7. **Accessibility.** Keyboard operation, visible focus, accessible control names, screen-reader support, non-color state cues and text enlargement apply on every supported GUI platform. Dialogs close with Escape and return focus to their trigger. While any dialog is open, its backdrop covers the whole app rail, including scrolled utility controls, so background pointer input cannot navigate or discard retained edits; the browser regression verifies actual hit targets for content-nested and root dialogs at desktop and narrow sizes. Apply the existing automatic-focus rule to forms with one critical input.
+7. **Accessibility.** Keyboard operation, visible focus, accessible control names, screen-reader support, non-color state cues and text enlargement apply on every supported GUI platform. Dialogs close with Escape and return focus to their trigger. While any dialog is open, its backdrop covers the whole tab sidebar, including utility controls, so background pointer input cannot navigate or discard retained edits; the browser regression verifies actual hit targets for content-nested and root dialogs at desktop and narrow sizes. Apply the existing automatic-focus rule to forms with one critical input.
 
 ### Pre-release data reset
 

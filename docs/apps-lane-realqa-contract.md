@@ -23,7 +23,7 @@ only for the behavior specified here; Pace remains outside this scope.
 
 ### Product and platform boundaries
 
-- Use existing Lane identity, native hosts, shared ReactLynx UI, storage, synchronization, and repository/task management. Preserve the Lane/Pace/RealQA rail order, approved icons, existing Lane state on app switching, and unsaved-edit protection.
+- Use existing Lane identity, native hosts, shared ReactLynx UI, storage, synchronization, and repository/task management. Use the shared vertical tab system and New tab mini-app chooser from the application foundation. Preserve approved icons, existing Lane state on tab switching, and unsaved-edit protection.
 - macOS and Windows: capture, image editing, floating task composition, RealQA settings, and Chrome integration. Windows runtime validation has the explicit release exception below.
 - iOS, Android, and web: read saved results in existing Lane task/prompt views. Do not expose capture or RealQA configuration editing on these surfaces. The RealQA entry shows `Capture on desktop. View saved captures in Lane.` and `Open Lane`.
 - Native use remains local and account-free. Synchronization is optional. Web requires an authenticated online connection and has no independent offline store or mutation queue.
