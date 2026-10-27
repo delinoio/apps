@@ -235,6 +235,7 @@ export function Dialog({
   children,
   onClose,
   focusHeading = false,
+  footer,
   returnFocusId,
   className = "",
 }: {
@@ -242,6 +243,7 @@ export function Dialog({
   children: ReactNode;
   onClose: () => void;
   focusHeading?: boolean;
+  footer?: ReactNode;
   returnFocusId?: string;
   className?: string;
 }) {
@@ -266,7 +268,7 @@ export function Dialog({
           .invoke({ method: "setFocus", params: { focus: true } })
           .exec();
     };
-  }, []);
+  }, [focusHeading, headingId, returnFocusId]);
   return (
     <view
       className="overlay"
@@ -292,11 +294,17 @@ export function Dialog({
           ) : (
             <text className="heading">{title}</text>
           )}
-          <Button onClick={onClose}>Close</Button>
+          <Button
+            focusOnShow={!focusHeading && !!returnFocusId}
+            onClick={onClose}
+          >
+            Close
+          </Button>
         </view>
         <scroll-view className="dialog-scroll" scroll-orientation="vertical">
           {children}
         </scroll-view>
+        {footer}
       </view>
     </view>
   );

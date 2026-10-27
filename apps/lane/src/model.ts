@@ -161,12 +161,12 @@ export function historyChanges(
   const next = taskOf(after);
   if (!next) return [];
   const label = (field: string, value: unknown) =>
-    field === "progress"
-      ? progressOptions.find(([v]) => v === value)?.[1] || String(value)
-      : field === "proposal"
-        ? proposalOptions.find(([v]) => v === value)?.[1] || String(value)
-        : value === undefined
-          ? "(absent)"
+    value === undefined
+      ? "(absent)"
+      : field === "progress"
+        ? progressOptions.find(([v]) => v === value)?.[1] || String(value)
+        : field === "proposal"
+          ? proposalOptions.find(([v]) => v === value)?.[1] || String(value)
           : String(value);
   const core = (
     ["title", "description", "progress", "proposal", "repositoryId"] as const
