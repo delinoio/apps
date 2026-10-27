@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+use axum::http::StatusCode;
 use std::sync::Mutex;
 
 const BUCKETS: [f64; 10] = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0];
@@ -8,6 +9,21 @@ pub enum Outcome {
     ClientError,
     ServerError,
     Timeout,
+}
+/// A typed operation result for HTTP envelopes that do not expose the backend status.
+#[derive(Clone, Copy)]
+pub struct BackendOutcome(pub Outcome);
+
+pub fn outcome_from_status(status: StatusCode) -> Outcome {
+    if status == StatusCode::GATEWAY_TIMEOUT {
+        Outcome::Timeout
+    } else if status.is_server_error() {
+        Outcome::ServerError
+    } else if status.is_client_error() {
+        Outcome::ClientError
+    } else {
+        Outcome::Success
+    }
 }
 #[derive(Default)]
 struct Samples {

@@ -175,6 +175,8 @@ Scope every lookup, cursor, history parent, idempotency key and lease to the cur
 
 Use `tracing`, correlation IDs and structured operation/result/duration metadata. Planning operations and constraint rejections log the operation, correlation ID, result category (including the violation name) and duration, never task content, label/milestone/cycle names or descriptions, or relationship titles. Server logs expire after 30 days. Metrics include request/error counts, duration histograms excluding long-lived connection lifetime, DB/service probes, pending sync failures and push queue age/attempt results. Keep account/resource IDs out of high-cardinality metric labels; dashboards and alerts reveal no content.
 
+The HTTP policy records one request outcome and one latency sample for each completed MCP request. Auth failures and other responses without a typed backend outcome use HTTP status. A failed MCP tool keeps its HTTP 200 error result, but its backend fault determines the metric outcome: server and timeout faults count in their respective buckets, and domain faults count as client errors. Metric labels remain bounded and contain no request content or account/resource IDs. The existing five-minute error ratio includes server errors and timeouts from these calls without changing its thresholds.
+
 Supply Prometheus rules, dashboards and Alertmanager email routing. Initial thresholds are configurable operational triggers, **not SLOs**:
 
 - Probe service and DB every 30 seconds, timeout five seconds. Fire after five minutes continuously unhealthy; resolve after five minutes continuously healthy.
