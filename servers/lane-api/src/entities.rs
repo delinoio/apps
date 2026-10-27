@@ -730,6 +730,25 @@ pub(crate) async fn save_receipt(
     Ok(())
 }
 
+fn normalize_task_planning_request(task: &mut Value) -> Result<()> {
+    let mut normalized = serde_json::Map::new();
+    crate::planning::task_planning_fields(task, &mut normalized)?;
+    let object = task
+        .as_object_mut()
+        .ok_or_else(|| fault(1, "task must be an object"))?;
+    for key in PLANNING_KEYS {
+        match normalized.remove(key) {
+            Some(value) => object.insert(key.to_string(), value),
+            None => object.remove(key),
+        };
+    }
+    Ok(())
+}
+
+pub(crate) fn normalize_create_task_request(p: &Principal, q: &Value) -> Result<Value> {
+    normalize_request(p, "CreateTask", q)
+}
+
 fn normalize_request(p: &Principal, method: &str, q: &Value) -> Result<Value> {
     let mut q = q.clone();
     if !q.is_object() {
@@ -757,15 +776,7 @@ fn normalize_request(p: &Principal, method: &str, q: &Value) -> Result<Value> {
     if method == "CreateTask" {
         // Planning fields normalize exactly like a stored task body so a retry with the same
         // content yields the same fingerprint however the transport spelled the sets.
-        let mut normalized = serde_json::Map::new();
-        crate::planning::task_planning_fields(&q, &mut normalized)?;
-        let object = q.as_object_mut().unwrap();
-        for key in PLANNING_KEYS {
-            match normalized.remove(key) {
-                Some(v) => object.insert(key.to_string(), v),
-                None => object.remove(key),
-            };
-        }
+        normalize_task_planning_request(&mut q)?;
         if q["repository"].get("url").is_some() {
             q["repository"]["url"] = json!(normalize_url(string(&q["repository"], "url"))?);
         }
@@ -791,6 +802,14 @@ fn normalize_request(p: &Principal, method: &str, q: &Value) -> Result<Value> {
     }
     if method == "ResolveConflict" {
         q["expectedHeadIds"] = json!(set_ids(&q["expectedHeadIds"])?);
+        if let Some(task) = q
+            .get_mut("resolved")
+            .and_then(|resolved| resolved.get_mut("task"))
+            && task.is_object()
+        {
+            // Keep the rest of the resolved version envelope in the receipt fingerprint.
+            normalize_task_planning_request(task)?;
+        }
     }
     Ok(q)
 }
@@ -1321,6 +1340,124 @@ mod tests {
             assert_eq!(canonical(q).unwrap(), case["expected"]["canonicalJson"]);
             assert_eq!(fingerprint(q).unwrap(), case["expected"]["sha256"]);
         }
+    }
+    #[test]
+    fn resolved_task_sets_normalize_without_erasing_version_fields() {
+        let p = Principal {
+            account_id: id(),
+            tenant_id: id(),
+            session_id: id(),
+            device_id: id(),
+            device_name: "test".into(),
+            origin_kind: "ORIGIN_KIND_CLI".into(),
+        };
+        let a = id();
+        let b = id();
+        let mut q = json!({
+            "meta":{"requestId":id()},"id":id(),"expectedHeadIds":[id(),id()],
+            "resolved":{"versionId":id(),"formatVersion":3,"task":{
+                "repositoryId":id(),"title":"Resolved","description":"", "progress":"PROGRESS_TODO",
+                "proposal":"PROPOSAL_REGULAR","labelIds":[b,a],"dependsOnTaskIds":[b,a],
+                "relatedTaskIds":[b,a],"captures":[{"id":"first"},{"id":"second"}]
+            }}
+        });
+        let original = normalize_request(&p, "ResolveConflict", &q).unwrap();
+        let mut equivalent = q.clone();
+        for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+            equivalent["resolved"]["task"][key] = json!([a, b, a]);
+        }
+        let replay = normalize_request(&p, "ResolveConflict", &equivalent).unwrap();
+        assert_eq!(
+            fingerprint(&original).unwrap(),
+            fingerprint(&replay).unwrap()
+        );
+        assert_eq!(
+            original["resolved"]["versionId"],
+            q["resolved"]["versionId"]
+        );
+        assert_eq!(
+            original["resolved"]["task"]["captures"],
+            q["resolved"]["task"]["captures"]
+        );
+        for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+            let mut expected = vec![a.clone(), b.clone()];
+            expected.sort();
+            assert_eq!(original["resolved"]["task"][key], json!(expected));
+        }
+        q["resolved"]["task"]["labelIds"] = json!([a]);
+        assert_ne!(
+            fingerprint(&original).unwrap(),
+            fingerprint(&normalize_request(&p, "ResolveConflict", &q).unwrap()).unwrap()
+        );
+        let mut changed = equivalent.clone();
+        changed["resolved"]["task"]["prompt"] = json!("");
+        assert_ne!(
+            fingerprint(&original).unwrap(),
+            fingerprint(&normalize_request(&p, "ResolveConflict", &changed).unwrap()).unwrap()
+        );
+        changed = equivalent;
+        changed["resolved"]["task"]["captures"] = json!([{"id":"second"},{"id":"first"}]);
+        assert_ne!(
+            fingerprint(&original).unwrap(),
+            fingerprint(&normalize_request(&p, "ResolveConflict", &changed).unwrap()).unwrap()
+        );
+    }
+
+    #[test]
+    fn embedded_create_task_uses_direct_planning_and_edit_sets() {
+        let p = Principal {
+            account_id: id(),
+            tenant_id: id(),
+            session_id: id(),
+            device_id: id(),
+            device_name: "test".into(),
+            origin_kind: "ORIGIN_KIND_CLI".into(),
+        };
+        let a = id();
+        let b = id();
+        let mut direct = json!({
+            "meta":{"requestId":id()},"id":id(),"repository":{"id":id()},"title":"Task",
+            "storyPoints":0,"labelIds":[b,a],"dependsOnTaskIds":[b,a],"relatedTaskIds":[b,a],
+            "relationshipEdits":{"addSubtaskIds":[b,a],"removeSubtaskIds":[b,a],
+                "addBlockedTaskIds":[b,a],"removeBlockedTaskIds":[b,a]}
+        });
+        let normalized = normalize_create_task_request(&p, &direct).unwrap();
+        for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+            direct[key] = json!([a, b, a]);
+        }
+        for key in [
+            "addSubtaskIds",
+            "removeSubtaskIds",
+            "addBlockedTaskIds",
+            "removeBlockedTaskIds",
+        ] {
+            direct["relationshipEdits"][key] = json!([a, b, a]);
+        }
+        assert_eq!(
+            normalize_create_task_request(&p, &direct).unwrap(),
+            normalized
+        );
+        assert_eq!(normalized["storyPoints"], 0);
+        assert_eq!(normalized["progress"], "PROGRESS_TODO");
+        assert_eq!(normalized["proposal"], "PROPOSAL_REGULAR");
+        let mut changed = direct.clone();
+        changed.as_object_mut().unwrap().remove("storyPoints");
+        assert_ne!(
+            normalize_create_task_request(&p, &changed).unwrap(),
+            normalized
+        );
+        changed = direct.clone();
+        changed["prompt"] = json!("");
+        assert_ne!(
+            normalize_create_task_request(&p, &changed).unwrap(),
+            normalized
+        );
+        changed = direct;
+        changed["relationshipEdits"]["addSubtaskIds"] = json!([a]);
+        assert_ne!(
+            normalize_create_task_request(&p, &changed).unwrap(),
+            normalized
+        );
     }
     #[test]
     fn normalized_repository_body_does_not_strip_another_suffix() {

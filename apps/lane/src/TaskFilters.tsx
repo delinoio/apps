@@ -6,6 +6,7 @@ import {
   Choices,
   CompactSelect,
   Field,
+  MenuChoices,
   MultiChoices,
   Notice,
 } from "./components";
@@ -40,6 +41,7 @@ export function TaskFilters({
   setSortDirection,
   compact = false,
   active = true,
+  separateSort = false,
 }: {
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -56,6 +58,7 @@ export function TaskFilters({
   setSortDirection: (direction: SortDirection) => void;
   compact?: boolean;
   active?: boolean;
+  separateSort?: boolean;
 }) {
   const [focusRequest, setFocusRequest] = useState(0);
   const [filterButtonId] = useState(
@@ -286,61 +289,102 @@ export function TaskFilters({
           </text>
         </view>
       )}
-      <view className={compact ? "compact-sort-band" : "default-task-sort"}>
-        {compact ? (
-          <>
-            <CompactSelect
-              label="Sort by"
-              value={sortKey}
-              options={sortKeyOptions}
-              onChange={setSortKey}
-              active={active}
-              open={openSortSelect === "key"}
-              onOpenChange={(nextOpen) =>
-                setOpenSortSelect(nextOpen ? "key" : undefined)
-              }
-            />
-            <CompactSelect
-              label="Sort direction"
-              value={
-                sortDirection === SortDirection.UNSPECIFIED
-                  ? SortDirection.ASCENDING
-                  : sortDirection
-              }
-              options={sortDirectionOptions}
-              onChange={setSortDirection}
-              disabled={sortKey === TaskSortKey.UNSPECIFIED}
-              active={active}
-              open={openSortSelect === "direction"}
-              onOpenChange={(nextOpen) =>
-                setOpenSortSelect(nextOpen ? "direction" : undefined)
-              }
-            />
-          </>
-        ) : (
-          <>
-            <Choices
-              exclusive
-              label="Sort by"
-              value={sortKey}
-              options={sortKeyOptions}
-              onChange={setSortKey}
-            />
-            <Choices
-              exclusive
-              label="Sort direction"
-              value={
-                sortDirection === SortDirection.UNSPECIFIED
-                  ? SortDirection.ASCENDING
-                  : sortDirection
-              }
-              options={sortDirectionOptions}
-              onChange={setSortDirection}
-              disabled={sortKey === TaskSortKey.UNSPECIFIED}
-            />
-          </>
-        )}
-      </view>
+      {!separateSort && (
+        <view className={compact ? "compact-sort-band" : "default-task-sort"}>
+          {compact ? (
+            <>
+              <CompactSelect
+                label="Sort by"
+                value={sortKey}
+                options={sortKeyOptions}
+                onChange={setSortKey}
+                active={active}
+                open={openSortSelect === "key"}
+                onOpenChange={(nextOpen) =>
+                  setOpenSortSelect(nextOpen ? "key" : undefined)
+                }
+              />
+              <CompactSelect
+                label="Sort direction"
+                value={
+                  sortDirection === SortDirection.UNSPECIFIED
+                    ? SortDirection.ASCENDING
+                    : sortDirection
+                }
+                options={sortDirectionOptions}
+                onChange={setSortDirection}
+                disabled={sortKey === TaskSortKey.UNSPECIFIED}
+                active={active}
+                open={openSortSelect === "direction"}
+                onOpenChange={(nextOpen) =>
+                  setOpenSortSelect(nextOpen ? "direction" : undefined)
+                }
+              />
+            </>
+          ) : (
+            <>
+              <Choices
+                exclusive
+                label="Sort by"
+                value={sortKey}
+                options={sortKeyOptions}
+                onChange={setSortKey}
+              />
+              <Choices
+                exclusive
+                label="Sort direction"
+                value={
+                  sortDirection === SortDirection.UNSPECIFIED
+                    ? SortDirection.ASCENDING
+                    : sortDirection
+                }
+                options={sortDirectionOptions}
+                onChange={setSortDirection}
+                disabled={sortKey === TaskSortKey.UNSPECIFIED}
+              />
+            </>
+          )}
+        </view>
+      )}
+    </view>
+  );
+}
+
+export function TaskSortControls({
+  sortKey,
+  setSortKey,
+  sortDirection,
+  setSortDirection,
+  compact = false,
+}: {
+  sortKey: TaskSortKey;
+  setSortKey: (key: TaskSortKey) => void;
+  sortDirection: SortDirection;
+  setSortDirection: (direction: SortDirection) => void;
+  compact?: boolean;
+}) {
+  const Control = compact ? MenuChoices : Choices;
+  return (
+    <view className={compact ? "proposal-sort" : "task-sort"}>
+      <Control
+        label="Sort by"
+        value={sortKey}
+        options={sortKeyOptions}
+        onChange={setSortKey}
+        {...(!compact ? { exclusive: true } : {})}
+      />
+      <Control
+        label="Sort direction"
+        value={
+          sortDirection === SortDirection.UNSPECIFIED
+            ? SortDirection.ASCENDING
+            : sortDirection
+        }
+        options={sortDirectionOptions}
+        onChange={setSortDirection}
+        disabled={sortKey === TaskSortKey.UNSPECIFIED}
+        {...(!compact ? { exclusive: true } : {})}
+      />
       {sortKey !== TaskSortKey.UNSPECIFIED && (
         <text className="muted">
           Tasks without a value always sort last; ties sort by task ID.

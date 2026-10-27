@@ -230,6 +230,46 @@ text {
   margin-top: 16px;
   margin-bottom: 16px;
 }
+.repository-directory {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+  background-color: #f7f9fc;
+}
+.repository-header {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.repository-header-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+.repository-header .heading {
+  font-size: 1.625rem;
+  margin-bottom: 0;
+}
+.repository-row,
+.repository-empty,
+.repository-status {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+  padding: 18px;
+  gap: 12px;
+  border: 1px solid #e4e8ef;
+  border-radius: 10px;
+  background-color: #fff;
+}
 .events-page {
   display: flex;
   flex-direction: column;
@@ -310,6 +350,68 @@ text {
   border: 1px solid #e4e8ef;
   border-radius: 10px;
   background-color: #fff;
+}
+.repository-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+.repository-name {
+  font-size: 1rem;
+  font-weight: 650;
+  white-space: normal;
+  word-break: break-all;
+}
+.repository-url {
+  color: #526079;
+  white-space: normal;
+  word-break: break-all;
+}
+.repository-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.repository-actions .button {
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 1;
+}
+.repository-actions .button text {
+  white-space: normal;
+}
+.repository-placeholder {
+  height: 72px;
+  border-radius: 8px;
+  background-color: #f0f3f8;
+}
+.dialog.repository-dialog {
+  width: 560px;
+  max-width: 100%;
+  height: auto;
+  max-height: calc(100vh - 32px);
+  padding: 28px;
+  box-shadow: 0 12px 36px #17203326;
+}
+.repository-dialog .heading {
+  min-width: 0;
+  white-space: normal;
+}
+.repository-dialog .button {
+  min-height: 44px;
+}
+.repository-dialog .field {
+  min-width: 0;
+}
+.repository-dialog-footer {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  padding-top: 8px;
 }
 .events-row-copy {
   display: flex;
@@ -587,6 +689,19 @@ text {
 .mobile .dialog {
   padding: 16px;
 }
+.mobile .repository-directory {
+  padding: 16px;
+}
+.mobile .repository-row,
+.mobile .repository-empty,
+.mobile .repository-status {
+  padding: 16px;
+}
+.mobile .repository-dialog {
+  width: 100%;
+  max-height: calc(100vh - 24px);
+  padding: 24px;
+}
 .bold {
   font-weight: 700;
 }
@@ -627,6 +742,148 @@ text {
 }
 .task-results {
   flex-shrink: 0;
+}
+.proposal-list {
+  padding: 32px;
+}
+.proposal-list .heading {
+  font-size: 1.9rem;
+  line-height: 1.2;
+}
+.proposal-list .button {
+  min-height: 44px;
+}
+.proposal-list .field {
+  min-width: 0;
+}
+.proposal-controls,
+.proposal-sort {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+.proposal-controls .menu-field,
+.proposal-sort .menu-field {
+  flex: 1;
+  min-width: 180px;
+}
+.menu-field {
+  position: relative;
+}
+.menu-trigger {
+  width: 100%;
+  justify-content: space-between;
+  gap: 12px;
+}
+.menu-options {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 4px;
+  border: 1px solid #dce2ec;
+  border-radius: 8px;
+  background-color: #fff;
+}
+.menu-option {
+  width: 100%;
+  justify-content: flex-start;
+  border-color: transparent;
+}
+.menu-option.menu-selected {
+  background-color: #e8f1ff;
+}
+.proposal-list .filters > .row {
+  gap: 8px;
+}
+.proposal-sort {
+  border-top: 1px solid #e7ebf1;
+  padding-top: 12px;
+}
+.proposal-sort > .muted {
+  width: 100%;
+}
+.proposal-row {
+  align-items: flex-start;
+  padding: 14px 4px;
+}
+.proposal-row-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 180px;
+  gap: 4px;
+}
+.proposal-row .button {
+  flex: 0 1 auto;
+  min-width: 0;
+  align-self: flex-start;
+  padding-left: 0;
+  color: #075aff;
+}
+.proposal-row .button text {
+  color: #075aff;
+  font-size: 1rem;
+  text-align: left;
+}
+.proposal-row .task-meta {
+  min-width: 0;
+  padding-left: 0;
+}
+.proposal-row .task-meta .badge {
+  background-color: #fff;
+  border: 1px solid #dce2ec;
+  color: #526079;
+}
+.proposal-row-states {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.proposal-disposition {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background-color: #e8f1ff;
+  color: #174e9b;
+}
+.proposal-progress {
+  color: #526079;
+}
+.proposal-progress text {
+  color: #526079;
+}
+.result-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.mobile .proposal-list {
+  padding: 16px;
+}
+.mobile .proposal-controls,
+.mobile .proposal-sort {
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+.mobile .proposal-controls .menu-field,
+.mobile .proposal-sort .menu-field {
+  width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+.mobile .proposal-row-main {
+  min-width: 0;
+  width: 100%;
+}
+.mobile .proposal-row-states {
+  justify-content: flex-start;
+  width: 100%;
 }
 .mobile .nav-items .button {
   flex: 1;

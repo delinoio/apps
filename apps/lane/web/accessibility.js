@@ -12,9 +12,11 @@ export function installAccessibility(view) {
   let previousSettingsTarget;
   let revealedSettingsTarget;
   let previousCommand;
+  const proposalFocus = new WeakMap();
   const pendingAnnouncements = new WeakSet();
   const wired = new WeakSet();
   const focusRequests = new WeakMap();
+  const openedMenus = new WeakSet();
   const focusables = (root) =>
     [
       ...root.querySelectorAll('x-view[role="button"], x-input, x-textarea'),
@@ -80,6 +82,11 @@ export function installAccessibility(view) {
           String(button.classList.contains("command-selected")),
         );
       }
+      if (button.classList.contains("menu-option"))
+        button.setAttribute(
+          "aria-pressed",
+          String(button.classList.contains("menu-selected")),
+        );
       // Toggle chips and collapsible regions expose their state to screen readers.
       // The web runtime removes aria-*="false", so only the active state is observable.
       for (const [source, aria] of [
@@ -121,6 +128,17 @@ export function installAccessibility(view) {
         });
       }
     }
+    for (const field of root.querySelectorAll(".menu-field")) {
+      field.querySelector(".menu-options")?.setAttribute("role", "group");
+      const options = field.querySelectorAll(".menu-option");
+      if (options.length && !openedMenus.has(field)) {
+        openedMenus.add(field);
+        requestAnimationFrame(() => {
+          if (field.querySelector(".menu-option"))
+            focus(field.querySelector(".menu-selected") || options[0]);
+        });
+      } else if (!options.length) openedMenus.delete(field);
+    }
     const tabList = root.querySelector(".tab-scroll");
     tabList?.setAttribute("role", "tablist");
     tabList?.setAttribute("aria-orientation", "vertical");
@@ -153,7 +171,15 @@ export function installAccessibility(view) {
         requestAnimationFrame(() => {
           const selected = root.querySelector('[data-tab-selected="true"]');
           selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
-          if (!previousDialog) focus(selected);
+          if (previousDialog) return;
+          const panel = root.querySelector('[data-active-tab="true"]');
+          const search = panel?.querySelector(
+            '.proposal-list x-input[accessibility-label="Search title or description"]',
+          );
+          const remembered = panel && proposalFocus.get(panel);
+          focus(
+            search ? (remembered?.isConnected ? remembered : search) : selected,
+          );
         });
       previousTab = selectedTab;
     }
@@ -197,6 +223,11 @@ export function installAccessibility(view) {
     for (const notice of root.querySelectorAll(".notice")) {
       notice.setAttribute("role", "status");
       notice.setAttribute("aria-live", "polite");
+    }
+    for (const status of root.querySelectorAll(".result-announcement")) {
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      status.setAttribute("aria-atomic", "true");
     }
     const dialogs = [...root.querySelectorAll(".dialog")].filter(
       (dialog) => !dialog.closest('[data-active-tab="false"]'),
@@ -394,9 +425,15 @@ export function installAccessibility(view) {
       true,
     );
     root.addEventListener("focusin", (event) => {
-      const target = event.composedPath()[0];
+      const path = event.composedPath();
+      const target = path[0];
       if (target instanceof Element && !target.closest(".dialog"))
         lastOutside = target.closest("x-view.button") || target;
+      const proposalControl = path.find(
+        (node) => node instanceof Element && node.closest(".proposal-list"),
+      );
+      const panel = proposalControl?.closest('[data-active-tab="true"]');
+      if (panel) proposalFocus.set(panel, proposalControl);
     });
     // Activation (pointer or keyboard) names the trigger precisely, even when the
     // button is not the element that received focus.
@@ -413,6 +450,36 @@ export function installAccessibility(view) {
       true,
     );
     root.addEventListener("keydown", (event) => {
+      const menuPart = event
+        .composedPath()
+        .find(
+          (node) =>
+            node instanceof Element &&
+            (node.matches(".menu-option") || node.matches(".menu-trigger")),
+        );
+      if (menuPart) {
+        const field = menuPart.closest(".menu-field");
+        const options = [...field.querySelectorAll(".menu-option")];
+        if (event.key === "Escape" && options.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          field.querySelector(".menu-trigger")?.click();
+          requestAnimationFrame(() =>
+            focus(field.querySelector(".menu-trigger")),
+          );
+          return;
+        }
+        if (["ArrowDown", "ArrowUp"].includes(event.key) && options.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          const index = options.indexOf(menuPart);
+          const next =
+            (index + (event.key === "ArrowDown" ? 1 : -1) + options.length) %
+            options.length;
+          focus(options[next]);
+          return;
+        }
+      }
       const tab = event
         .composedPath()
         .find(

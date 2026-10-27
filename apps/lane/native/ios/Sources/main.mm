@@ -4,6 +4,7 @@
 #import <XElement/LynxUIInput.h>
 #import <XElement/LynxUITextArea.h>
 #import "LaneLog.h"
+#import "LaneHTTPSImageData.h"
 #import <Lynx/LynxConfig.h>
 #import <Lynx/LynxEnv.h>
 #import <Lynx/LynxTemplateProvider.h>
@@ -29,25 +30,45 @@
 }
 @end
 
-// The host resolves and validates attachment ownership before returning inline
-// PNGs. Render those bytes without a filesystem path or a shared image cache.
+// The host validates attachment ownership before returning inline PNGs. Neither
+// authorized bytes nor remote Markdown images enter a shared image cache.
 @interface LaneImageFetcher : NSObject <LynxImageFetcher>
+@property(nonatomic, strong) LaneHTTPSImageData *remote;
 @end
 @implementation LaneImageFetcher
+- (instancetype)init {
+  if ((self = [super init])) _remote = [LaneHTTPSImageData new];
+  return self;
+}
 - (dispatch_block_t)loadImageWithURL:(NSURL *)url size:(CGSize)size contextInfo:(NSDictionary *)context
     completion:(LynxImageLoadCompletionBlock)completion {
   NSProgress *progress = [NSProgress progressWithTotalUnitCount:1];
-  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+  void (^finish)(NSData *, BOOL) = ^(NSData *data, BOOL remote) {
     if (progress.cancelled) return;
-    NSString *prefix = @"data:image/png;base64,";
-    NSString *source = url.absoluteString;
-    NSData *data = [source hasPrefix:prefix] ? [[NSData alloc] initWithBase64EncodedString:[source substringFromIndex:prefix.length] options:0] : nil;
     UIImage *image = data ? [UIImage imageWithData:data] : nil;
+    CGImageRef pixels = image.CGImage;
+    if (remote && pixels && (CGImageGetWidth(pixels) == 0 || CGImageGetHeight(pixels) == 0 ||
+        (uint64_t)CGImageGetWidth(pixels) * CGImageGetHeight(pixels) > 16000000)) image = nil;
+    NSError *error = image ? nil : [NSError errorWithDomain:@"io.delino.lane.image" code:1 userInfo:nil];
     dispatch_async(dispatch_get_main_queue(), ^{
-      if (!progress.cancelled) completion(image, image ? nil : [NSError errorWithDomain:@"io.delino.lane.image" code:1 userInfo:nil], url);
+      @synchronized(progress) {
+        if (!progress.cancelled) completion(image, error, url);
+      }
     });
-  });
-  return ^{ [progress cancel]; };
+  };
+  NSString *prefix = @"data:image/png;base64,";
+  NSString *source = url.absoluteString;
+  if ([source hasPrefix:prefix]) {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+      NSData *data = [[NSData alloc] initWithBase64EncodedString:[source substringFromIndex:prefix.length] options:0];
+      finish(data, NO);
+    });
+    return ^{ @synchronized(progress) { [progress cancel]; } };
+  }
+  dispatch_block_t cancel = [self.remote loadURL:url completion:^(NSData *data, NSError *error) {
+    finish(error ? nil : data, YES);
+  }];
+  return ^{ @synchronized(progress) { [progress cancel]; } cancel(); };
 }
 @end
 

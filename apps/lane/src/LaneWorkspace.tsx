@@ -11,7 +11,14 @@ import {
 } from "@repo/protos/lane/v1/lane_pb";
 import { newId, type LaneAdapter } from "./adapter";
 
-import { Button, Choices, CompactSelect, Field, Notice } from "./components";
+import {
+  Button,
+  Choices,
+  CompactSelect,
+  Field,
+  MenuChoices,
+  Notice,
+} from "./components";
 import {
   blankTask,
   conflicted,
@@ -24,7 +31,7 @@ import {
   type Draft,
 } from "./model";
 import { TaskEditor } from "./TaskEditor";
-import { TaskFilters } from "./TaskFilters";
+import { TaskFilters, TaskSortControls } from "./TaskFilters";
 import { usePlanning } from "./usePlanning";
 
 import {
@@ -84,8 +91,9 @@ export function LaneWorkspace({
 }) {
   const [planningDirty, setPlanningDirty] = useState(false);
   const [taskError, setTaskError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
   const [repositoryError, setRepositoryError] = useState("");
-  const error = taskError || repositoryError;
+  const error = taskError || refreshError || repositoryError;
   const [loading, setLoading] = useState(true);
   const page = target.page ?? LanePage.Tasks;
   const [repository, setRepository] = useState(target.repositoryId ?? "");
@@ -104,6 +112,10 @@ export function LaneWorkspace({
   };
   const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
+  const searchFocusPending = useRef(page === "Proposals");
+  useEffect(() => {
+    if (active && page === "Proposals") searchFocusPending.current = false;
+  }, [active, page]);
   const [progress, setProgress] = useState<Progress>(Progress.UNSPECIFIED);
   const [proposal, setProposal] = useState<Proposal>(Proposal.UNSPECIFIED);
   const [openRepositorySelect, setOpenRepositorySelect] = useState<
@@ -163,6 +175,7 @@ export function LaneWorkspace({
     if (!adapter) return;
     let active = true;
     setRepositoryStatus("Loading repositories...");
+    setRepositoryError("");
     let repositoriesLoaded = false;
     void (async () => {
       try {
@@ -179,6 +192,7 @@ export function LaneWorkspace({
         if (active) {
           setRepositories(repos);
           setRepositoryStatus("");
+          setRepositoryError("");
         }
         let count = 0;
         after = "";
@@ -201,14 +215,17 @@ export function LaneWorkspace({
             setDraft((d) => (d ? receiveExternal(d, r.result!) : d));
           }
         }
-        if (active) setRepositoryError("");
+        if (active) setRefreshError("");
       } catch (e) {
         if (active) {
-          if (!repositoriesLoaded)
+          if (!repositoriesLoaded) {
             setRepositoryStatus("Repositories could not be refreshed.");
-          setRepositoryError(
-            e instanceof Error ? e.message : "Refresh failed.",
-          );
+            setRepositoryError(
+              e instanceof Error ? e.message : "Refresh failed.",
+            );
+          } else {
+            setRefreshError(e instanceof Error ? e.message : "Refresh failed.");
+          }
         }
       }
     })();
@@ -473,7 +490,7 @@ export function LaneWorkspace({
           <view className="task-workspace">
             {(!mobile || !draft) && (
               <view
-                className={`task-list ${repositoryList ? "repository-task-list" : ""}`}
+                className={`task-list ${repositoryList ? "repository-task-list" : ""} ${page === "Proposals" ? "proposal-list" : ""}`}
               >
                 <scroll-view
                   className="rows"
@@ -527,6 +544,7 @@ export function LaneWorkspace({
                       label="Search title or description"
                       value={search}
                       onChange={setSearch}
+                      focus={active && searchFocusPending.current}
                     />
                     {mobile && (
                       <Choices
@@ -572,7 +590,9 @@ export function LaneWorkspace({
                       className={
                         repositoryList
                           ? "repository-query-band"
-                          : "default-task-controls"
+                          : page === "Proposals"
+                            ? "proposal-controls"
+                            : undefined
                       }
                     >
                       {repositoryList ? (
@@ -610,6 +630,27 @@ export function LaneWorkspace({
                             }
                           />
                         </view>
+                      ) : page === "Proposals" ? (
+                        <>
+                          <MenuChoices
+                            label="Proposal disposition"
+                            value={proposal}
+                            options={[
+                              [Proposal.UNSPECIFIED, "Pending proposals"],
+                              ...proposalOptions,
+                            ]}
+                            onChange={setProposal}
+                          />
+                          <MenuChoices
+                            label="Progress"
+                            value={progress}
+                            options={[
+                              [Progress.UNSPECIFIED, "All"],
+                              ...progressOptions,
+                            ]}
+                            onChange={setProgress}
+                          />
+                        </>
                       ) : (
                         <>
                           <Choices
@@ -625,35 +666,40 @@ export function LaneWorkspace({
                             label="Proposal filter"
                             value={proposal}
                             options={[
-                              [
-                                Proposal.UNSPECIFIED,
-                                page === "Proposals"
-                                  ? "Pending proposals"
-                                  : "All",
-                              ],
+                              [Proposal.UNSPECIFIED, "All"],
                               ...proposalOptions,
                             ]}
                             onChange={setProposal}
                           />
                         </>
                       )}
-                      <TaskFilters
-                        open={filtersOpen}
-                        setOpen={setFiltersOpen}
-                        filter={filter}
-                        setFilter={setFilter}
-                        errors={filterProblems}
-                        planning={planning}
-                        repositoryId={repository}
-                        repositoryNames={repositoryNames}
+                    </view>
+                    <TaskFilters
+                      open={filtersOpen}
+                      setOpen={setFiltersOpen}
+                      filter={filter}
+                      setFilter={setFilter}
+                      errors={filterProblems}
+                      planning={planning}
+                      repositoryId={repository}
+                      repositoryNames={repositoryNames}
+                      sortKey={sortKey}
+                      setSortKey={setSortKey}
+                      sortDirection={sortDirection}
+                      setSortDirection={setSortDirection}
+                      compact={repositoryList}
+                      active={active}
+                      separateSort={page === "Proposals"}
+                    />
+                    {page === "Proposals" && (
+                      <TaskSortControls
+                        compact
                         sortKey={sortKey}
                         setSortKey={setSortKey}
                         sortDirection={sortDirection}
                         setSortDirection={setSortDirection}
-                        compact={repositoryList}
-                        active={active}
                       />
-                    </view>
+                    )}
                     <view
                       className="task-results"
                       key={
@@ -664,6 +710,20 @@ export function LaneWorkspace({
                             : "populated"
                       }
                     >
+                      {page === "Proposals" && (
+                        <text
+                          className="result-announcement"
+                          accessibility-live-region="polite"
+                        >
+                          {filterInvalid
+                            ? "Fix filter values to update proposals."
+                            : loading
+                              ? "Loading proposals."
+                              : listError
+                                ? "Proposal list error."
+                                : "Proposals updated."}
+                        </text>
+                      )}
                       {filterInvalid ? (
                         <Notice>
                           Fix the highlighted filter values to update the list.
@@ -674,7 +734,9 @@ export function LaneWorkspace({
                       ) : listError && tasks.length === 0 ? (
                         <view className="empty">
                           <text className="heading">
-                            Tasks could not be loaded
+                            {page === "Proposals"
+                              ? "Proposals could not be loaded"
+                              : "Tasks could not be loaded"}
                           </text>
                           <text>{listError}</text>
                           <Button primary onClick={refresh}>
@@ -684,14 +746,22 @@ export function LaneWorkspace({
                       ) : tasks.length === 0 ? (
                         <view className="empty">
                           <text className="heading">
-                            {activeFilters || search
-                              ? "No tasks match"
-                              : "No tasks here yet"}
+                            {page === "Proposals"
+                              ? activeFilters || search || progress
+                                ? "No proposals match"
+                                : "No proposals here yet"
+                              : activeFilters || search
+                                ? "No tasks match"
+                                : "No tasks here yet"}
                           </text>
                           <text>
-                            {activeFilters || search
-                              ? "No task matches the search and filters. Change them or clear the filters."
-                              : "Create a task with a title, or change your filters."}
+                            {page === "Proposals"
+                              ? activeFilters || search || progress
+                                ? "Change the search or filters to find proposals."
+                                : "There are no proposals for this disposition. Change the filters to see other tasks."
+                              : activeFilters || search
+                                ? "No task matches the search and filters. Change them or clear the filters."
+                                : "Create a task with a title, or change your filters."}
                           </text>
                           {activeFilters > 0 && (
                             <Button onClick={() => setFilter(emptyFilter())}>
@@ -783,39 +853,83 @@ export function LaneWorkspace({
                               </view>
                             ) : (
                               <view
-                                className={`task-row ${draft?.id === r.version?.entityId ? "selected" : ""}`}
+                                className={`task-row ${page === "Proposals" ? "proposal-row" : ""} ${draft?.id === r.version?.entityId ? "selected" : ""}`}
                                 key={r.version?.entityId}
                               >
-                                <Button
-                                  onClick={() =>
-                                    onOpen({
-                                      kind: TabKind.Task,
-                                      taskId: r.version!.entityId,
-                                      repositoryId: repository,
-                                      label: t.title,
-                                    })
-                                  }
-                                >
-                                  {t.title}
-                                </Button>
-                                <text className="badge">
-                                  {
-                                    progressOptions.find(
-                                      ([v]) => v === t.progress,
-                                    )?.[1]
-                                  }
-                                </text>
-                                {t.proposal === Proposal.PENDING && (
-                                  <text className="badge">Proposal</text>
+                                {page === "Proposals" ? (
+                                  <>
+                                    <view className="proposal-row-main">
+                                      <Button
+                                        onClick={() =>
+                                          onOpen({
+                                            kind: TabKind.Task,
+                                            taskId: r.version!.entityId,
+                                            repositoryId: repository,
+                                            label: t.title,
+                                          })
+                                        }
+                                      >
+                                        {t.title}
+                                      </Button>
+                                      {conflicted(r) && (
+                                        <text className="badge">Conflict</text>
+                                      )}
+                                      <TaskMetadataLine
+                                        task={t}
+                                        lookup={lookup}
+                                        qualify={!repository}
+                                      />
+                                    </view>
+                                    <view className="proposal-row-states">
+                                      <text className="proposal-disposition">
+                                        {proposalOptions.find(
+                                          ([value]) => value === t.proposal,
+                                        )?.[1] ?? "Unknown disposition"}
+                                      </text>
+                                      <text className="proposal-progress">
+                                        <text accessibility-elements-hidden>
+                                          {progressSymbol(t.progress)}
+                                        </text>{" "}
+                                        {progressOptions.find(
+                                          ([value]) => value === t.progress,
+                                        )?.[1] ?? "Unknown progress"}
+                                      </text>
+                                    </view>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Button
+                                      onClick={() =>
+                                        onOpen({
+                                          kind: TabKind.Task,
+                                          taskId: r.version!.entityId,
+                                          repositoryId: repository,
+                                          label: t.title,
+                                        })
+                                      }
+                                    >
+                                      {t.title}
+                                    </Button>
+                                    <text className="badge">
+                                      {
+                                        progressOptions.find(
+                                          ([v]) => v === t.progress,
+                                        )?.[1]
+                                      }
+                                    </text>
+                                    {t.proposal === Proposal.PENDING && (
+                                      <text className="badge">Proposal</text>
+                                    )}
+                                    {conflicted(r) && (
+                                      <text className="badge">Conflict</text>
+                                    )}
+                                    <TaskMetadataLine
+                                      task={t}
+                                      lookup={lookup}
+                                      qualify={!repository}
+                                    />
+                                  </>
                                 )}
-                                {conflicted(r) && (
-                                  <text className="badge">Conflict</text>
-                                )}
-                                <TaskMetadataLine
-                                  task={t}
-                                  lookup={lookup}
-                                  qualify={!repository}
-                                />
                               </view>
                             );
                           })}
@@ -922,6 +1036,8 @@ export function LaneWorkspace({
               busyChanged={setPageBusy}
               adapter={adapter}
               items={repositories}
+              status={repositoryStatus}
+              loadError={repositoryError}
               planning={planning}
               refresh={refresh}
               select={(id) => {
@@ -977,6 +1093,23 @@ export function LaneWorkspace({
       </view>
     </view>
   );
+}
+
+function progressSymbol(progress: Progress): string {
+  switch (progress) {
+    case Progress.TODO:
+      return "○";
+    case Progress.IN_PROGRESS:
+      return "◐";
+    case Progress.BLOCKED:
+      return "!";
+    case Progress.DONE:
+      return "✓";
+    case Progress.CANCELED:
+      return "×";
+    default:
+      return "?";
+  }
 }
 
 // Compact planning metadata under a row; names are always text, color never alone.
