@@ -139,7 +139,7 @@ async function open() {
       [dialog()],
       (n) =>
         n.props.className === "notice" ||
-        n.props.className === "events-feedback",
+        n.props.className === "notice events-feedback",
     ).map(text);
   const selected = (option: string) =>
     /(^| )primary( |$)/.test(choice(option).props.className);

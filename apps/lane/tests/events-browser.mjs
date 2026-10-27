@@ -149,6 +149,10 @@ try {
   await fixture({ receivers: [], events: [], failReads: 1 });
   await button("Refresh events").click();
   await text("Simulated read failure", false).waitFor();
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Simulated read failure" })
+    .waitFor();
   assert.equal(await text("No events match these filters.").count(), 0);
   assert.equal(await text("No receivers for this repository.").count(), 0);
   await button("Refresh events").click();

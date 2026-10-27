@@ -190,14 +190,20 @@ export function Events({
         />
       </view>
       {error && !editing && !selected && !deleting && !secret && (
-        <text className="events-feedback" accessibility-live-region="polite">
+        <text
+          className="notice events-feedback"
+          accessibility-live-region="polite"
+        >
           {error}
         </text>
       )}
       <view className="events-section">
         <text className="events-section-title">Receiving settings</text>
         {receivers.length === 0 && view.loading && !view.receiversLoaded && (
-          <text className="events-feedback" accessibility-live-region="polite">
+          <text
+            className="notice events-feedback"
+            accessibility-live-region="polite"
+          >
             Loading receivers...
           </text>
         )}
@@ -278,13 +284,19 @@ export function Events({
       <view className="events-section">
         <text className="events-section-title">Retained events</text>
         {view.error && (
-          <text className="events-feedback" accessibility-live-region="polite">
+          <text
+            className="notice events-feedback"
+            accessibility-live-region="polite"
+          >
             {view.error} Use Refresh events to retry, or retry Load more events
             when available.
           </text>
         )}
         {events.length === 0 && view.loading && !view.eventsLoaded && (
-          <text className="events-feedback" accessibility-live-region="polite">
+          <text
+            className="notice events-feedback"
+            accessibility-live-region="polite"
+          >
             Loading events...
           </text>
         )}
@@ -321,12 +333,18 @@ export function Events({
           ))}
         </view>
         {detail.loading && !selected && (
-          <text className="events-feedback" accessibility-live-region="polite">
+          <text
+            className="notice events-feedback"
+            accessibility-live-region="polite"
+          >
             Loading event details...
           </text>
         )}
         {detail.error && !selected && (
-          <text className="events-feedback" accessibility-live-region="polite">
+          <text
+            className="notice events-feedback"
+            accessibility-live-region="polite"
+          >
             {detail.error} Select Inspect event to retry.
           </text>
         )}
@@ -339,7 +357,10 @@ export function Events({
               {view.error ? "Retry load more events" : "Load more events"}
             </Button>
             {view.loadingMore && (
-              <text accessibility-live-region="polite">
+              <text
+                className="notice events-feedback"
+                accessibility-live-region="polite"
+              >
                 Loading more events...
               </text>
             )}
@@ -376,7 +397,7 @@ export function Events({
           </Notice>
           {error && (
             <text
-              className="events-feedback"
+              className="notice events-feedback"
               accessibility-live-region="polite"
             >
               {error}
@@ -458,7 +479,7 @@ export function Events({
           </Button>
           {error && (
             <text
-              className="events-feedback"
+              className="notice events-feedback"
               accessibility-live-region="polite"
             >
               {error}
@@ -495,7 +516,7 @@ export function Events({
           <text className="events-section-title">Processing history</text>
           {detail.loading && (
             <text
-              className="events-feedback"
+              className="notice events-feedback"
               accessibility-live-region="polite"
             >
               Loading event details...
@@ -563,7 +584,7 @@ export function Events({
           </view>
           {(error || detail.error) && (
             <text
-              className="events-feedback"
+              className="notice events-feedback"
               accessibility-live-region="polite"
             >
               {error || detail.error}
@@ -605,7 +626,7 @@ export function Events({
           </Button>
           {error && (
             <text
-              className="events-feedback"
+              className="notice events-feedback"
               accessibility-live-region="polite"
             >
               {error}

@@ -366,6 +366,7 @@ text {
 }
 .events-feedback {
   color: #8a3b0e;
+  margin-bottom: 0;
 }
 .events-continuation {
   display: flex;
