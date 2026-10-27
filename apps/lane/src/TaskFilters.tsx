@@ -61,6 +61,7 @@ export function TaskFilters({
   const [filterButtonId] = useState(
     () => "filters-" + Math.random().toString(36).slice(2),
   );
+  const [openSortSelect, setOpenSortSelect] = useState<"key" | "direction">();
   useEffect(() => {
     "background only";
     if (focusRequest)
@@ -294,6 +295,10 @@ export function TaskFilters({
               options={sortKeyOptions}
               onChange={setSortKey}
               active={active}
+              open={openSortSelect === "key"}
+              onOpenChange={(nextOpen) =>
+                setOpenSortSelect(nextOpen ? "key" : undefined)
+              }
             />
             <CompactSelect
               label="Sort direction"
@@ -306,6 +311,10 @@ export function TaskFilters({
               onChange={setSortDirection}
               disabled={sortKey === TaskSortKey.UNSPECIFIED}
               active={active}
+              open={openSortSelect === "direction"}
+              onOpenChange={(nextOpen) =>
+                setOpenSortSelect(nextOpen ? "direction" : undefined)
+              }
             />
           </>
         ) : (

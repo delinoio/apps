@@ -106,6 +106,9 @@ export function LaneWorkspace({
   const [search, setSearch] = useState("");
   const [progress, setProgress] = useState<Progress>(Progress.UNSPECIFIED);
   const [proposal, setProposal] = useState<Proposal>(Proposal.UNSPECIFIED);
+  const [openRepositorySelect, setOpenRepositorySelect] = useState<
+    "progress" | "proposal"
+  >();
   const [filter, setFilter] = useState<FilterState>(emptyFilter);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortKey, setSortKey] = useState<TaskSortKey>(TaskSortKey.UNSPECIFIED);
@@ -583,6 +586,12 @@ export function LaneWorkspace({
                             ]}
                             onChange={setProgress}
                             active={active}
+                            open={openRepositorySelect === "progress"}
+                            onOpenChange={(open) =>
+                              setOpenRepositorySelect(
+                                open ? "progress" : undefined,
+                              )
+                            }
                           />
                           <CompactSelect
                             label="Proposal filter"
@@ -593,6 +602,12 @@ export function LaneWorkspace({
                             ]}
                             onChange={setProposal}
                             active={active}
+                            open={openRepositorySelect === "proposal"}
+                            onOpenChange={(open) =>
+                              setOpenRepositorySelect(
+                                open ? "proposal" : undefined,
+                              )
+                            }
                           />
                         </view>
                       ) : (

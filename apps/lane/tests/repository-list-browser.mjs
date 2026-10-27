@@ -100,6 +100,18 @@ try {
   );
 
   await button("Progress filter: All").click();
+  await button("Proposal filter: All").click();
+  assert.equal(await button("Progress filter: Blocked").count(), 0);
+  assert.equal(await button("Proposal filter: Pending").count(), 1);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.activeElement?.getAttribute("accessibility-label") ===
+      "Proposal filter: All",
+  );
+  await button("Progress filter: All").click();
   await button("Progress filter: Blocked").waitFor();
   assert.equal(await button("Progress filter: Blocked").count(), 1);
   await button("Progress filter: Blocked").click();

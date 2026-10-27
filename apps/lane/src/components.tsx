@@ -90,6 +90,8 @@ export function CompactSelect<T extends string | number>({
   onChange,
   disabled = false,
   active = true,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   label: string;
   value: T;
@@ -97,12 +99,19 @@ export function CompactSelect<T extends string | number>({
   onChange: (value: T) => void;
   disabled?: boolean;
   active?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
   const [triggerId] = useState(
     () => "select-" + Math.random().toString(36).slice(2),
   );
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
   const selected = options.find(([option]) => option === value)?.[1] ?? "";
   useEffect(() => {
     "background only";
