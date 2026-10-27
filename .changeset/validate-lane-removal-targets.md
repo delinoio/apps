@@ -1,8 +1,10 @@
 ---
+"@apps/lane": patch
+"@delinoio/lane": patch
 "@servers/lane-api": patch
 ---
 
-Validate explicit task relationship removal targets in the account transaction and reject deleted targets with NOT_FOUND.
+Validate explicit task relationship removal targets in the native, CLI and server transactions and reject deleted targets with NOT_FOUND.
 
 <!-- public-changelog:start -->
 
