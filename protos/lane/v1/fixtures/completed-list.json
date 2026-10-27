@@ -1,0 +1,2622 @@
+{
+  "formatVersion": 1,
+  "description": "Shared completed-list vectors. Each version is an immutable EntityVersion ProtoJSON value. Rows identify the existing selected projection and all unresolved heads; adapters preserve their own projection rules. Derive terminal entry from the full version graph, including parents outside a displayed history page. UNKNOWN is inclusive for duration selections. Requests are ListTasksRequest ProtoJSON. Evaluate completed and other filters before ordering and pagination. expected.pages splits the filtered order at page.size; cursor cases compare query, account and data-space scope, not an adapter cursor encoding.",
+  "queryInstant": "2026-10-28T12:00:00.000000Z",
+  "dataset": {
+    "versions": [
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000001",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000001",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "old done",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_HIGH"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000001",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000002",
+        "createdAt": "2026-10-27T11:59:59.999999Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "old done",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_HIGH"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000001"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000002",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000003",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "cutoff done",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000002",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000004",
+        "createdAt": "2026-10-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "cutoff done",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000003"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000003",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000005",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "new done",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000003",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000006",
+        "createdAt": "2026-10-27T12:00:00.000001Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "new done",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000005"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000004",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000007",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a002",
+          "title": "unknown missing",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_HIGH"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-0000000fffff"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000005",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000008",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a002",
+          "title": "future done",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_HIGH"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000005",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000009",
+        "createdAt": "2026-10-28T12:00:00.000001Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a002",
+          "title": "future done",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_HIGH"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000008"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000006",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000000a",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "far future",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000006",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000000b",
+        "createdAt": "2026-12-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "far future",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000000a"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000007",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000000c",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "old canceled",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000007",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000000d",
+        "createdAt": "2026-10-21T11:59:59.999999Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "old canceled",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000000c"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000008",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000000e",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a002",
+          "title": "cutoff canceled",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000008",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000000f",
+        "createdAt": "2026-10-21T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a002",
+          "title": "cutoff canceled",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000000e"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000009",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000010",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "new week canceled",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000009",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000011",
+        "createdAt": "2026-10-21T12:00:00.000001Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "new week canceled",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000010"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000a",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000012",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "old month done",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000a",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000013",
+        "createdAt": "2026-09-28T11:59:59.999999Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "old month done",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000012"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000b",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000014",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "month canceled",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000b",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000015",
+        "createdAt": "2026-09-28T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "month canceled",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000014"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000c",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000016",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "new month done",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000c",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000017",
+        "createdAt": "2026-09-28T12:00:00.000001Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "new month done",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000016"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000d",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000018",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "title edit",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_HIGH"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000d",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000019",
+        "createdAt": "2026-09-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "title edit",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_HIGH"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000018"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000d",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000001a",
+        "createdAt": "2026-10-28T11:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "title edit renamed",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_HIGH"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000019"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000e",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000001b",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "done to canceled",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000e",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000001c",
+        "createdAt": "2026-10-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "done to canceled",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000001b"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000e",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000001d",
+        "createdAt": "2026-10-28T00:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "done to canceled",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000001c"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000f",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000001e",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "canceled to done",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000f",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000001f",
+        "createdAt": "2026-10-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "canceled to done",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000001e"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000000f",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000020",
+        "createdAt": "2026-10-28T00:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "canceled to done",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000001f"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000010",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000021",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "recompleted",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000010",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000022",
+        "createdAt": "2026-10-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "recompleted",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000021"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000010",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000023",
+        "createdAt": "2026-10-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "recompleted",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000022"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000010",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000024",
+        "createdAt": "2026-10-28T11:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "recompleted",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000023"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000011",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000025",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi same",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000011",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000026",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi same",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000025"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000011",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000027",
+        "createdAt": "2026-10-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi same",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000026"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000011",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000028",
+        "createdAt": "2026-10-28T00:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi same",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000026"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000011",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000029",
+        "createdAt": "2026-10-28T11:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi same",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000027",
+          "019c0000-0000-7000-8002-000000000028"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000012",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000002a",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi distinct",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000012",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000002b",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi distinct",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000002a"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000012",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000002c",
+        "createdAt": "2026-10-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi distinct",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000002a"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000012",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000002d",
+        "createdAt": "2026-10-28T11:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi distinct",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000002b",
+          "019c0000-0000-7000-8002-00000000002c"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000013",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000002e",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi equal time distinct",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000013",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000002f",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi equal time distinct",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000002e"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000013",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000030",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi equal time distinct",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000002e"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000013",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000031",
+        "createdAt": "2026-10-28T11:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi equal time distinct",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000002f",
+          "019c0000-0000-7000-8002-000000000030"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000014",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000032",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi new",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000014",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000033",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi new",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000032"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000014",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000034",
+        "createdAt": "2026-10-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi new",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000032"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000014",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000035",
+        "createdAt": "2026-10-28T11:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi new",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000033",
+          "019c0000-0000-7000-8002-000000000034"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000015",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000036",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi mixed",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000015",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000037",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi mixed",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000036"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000015",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000038",
+        "createdAt": "2026-10-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi mixed",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000036"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000015",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000039",
+        "createdAt": "2026-10-28T11:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "multi mixed",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000037",
+          "019c0000-0000-7000-8002-000000000038"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000016",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000003a",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "conflict same",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000016",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000003b",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "conflict same",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000003a"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000016",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000003c",
+        "createdAt": "2026-10-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "conflict same",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000003b"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000016",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000003d",
+        "createdAt": "2026-10-28T00:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "conflict same",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000003b"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000017",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000003e",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "conflict active",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000017",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-00000000003f",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "conflict active",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000003e"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000017",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000040",
+        "createdAt": "2026-10-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "conflict active",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-00000000003e"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000018",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000041",
+        "createdAt": "2026-10-25T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "root done",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-000000000019",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000042",
+        "createdAt": "2026-10-27T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "root canceled",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000001a",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000043",
+        "createdAt": "2026-09-18T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "misleading neighbor",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000001a",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000044",
+        "createdAt": "2026-10-23T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "misleading neighbor",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000043"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000001a",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000045",
+        "createdAt": "2026-10-28T11:59:59.999999Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "misleading neighbor",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        },
+        "parentVersionIds": [
+          "019c0000-0000-7000-8002-000000000043"
+        ]
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000001b",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000046",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "active todo",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_HIGH"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000001c",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000047",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a002",
+          "title": "active in progress",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019c0000-0000-7000-8001-00000000001d",
+        "kind": "ENTITY_KIND_TASK",
+        "versionId": "019c0000-0000-7000-8002-000000000048",
+        "createdAt": "2026-10-26T12:00:00.000000Z",
+        "task": {
+          "repositoryId": "019c0000-0000-7000-8000-00000000a001",
+          "title": "active blocked",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR",
+          "priority": "TASK_PRIORITY_NORMAL"
+        }
+      }
+    ],
+    "rows": [
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000002",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000002"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000004",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000004"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000006",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000006"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000007",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000007"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000009",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000009"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000000b",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000000b"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000000d",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000000d"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000000f",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000000f"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000011",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000011"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000013",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000013"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000015",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000015"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000017",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000017"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000001a",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000001a"
+        ],
+        "displayedHistoryVersionIds": [
+          "019c0000-0000-7000-8002-00000000001a"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000001d",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000001d"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000020",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000020"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000024",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000024"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000029",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000029"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000002d",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000002d"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000031",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000031"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000035",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000035"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000039",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000039"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000003c",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000003c",
+          "019c0000-0000-7000-8002-00000000003d"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000003f",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000003f",
+          "019c0000-0000-7000-8002-000000000040"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000041",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000041"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000042",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000042"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000044",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000044"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000046",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000046"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000047",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000047"
+        ]
+      },
+      {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000048",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000048"
+        ]
+      }
+    ]
+  },
+  "entryCases": [
+    {
+      "id": "old-done",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000002",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000002"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-27T11:59:59.999999Z"
+      }
+    },
+    {
+      "id": "cutoff-done",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000004",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000004"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-27T12:00:00.000000Z"
+      }
+    },
+    {
+      "id": "new-done",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000006",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000006"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-27T12:00:00.000001Z"
+      }
+    },
+    {
+      "id": "unknown-missing",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000007",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000007"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_UNKNOWN"
+      }
+    },
+    {
+      "id": "future-done",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000009",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000009"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-28T12:00:00.000001Z"
+      }
+    },
+    {
+      "id": "far-future",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000000b",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000000b"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-12-27T12:00:00.000000Z"
+      }
+    },
+    {
+      "id": "old-canceled",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000000d",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000000d"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-21T11:59:59.999999Z"
+      }
+    },
+    {
+      "id": "cutoff-canceled",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000000f",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000000f"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-21T12:00:00.000000Z"
+      }
+    },
+    {
+      "id": "new-week-canceled",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000011",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000011"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-21T12:00:00.000001Z"
+      }
+    },
+    {
+      "id": "old-month-done",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000013",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000013"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-09-28T11:59:59.999999Z"
+      }
+    },
+    {
+      "id": "month-canceled",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000015",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000015"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-09-28T12:00:00.000000Z"
+      }
+    },
+    {
+      "id": "new-month-done",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000017",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000017"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-09-28T12:00:00.000001Z"
+      }
+    },
+    {
+      "id": "title-edit",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000001a",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000001a"
+        ],
+        "displayedHistoryVersionIds": [
+          "019c0000-0000-7000-8002-00000000001a"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-09-27T12:00:00.000000Z"
+      }
+    },
+    {
+      "id": "done-to-canceled",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000001d",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000001d"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-28T00:00:00.000000Z"
+      }
+    },
+    {
+      "id": "canceled-to-done",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000020",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000020"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-28T00:00:00.000000Z"
+      }
+    },
+    {
+      "id": "recompleted",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000024",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000024"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-28T11:00:00.000000Z"
+      }
+    },
+    {
+      "id": "multi-same",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000029",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000029"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-26T12:00:00.000000Z"
+      }
+    },
+    {
+      "id": "multi-distinct",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000002d",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000002d"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_UNKNOWN"
+      }
+    },
+    {
+      "id": "multi-equal-time-distinct",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000031",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000031"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_UNKNOWN"
+      }
+    },
+    {
+      "id": "multi-new",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000035",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000035"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-28T11:00:00.000000Z"
+      }
+    },
+    {
+      "id": "multi-mixed",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000039",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000039"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_UNKNOWN"
+      }
+    },
+    {
+      "id": "conflict-same",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000003c",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000003c",
+          "019c0000-0000-7000-8002-00000000003d"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-26T12:00:00.000000Z"
+      }
+    },
+    {
+      "id": "conflict-active",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-00000000003f",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-00000000003f",
+          "019c0000-0000-7000-8002-000000000040"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_UNKNOWN"
+      }
+    },
+    {
+      "id": "root-done",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000041",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000041"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-25T12:00:00.000000Z"
+      }
+    },
+    {
+      "id": "root-canceled",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000042",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000042"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-27T12:00:00.000000Z"
+      }
+    },
+    {
+      "id": "misleading-neighbor",
+      "input": {
+        "selectedVersionId": "019c0000-0000-7000-8002-000000000044",
+        "headVersionIds": [
+          "019c0000-0000-7000-8002-000000000044"
+        ]
+      },
+      "expected": {
+        "kind": "TERMINAL_ENTRY_KIND_KNOWN",
+        "enteredAt": "2026-10-23T12:00:00.000000Z"
+      }
+    }
+  ],
+  "listCases": [
+    {
+      "id": "omitted-preserves-all",
+      "input": {
+        "request": {
+          "page": {
+            "size": 5
+          }
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000001",
+          "019c0000-0000-7000-8001-000000000002",
+          "019c0000-0000-7000-8001-000000000003",
+          "019c0000-0000-7000-8001-000000000004",
+          "019c0000-0000-7000-8001-000000000005",
+          "019c0000-0000-7000-8001-000000000006",
+          "019c0000-0000-7000-8001-000000000007",
+          "019c0000-0000-7000-8001-000000000008",
+          "019c0000-0000-7000-8001-000000000009",
+          "019c0000-0000-7000-8001-00000000000a",
+          "019c0000-0000-7000-8001-00000000000b",
+          "019c0000-0000-7000-8001-00000000000c",
+          "019c0000-0000-7000-8001-00000000000d",
+          "019c0000-0000-7000-8001-00000000000e",
+          "019c0000-0000-7000-8001-00000000000f",
+          "019c0000-0000-7000-8001-000000000010",
+          "019c0000-0000-7000-8001-000000000011",
+          "019c0000-0000-7000-8001-000000000012",
+          "019c0000-0000-7000-8001-000000000013",
+          "019c0000-0000-7000-8001-000000000014",
+          "019c0000-0000-7000-8001-000000000015",
+          "019c0000-0000-7000-8001-000000000016",
+          "019c0000-0000-7000-8001-000000000017",
+          "019c0000-0000-7000-8001-000000000018",
+          "019c0000-0000-7000-8001-000000000019",
+          "019c0000-0000-7000-8001-00000000001a",
+          "019c0000-0000-7000-8001-00000000001b",
+          "019c0000-0000-7000-8001-00000000001c",
+          "019c0000-0000-7000-8001-00000000001d"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000001",
+            "019c0000-0000-7000-8001-000000000002",
+            "019c0000-0000-7000-8001-000000000003",
+            "019c0000-0000-7000-8001-000000000004",
+            "019c0000-0000-7000-8001-000000000005"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000006",
+            "019c0000-0000-7000-8001-000000000007",
+            "019c0000-0000-7000-8001-000000000008",
+            "019c0000-0000-7000-8001-000000000009",
+            "019c0000-0000-7000-8001-00000000000a"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000000b",
+            "019c0000-0000-7000-8001-00000000000c",
+            "019c0000-0000-7000-8001-00000000000d",
+            "019c0000-0000-7000-8001-00000000000e",
+            "019c0000-0000-7000-8001-00000000000f"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000010",
+            "019c0000-0000-7000-8001-000000000011",
+            "019c0000-0000-7000-8001-000000000012",
+            "019c0000-0000-7000-8001-000000000013",
+            "019c0000-0000-7000-8001-000000000014"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000015",
+            "019c0000-0000-7000-8001-000000000016",
+            "019c0000-0000-7000-8001-000000000017",
+            "019c0000-0000-7000-8001-000000000018",
+            "019c0000-0000-7000-8001-000000000019"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001a",
+            "019c0000-0000-7000-8001-00000000001b",
+            "019c0000-0000-7000-8001-00000000001c",
+            "019c0000-0000-7000-8001-00000000001d"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "none-excludes-all-terminal-before-page",
+      "input": {
+        "request": {
+          "page": {
+            "size": 1
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_NONE"
+          }
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-00000000001b",
+          "019c0000-0000-7000-8001-00000000001c",
+          "019c0000-0000-7000-8001-00000000001d"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-00000000001b"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001c"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001d"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "all-includes-known-and-unknown",
+      "input": {
+        "request": {
+          "page": {
+            "size": 7
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_ALL"
+          }
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000001",
+          "019c0000-0000-7000-8001-000000000002",
+          "019c0000-0000-7000-8001-000000000003",
+          "019c0000-0000-7000-8001-000000000004",
+          "019c0000-0000-7000-8001-000000000005",
+          "019c0000-0000-7000-8001-000000000006",
+          "019c0000-0000-7000-8001-000000000007",
+          "019c0000-0000-7000-8001-000000000008",
+          "019c0000-0000-7000-8001-000000000009",
+          "019c0000-0000-7000-8001-00000000000a",
+          "019c0000-0000-7000-8001-00000000000b",
+          "019c0000-0000-7000-8001-00000000000c",
+          "019c0000-0000-7000-8001-00000000000d",
+          "019c0000-0000-7000-8001-00000000000e",
+          "019c0000-0000-7000-8001-00000000000f",
+          "019c0000-0000-7000-8001-000000000010",
+          "019c0000-0000-7000-8001-000000000011",
+          "019c0000-0000-7000-8001-000000000012",
+          "019c0000-0000-7000-8001-000000000013",
+          "019c0000-0000-7000-8001-000000000014",
+          "019c0000-0000-7000-8001-000000000015",
+          "019c0000-0000-7000-8001-000000000016",
+          "019c0000-0000-7000-8001-000000000017",
+          "019c0000-0000-7000-8001-000000000018",
+          "019c0000-0000-7000-8001-000000000019",
+          "019c0000-0000-7000-8001-00000000001a",
+          "019c0000-0000-7000-8001-00000000001b",
+          "019c0000-0000-7000-8001-00000000001c",
+          "019c0000-0000-7000-8001-00000000001d"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000001",
+            "019c0000-0000-7000-8001-000000000002",
+            "019c0000-0000-7000-8001-000000000003",
+            "019c0000-0000-7000-8001-000000000004",
+            "019c0000-0000-7000-8001-000000000005",
+            "019c0000-0000-7000-8001-000000000006",
+            "019c0000-0000-7000-8001-000000000007"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000008",
+            "019c0000-0000-7000-8001-000000000009",
+            "019c0000-0000-7000-8001-00000000000a",
+            "019c0000-0000-7000-8001-00000000000b",
+            "019c0000-0000-7000-8001-00000000000c",
+            "019c0000-0000-7000-8001-00000000000d",
+            "019c0000-0000-7000-8001-00000000000e"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000000f",
+            "019c0000-0000-7000-8001-000000000010",
+            "019c0000-0000-7000-8001-000000000011",
+            "019c0000-0000-7000-8001-000000000012",
+            "019c0000-0000-7000-8001-000000000013",
+            "019c0000-0000-7000-8001-000000000014",
+            "019c0000-0000-7000-8001-000000000015"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000016",
+            "019c0000-0000-7000-8001-000000000017",
+            "019c0000-0000-7000-8001-000000000018",
+            "019c0000-0000-7000-8001-000000000019",
+            "019c0000-0000-7000-8001-00000000001a",
+            "019c0000-0000-7000-8001-00000000001b",
+            "019c0000-0000-7000-8001-00000000001c"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001d"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "last-24-hours-inclusive-and-future",
+      "input": {
+        "request": {
+          "page": {
+            "size": 3
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+            "cutoff": "2026-10-27T12:00:00.000000Z"
+          }
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000002",
+          "019c0000-0000-7000-8001-000000000003",
+          "019c0000-0000-7000-8001-000000000004",
+          "019c0000-0000-7000-8001-000000000005",
+          "019c0000-0000-7000-8001-000000000006",
+          "019c0000-0000-7000-8001-00000000000e",
+          "019c0000-0000-7000-8001-00000000000f",
+          "019c0000-0000-7000-8001-000000000010",
+          "019c0000-0000-7000-8001-000000000012",
+          "019c0000-0000-7000-8001-000000000013",
+          "019c0000-0000-7000-8001-000000000014",
+          "019c0000-0000-7000-8001-000000000015",
+          "019c0000-0000-7000-8001-000000000017",
+          "019c0000-0000-7000-8001-000000000019",
+          "019c0000-0000-7000-8001-00000000001b",
+          "019c0000-0000-7000-8001-00000000001c",
+          "019c0000-0000-7000-8001-00000000001d"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000002",
+            "019c0000-0000-7000-8001-000000000003",
+            "019c0000-0000-7000-8001-000000000004"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000005",
+            "019c0000-0000-7000-8001-000000000006",
+            "019c0000-0000-7000-8001-00000000000e"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000000f",
+            "019c0000-0000-7000-8001-000000000010",
+            "019c0000-0000-7000-8001-000000000012"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000013",
+            "019c0000-0000-7000-8001-000000000014",
+            "019c0000-0000-7000-8001-000000000015"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000017",
+            "019c0000-0000-7000-8001-000000000019",
+            "019c0000-0000-7000-8001-00000000001b"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001c",
+            "019c0000-0000-7000-8001-00000000001d"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "last-7-days-inclusive",
+      "input": {
+        "request": {
+          "page": {
+            "size": 4
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_LAST_7_DAYS",
+            "cutoff": "2026-10-21T12:00:00.000000Z"
+          }
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000001",
+          "019c0000-0000-7000-8001-000000000002",
+          "019c0000-0000-7000-8001-000000000003",
+          "019c0000-0000-7000-8001-000000000004",
+          "019c0000-0000-7000-8001-000000000005",
+          "019c0000-0000-7000-8001-000000000006",
+          "019c0000-0000-7000-8001-000000000008",
+          "019c0000-0000-7000-8001-000000000009",
+          "019c0000-0000-7000-8001-00000000000e",
+          "019c0000-0000-7000-8001-00000000000f",
+          "019c0000-0000-7000-8001-000000000010",
+          "019c0000-0000-7000-8001-000000000011",
+          "019c0000-0000-7000-8001-000000000012",
+          "019c0000-0000-7000-8001-000000000013",
+          "019c0000-0000-7000-8001-000000000014",
+          "019c0000-0000-7000-8001-000000000015",
+          "019c0000-0000-7000-8001-000000000016",
+          "019c0000-0000-7000-8001-000000000017",
+          "019c0000-0000-7000-8001-000000000018",
+          "019c0000-0000-7000-8001-000000000019",
+          "019c0000-0000-7000-8001-00000000001a",
+          "019c0000-0000-7000-8001-00000000001b",
+          "019c0000-0000-7000-8001-00000000001c",
+          "019c0000-0000-7000-8001-00000000001d"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000001",
+            "019c0000-0000-7000-8001-000000000002",
+            "019c0000-0000-7000-8001-000000000003",
+            "019c0000-0000-7000-8001-000000000004"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000005",
+            "019c0000-0000-7000-8001-000000000006",
+            "019c0000-0000-7000-8001-000000000008",
+            "019c0000-0000-7000-8001-000000000009"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000000e",
+            "019c0000-0000-7000-8001-00000000000f",
+            "019c0000-0000-7000-8001-000000000010",
+            "019c0000-0000-7000-8001-000000000011"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000012",
+            "019c0000-0000-7000-8001-000000000013",
+            "019c0000-0000-7000-8001-000000000014",
+            "019c0000-0000-7000-8001-000000000015"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000016",
+            "019c0000-0000-7000-8001-000000000017",
+            "019c0000-0000-7000-8001-000000000018",
+            "019c0000-0000-7000-8001-000000000019"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001a",
+            "019c0000-0000-7000-8001-00000000001b",
+            "019c0000-0000-7000-8001-00000000001c",
+            "019c0000-0000-7000-8001-00000000001d"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "last-30-days-inclusive",
+      "input": {
+        "request": {
+          "page": {
+            "size": 5
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_LAST_30_DAYS",
+            "cutoff": "2026-09-28T12:00:00.000000Z"
+          }
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000001",
+          "019c0000-0000-7000-8001-000000000002",
+          "019c0000-0000-7000-8001-000000000003",
+          "019c0000-0000-7000-8001-000000000004",
+          "019c0000-0000-7000-8001-000000000005",
+          "019c0000-0000-7000-8001-000000000006",
+          "019c0000-0000-7000-8001-000000000007",
+          "019c0000-0000-7000-8001-000000000008",
+          "019c0000-0000-7000-8001-000000000009",
+          "019c0000-0000-7000-8001-00000000000b",
+          "019c0000-0000-7000-8001-00000000000c",
+          "019c0000-0000-7000-8001-00000000000e",
+          "019c0000-0000-7000-8001-00000000000f",
+          "019c0000-0000-7000-8001-000000000010",
+          "019c0000-0000-7000-8001-000000000011",
+          "019c0000-0000-7000-8001-000000000012",
+          "019c0000-0000-7000-8001-000000000013",
+          "019c0000-0000-7000-8001-000000000014",
+          "019c0000-0000-7000-8001-000000000015",
+          "019c0000-0000-7000-8001-000000000016",
+          "019c0000-0000-7000-8001-000000000017",
+          "019c0000-0000-7000-8001-000000000018",
+          "019c0000-0000-7000-8001-000000000019",
+          "019c0000-0000-7000-8001-00000000001a",
+          "019c0000-0000-7000-8001-00000000001b",
+          "019c0000-0000-7000-8001-00000000001c",
+          "019c0000-0000-7000-8001-00000000001d"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000001",
+            "019c0000-0000-7000-8001-000000000002",
+            "019c0000-0000-7000-8001-000000000003",
+            "019c0000-0000-7000-8001-000000000004",
+            "019c0000-0000-7000-8001-000000000005"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000006",
+            "019c0000-0000-7000-8001-000000000007",
+            "019c0000-0000-7000-8001-000000000008",
+            "019c0000-0000-7000-8001-000000000009",
+            "019c0000-0000-7000-8001-00000000000b"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000000c",
+            "019c0000-0000-7000-8001-00000000000e",
+            "019c0000-0000-7000-8001-00000000000f",
+            "019c0000-0000-7000-8001-000000000010",
+            "019c0000-0000-7000-8001-000000000011"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000012",
+            "019c0000-0000-7000-8001-000000000013",
+            "019c0000-0000-7000-8001-000000000014",
+            "019c0000-0000-7000-8001-000000000015",
+            "019c0000-0000-7000-8001-000000000016"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000017",
+            "019c0000-0000-7000-8001-000000000018",
+            "019c0000-0000-7000-8001-000000000019",
+            "019c0000-0000-7000-8001-00000000001a",
+            "019c0000-0000-7000-8001-00000000001b"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001c",
+            "019c0000-0000-7000-8001-00000000001d"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "done-and-none-is-empty",
+      "input": {
+        "request": {
+          "page": {
+            "size": 2
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_NONE"
+          },
+          "progress": [
+            "PROGRESS_DONE"
+          ]
+        }
+      },
+      "expected": {
+        "taskIds": [],
+        "pages": [
+          []
+        ]
+      }
+    },
+    {
+      "id": "future-search-still-conjunctive",
+      "input": {
+        "request": {
+          "page": {
+            "size": 1
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+            "cutoff": "2026-10-27T12:00:00.000000Z"
+          },
+          "search": "future"
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000005",
+          "019c0000-0000-7000-8001-000000000006"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000005"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000006"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "priority-filter-still-conjunctive",
+      "input": {
+        "request": {
+          "page": {
+            "size": 2
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+            "cutoff": "2026-10-27T12:00:00.000000Z"
+          },
+          "filter": {
+            "priorities": [
+              "TASK_PRIORITY_HIGH"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000004",
+          "019c0000-0000-7000-8001-000000000005",
+          "019c0000-0000-7000-8001-00000000001b"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000004",
+            "019c0000-0000-7000-8001-000000000005"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001b"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "repository-filter-still-conjunctive",
+      "input": {
+        "request": {
+          "page": {
+            "size": 2
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+            "cutoff": "2026-10-27T12:00:00.000000Z"
+          },
+          "repositoryId": "019c0000-0000-7000-8000-00000000a002"
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000004",
+          "019c0000-0000-7000-8001-000000000005",
+          "019c0000-0000-7000-8001-00000000001c"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000004",
+            "019c0000-0000-7000-8001-000000000005"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001c"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "combined-filters-use-and",
+      "input": {
+        "request": {
+          "page": {
+            "size": 1
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+            "cutoff": "2026-10-27T12:00:00.000000Z"
+          },
+          "repositoryId": "019c0000-0000-7000-8000-00000000a002",
+          "search": "unknown",
+          "progress": [
+            "PROGRESS_DONE"
+          ],
+          "filter": {
+            "priorities": [
+              "TASK_PRIORITY_HIGH"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000004"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000004"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "proposal-filter-still-conjunctive",
+      "input": {
+        "request": {
+          "page": {
+            "size": 2
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+            "cutoff": "2026-10-27T12:00:00.000000Z"
+          },
+          "proposal": [
+            "PROPOSAL_PENDING"
+          ]
+        }
+      },
+      "expected": {
+        "taskIds": [],
+        "pages": [
+          []
+        ]
+      }
+    },
+    {
+      "id": "priority-sort-after-filter",
+      "input": {
+        "request": {
+          "page": {
+            "size": 4
+          },
+          "completed": {
+            "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+            "cutoff": "2026-10-27T12:00:00.000000Z"
+          },
+          "sortKey": "TASK_SORT_KEY_PRIORITY"
+        }
+      },
+      "expected": {
+        "taskIds": [
+          "019c0000-0000-7000-8001-000000000004",
+          "019c0000-0000-7000-8001-000000000005",
+          "019c0000-0000-7000-8001-00000000001b",
+          "019c0000-0000-7000-8001-000000000002",
+          "019c0000-0000-7000-8001-000000000003",
+          "019c0000-0000-7000-8001-000000000006",
+          "019c0000-0000-7000-8001-00000000000e",
+          "019c0000-0000-7000-8001-00000000000f",
+          "019c0000-0000-7000-8001-000000000010",
+          "019c0000-0000-7000-8001-000000000012",
+          "019c0000-0000-7000-8001-000000000013",
+          "019c0000-0000-7000-8001-000000000014",
+          "019c0000-0000-7000-8001-000000000015",
+          "019c0000-0000-7000-8001-000000000017",
+          "019c0000-0000-7000-8001-000000000019",
+          "019c0000-0000-7000-8001-00000000001c",
+          "019c0000-0000-7000-8001-00000000001d"
+        ],
+        "pages": [
+          [
+            "019c0000-0000-7000-8001-000000000004",
+            "019c0000-0000-7000-8001-000000000005",
+            "019c0000-0000-7000-8001-00000000001b",
+            "019c0000-0000-7000-8001-000000000002"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000003",
+            "019c0000-0000-7000-8001-000000000006",
+            "019c0000-0000-7000-8001-00000000000e",
+            "019c0000-0000-7000-8001-00000000000f"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000010",
+            "019c0000-0000-7000-8001-000000000012",
+            "019c0000-0000-7000-8001-000000000013",
+            "019c0000-0000-7000-8001-000000000014"
+          ],
+          [
+            "019c0000-0000-7000-8001-000000000015",
+            "019c0000-0000-7000-8001-000000000017",
+            "019c0000-0000-7000-8001-000000000019",
+            "019c0000-0000-7000-8001-00000000001c"
+          ],
+          [
+            "019c0000-0000-7000-8001-00000000001d"
+          ]
+        ]
+      }
+    }
+  ],
+  "invalidCases": [
+    {
+      "id": "duration-requires-cutoff",
+      "request": {
+        "page": {
+          "size": 3
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS"
+        }
+      }
+    },
+    {
+      "id": "none-rejects-cutoff",
+      "request": {
+        "page": {
+          "size": 3
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_NONE",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        }
+      }
+    },
+    {
+      "id": "all-rejects-cutoff",
+      "request": {
+        "page": {
+          "size": 3
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_ALL",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        }
+      }
+    },
+    {
+      "id": "present-unspecified-selection",
+      "request": {
+        "page": {
+          "size": 1
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_UNSPECIFIED"
+        }
+      }
+    },
+    {
+      "id": "unknown-selection",
+      "request": {
+        "page": {
+          "size": 1
+        },
+        "completed": {
+          "selection": 99
+        }
+      }
+    },
+    {
+      "id": "submicrosecond-cutoff",
+      "request": {
+        "page": {
+          "size": 3
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000001Z"
+        }
+      }
+    }
+  ],
+  "cursorCases": [
+    {
+      "id": "same-query-and-cutoff",
+      "first": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "resume": {
+        "page": {
+          "size": 5
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "firstAccountId": "account-a",
+      "resumeAccountId": "account-a",
+      "firstSpaceId": "space-a",
+      "resumeSpaceId": "space-a",
+      "valid": true
+    },
+    {
+      "id": "new-cutoff-after-reload",
+      "first": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "resume": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T13:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "firstAccountId": "account-a",
+      "resumeAccountId": "account-a",
+      "firstSpaceId": "space-a",
+      "resumeSpaceId": "space-a",
+      "valid": false
+    },
+    {
+      "id": "changed-selection",
+      "first": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "resume": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_7_DAYS",
+          "cutoff": "2026-10-21T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "firstAccountId": "account-a",
+      "resumeAccountId": "account-a",
+      "firstSpaceId": "space-a",
+      "resumeSpaceId": "space-a",
+      "valid": false
+    },
+    {
+      "id": "changed-search",
+      "first": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "resume": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "future"
+      },
+      "firstAccountId": "account-a",
+      "resumeAccountId": "account-a",
+      "firstSpaceId": "space-a",
+      "resumeSpaceId": "space-a",
+      "valid": false
+    },
+    {
+      "id": "changed-sort",
+      "first": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "resume": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done",
+        "sortKey": "TASK_SORT_KEY_PRIORITY"
+      },
+      "firstAccountId": "account-a",
+      "resumeAccountId": "account-a",
+      "firstSpaceId": "space-a",
+      "resumeSpaceId": "space-a",
+      "valid": false
+    },
+    {
+      "id": "changed-account",
+      "first": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "resume": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "firstAccountId": "account-a",
+      "resumeAccountId": "account-b",
+      "firstSpaceId": "space-a",
+      "resumeSpaceId": "space-a",
+      "valid": false
+    },
+    {
+      "id": "changed-data-space",
+      "first": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "resume": {
+        "page": {
+          "size": 2
+        },
+        "completed": {
+          "selection": "COMPLETED_SELECTION_LAST_24_HOURS",
+          "cutoff": "2026-10-27T12:00:00.000000Z"
+        },
+        "search": "done"
+      },
+      "firstAccountId": "account-a",
+      "resumeAccountId": "account-a",
+      "firstSpaceId": "space-a",
+      "resumeSpaceId": "space-b",
+      "valid": false
+    }
+  ]
+}

@@ -193,6 +193,34 @@ enum SortDirection {
   SORT_DIRECTION_DESCENDING = 2;
 }
 
+// A missing CompletedFilter preserves the existing unfiltered ListTasks behavior.
+enum CompletedSelection {
+  COMPLETED_SELECTION_UNSPECIFIED = 0;
+  COMPLETED_SELECTION_NONE = 1;
+  COMPLETED_SELECTION_LAST_24_HOURS = 2;
+  COMPLETED_SELECTION_LAST_7_DAYS = 3;
+  COMPLETED_SELECTION_LAST_30_DAYS = 4;
+  COMPLETED_SELECTION_ALL = 5;
+}
+
+// TerminalEntry is an evaluation result derived from immutable task versions.
+// It is never stored in a Task or EntityVersion.
+enum TerminalEntryKind {
+  TERMINAL_ENTRY_KIND_UNSPECIFIED = 0;
+  TERMINAL_ENTRY_KIND_KNOWN = 1;
+  TERMINAL_ENTRY_KIND_UNKNOWN = 2;
+}
+
+message TerminalEntry {
+  TerminalEntryKind kind = 1;
+  google.protobuf.Timestamp entered_at = 2; // present only for KNOWN
+}
+
+message CompletedFilter {
+  CompletedSelection selection = 1;
+  google.protobuf.Timestamp cutoff = 2; // required only for duration selections
+}
+
 message Origin {
   OriginKind kind = 1; // APP=1, CLI=2, MCP=3
   string device_id = 2;
@@ -469,6 +497,7 @@ message ListTasksRequest {
   TaskFilter filter = 6;
   TaskSortKey sort_key = 7;
   SortDirection sort_direction = 8;
+  CompletedFilter completed = 9;
 }
 
 message ListTasksResponse {
