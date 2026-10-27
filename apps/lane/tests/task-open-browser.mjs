@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Superseded task-detail reads against the test-only preview with held GetTask replies.
+// Tab-owned task-detail reads and retained save completions against the test-only preview with held GetTask replies.
 // Fixture evidence verifies the shared ReactLynx screens, not a real account or device.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -29,7 +29,38 @@ const control = async (query) =>
   (await fetch(`${base}/test/task-open?${query}`)).json();
 const release = (index, mode = "ok") => control(`release=${index}:${mode}`);
 const button = (page, name) => page.getByRole("button", { name, exact: true });
-const field = (page, name) => page.getByRole("textbox", { name, exact: true });
+const field = (page, name) =>
+  page
+    .locator('[data-active-tab="true"]')
+    .getByRole("textbox", { name, exact: true });
+const waitSelected = (page, id) =>
+  page.waitForFunction(
+    (id) =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") === id,
+    id,
+  );
+const openTask = async (page, name, id) => {
+  await button(page, name).click();
+  await waitSelected(page, `task-${id}`);
+};
+const newTask = async (page) => {
+  const previous = await page
+    .locator("#lane-root")
+    .getAttribute("data-selected-tab");
+  await button(page, "+ New task").click();
+  await page.waitForFunction(
+    (previous) =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") !== previous,
+    previous,
+  );
+  await field(page, "Title").waitFor();
+};
 // Polls the preview until the expected number of GetTask replies is being held.
 const waitHeld = async (count) => {
   for (let i = 0; i < 100; i++) {
@@ -61,8 +92,8 @@ async function scenario(run) {
 try {
   for (const outcome of ["ok", "fail"]) {
     await scenario(async (page, n) => {
-      await button(page, "Task A").click();
-      await button(page, "Task B").click();
+      await openTask(page, "Task A", idA);
+      await openTask(page, "Task B", "019a196d-0000-7000-8000-000000000021");
       await waitHeld(n + 2);
       await release(n + 1);
       await field(page, "Title").waitFor();
@@ -76,24 +107,36 @@ try {
         await field(page, "Description Markdown").inputValue(),
         "B unsaved description",
       );
-      assert.equal(await page.getByText("Read failed").count(), 0);
+      assert.equal(
+        await page
+          .locator('[data-active-tab="true"] .notice')
+          .filter({ hasText: "Read failed" })
+          .count(),
+        0,
+      );
       assert.equal(await page.getByRole("dialog").count(), 0);
     });
   }
   for (const outcome of ["ok", "fail"]) {
     await scenario(async (page, n) => {
-      await button(page, "Task A").click();
-      await button(page, "+ New task").click();
+      await openTask(page, "Task A", idA);
+      await newTask(page);
       await field(page, "Title").fill("New unsaved");
       await waitHeld(n + 1);
       await release(n, outcome);
       await settle(page);
       assert.equal(await field(page, "Title").inputValue(), "New unsaved");
-      assert.equal(await page.getByText("Read failed").count(), 0);
+      assert.equal(
+        await page
+          .locator('[data-active-tab="true"] .notice')
+          .filter({ hasText: "Read failed" })
+          .count(),
+        0,
+      );
     });
   }
   await scenario(async (page, n) => {
-    await button(page, "Task A").click();
+    await openTask(page, "Task A", idA);
     await waitHeld(n + 1);
     await button(page, "Settings").click();
     await release(n);
@@ -102,9 +145,9 @@ try {
     assert.equal(await button(page, "+ New task").count(), 0);
   });
   await scenario(async (page, n) => {
-    await button(page, "Task A").click();
+    await openTask(page, "Task A", idA);
     await waitHeld(n + 1);
-    await button(page, "Task B").click();
+    await openTask(page, "Task B", "019a196d-0000-7000-8000-000000000021");
     await waitHeld(n + 2);
     await release(n + 1);
     await field(page, "Title").waitFor();
@@ -114,43 +157,46 @@ try {
     assert.equal(await field(page, "Title").count(), 0);
   });
   await scenario(async (page, n) => {
-    await button(page, "Task A").click();
+    await openTask(page, "Task A", idA);
     await waitHeld(n + 1);
     await control(`title=${idA}:Task A newer`);
-    await button(page, "Task B").click();
+    await openTask(page, "Task B", "019a196d-0000-7000-8000-000000000021");
     await waitHeld(n + 2);
     // The preview sends no change notification for the title edit, so the list label
     // updates only when the sync watch reconnects and invalidates the list. That timing
     // is not deterministic: accept the label before or after the refresh.
     await page.getByRole("button", { name: /^Task A( newer)?$/ }).click();
-    await waitHeld(n + 3);
-    await release(n + 2);
-    await field(page, "Title").waitFor();
-    assert.equal(await field(page, "Title").inputValue(), "Task A newer");
-    await field(page, "Title").fill("Latest A unsaved");
+    // Selecting an already open task reuses its pending read, rather than
+    // creating a third editor/read that can compete with its retained draft.
+    assert.equal((await control("")).length, n + 2);
     await release(n);
+    await field(page, "Title").waitFor();
+    assert.equal(await field(page, "Title").inputValue(), "Task A");
+    await field(page, "Title").fill("Latest A unsaved");
     await release(n + 1);
     await settle(page);
     assert.equal(await field(page, "Title").inputValue(), "Latest A unsaved");
   });
   await scenario(async (page, n) => {
-    await button(page, "Task A").click();
+    await openTask(page, "Task A", idA);
     await waitHeld(n + 1);
     await release(n);
     await field(page, "Title").waitFor();
-    assert.equal(await field(page, "Title").inputValue(), "Task A");
     await field(page, "Title").fill("A edited");
-    await button(page, "Task B").click();
+    await openTask(page, "Task B", "019a196d-0000-7000-8000-000000000021");
+    await waitHeld(n + 2);
+    assert.equal(await page.getByRole("dialog").count(), 0);
     await page
-      .getByRole("dialog", { name: "Discard unsaved changes?" })
-      .waitFor();
-    await page.keyboard.press("Escape");
-    await page.getByRole("dialog").waitFor({ state: "hidden" });
+      .getByRole("tab", { name: "A edited, Unsaved changes", exact: true })
+      .click();
+    await settle(page);
     assert.equal(await field(page, "Title").inputValue(), "A edited");
-    assert.equal((await control("")).length, n + 1);
+    await release(n + 1);
+    await settle(page);
+    assert.equal(await field(page, "Title").inputValue(), "A edited");
   });
-  // Task saves whose editor ended before the reply arrived. SaveTask replies are
-  // held and released in an order chosen by the test.
+  // Saves remain owned by their mounted tab while another tab is selected.
+  // The single-editor lifetime edge cases also remain covered by Node tests.
   const saveControl = async (query) =>
     (await fetch(`${base}/test/save-hold?${query}`)).json();
   const waitSaves = async (count) => {
@@ -187,7 +233,7 @@ try {
   }
   // Opens A, edits it and submits a save that stays pending.
   const saveHeldA = async (page, n, title = "A edited") => {
-    await button(page, "Task A").click();
+    await openTask(page, "Task A", idA);
     await field(page, "Title").waitFor();
     await field(page, "Title").fill(title);
     await button(page, "Save").click();
@@ -195,24 +241,24 @@ try {
   };
   const discardEditor = async (page, leave) => {
     await button(page, leave).click();
-    await button(page, "Discard changes").click();
-    await page.getByRole("dialog").waitFor({ state: "hidden" });
-    await field(page, "Title").waitFor({ state: "detached" });
+    await waitSelected(page, "page-Tasks");
+    await field(page, "Title").waitFor({ state: "hidden" });
+    assert.equal(await page.getByRole("dialog").count(), 0);
   };
-  // The editor still holds unsaved input: leaving it must ask for confirmation.
   const assertDirtyEditor = async (page) => {
-    await button(page, "Back to list").click();
+    const title = await field(page, "Title").inputValue();
+    await button(page, `Close ${title}`).click();
     await page
       .getByRole("dialog", { name: "Discard unsaved changes?" })
       .waitFor();
     await button(page, "Keep editing").click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
   };
-  for (const leave of ["Back to list", "Cancel"]) {
+  for (const leave of ["Back to list"]) {
     await saveScenario(async (page, n) => {
       await saveHeldA(page, n);
       await discardEditor(page, leave);
-      await button(page, "+ New task").click();
+      await newTask(page);
       await field(page, "Title").fill("B unsaved");
       await field(page, "Description Markdown").fill("B unsaved description");
       await button(page, "Prompt").click();
@@ -236,7 +282,7 @@ try {
     await saveScenario(async (page, n) => {
       await saveHeldA(page, n);
       await discardEditor(page, leave);
-      await button(page, "Task B").click();
+      await openTask(page, "Task B", "019a196d-0000-7000-8000-000000000021");
       await field(page, "Title").waitFor();
       assert.equal(await field(page, "Title").inputValue(), "Task B");
       await field(page, "Title").fill("B unsaved");
@@ -250,11 +296,18 @@ try {
   await saveScenario(async (page, n) => {
     await saveHeldA(page, n, "A first edit");
     await discardEditor(page, "Back to list");
-    await button(page, "Task A").click();
+    await openTask(page, "Task A", idA);
     await field(page, "Title").waitFor();
-    assert.equal(await field(page, "Title").inputValue(), "Task A");
-    await field(page, "Title").fill("A second edit");
+    assert.equal(await field(page, "Title").inputValue(), "A first edit");
+    assert.equal(await isDisabled(button(page, "Saving…")), true);
+    assert.equal(
+      await isDisabled(button(page, "Cancel")),
+      true,
+      "Cancel cannot close a pending mutation",
+    );
     await saveControl(`release=${n}:ok`);
+    await button(page, "Save").waitFor();
+    await field(page, "Title").fill("A second edit");
     await settle(page);
     assert.equal(await field(page, "Title").inputValue(), "A second edit");
     await assertDirtyEditor(page);
@@ -319,23 +372,23 @@ try {
       assert.notEqual(after[n + 2].requestId, after[n + 1].requestId);
     });
   }
-  // Opening task B through the task list keeps A's editor on screen until B's read
-  // publishes. When that read fails or returns nothing, the proposal change that A
-  // submitted still completes in A instead of leaving the old proposal on screen.
+  // B owns its failure/empty state while A's pending proposal change finishes
+  // in A. Selecting A later reveals its updated proposal without losing ownership.
   for (const mode of ["fail", "empty"]) {
     await saveScenario(async (page, n) => {
-      await button(page, "Task A").click();
+      await openTask(page, "Task A", idA);
       await field(page, "Title").waitFor();
       await page.getByText("Proposal: Pending", { exact: false }).waitFor();
       await button(page, "Accept proposal").click();
       await waitSaves(n + 1);
       const held = (await control("")).length;
       await control("hold=1");
-      await button(page, "Task B").click();
+      await openTask(page, "Task B", "019a196d-0000-7000-8000-000000000021");
       await waitHeld(held + 1);
       await release(held, mode);
       await settle(page);
       await saveControl(`release=${n}:ok`);
+      await page.getByRole("tab", { name: "Task A", exact: true }).click();
       await page.getByText("Proposal: Accepted", { exact: false }).waitFor();
       assert.equal(await field(page, "Title").inputValue(), "Task A");
     });

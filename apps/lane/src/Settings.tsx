@@ -43,11 +43,18 @@ export function Settings({
   adapter,
   onReset,
   target,
+  stateChanged,
+  active: visible = true,
+  beforeDataChange,
 }: {
   adapter: LaneAdapter;
   onReset: () => void;
+  active?: boolean;
+  beforeDataChange?: () => Promise<boolean>;
+  stateChanged?: (dirty: boolean, busy: boolean, exitBusy: boolean) => void;
   target?: { section: SettingsSection; request: number };
 }) {
+  const revealedTarget = useRef<number | undefined>(undefined);
   const [deletion, setDeletion] = useState<{
     challengeId: string;
     ready: boolean;
@@ -92,6 +99,9 @@ export function Settings({
   const [operationBusy, setBusy] = useState(false);
   const [updateBusy, setUpdateBusy] = useState(false);
   const busy = operationBusy || updateBusy;
+  useEffect(() => {
+    stateChanged?.(prefsDirty.current, busy, operationBusy);
+  }, [prefs, busy, operationBusy]);
   const [confirm, setConfirm] = useState<
     null | "disconnect" | "local" | "server" | "everywhere" | "reconnect"
   >(null);
@@ -101,7 +111,8 @@ export function Settings({
   const [retention, setRetention] = useState<LocalRetention>(
     LocalRetention.KEEP_LOCAL,
   );
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (fn: () => Promise<void>, changesData = false) => {
+    if (changesData && beforeDataChange && !(await beforeDataChange())) return;
     setBusy(true);
     setError("");
     setMessage("");
@@ -148,7 +159,14 @@ export function Settings({
   }, [adapter]);
   useEffect(() => {
     "background only";
-    if (!target || adapter.mode === "web") return;
+    if (
+      !visible ||
+      !target ||
+      adapter.mode === "web" ||
+      revealedTarget.current === target.request
+    )
+      return;
+    revealedTarget.current = target.request;
     // Wait for layout before measuring; native acceptance is tracked per host.
     let active = true;
     const timer = setTimeout(() => {
@@ -214,18 +232,22 @@ export function Settings({
       active = false;
       clearTimeout(timer);
     };
-  }, [target, adapter]);
+  }, [target, adapter, visible]);
   return (
     <view
       className="section"
-      data-settings-target={target ? `${target.section}:${target.request}` : ""}
+      data-settings-target={
+        visible && target ? `${target.section}:${target.request}` : ""
+      }
     >
       <text className="heading">Settings</text>
-      <AppUpdates
-        settingsDirty={() => prefsDirty.current}
-        settingsBusy={operationBusy}
-        onBusyChange={setUpdateBusy}
-      />
+      {visible && (
+        <AppUpdates
+          settingsDirty={() => prefsDirty.current}
+          settingsBusy={operationBusy}
+          onBusyChange={setUpdateBusy}
+        />
+      )}
       <Button onClick={() => void run(load)}>Refresh settings</Button>
       {error && <Notice>{error}</Notice>}
       {message && <Notice>{message}</Notice>}
@@ -308,7 +330,7 @@ export function Settings({
                 setMessage(
                   "Complete browser approval, then refresh. Retained data from other accounts stays separate.",
                 );
-              });
+              }, true);
             }}
           >
             {adapter.mode === "native"
@@ -502,6 +524,8 @@ export function Settings({
         <ResetDevelopmentDialog
           onClose={() => setResetOpen(false)}
           onConfirm={async () => {
+            if (beforeDataChange && !(await beforeDataChange()))
+              throw new Error("Data reset cancelled. Your input is retained.");
             await adapter.local("ResetDevelopmentData", { confirmed: true });
             setResetOpen(false);
             onReset();
@@ -535,7 +559,7 @@ export function Settings({
                 deletionRef.current = undefined;
                 setDeletion(undefined);
                 onReset();
-              })
+              }, true)
             }
           >
             Delete now
@@ -658,7 +682,7 @@ export function Settings({
                   );
                   setConfirm(null);
                 }
-              })
+              }, true)
             }
           >
             {confirm === "server" || confirm === "everywhere"

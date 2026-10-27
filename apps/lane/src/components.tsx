@@ -11,6 +11,7 @@ export function Button({
   expanded,
   label,
   swatch,
+  focusOnShow = false,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -23,10 +24,23 @@ export function Button({
   label?: string;
   // Decorative color next to the text; the name always stays visible.
   swatch?: string;
+  focusOnShow?: boolean;
 }) {
+  const [id] = useState(() => "button-" + Math.random().toString(36).slice(2));
+  useEffect(() => {
+    "background only";
+    if (focusOnShow)
+      lynx
+        .createSelectorQuery()
+        .select(`#${id}`)
+        .invoke({ method: "setFocus", params: { focus: true } })
+        .exec();
+  }, [focusOnShow, id]);
   const selected = pressed ?? primary;
   return (
     <view
+      id={id}
+      data-dialog-default={focusOnShow ? "true" : undefined}
       className={`button ${primary || pressed ? "primary" : ""} ${disabled ? "disabled" : ""}`}
       data-pressed={pressed === undefined ? undefined : String(pressed)}
       data-expanded={expanded === undefined ? undefined : String(expanded)}

@@ -210,12 +210,16 @@ try {
       0,
     );
     assert.equal(
-      await page.getByText("Online account", { exact: true }).count(),
+      await page
+        .getByText("Online account", { exact: true })
+        .filter({ visible: true })
+        .count(),
       0,
     );
     assert.equal(
       await page
         .getByText("Notifications on this device", { exact: true })
+        .filter({ visible: true })
         .count(),
       0,
     );
@@ -296,9 +300,10 @@ try {
     await title.waitFor();
     await title.fill("Unsaved rail draft");
     await page.waitForTimeout(150);
-    // Request app switching through the rail so the discard guard opens.
+    // Closing the edited workspace opens the root guard. App switching keeps
+    // the tab and its draft, so it no longer needs a discard confirmation.
     if (viewport.height < 400) await scrollRail("start");
-    await button("Pace").click();
+    await button("Close Unsaved rail draft").click();
     const discard = dialogHeading("Discard unsaved changes?");
     await discard.waitFor();
     await assertAllRailControlsCovered(`Discard dialog, ${viewport.label}`);
@@ -317,10 +322,12 @@ try {
     await discard.waitFor({ state: "detached" });
     assert.equal(await title.inputValue(), "Unsaved rail draft");
     await assertLaneSelected();
-    // Explicit confirmation still performs the existing navigation.
-    await button("Account & sync").click();
+    // Explicit confirmation closes the edited tab; utility navigation remains
+    // usable after the overlay releases the app rail.
+    await button("Close Unsaved rail draft").click();
     await discard.waitFor();
     await button("Discard changes").click();
+    await button("Account & sync").click();
     await page.getByText("Online account", { exact: true }).waitFor();
     await button("Lane").click();
     await releaseRailTooltip();

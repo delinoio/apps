@@ -69,6 +69,9 @@ const resetCalls = async () =>
 try {
   await page.goto(base);
   await button("+ New task").waitFor();
+  await button("+ New task").click();
+  const draftTitle = page.getByRole("textbox", { name: "Title", exact: true });
+  await draftTitle.fill("Retain this hidden draft");
   await button("Settings").first().click();
   await page.getByText("Development data", { exact: true }).waitFor();
 
@@ -105,6 +108,31 @@ try {
   await page.waitForTimeout(300);
   assert.notEqual(await confirm.getAttribute("aria-disabled"), "true");
   await confirm.click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?", exact: true })
+    .waitFor();
+  await button("Keep editing").click();
+  await page
+    .getByText("Data reset cancelled. Your input is retained.", {
+      exact: false,
+    })
+    .waitFor();
+  assert.deepEqual(
+    await resetCalls(),
+    [],
+    "cancel preserves every tab and performs no reset",
+  );
+  assert.equal(
+    await page
+      .getByRole("textbox", { name: "Title", exact: true, includeHidden: true })
+      .inputValue(),
+    "Retain this hidden draft",
+  );
+  await confirm.click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?", exact: true })
+    .waitFor();
+  await button("Discard changes").click();
   await page
     .getByText("Reset development data?", { exact: true })
     .waitFor({ state: "detached" });
@@ -161,6 +189,10 @@ try {
   assert.deepEqual(unopened, [
     { method: "ResetDevelopmentData", request: { confirmed: true } },
   ]);
+} catch (error) {
+  await page.screenshot({ path: "/tmp/lane-reset-failure.png" });
+  console.error(errors);
+  throw error;
 } finally {
   await browser.close();
   server.kill();

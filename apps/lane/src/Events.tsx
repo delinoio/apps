@@ -24,6 +24,8 @@ export function Events({
   repositories,
   revision,
   openTask,
+  stateChanged,
+  active = true,
 }: {
   adapter: LaneAdapter;
   repositories: EntityResult[];
@@ -31,6 +33,8 @@ export function Events({
   // first page of the active query; Events keeps its identity and local state.
   revision: number;
   openTask: (id: string) => void;
+  active?: boolean;
+  stateChanged?: (dirty: boolean, busy: boolean) => void;
 }) {
   const [view, setView] = useState<EventsView>(emptyEventsView);
   const { receivers, events, cursor, cursorKey } = view;
@@ -60,6 +64,9 @@ export function Events({
   // A pending current inspection also blocks mutations, as before; obsolete
   // inspections never reach this state.
   const busy = mutating || detail.loading;
+  useEffect(() => {
+    stateChanged?.(!!editing, mutating || savingReceiver);
+  }, [editing, mutating, savingReceiver]);
   const run = async (fn: () => Promise<void>) => {
     setMutating(true);
     setError("");
@@ -105,6 +112,11 @@ export function Events({
       if (reader.current === owned) reader.current = undefined;
     };
   }, [adapter]);
+  useEffect(() => {
+    // A tab retains its list and receiver draft, but an inspection requested
+    // before leaving must not open a surprise dialog when the tab returns.
+    if (!active) reader.current?.close();
+  }, [active]);
   const closeDetail = () => reader.current?.close();
   const load = async () => {
     await loader.current?.refresh();

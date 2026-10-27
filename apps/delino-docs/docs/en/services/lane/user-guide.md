@@ -12,6 +12,25 @@ Use repository lists or the all-repository list, filter by progress or proposal 
 
 The CLI provides `repository list/get/create/edit/delete`, `task list/get/create/edit/delete`, `task progress`, `task accept`, `task reject`, and `task move`, plus `label`, `milestone`, and `cycle` for repository planning items. Run command help for the required arguments. Mutations accept `--request-id <uuid>`; keep the returned ID for retries. Edits require `--expected-version <uuid>` from a current read. Reusing a request ID with different content fails.
 
+## Work in tabs
+
+Open tasks, pages and repository lists in separate tabs. Each tab keeps its own
+sidebar selection, list filters, scroll position and unsaved task input. Selecting
+an already open task returns to its tab. **New task** opens a separate draft;
+**+** in the tab strip opens the page and repository picker. Use the open-tabs
+menu to find a complete title or reach a tab outside the visible strip.
+
+Switching tabs does not save or discard edits. A dot marks unsaved changes. Use
+**Save** to keep them. Closing an edited tab asks whether to discard changes or
+keep editing; a tab cannot close while its save is running. **Back to list**
+returns to the list while keeping the task tab. **Cancel** closes the task tab
+through the same unsaved-change confirmation. Tabs and unsaved input are not
+restored after a restart or synchronized to another device.
+
+The app icon rail stays outside the tabs. Each tab includes its sidebar and page.
+On narrow screens, scroll the tab strip or use the open-tabs menu. Left/Right
+and Home/End move keyboard focus between tabs; Enter or Space selects one.
+
 ## Save, history, and prompts
 
 App edits require **Save**. An explicit CLI edit saves as one command/version. Descriptions and prompts are Markdown source; embedded HTML does not execute and automatic image loading is limited to HTTPS. You can edit and copy the source.

@@ -16,6 +16,7 @@ import { DesktopUpdater } from "./updater.mjs";
 import { RealQA } from "./realqa.mjs";
 import { connectChrome } from "./realqa-chrome.mjs";
 import { homedir } from "node:os";
+import { WorkspaceExit } from "./workspace-exit.mjs";
 import { realQASmoke } from "./realqa-smoke.mjs";
 
 const resources = dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,7 @@ const native = require("./lane_host.node");
 let window, windowSession, tray, poller, composer, realqa, updater;
 let captureWindows = [];
 let pendingCommandPalette = false;
+let workspaceExit = new WorkspaceExit();
 const pendingRealQA = [];
 const emitRealQA = (name, value) => {
   if (
@@ -44,6 +46,20 @@ const facade = (kind) => ({
   store: native.store,
   host: {
     ...native.host,
+    workspace: (raw, reply) => {
+      if (kind !== "main") {
+        reply(unavailable);
+        return;
+      }
+      try {
+        const action = workspaceExit.update(raw);
+        reply(JSON.stringify({ ok: true }));
+        if (action === "quit") app.quit();
+        else if (action === "close") window?.close();
+      } catch {
+        reply(unavailable);
+      }
+    },
     realqa: (raw, reply) => void realqa.invoke(raw, kind).then(reply),
     update: (action, reply) => {
       if (
@@ -152,11 +168,19 @@ function showWindow() {
       () => event.sendReply(unavailable),
     );
   });
+  owner.on("close", (event) => {
+    if (!quitting && !workspaceExit.request("close")) {
+      event.preventDefault();
+      log("lane_window_close_deferred");
+      owner.sendGlobalEvent("lane.workspace.exitRequested", {});
+    }
+  });
   window.on("focus", () => runControl("resume"));
   window.on("closed", () => {
     updater?.cancel();
     session.retire();
     if (window === owner) {
+      workspaceExit = new WorkspaceExit();
       window = undefined;
       windowSession = undefined;
       runControl("viewClosed");
@@ -261,6 +285,12 @@ app.on("before-quit", (event) => {
   if (!started || quitting) return;
   event.preventDefault();
   if (stopping) return;
+  if (window && !window.isDestroyed() && !workspaceExit.request("quit")) {
+    showWindow();
+    log("lane_quit_deferred");
+    window.sendGlobalEvent("lane.workspace.exitRequested", {});
+    return;
+  }
   stopping = true;
   updater?.cancel();
   // Keep event pumping active while native workers finish their UI callbacks.
@@ -304,7 +334,12 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
         config,
         restart: () => app.quit(),
         canRestart: () =>
-          !realqa?.draft && !stopping && !!window && !window.isDestroyed(),
+          !realqa?.draft &&
+          !workspaceExit.dirty &&
+          !workspaceExit.busy &&
+          !stopping &&
+          !!window &&
+          !window.isDestroyed(),
         log: (event) => console.info(JSON.stringify(event)),
       });
       const dataRoot =

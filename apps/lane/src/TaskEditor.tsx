@@ -57,6 +57,8 @@ export function TaskEditor({
   openTask,
   beginCompletion,
   onClose,
+  onBack,
+  busyChanged,
 }: {
   adapter: LaneAdapter;
   draft: Draft;
@@ -65,17 +67,22 @@ export function TaskEditor({
   repositories: EntityResult[];
   planning: PlanningState;
   revision: number;
-  // Opens a related task through the shared unsaved-change confirmation.
+  // Opens a related task in its own workspace tab.
   openTask: (id: string) => void;
   // Binds a mutation to the editor lifetime that submits it. Every mutation result
   // goes through the returned completion so a late result from an ended editor
   // cannot replace, clean, reopen or close another editor.
   beginCompletion: () => EditorCompletion<EntityResult>;
   onClose: () => void;
+  onBack?: () => void;
+  busyChanged?: (busy: boolean) => void;
 }) {
   const [tab, setTab] = useState("Description");
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    busyChanged?.(busy);
+  }, [busy, busyChanged]);
   const [error, setError] = useState("");
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [history, setHistory] = useState<EntityVersion[] | null>(null);
@@ -299,7 +306,7 @@ export function TaskEditor({
         <text className="heading">
           {draft.base ? "Task details" : "New task"}
         </text>
-        <Button onClick={onClose}>Back to list</Button>
+        <Button onClick={onBack ?? onClose}>Back to list</Button>
       </view>
       <scroll-view className="editor-body" scroll-orientation="vertical">
         {draft.external && (
@@ -572,7 +579,9 @@ export function TaskEditor({
             Compare conflict
           </Button>
         )}
-        <Button onClick={onClose}>Cancel</Button>
+        <Button disabled={busy} onClick={onClose}>
+          Cancel
+        </Button>
         <Button primary disabled={busy || readOnly} onClick={() => void save()}>
           {busy ? "Saving…" : error ? "Retry Save" : "Save"}
         </Button>

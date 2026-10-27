@@ -102,6 +102,7 @@ try {
         ["App settings", "Notifications on this device"],
       ]) {
         await appButton(miniApp).click();
+        await page.waitForTimeout(100);
         assert.equal(await page.locator(".app-switch").count(), 3);
         assert.equal(await page.locator(".app-utility").count(), 2);
         const button = appButton(utility);
@@ -163,6 +164,13 @@ try {
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await appButton("All tasks").click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") === "page-Tasks",
+  );
   await appButton("Improve empty states").click();
   const utilityDraft = page.getByRole("textbox", {
     name: "Title",
@@ -171,19 +179,46 @@ try {
   for (const utility of ["Account & sync", "App settings"]) {
     await utilityDraft.fill("Keep this utility draft");
     await appButton(utility).click();
-    await appButton("Keep editing").click();
-    assert.equal(await utilityDraft.inputValue(), "Keep this utility draft");
-    await appButton(utility).click();
-    await appButton("Discard changes").click();
+    assert.equal(
+      await page
+        .getByRole("dialog", { name: "Discard unsaved changes?" })
+        .count(),
+      0,
+    );
     await settingsFocus(
       utility === "Account & sync"
         ? "Online account"
         : "Notifications on this device",
     );
     await appButton("All tasks").click();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector("lynx-view")
+          .shadowRoot.querySelector("#lane-root")
+          .getAttribute("data-selected-tab") === "page-Tasks",
+    );
     await appButton("Improve empty states").click();
+    await page
+      .getByRole("tab", {
+        name: "Keep this utility draft, Unsaved changes",
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(await utilityDraft.inputValue(), "Keep this utility draft");
   }
+  await page
+    .getByRole("button", { name: "Close Keep this utility draft", exact: true })
+    .click();
+  await appButton("Discard changes").click();
   await appButton("All tasks").click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") === "page-Tasks",
+  );
   await search.fill("preserved filter");
   await appButton("Pace").click();
   await page.getByText("Pace is not available yet.", { exact: true }).waitFor();
@@ -211,8 +246,12 @@ try {
     const layout = await page.locator("lynx-view").evaluate((view) => {
       const root = view.shadowRoot;
       const rail = root.querySelector(".app-rail").getBoundingClientRect();
-      const nav = root.querySelector(".navigation").getBoundingClientRect();
-      const content = root.querySelector(".workspace").getBoundingClientRect();
+      const nav = root
+        .querySelector(".app-content:not(.lane-tab-content) .navigation")
+        .getBoundingClientRect();
+      const content = root
+        .querySelector(".app-content:not(.lane-tab-content) .workspace")
+        .getBoundingClientRect();
       const button = root
         .querySelector(".coming-soon .button")
         .getBoundingClientRect();
@@ -236,6 +275,7 @@ try {
   await search.fill("");
   await appButton("Improve empty states").waitFor();
   await page
+    .locator('[data-active-tab="true"]')
     .getByText("Loading…", { exact: true })
     .waitFor({ state: "hidden" });
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -243,8 +283,12 @@ try {
   await page
     .locator("lynx-view")
     .evaluate((view) => view.sendGlobalEvent("lane.onlineChanged", [{}]));
-  await page.getByText("No tasks here yet", { exact: true }).waitFor();
   await page
+    .locator('[data-active-tab="true"]')
+    .getByText("No tasks here yet", { exact: true })
+    .waitFor();
+  await page
+    .locator('[data-active-tab="true"]')
     .getByText("Loading…", { exact: true })
     .waitFor({ state: "hidden" });
   assert.equal(
@@ -253,7 +297,13 @@ try {
       .count(),
     0,
   );
-  assert.equal(await page.getByText("Loading…", { exact: true }).count(), 0);
+  assert.equal(
+    await page
+      .locator('[data-active-tab="true"]')
+      .getByText("Loading…", { exact: true })
+      .count(),
+    0,
+  );
   await page.request.get("http://127.0.0.1:46400/test/empty-list?enabled=0");
   await page
     .locator("lynx-view")
@@ -262,7 +312,10 @@ try {
     .getByRole("button", { name: "Improve empty states", exact: true })
     .waitFor();
   assert.equal(
-    await page.getByText("No tasks here yet", { exact: true }).count(),
+    await page
+      .locator('[data-active-tab="true"]')
+      .getByText("No tasks here yet", { exact: true })
+      .count(),
     0,
   );
   await page
@@ -274,11 +327,10 @@ try {
   await title.fill("Unsaved local title");
   await page.waitForTimeout(150);
   await appButton("Pace").click();
-  await page
-    .getByRole("dialog", { name: "Discard unsaved changes?" })
-    .waitFor();
-  await page.keyboard.press("Escape");
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByText("Pace is not available yet.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("dialog").count(), 0);
+  await appButton("Lane").click();
+  await title.waitFor();
   assert.equal(await title.inputValue(), "Unsaved local title");
   assert.equal(await appButton("Lane").getAttribute("aria-pressed"), "true");
   await page.request.get("http://127.0.0.1:46400/test/external");
@@ -315,12 +367,30 @@ try {
   assert.ok(await title.isVisible());
   await page.screenshot({ path: join(evidence, "mobile-editor.png") });
   await page.getByRole("button", { name: "Back to list", exact: true }).click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") === "page-Tasks",
+  );
+  assert.equal(await page.getByRole("dialog").count(), 0);
+  await page
+    .getByRole("button", { name: "Close Unsaved local title", exact: true })
+    .click();
   await page
     .getByRole("dialog", { name: "Discard unsaved changes?" })
     .waitFor();
   await page.getByRole("button", { name: "Keep editing", exact: true }).click();
-  assert.equal(await title.inputValue(), "Unsaved local title");
-  await page.getByRole("button", { name: "Back to list", exact: true }).click();
+  assert.equal(
+    await page
+      .getByRole("textbox", { name: "Title", exact: true, includeHidden: true })
+      .inputValue(),
+    "Unsaved local title",
+  );
+  await page
+    .getByRole("button", { name: "Close Unsaved local title", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Discard changes", exact: true })
     .click();
@@ -331,13 +401,15 @@ try {
     await page.waitForTimeout(150);
     const layout = await page.locator("lynx-view").evaluate((view) => {
       const root = view.shadowRoot;
-      const fields = [...root.querySelectorAll(".task-list .field")].map(
-        (e) => {
-          const r = e.getBoundingClientRect();
-          return { top: r.top, bottom: r.bottom };
-        },
-      );
-      const tabs = [...root.querySelectorAll(".nav-items .button")].map((e) => {
+      const fields = [
+        ...root.querySelectorAll('[data-active-tab="true"] .task-list .field'),
+      ].map((e) => {
+        const r = e.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom };
+      });
+      const tabs = [
+        ...root.querySelectorAll('[data-active-tab="true"] .nav-items .button'),
+      ].map((e) => {
         const r = e.getBoundingClientRect();
         return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
       });

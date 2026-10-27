@@ -53,7 +53,7 @@ async function openDirtyTask(viewport, dirty = true) {
   await field(page, "Prompt Markdown").fill(retained.prompt);
   return { page, context };
 }
-// The draft is intact and still dirty: leaving the editor asks to discard it.
+// The draft is intact and still dirty: closing its tab asks to discard it.
 async function assertDraftRetained(page) {
   await button(page, "Description").click();
   assert.equal(await field(page, "Title").inputValue(), retained.title);
@@ -62,11 +62,23 @@ async function assertDraftRetained(page) {
     retained.description,
   );
   await button(page, "Prompt").click();
+  // The shared multiline control receives its new value after the subtab label.
+  await page.waitForFunction(
+    (value) =>
+      [
+        ...document
+          .querySelector("lynx-view")
+          .shadowRoot.querySelectorAll("x-textarea"),
+      ].some(
+        (host) => host.shadowRoot?.querySelector("textarea")?.value === value,
+      ),
+    retained.prompt,
+  );
   assert.equal(
     await field(page, "Prompt Markdown").inputValue(),
     retained.prompt,
   );
-  await button(page, "Cancel").click();
+  await button(page, `Close ${retained.title}`).click();
   await page
     .getByRole("dialog", { name: "Discard unsaved changes?" })
     .waitFor();

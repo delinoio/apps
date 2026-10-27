@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "@lynx-js/react";
 import {
   CaptureService,
+  LaneService,
   ResultKind,
   type EntityResult,
 } from "@repo/protos/lane/v1/lane_pb";
@@ -29,13 +30,12 @@ import {
 export function CaptureComposer({
   controller,
   adapter,
-  repositories,
 }: {
   controller: RealQAController;
   adapter?: LaneAdapter;
-  repositories: UI<EntityResult>[];
 }) {
   const draft = controller.state?.draft;
+  const [repositories, setRepositories] = useState<UI<EntityResult>[]>([]);
   const [selected, setSelected] = useState("");
   const [narrow, setNarrow] = useState(false);
   const [rules, setRules] =
@@ -61,7 +61,22 @@ export function CaptureComposer({
   useEffect(() => {
     if (!adapter) return;
     let active = true;
-    const load = async () => {
+    const loadRepositories = async () => {
+      // Composer windows replace the tab tree, so their repository choices must
+      // be loaded by the composer rather than by a retained Lane workspace.
+      const repositoryResults: UI<EntityResult>[] = [];
+      let repositoryCursor = "";
+      do {
+        const r = await adapter.call(LaneService.method.listRepositories, {
+          page: { size: 100, cursor: repositoryCursor },
+        });
+        if (!active) return;
+        repositoryResults.push(...r.items);
+        repositoryCursor = r.nextCursor;
+      } while (repositoryCursor);
+      setRepositories(repositoryResults);
+    };
+    const loadRules = async () => {
       const all: { prefix: string; repositoryId: string }[] = [];
       let cursor = "";
       do {
@@ -77,10 +92,15 @@ export function CaptureComposer({
       } while (cursor);
       if (active) setRules(all);
     };
-    void load().catch((e) => setSaveError(e.message));
-    const stop = adapter.subscribe(() => {
-      void load().catch((e) => setSaveError(e.message));
-    });
+    const load = () => {
+      // Either lookup can fail independently; a slow repository list must not
+      // suppress URL-rule selection or warnings for the current capture.
+      void Promise.all([loadRepositories(), loadRules()]).catch((e) => {
+        if (active) setSaveError(e.message);
+      });
+    };
+    load();
+    const stop = adapter.subscribe(load);
     return () => {
       active = false;
       stop();

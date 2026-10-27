@@ -26,7 +26,7 @@ function all(
 ): HostNode[] {
   const found: HostNode[] = [];
   const walk = (n: HostNode | string) => {
-    if (typeof n === "string") return;
+    if (typeof n === "string" || n.props["data-active-tab"] === "false") return;
     if (match(n)) found.push(n);
     n.children.forEach(walk);
   };

@@ -56,6 +56,7 @@ export function PlanningManager({
   planning,
   refresh,
   dirty,
+  beginOperation,
   back,
 }: {
   adapter: LaneAdapter;
@@ -63,6 +64,7 @@ export function PlanningManager({
   planning: PlanningState;
   refresh: () => void;
   dirty: (value: boolean) => void;
+  beginOperation?: () => () => void;
   back: () => void;
 }) {
   const repositoryId = repository.version!.entityId;
@@ -97,6 +99,7 @@ export function PlanningManager({
   const run = async (action: () => Promise<void>) => {
     if (lock.current) return;
     lock.current = true;
+    const finishOperation = beginOperation?.();
     setBusy(true);
     setError("");
     try {
@@ -106,19 +109,24 @@ export function PlanningManager({
     } finally {
       lock.current = false;
       setBusy(false);
+      finishOperation?.();
     }
   };
   const unsaved =
     !!editing && planningInputChanged(editing.initial, editing.input);
-  // Report unsaved input to the app so page and app navigation ask first.
+  // Report unsaved input for tab closing and shared data or exit guards.
   useEffect(() => {
     dirty(unsaved);
     return () => dirty(false);
   }, [unsaved, dirty]);
   // Every action that replaces or closes the editor asks before dropping unsaved input.
   const guard = (action: () => void) => {
-    if (unsaved) setDiscard(() => action);
-    else action();
+    if (unsaved) {
+      console.info(
+        JSON.stringify({ event: "lane_planning_discard", action: "request" }),
+      );
+      setDiscard(() => action);
+    } else action();
   };
   const start = (item?: PlanningItem) =>
     guard(() => {
@@ -428,7 +436,18 @@ export function PlanningManager({
           >
             Discard changes
           </Button>
-          <Button primary onClick={() => setDiscard(undefined)}>
+          <Button
+            primary
+            onClick={() => {
+              console.info(
+                JSON.stringify({
+                  event: "lane_planning_discard",
+                  action: "keep",
+                }),
+              );
+              setDiscard(undefined);
+            }}
+          >
             Keep editing
           </Button>
         </Dialog>

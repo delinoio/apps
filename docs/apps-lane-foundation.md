@@ -75,6 +75,89 @@ signing and store registration remain separate.
 
 Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use an icon-only app rail to the left of the contextual sidebar. Lane, Pace and RealQA are equal app selectors in that order; Pace shows its own sidebar and `Coming soon` page. RealQA follows the [capture and attachment contract](apps-lane-realqa-contract.md). Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. Task Properties, Relationships, list Filters and sort, and repository Labels, Milestones and Cycles management follow the [task planning UI specification](#task-planning-ui-specification). These product constraints do not change the platform build/toolchain choices.
 
+### Workspace tabs
+
+Each Lane tab owns its contextual sidebar and content. Only the 64-pixel app
+icon rail remains outside the tabbed area. Place one 56-pixel horizontal tab
+strip immediately to the right of the rail, spanning the sidebar and content.
+Below it, the active panel contains the 240-pixel sidebar and existing
+list/detail or page content. Preserve the English UI, white/gray surfaces,
+`#075aff` accent, outline controls and existing app artwork.
+
+Open tasks, new-task drafts, pages and repository lists in tabs. Start with one
+`All tasks` tab. Sidebar, command-menu, relationship, event and deep-link
+navigation opens the destination or selects its existing tab. A task has one
+tab identity, including after a new draft is saved. Page and repository tabs
+have distinct identities. `New task` opens a separate draft; the strip's `New
+tab` action opens the page/repository picker without mini-app destinations.
+The existing command shortcut retains its app destinations. The open-tabs menu
+shows the count, complete titles, selection and unsaved state, with selection
+and individual close actions. A repository tab keeps its repository identity:
+on mobile, choosing another repository selects or opens that repository tab;
+choosing `All repositories` selects the `All tasks` page.
+
+Keep each pane mounted while inactive so its sidebar selection and scroll,
+repository, search, filters, sort, list scroll, editor scroll and drafts survive
+tab and mini-app switching. Inactive panels must be hidden from both keyboard
+navigation and assistive technology. A selected task tab retains its associated
+list beside the editor on desktop. `Back to list` selects the corresponding
+list tab without discarding the task tab. The editor's `Cancel` action closes
+its tab through the same unsaved-change guard and is disabled while saving.
+Save is explicit; tab selection never
+saves or discards input. Each tab owns its reads, mutations, conflict state and
+retry identity: a late response can refresh its owning pane but cannot select
+that pane or replace another tab's editor. Closing the pane invalidates its
+outstanding read ownership; an already submitted mutation is not rolled back.
+The repository pane owns pending planning-operation reports until their promises
+settle, even after the planning manager closes. Overlapping old and reopened
+managers must keep the pane busy until every operation finishes.
+Leaving the Events tab ends a pending event-detail inspection, while retaining
+its list filters and receiver draft; a late inspection must not open a dialog
+when that tab returns. Subscribe to shared data invalidation once per window.
+
+Tab labels show an icon, truncated title, a separate unsaved dot and close
+button. Expose the complete title and `Unsaved changes` in accessible names,
+hover/focus tooltips and the open-tabs menu. Use a white selected surface,
+stronger title and blue bottom rule; distinguish focus from selection. Activation
+and close targets are at least 44 pixels. Left/Right and Home/End move focus;
+Enter/Space activates. Tab proceeds to the remaining controls and content.
+Closing restores focus to the selected adjacent tab: choose the right neighbor,
+then the left. Closing the final tab opens a clean `All tasks` tab.
+
+Closing an edited tab requires `Discard unsaved changes?`, with `Keep editing`
+and `Discard changes`. Escape cancels. Focus the safe action and trap focus in
+the dialog, restoring the originating control on cancellation. Disable closing
+while its save or other mutation is running; switching tabs remains available.
+Normal desktop window close and Quit require confirmation for drafts across all
+tabs and must wait for pending mutations. Web refresh/close uses the browser's
+available unload confirmation, without promising recovery. Account/data-space
+changes, logout and explicit data reset check all tab drafts before initiating
+the transition; after a confirmed transition remove old-space panes. An expired
+or revoked web session clears its inaccessible panes immediately. Preserve
+RealQA's existing capture/settings confirmation and memory-only draft boundary.
+
+Use tab-local loading, empty, error/retry, unavailable/deleted and permission
+states. Never erase an existing draft or report Save success on failure, external
+change, deletion or lost permission. Preserve conflict comparison, history,
+prompt restoration and existing request replay rules. Block app update restart
+while any tab has an unsaved draft; leaving the Settings tab cancels an update
+before installation as existing Settings navigation does.
+
+At widths below 900 pixels, place existing contextual navigation inside the tab
+panel above its page, retaining mobile list/detail behavior. Only the tab strip
+scrolls horizontally; selected tabs stay reachable, and `New tab` and the
+open-tabs menu stay fixed at its right. Preserve wrapping content and reachable
+controls at 1440, 900, 899, 390 and 360 pixels and with enlarged text. Validate
+keyboard, focus restoration, screen-reader roles, hidden panels and independent
+scroll/draft retention. Fixtures and shared compilation do not establish actual
+Android, iOS, macOS or Windows acceptance.
+
+Tabs and unsaved drafts live only in the current window's memory, without
+server or cross-device synchronization, automatic saves or restart recovery.
+Pace and RealQA remain single mini-app views. Drag reordering, pinned/grouped
+or split tabs, detached windows, reopening closed tabs and new global close
+shortcuts are out of scope.
+
 ### Desktop app updates
 
 Settings begins with an `App updates` card on macOS and Windows. Show the
@@ -96,7 +179,7 @@ wrapping text, keyboard activation, visible focus and accessible status/progress
 labels. Mobile and web do not show the desktop updater. Development and
 native-testing packages show an unavailable explanation and cannot self-update.
 
-Protect unsaved task edits through existing Settings navigation confirmation.
+Preserve task drafts in their tabs when opening Settings. Block update restart while any tab has an unsaved draft.
 Require notification edits to be saved before updating; disable other Settings
 mutations while updating. An open RealQA capture draft blocks installation.
 Leaving Settings or closing its window cancels before installation, so later
@@ -163,13 +246,13 @@ Escape, the close button and the shortcut dismiss the menu. Browser Tab focus
 stays inside the dialog; closing restores the originating control when it still
 exists, otherwise the workspace. Native hosts return focus to the workspace.
 
-Page destinations select Lane and the requested page and clear the repository
-filter; keep task search, progress and proposal filters. A repository destination
-selects Lane's Tasks page with that repository. App destinations preserve the
-existing return-to-Lane behavior. Apply the existing task and RealQA unsaved-edit
-confirmation before changing destinations. Cancellation retains the screen and
-draft; confirmation discards the unsaved draft and completes navigation. Opening
-or dismissing the menu alone never discards edits.
+Page destinations select Lane and the requested page tab. A repository destination
+selects its repository-list tab. Each existing destination keeps its own filters;
+a new destination starts with its default filters. App destinations preserve the
+existing return-to-Lane behavior. Lane destinations open or select tabs and preserve their drafts and filters.
+Apply the existing RealQA unsaved-edit confirmation when leaving RealQA.
+Cancellation retains its screen and draft. Opening or dismissing the menu alone
+never discards edits.
 
 Keep the existing white/gray surfaces, blue accent, outline icons, 44-pixel
 minimum result targets, and keyboard hints. The panel is at most 560 pixels wide,
@@ -240,10 +323,10 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Keep Lane, Pace and RealQA as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the approved folded-lanes artwork for Lane, the folded-ribbon speedometer artwork for Pace, and the approved checklist-and-cursor artwork for RealQA. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
   Tooltips must fit the complete app name outside the trigger's bounds.
 - Anchor a separate utility group at the bottom of the rail, with an outline person button above an outline gear button. Use 44-by-44-pixel targets, 24-pixel gray `#68758b` icons, 9-pixel corners, a 12-pixel gap and 24-pixel bottom padding. Preserve the white rail, `#e4e8ef` divider, blue `#075aff` focus and pale-blue `#e8f0fe` hover treatment. Show complete English hover/focus tooltips on `#172033`: `Account & sync` and `App settings`. Expose the same accessible names and support Tab, Enter/Space and direct touch activation. Utility actions are navigation buttons without mini-app selected state.
-- Both utility actions open Lane's existing Settings page from any mini-app, retain repository/task filters and use the existing unsaved-edit confirmation. Cancellation preserves the view and draft. Confirmation navigates and discards the unsaved draft. `Account & sync` reveals and focuses `Local data and synchronization` on native or `Online account` on web. `App settings` reveals and focuses `Notifications on this device`. Keep the contextual Settings entry and its default destination. Opening a destination must not connect synchronization, sign in, request notification permission, change preferences or delete data. Existing account errors and safeguards remain authoritative; local native notification preferences remain usable if account lists fail. On constrained heights, scroll the vertical rail so all five controls remain reachable without overlap; retain bottom anchoring when space permits.
+- Both utility actions open Lane's existing Settings page from any mini-app, retain repository/task filters and open or select the Settings tab while preserving Lane drafts. When leaving RealQA, use its existing unsaved-edit confirmation. Cancellation preserves that view and draft. Confirmation navigates and discards its unsaved draft. `Account & sync` reveals and focuses `Local data and synchronization` on native or `Online account` on web. `App settings` reveals and focuses `Notifications on this device`. Keep the contextual Settings entry and its default destination. Opening a destination must not connect synchronization, sign in, request notification permission, change preferences or delete data. Existing account errors and safeguards remain authoritative; local native notification preferences remain usable if account lists fail. On constrained heights, scroll the vertical rail so all five controls remain reachable without overlap; retain bottom anchoring when space permits.
 - At widths of at least 900 pixels, place the 240-pixel app-specific sidebar between the rail and content. Lane retains its navigation, repository list and connection status. Pace and RealQA each show their own name, icon and selected `Overview` item, without Lane navigation. Pace retains `Coming soon`; RealQA shows the capture/settings or read-only entry defined in its owning contract. Below 900 pixels, retain the left rail and show contextual navigation above the content, with scrollable content and wrapping text.
 - Unimplemented mini-apps show their icon and name, `Coming soon`, `<App> is not available yet.`, and `Back to Lane`, without requiring login, connectivity or a permission prompt for that page. Both the Lane selector and return button restore the previous Lane page and filters. Keep Lane's loading, error, authentication and permission behavior unchanged. Do not add release dates or sign-up flows. The former Perfine navigation entry is removed.
-- Apply the existing unsaved-edit confirmation before switching apps. Cancel retains the current screen and draft; confirming discards the unsaved draft. App switching must support keyboard activation, visible focus and content-focus transfer. RealQA capture, composer, settings and saved-result behavior follow the [RealQA contract](apps-lane-realqa-contract.md).
+- Lane app switching preserves its tabs and drafts. Apply the existing RealQA unsaved-edit confirmation before leaving its view. Cancel retains the current screen and draft; confirming discards that unsaved draft. App switching must support keyboard activation, visible focus and content-focus transfer. RealQA capture, composer, settings and saved-result behavior follow the [RealQA contract](apps-lane-realqa-contract.md).
 - User-facing app and CLI text is English only. Validate keyboard operation, screen readers, visible focus, state distinctions that do not rely on color, and text enlargement on every released GUI platform. Follow repository form-focus and Escape-to-close rules where applicable.
 
 ### Repositories
@@ -267,7 +350,7 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Store descriptions and prompts as Markdown source. Render Markdown in the app; allow source editing and copying. Do not execute embedded HTML. Automatically load images only from HTTPS URLs.
 - The task editor Prompt presence control keeps absent, present-empty and nonempty prompts distinct. Selecting Include prompt while a prompt is present, including after unsaved edits, keeps its exact Markdown and does not dirty the draft; selecting it from absence creates a present empty prompt; No prompt intentionally removes presence. Presence changes preserve captures, other fields and the draft base, and the control stays disabled while busy, conflicted or deleted.
 - App edits require explicit Save; saves create versions. If external changes arrive during editing, retain unsaved input, indicate the external change, and check conflicts when saving.
-- Opening a task is owned by the latest accepted editor action. Selecting another task, choosing New task, closing the editor, changing page or app, resetting data, and disposing of the adapter or data space supersede earlier pending task reads, including a read of the same task started before. A superseded read neither replaces a draft nor reopens a closed editor, changes the page, or reports an error. Cancelling a discard prompt supersedes nothing; only an accepted transition does.
+- Opening a task is owned by its tab and the latest accepted editor action within that tab. A replacement read within the same editor, closing its tab, resetting data, and disposing of the adapter or data space supersede earlier pending reads, including a read of the same task started before. Selecting another tab, page or mini-app preserves each owning tab and does not transfer read ownership. A superseded read neither replaces a draft nor reopens a closed editor, changes the page, or reports an error. Cancelling a discard prompt supersedes nothing; only an accepted transition does.
 - A task mutation (save, create, proposal change, prompt restoration, conflict resolution or deletion) belongs to the editor that submitted it. If that editor was closed, discarded or replaced before the reply arrived, even by a new editor for the same task, the already submitted server mutation is not cancelled or rolled back, but its result only refreshes read data. It never replaces, cleans, reopens or closes another editor, or changes the page, so the newer draft, its dirty state and selection stay intact without another discard prompt. A mutation from the editor still on screen adopts its result, clears dirty state and handles conflicts and failures as before. Starting to open another task does not replace the editor on screen: the editor changes only when that task's read succeeds, so a read that fails or returns nothing leaves the visible editor and its pending mutation intact, and the mutation's result is adopted when it arrives.
 - Accepting a proposal, rejecting a proposal and restoring a prompt as a new version keep their request ID across a failed reply, including a reply lost after the action was stored, and across a refresh of a clean draft. An unchanged explicit retry (same task, expected version, proposal target or prompt source) reuses the ID and receives the stored result without a second version, head or conflict. A changed action, target, source, task or expected version gets a new ID. A completed action ends the attempt, so a later independent action, including another restoration of the same prompt, creates its own new version. The expected version is never advanced merely because a refresh arrived, and competing edits keep the existing stale-write and conflict behavior.
 - If local storage is full or saving fails, retain unsaved input on the current screen and provide an error/retry action. Do not show successful save/synchronization. In web, connectivity loss blocks saving but retains current-screen input; reconnection requires an explicit retry, not an offline queue.
@@ -352,7 +435,7 @@ Native and CLI saves commit locally without a server. Synchronization preserves 
 
 This text specification is authoritative without supporting images. Preview data is illustrative, not seeded product data. Existing navigation, task content editing, progress/proposal behavior and app selectors remain unchanged. Layout references were a 720-pixel desktop content width for the task editor and 760 pixels for the task list and repository management.
 
-1. **Task creation and detail.** Add Properties and Relationships sections to the existing editor. Properties contains priority, type, labels, start date, due date, story points, milestone and cycle. Relationships contains Parent, Subtasks, Depends on, Blocks, Related and Duplicate of. Select existing tasks of the same repository by search and display their titles. Show Change parent when a parent exists. Field edits and relationship changes remain in the draft until the existing Save action succeeds. Opening a related task uses the existing unsaved-change confirmation.
+1. **Task creation and detail.** Add Properties and Relationships sections to the existing editor. Properties contains priority, type, labels, start date, due date, story points, milestone and cycle. Relationships contains Parent, Subtasks, Depends on, Blocks, Related and Duplicate of. Select existing tasks of the same repository by search and display their titles. Show Change parent when a parent exists. Field edits and relationship changes remain in the draft until the existing Save action succeeds. Opening a related task opens or selects its tab and preserves the current draft.
 2. **Task lists.** Add a collapsible Filters region and separate sort-key and direction controls. Keep the existing search, progress and proposal controls. Label every filter, give each filter its own Unassigned choice, and identify repository-owned values with their repository in the all-repository list. Show task metadata compactly. Do not add grouping, bulk selection or saved views.
 3. **Repository management.** Provide Labels, Milestones and Cycles tabs under the repository detail area, each with an item list and an edit area and with New item, Save, Delete and History actions. Labels expose name, color and description. Milestones expose name, description, optional target date and completion. Cycles expose name, description and required start and end dates. History shows before/after values, time and origin and has no Restore action. An empty list offers creation. Deletion confirmation explains that deleting an item detaches it from tasks while the tasks remain.
 4. **Responsive layout.** At widths of at least 900 pixels keep the existing desktop list/detail navigation and use two-column fields where space permits. Below 900 pixels keep the mobile list/detail navigation and stack fields and filters in one column. At 360 pixels wrap long names and labels and keep every control usable without horizontal scrolling.
