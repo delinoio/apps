@@ -67,6 +67,7 @@ only for the behavior specified here; Pace remains outside this scope.
 - Keep each image's edit state in memory before save. Composite the final result into PNG, including blur and opaque covers. Do not persist original images or editable layers.
 - A thumbnail strip selects images and supports deletion and reordering without requiring drag-and-drop. `Add capture` offers the four capture modes and appends to this draft.
 - Form: `Repository`, required `Title`, and optional `Description`. Saving requires a selected repository, a nonblank title, and at least one image. Show validation errors beside the affected control. Focus the title when the composer first opens.
+- The composer loads all repository-choice pages independently of the Lane workspace tabs. Composer initialization and tab cleanup must not suppress the repository choices or prevent validation of a URL-selected repository.
 - `Capture details` shows editable/removable URL, page title, and CSS selector for the selected image. Show a nonblocking different-repository notice when applicable.
 - `Save to Lane` creates a new regular Lane task with the existing default To do progress. Store the user's problem description, ordered attachment references, and retained metadata in the task prompt. Do not create a separate RealQA issue entity or append to an existing task.
 - Show `Saving…` and prevent duplicate submission. A double click, lost response, or retry must not create another task. Preserve stable request identities and Lane's existing idempotency rules.

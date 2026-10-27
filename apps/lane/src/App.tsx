@@ -315,13 +315,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       .finally(() => setSwitching(false));
   };
   if (realqa.state?.window === "composer")
-    return (
-      <CaptureComposer
-        controller={realqa}
-        adapter={adapter}
-        repositories={repositories}
-      />
-    );
+    return <CaptureComposer controller={realqa} adapter={adapter} />;
   return (
     <view
       id="lane-root"
