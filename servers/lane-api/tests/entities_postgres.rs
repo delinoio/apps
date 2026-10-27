@@ -1586,6 +1586,7 @@ fn violation_name(f: &lane_api::Fault) -> Option<&'static str> {
 fn expect_rejection(expected: &Value, got: &lane_api::Fault, case: &str) {
     let reason = match string(expected, "reason") {
         "ERROR_REASON_INVALID_INPUT" => 1,
+        "ERROR_REASON_NOT_FOUND" => 2,
         "ERROR_REASON_CONSTRAINT_VIOLATION" => 19,
         other => panic!("unexpected reason {other}"),
     };
@@ -1654,6 +1655,177 @@ async fn shared_planning_validation_and_graph_vectors_execute_database_domain() 
             f.close().await;
         }
     }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn explicit_removal_targets_are_account_scoped_and_atomic() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let other_repo = "019a0000-0000-7000-8000-0000000000b1";
+    let deleted = "019a0000-0000-7000-8000-0000000000b2";
+    let missing = "019a0000-0000-7000-8000-0000000000b3";
+    let foreign_account_task = "019a0000-0000-7000-8000-0000000000b4";
+    let new_task = "019a0000-0000-7000-8000-0000000000b5";
+    f.repo(other_repo, "https://example.com/other").await;
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    f.task(TASK_C, other_repo).await;
+    f.task(deleted, REPO).await;
+    f.call(
+        "DeleteTask",
+        json!({"meta":{"requestId":id()},"id":deleted}),
+    )
+    .await
+    .unwrap();
+    f.label(LABEL, REPO, "Label").await;
+
+    let mut foreign = f.p.clone();
+    foreign.account_id = id();
+    foreign.tenant_id = id();
+    sqlx::query("INSERT INTO lane_accounts(account_id,tenant_id,epoch) VALUES($1,$2,$3)")
+        .bind(&foreign.account_id)
+        .bind(&foreign.tenant_id)
+        .bind(id())
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &foreign.account_id).await.unwrap();
+    entities::dispatch(
+        &mut tx,
+        &foreign,
+        "CreateRepository",
+        &json!({"meta":{"requestId":id()},"id":REPO,"url":"https://example.com/foreign"}),
+        usize::MAX,
+    )
+    .await
+    .unwrap();
+    entities::dispatch(&mut tx, &foreign, "CreateTask", &json!({"meta":{"requestId":id()},"id":foreign_account_task,"repository":{"id":REPO},"title":"Foreign"}), usize::MAX).await.unwrap();
+    tx.commit().await.unwrap();
+
+    for method in ["CreateTask", "SaveTask"] {
+        for field in ["removeSubtaskIds", "removeBlockedTaskIds"] {
+            for (target, reason, violation) in [
+                (
+                    missing,
+                    19,
+                    Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"),
+                ),
+                (deleted, 2, None),
+                (LABEL, 19, Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")),
+                (TASK_C, 19, Some("CONSTRAINT_VIOLATION_CROSS_REPOSITORY")),
+                (
+                    foreign_account_task,
+                    19,
+                    Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"),
+                ),
+            ] {
+                let edits = json!({field:[target],"addSubtaskIds":[TASK_B]});
+                let request = if method == "CreateTask" {
+                    json!({"meta":{"requestId":id()},"id":new_task,"repository":{"id":REPO},"title":"New","relationshipEdits":edits})
+                } else {
+                    json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":f.accepted(TASK).await,"task":task_fields("Title", REPO, json!({})),"relationshipEdits":edits})
+                };
+                let before = f.footprint().await;
+                let bodies = f.task_bodies().await;
+                let heads = f.heads(TASK).await;
+                let peer_heads = f.heads(TASK_B).await;
+                let error = f.call(method, request).await.unwrap_err();
+                assert_eq!(error.reason & 0xff, reason, "{method}/{field}/{target}");
+                assert_eq!(
+                    violation_name(&error),
+                    violation,
+                    "{method}/{field}/{target}"
+                );
+                assert_eq!(f.footprint().await, before, "{method}/{field}/{target}");
+                assert_eq!(f.task_bodies().await, bodies);
+                assert_eq!(f.heads(TASK).await, heads);
+                assert_eq!(f.heads(TASK_B).await, peer_heads);
+                assert!(!f.task_bodies().await.contains_key(new_task));
+            }
+        }
+    }
+
+    let request = json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":f.accepted(TASK).await,"task":task_fields("Title", REPO, json!({})),"relationshipEdits":{"removeSubtaskIds":[missing]}});
+    let before = f.footprint().await;
+    assert_eq!(
+        violation_name(&f.call("SaveTask", request.clone()).await.unwrap_err()),
+        Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")
+    );
+    assert_eq!(f.footprint().await, before);
+    f.task(missing, REPO).await;
+    assert!(f.call("SaveTask", request).await.is_ok());
+
+    for (add, remove, peer_key) in [
+        ("addSubtaskIds", "removeSubtaskIds", "parentTaskId"),
+        (
+            "addBlockedTaskIds",
+            "removeBlockedTaskIds",
+            "dependsOnTaskIds",
+        ),
+    ] {
+        f.save_task(
+            TASK,
+            task_fields("Title", REPO, json!({})),
+            Some(json!({add:[TASK_B]})),
+        )
+        .await
+        .unwrap();
+        let before_peer = f.accepted(TASK_B).await;
+        let removed = f
+            .save_task(
+                TASK,
+                task_fields("Title", REPO, json!({})),
+                Some(json!({remove:[TASK_B]})),
+            )
+            .await
+            .unwrap();
+        assert_eq!(removed["affected"].as_array().unwrap().len(), 1);
+        assert_eq!(removed["affected"][0]["version"]["entityId"], TASK_B);
+        assert_ne!(f.accepted(TASK_B).await, before_peer);
+        assert!(f.task_bodies().await[TASK_B].get(peer_key).is_none());
+        let absent_peer = f.accepted(TASK_B).await;
+        let no_op = f
+            .save_task(
+                TASK,
+                task_fields("Title", REPO, json!({})),
+                Some(json!({remove:[TASK_B]})),
+            )
+            .await
+            .unwrap();
+        assert!(no_op["affected"].as_array().is_none_or(Vec::is_empty));
+        assert_eq!(f.accepted(TASK_B).await, absent_peer);
+    }
+    f.save_task(
+        TASK,
+        task_fields("Title", REPO, json!({})),
+        Some(json!({"addSubtaskIds":[TASK_B]})),
+    )
+    .await
+    .unwrap();
+    let peer_version = f.accepted(TASK_B).await;
+    for title in ["First", "Alternative"] {
+        f.call(
+            "SaveTask",
+            json!({"meta":{"requestId":id()},"id":TASK_B,"expectedVersionId":peer_version,"task":task_fields(title, REPO, json!({"parentTaskId":TASK}))}),
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(f.heads(TASK_B).await.len(), 2);
+    let before = f.footprint().await;
+    let error = f
+        .save_task(
+            TASK,
+            task_fields("Title", REPO, json!({})),
+            Some(json!({"removeSubtaskIds":[TASK_B]})),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.reason, 4);
+    assert_eq!(f.footprint().await, before);
+    f.close().await;
 }
 
 #[tokio::test]
