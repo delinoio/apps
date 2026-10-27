@@ -254,7 +254,7 @@ try {
     await button(page, "Keep editing").click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
   };
-  for (const leave of ["Back to list", "Cancel"]) {
+  for (const leave of ["Back to list"]) {
     await saveScenario(async (page, n) => {
       await saveHeldA(page, n);
       await discardEditor(page, leave);
@@ -300,6 +300,11 @@ try {
     await field(page, "Title").waitFor();
     assert.equal(await field(page, "Title").inputValue(), "A first edit");
     assert.equal(await isDisabled(button(page, "Saving…")), true);
+    assert.equal(
+      await isDisabled(button(page, "Cancel")),
+      true,
+      "Cancel cannot close a pending mutation",
+    );
     await saveControl(`release=${n}:ok`);
     await button(page, "Save").waitFor();
     await field(page, "Title").fill("A second edit");

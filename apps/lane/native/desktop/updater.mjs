@@ -369,13 +369,13 @@ export class DesktopUpdater {
     active();
     if (!this.canRestart())
       throw new Error(
-        "Save or close the open RealQA capture, then retry the update.",
+        "Wait for pending operations and save or close unsaved work in Lane and RealQA, then retry the update.",
       );
     await this.prepareInstaller(candidate, target.release);
     active();
     if (!this.canRestart())
       throw new Error(
-        "Save or close the open RealQA capture, then retry the update.",
+        "Wait for pending operations and save or close unsaved work in Lane and RealQA, then retry the update.",
       );
     this.set("installing");
     this.restart();

@@ -261,7 +261,36 @@ try {
   await selectTab("A unsaved");
   await selectTab("Independent new draft, Unsaved changes");
   assert.equal(await field("Title").inputValue(), "Independent new draft");
-  await button("Close Independent new draft").click();
+  const longTitle =
+    "A long task title keeps its complete text and unsaved state readable in the open tabs menu on a narrow screen";
+  await field("Title").fill(longTitle);
+  await tab(`${longTitle}, Unsaved changes`).waitFor();
+  await page.setViewportSize({ width: 360, height: 900 });
+  await button("Open tabs (5)").click();
+  const longChoice = page
+    .getByRole("dialog", { name: "Open tabs", exact: true })
+    .getByRole("button", {
+      name: `${longTitle}, Unsaved changes`,
+      exact: true,
+    });
+  await longChoice.waitFor();
+  const menuBounds = await page
+    .getByRole("dialog", { name: "Open tabs", exact: true })
+    .boundingBox();
+  const choiceBounds = await longChoice.boundingBox();
+  assert.ok(
+    choiceBounds.x >= menuBounds.x &&
+      choiceBounds.x + choiceBounds.width <=
+        menuBounds.x + menuBounds.width + 1,
+  );
+  assert.equal(await longChoice.getAttribute("aria-pressed"), "true");
+  assert.ok((await longChoice.textContent()).includes("Unsaved changes"));
+  await page.screenshot({
+    path: join(evidence, "tabs-long-title-menu-360.png"),
+  });
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await button("Cancel").click();
   await button("Discard changes").click();
   // Close all remaining tabs through their own controls; the final close keeps
   // a clean All tasks tab instead of leaving an unusable empty workspace.

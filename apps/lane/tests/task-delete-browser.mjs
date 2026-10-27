@@ -62,6 +62,18 @@ async function assertDraftRetained(page) {
     retained.description,
   );
   await button(page, "Prompt").click();
+  // The shared multiline control receives its new value after the subtab label.
+  await page.waitForFunction(
+    (value) =>
+      [
+        ...document
+          .querySelector("lynx-view")
+          .shadowRoot.querySelectorAll("x-textarea"),
+      ].some(
+        (host) => host.shadowRoot?.querySelector("textarea")?.value === value,
+      ),
+    retained.prompt,
+  );
   assert.equal(
     await field(page, "Prompt Markdown").inputValue(),
     retained.prompt,

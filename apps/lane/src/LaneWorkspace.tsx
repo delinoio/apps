@@ -61,6 +61,7 @@ export function LaneWorkspace({
   onReport,
   onReset,
   onRemoved,
+  onCloseTab,
   revision,
   onChange,
   beforeDataChange,
@@ -75,6 +76,7 @@ export function LaneWorkspace({
   onReport: (report: WorkspaceReport) => void;
   onReset: () => void;
   onRemoved: (id: string) => void;
+  onCloseTab: (id: string) => void;
   revision: number;
   onChange: () => void;
   beforeDataChange: () => Promise<boolean>;
@@ -147,7 +149,8 @@ export function LaneWorkspace({
   useEffect(() => {
     return () => {
       editorLifetime.supersede();
-      advanceQueryGeneration();
+      continuation.current = undefined;
+      ++queryGeneration.current;
     };
   }, [adapter]);
   useEffect(() => {
@@ -326,9 +329,19 @@ export function LaneWorkspace({
   const dirty = !!draft?.dirty || planningDirty || settingsDirty;
   const busy = editorBusy || settingsBusy || pageBusy;
   const exitBusy = editorBusy || pageBusy || settingsExitBusy;
+  const openedRepository =
+    target.kind === TabKind.Repository
+      ? repositories.find(
+          (result) => result.version?.entityId === target.repositoryId,
+        )?.version
+      : undefined;
   const title =
     draft?.task.title ||
-    (target.kind === TabKind.NewTask ? "New task" : target.label);
+    (target.kind === TabKind.NewTask
+      ? "New task"
+      : openedRepository
+        ? repositoryName(openedRepository)
+        : target.label);
   useEffect(() => {
     onReport({
       id: tabId,
@@ -356,8 +369,8 @@ export function LaneWorkspace({
     }
     refresh();
   };
-  // A mutation submitted by the editor on screen applies its result to that editor
-  // only while the editor is still the one shown; otherwise it just refreshes reads.
+  // A mutation belongs to this retained editor even while its tab is hidden.
+  // Closing the pane ends its ownership; late results only refresh shared reads.
   const beginCompletion = () =>
     beginEditorCompletion<EntityResult>(editorLifetime, {
       saved,
@@ -707,7 +720,8 @@ export function LaneWorkspace({
                 }
                 beginCompletion={beginCompletion}
                 busyChanged={setEditorBusy}
-                onClose={() =>
+                onClose={() => onCloseTab(tabId)}
+                onBack={() =>
                   onOpen({
                     kind: repository ? TabKind.Repository : TabKind.Page,
                     page: LanePage.Tasks,

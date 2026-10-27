@@ -43,6 +43,10 @@ export function installAccessibility(view) {
     )) {
       icon.setAttribute("aria-hidden", "true");
     }
+    // web-core does not map Lynx touch hit-testing flags to browser CSS.
+    for (const tooltip of root.querySelectorAll(".tab-tooltip")) {
+      tooltip.style.pointerEvents = "none";
+    }
     for (const heading of root.querySelectorAll(
       '[accessibility-heading="true"]',
     )) {

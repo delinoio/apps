@@ -103,7 +103,11 @@ export function TabBar({
                 {report?.dirty && (
                   <view className="tab-dirty" accessibility-elements-hidden />
                 )}
-                <view className="tab-tooltip" accessibility-elements-hidden>
+                <view
+                  className="tab-tooltip"
+                  accessibility-elements-hidden
+                  user-interaction-enabled={false}
+                >
                   <text>
                     {title}
                     {report?.dirty ? " · Unsaved changes" : ""}

@@ -66,8 +66,8 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((v) => v + 1), []);
   const [switching, setSwitching] = useState(false);
-  const state = useRef({ reports, realqaDirty, tabs, selected });
-  state.current = { reports, realqaDirty, tabs, selected };
+  const state = useRef({ reports, realqaDirty, tabs, selected, miniApp });
+  state.current = { reports, realqaDirty, tabs, selected, miniApp };
   const onReport = useCallback((report: WorkspaceReport) => {
     setReports((previous) => ({ ...previous, [report.id]: report }));
   }, []);
@@ -136,7 +136,8 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       setMiniApp(MiniApp.Lane);
       setOpenTabs(false);
     };
-    if (miniApp === MiniApp.RealQA && realqaDirty) setDiscard(() => proceed);
+    if (state.current.miniApp === MiniApp.RealQA && state.current.realqaDirty)
+      setDiscard(() => proceed);
     else proceed();
   };
   const selectApp = (app: MiniApp) => {
@@ -257,6 +258,10 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     if (route.spaceId && route.spaceId !== adapter.spaceId)
       guard(() => {
         setSwitching(true);
+        setMiniApp(MiniApp.Lane);
+        setRealqaDirty(false);
+        state.current.miniApp = MiniApp.Lane;
+        state.current.realqaDirty = false;
         // Unmount every old pane before changing the shared adapter's data space.
         resetTabs();
         setAdapter(undefined);
@@ -397,6 +402,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                   onOpen={open}
                   onReport={onReport}
                   onRemoved={removeTab}
+                  onCloseTab={closeTab}
                   revision={revision}
                   onChange={refresh}
                   beforeDataChange={beforeDataChange}
@@ -445,24 +451,28 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       {openTabs && (
         <Dialog title="Open tabs" onClose={() => setOpenTabs(false)}>
           {tabs.map((tab) => (
-            <view className="row" key={tab.id}>
-              <Button
-                primary={tab.id === selected}
-                label={`${reports[tab.id]?.title ?? tab.target.label}${reports[tab.id]?.dirty ? ", Unsaved changes" : ""}`}
-                onClick={() => {
-                  setSelected(tab.id);
-                  setOpenTabs(false);
-                }}
-              >
-                {reports[tab.id]?.title ?? tab.target.label}
-              </Button>
-              <Button
-                label={`Close ${reports[tab.id]?.title ?? tab.target.label}`}
-                disabled={reports[tab.id]?.busy}
-                onClick={() => closeTab(tab.id)}
-              >
-                ×
-              </Button>
+            <view className="row open-tab-row" key={tab.id}>
+              <view className="open-tab-choice">
+                <Button
+                  pressed={tab.id === selected}
+                  label={`${reports[tab.id]?.title ?? tab.target.label}${reports[tab.id]?.dirty ? ", Unsaved changes" : ""}`}
+                  onClick={() => {
+                    setSelected(tab.id);
+                    setOpenTabs(false);
+                  }}
+                >
+                  {`${reports[tab.id]?.title ?? tab.target.label}${reports[tab.id]?.dirty ? " · Unsaved changes" : ""}`}
+                </Button>
+              </view>
+              <view className="open-tab-close">
+                <Button
+                  label={`Close ${reports[tab.id]?.title ?? tab.target.label}`}
+                  disabled={reports[tab.id]?.busy}
+                  onClick={() => closeTab(tab.id)}
+                >
+                  ×
+                </Button>
+              </view>
             </view>
           ))}
         </Dialog>

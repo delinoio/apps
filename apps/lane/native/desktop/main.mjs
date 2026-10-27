@@ -171,6 +171,7 @@ function showWindow() {
   owner.on("close", (event) => {
     if (!quitting && !workspaceExit.request("close")) {
       event.preventDefault();
+      log("lane_window_close_deferred");
       owner.sendGlobalEvent("lane.workspace.exitRequested", {});
     }
   });
@@ -286,6 +287,7 @@ app.on("before-quit", (event) => {
   if (stopping) return;
   if (window && !window.isDestroyed() && !workspaceExit.request("quit")) {
     showWindow();
+    log("lane_quit_deferred");
     window.sendGlobalEvent("lane.workspace.exitRequested", {});
     return;
   }

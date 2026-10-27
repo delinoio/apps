@@ -23,7 +23,8 @@ menu to find a complete title or reach a tab outside the visible strip.
 Switching tabs does not save or discard edits. A dot marks unsaved changes. Use
 **Save** to keep them. Closing an edited tab asks whether to discard changes or
 keep editing; a tab cannot close while its save is running. **Back to list**
-returns to the list while keeping the task tab. Tabs and unsaved input are not
+returns to the list while keeping the task tab. **Cancel** closes the task tab
+through the same unsaved-change confirmation. Tabs and unsaved input are not
 restored after a restart or synchronized to another device.
 
 The app icon rail stays outside the tabs. Each tab includes its sidebar and page.

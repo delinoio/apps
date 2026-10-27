@@ -99,7 +99,9 @@ repository, search, filters, sort, list scroll, editor scroll and drafts survive
 tab and mini-app switching. Inactive panels must be hidden from both keyboard
 navigation and assistive technology. A selected task tab retains its associated
 list beside the editor on desktop. `Back to list` selects the corresponding
-list tab without discarding the task tab. Save is explicit; tab selection never
+list tab without discarding the task tab. The editor's `Cancel` action closes
+its tab through the same unsaved-change guard and is disabled while saving.
+Save is explicit; tab selection never
 saves or discards input. Each tab owns its reads, mutations, conflict state and
 retry identity: a late response can refresh its owning pane but cannot select
 that pane or replace another tab's editor. Closing the pane invalidates its

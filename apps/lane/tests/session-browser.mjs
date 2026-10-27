@@ -112,6 +112,9 @@ try {
   await control("session-mode?mode=ok");
   await page.getByRole("button", { name: "Retry connection" }).click();
   await gate.waitFor({ state: "hidden" });
+  // Reconnection invalidates every retained pane. Finish those authorized reads
+  // before resetting the log for the next rejected-session scenario.
+  await page.waitForLoadState("networkidle");
   assert.equal(await title.inputValue(), "Draft of B");
 
   // Scenario 4 (unauthorized): the sign-in gate appears and no business request follows.

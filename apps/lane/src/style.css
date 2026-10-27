@@ -989,9 +989,13 @@ text {
 }
 .tab-tooltip {
   display: none;
-  position: absolute;
-  top: 54px;
-  left: 0;
+  /* Match app-rail tooltips: fixed positioning escapes the scroll-view clip. */
+  position: fixed;
+  top: 58px;
+  left: 72px;
+  width: max-content;
+  max-width: calc(100vw - 88px);
+  overflow: hidden;
   padding: 8px;
   background-color: #172033;
   border-radius: 6px;
@@ -1003,4 +1007,36 @@ text {
 .tab-select:hover .tab-tooltip,
 .tab-select:focus .tab-tooltip {
   display: flex;
+}
+.workspace-tab .button:focus,
+.tab-actions .button:focus {
+  border: 2px solid #075aff;
+}
+
+.open-tab-row {
+  width: 100%;
+}
+.open-tab-choice {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.open-tab-choice .button {
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+}
+.open-tab-choice text {
+  width: 100%;
+  white-space: normal;
+  word-break: break-all;
+}
+.open-tab-close {
+  width: 44px;
+  flex-shrink: 0;
+}
+.open-tab-close .button {
+  width: 44px;
+  min-height: 44px;
 }

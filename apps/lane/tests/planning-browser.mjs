@@ -29,21 +29,45 @@ await new Promise((resolve, reject) => {
 const browser = await chromium.launch({
   channel: process.env.LANE_BROWSER_CHANNEL || "chrome",
   headless: true,
+  // Let web-core apply each pointer action across its renderer bridge.
+  slowMo: 50,
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
+page.on("console", (message) => {
+  if (message.text().includes("lane_planning_discard"))
+    console.log(message.text());
+});
 
-const button = (name) => page.getByRole("button", { name, exact: true });
+// Retained panes keep their controls mounted. Bind contextual actions to the
+// selected pane, while allowing the global strip and root confirmation dialogs.
+const surface = page.locator(
+  '[data-active-tab="true"], .tab-bar, #lane-root > .overlay',
+);
+const button = (name) => surface.getByRole("button", { name, exact: true });
 // A field's accessible name gains its validation message, so match by label prefix.
 const box = (name) =>
-  page.getByRole("textbox", {
+  surface.getByRole("textbox", {
     name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\.|$)`),
   });
-const saveButton = () => page.getByRole("button", { name: /^(Retry )?Save$/ });
-const heading = (name) => page.getByRole("heading", { name, exact: true });
+const saveButton = () =>
+  surface.getByRole("button", { name: /^(Retry )?Save$/ });
+const heading = (name) => surface.getByRole("heading", { name, exact: true });
 const text = (value, exact = true) =>
-  page.getByText(value, { exact }).filter({ visible: true });
+  surface.getByText(value, { exact }).filter({ visible: true });
+const waitPlanningName = (value) =>
+  page.waitForFunction(
+    (expected) =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector(
+          '[data-active-tab="true"] x-input[accessibility-label="Name"]',
+        )
+        ?.shadowRoot?.querySelector("input")?.value === expected,
+    value,
+  );
 const requests = async () => (await fetch(`${base}/test/requests`)).json();
 const clearRequests = () => fetch(`${base}/test/reset-requests`);
 const plan = (body) =>
@@ -104,6 +128,9 @@ try {
   await page.goto(base);
   await button("Improve empty states").waitFor();
 
+  console.log(
+    JSON.stringify({ event: "lane_planning_phase", phase: "task-list" }),
+  );
   // ---- Task list: metadata, qualification, filters and sort --------------------
   await text(
     "Priority High · Due 2026-11-20 · 3 points · Milestone apps / v1 launch",
@@ -615,6 +642,12 @@ try {
   await page.keyboard.press("Escape");
   await plan({ conflictTask: "" });
 
+  console.log(
+    JSON.stringify({
+      event: "lane_planning_phase",
+      phase: "conflict-resolution",
+    }),
+  );
   // A conflict resolution stays bound to the head set that the user reviewed.
   {
     const head = (n, title) => ({
@@ -833,7 +866,39 @@ try {
   assert.equal(await button("Show more matching tasks").count(), 0);
   await page.unroute("**/lane.v1.LaneService/ListTasks", twins);
 
+  console.log(
+    JSON.stringify({
+      event: "lane_planning_phase",
+      phase: "repository-planning",
+    }),
+  );
   // ---- Repository planning management ------------------------------------------
+  // Task editing scenarios are complete. Close their retained workspaces before
+  // testing the planning manager; its own Settings round trip below verifies
+  // preservation across page tabs without unrelated task editors in the fixture.
+  const taskWorkspaces = page.locator(".workspace-tab").filter({
+    has: page.locator('[data-workspace-tab^="task-"]'),
+  });
+  while (await taskWorkspaces.count()) {
+    const workspace = taskWorkspaces.last();
+    const selector = workspace.locator("[data-workspace-tab]");
+    const id = await selector.getAttribute("data-workspace-tab");
+    const dirty = (await selector.getAttribute("aria-label")).includes(
+      "Unsaved changes",
+    );
+    await workspace.getByRole("button", { name: /^Close / }).click();
+    if (dirty) {
+      await page
+        .getByRole("dialog", { name: "Discard unsaved changes?", exact: true })
+        .waitFor();
+      await page
+        .getByRole("button", { name: "Discard changes", exact: true })
+        .click();
+    }
+    await page
+      .locator(`[data-workspace-tab="${id}"]`)
+      .waitFor({ state: "detached" });
+  }
   await button("Repositories").click();
   await button("Labels, milestones and cycles").first().click();
   await text("Labels (2)", false).waitFor();
@@ -852,9 +917,21 @@ try {
   await text("Use a color in #RRGGBB form, for example #075AFF.").waitFor();
   assert.equal((await sent("CreatePlanningItem")).length, 0);
   await box("Name").fill("Design");
+  await page
+    .locator('[data-active-tab="true"] x-input[accessibility-label="Name"]')
+    .waitFor({ state: "attached" });
   await box("Color (#RRGGBB)").fill("#0a5aff");
+  await page
+    .locator(
+      '[data-active-tab="true"] x-input[accessibility-label="Color (#RRGGBB)"]',
+    )
+    .waitFor({ state: "attached" });
   await clearRequests();
+  const createdLabel = page.waitForResponse((response) =>
+    response.url().endsWith("/lane.v1.PlanningService/CreatePlanningItem"),
+  );
   await saveButton().click();
+  await createdLabel;
   await settle();
   let create = await last("CreatePlanningItem");
   assert.equal(create.item.label.color, "#0A5AFF");
@@ -881,9 +958,12 @@ try {
 
   // History: before/after, time and origin, no Restore.
   await box("Name").fill("Design system");
-  await button("Retry Save")
-    .click()
-    .catch(() => {});
+  const savedLabel = page.waitForResponse((response) =>
+    response.url().endsWith("/lane.v1.PlanningService/SavePlanningItem"),
+  );
+  await button("Retry Save").click();
+  await savedLabel;
+  await button("Save").waitFor();
   await settle();
   await button("History").click();
   await text("Item history").waitFor();
@@ -915,9 +995,18 @@ try {
   await saveButton().click();
   await text("Use a real calendar date in YYYY-MM-DD form.").waitFor();
   await box("Target date (YYYY-MM-DD, optional)").fill("");
+  await page
+    .locator(
+      '[data-active-tab="true"] x-input[accessibility-label="Target date (YYYY-MM-DD, optional)"]',
+    )
+    .waitFor({ state: "attached" });
   await button("Completion: Completed").click();
   await clearRequests();
+  const createdMilestone = page.waitForResponse((response) =>
+    response.url().endsWith("/lane.v1.PlanningService/CreatePlanningItem"),
+  );
   await saveButton().click();
+  await createdMilestone;
   await settle();
   create = await last("CreatePlanningItem");
   assert.equal(create.item.milestone.completed, true);
@@ -930,23 +1019,48 @@ try {
   await saveButton().click();
   await text("The end date must be on or after the start date.").waitFor();
 
+  console.log(
+    JSON.stringify({
+      event: "lane_planning_phase",
+      phase: "retained-planning-draft",
+    }),
+  );
   // Workspace tab switching preserves planning input; internal manager
   // navigation still uses its existing discard confirmation.
   await button("Settings").first().click();
   await page.getByRole("tab", { name: "Settings", exact: true }).waitFor();
   await settle();
   assert.equal(await text("Discard unsaved changes?").count(), 0);
-  await page
-    .getByRole("tab", { name: /Repositories, Unsaved changes/ })
-    .click();
+  const repositoryWorkspace = page.getByRole("tab", {
+    name: /Repositories, Unsaved changes/,
+  });
+  await repositoryWorkspace.scrollIntoViewIfNeeded();
+  await settle();
+  await repositoryWorkspace.click();
+  console.log(
+    JSON.stringify({
+      event: "lane_planning_phase",
+      phase: "return-to-repositories",
+    }),
+  );
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") === "page-Repositories",
+  );
   await box("Name").waitFor();
   assert.equal(await box("Name").inputValue(), "Sprint 2");
   await button("Labels tab").click();
   await text("Discard unsaved changes?").waitFor();
+  await settle();
   await button("Keep editing").click();
+  await text("Discard unsaved changes?").waitFor({ state: "detached" });
   assert.equal(await box("Name").inputValue(), "Sprint 2");
   await button("Back to repositories").click();
   await text("Discard unsaved changes?").waitFor();
+  await settle();
   await button("Keep editing").click();
   await text("Discard unsaved changes?").waitFor({ state: "detached" });
   await button("Close").click();
@@ -960,6 +1074,7 @@ try {
   await plan({ delayMs: 700 });
   await clearRequests();
   await saveButton().click();
+  await button("Saving…").waitFor();
   await button("Milestones tab").click();
   await settle(1200);
   await text("Select an item to edit it, or create a new one.").waitFor();
@@ -971,7 +1086,17 @@ try {
   await button("Labels tab").click();
   await button("Edit label Backend").click();
   await saveButton().click();
+  await button("Saving…").waitFor();
   await button("Edit label Frontend").click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector(
+          '[data-active-tab="true"] x-input[accessibility-label="Name"]',
+        )
+        ?.shadowRoot?.querySelector("input")?.value === "Frontend",
+  );
   await settle(1200);
   assert.equal(
     await box("Name").inputValue(),
@@ -980,15 +1105,25 @@ try {
   );
   await plan({ delayMs: 0 });
   await button("Close").click();
-  // Clean editors never prompt, and discarding in Settings navigation proceeds.
+  await text("Select an item to edit it, or create a new one.").waitFor();
+  // Clean editors never prompt, and workspace navigation keeps the draft.
   await button("Labels tab").click();
   await button("Edit label Backend").click();
+  await waitPlanningName("Backend");
   await button("Back to repositories").click();
   assert.equal(await text("Discard unsaved changes?").count(), 0);
   await button("Labels, milestones and cycles").first().click();
   await button("Edit label Backend").click();
+  await waitPlanningName("Backend");
   await box("Name").fill("Backend 2");
   await button("Settings").first().click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") === "page-Settings",
+  );
   await settle();
   assert.equal(await text("Discard unsaved changes?").count(), 0);
 
@@ -997,6 +1132,12 @@ try {
   await text("Online account", true).first().waitFor();
   assert.equal(await text("Development data").count(), 0);
 
+  console.log(
+    JSON.stringify({
+      event: "lane_planning_phase",
+      phase: "responsive-layout",
+    }),
+  );
   // ---- Responsive layout and keyboard operation --------------------------------
   for (const width of [900, 899, 360]) {
     await page.setViewportSize({ width, height: 800 });
