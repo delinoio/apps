@@ -474,7 +474,7 @@ text {
   background-color: #fff;
 }
 .capture-position {
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 600;
   color: #172033;
 }
@@ -511,13 +511,13 @@ text {
   width: 112px;
   flex-shrink: 0;
   color: #526079;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .capture-metadata-value {
   flex: 1;
   min-width: 0;
   color: #172033;
-  font-size: 14px;
+  font-size: 0.875rem;
   white-space: normal;
   word-break: break-all;
 }

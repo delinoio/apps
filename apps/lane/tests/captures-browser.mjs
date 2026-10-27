@@ -165,6 +165,23 @@ try {
         );
     }
   }
+  await page.evaluate(() => {
+    document.body.style.zoom = "2";
+  });
+  await page.locator(".capture-result").last().scrollIntoViewIfNeeded();
+  const enlarged = await readGeometry();
+  assert.ok(
+    enlarged.every(
+      (card) =>
+        card.left >= -0.5 &&
+        card.right <= 360.5 &&
+        card.metadata.every((row) => row.right <= card.right + 0.5),
+    ),
+    JSON.stringify(enlarged),
+  );
+  await page.evaluate(() => {
+    document.body.style.zoom = "";
+  });
   const rows = (await readGeometry()).flatMap((card) => card.metadata);
   assert.deepEqual(
     rows.slice(0, 3).map((row) => row.value),
