@@ -1855,12 +1855,20 @@ struct Store::Impl {
     for (auto key : {"parentTaskId", "duplicateOfTaskId"})
       if (body.contains(key))
         links.push_back(str(body, key));
-    for (auto key : {"addSubtaskIds", "addBlockedTaskIds"})
+    for (auto key : {"addSubtaskIds", "removeSubtaskIds", "addBlockedTaskIds",
+                     "removeBlockedTaskIds"})
       for (auto &x : list(edits, key))
         links.push_back(x);
     for (auto &x : links)
       if (x == taskId)
         violation("SELF_LINK", taskId, "A task cannot be linked to itself.");
+    for (auto key : {"removeSubtaskIds", "removeBlockedTaskIds"})
+      for (auto &x : list(edits, key)) {
+        auto h = heads(d, x);
+        if (!h.empty() && h[0].value("deleted", false) &&
+            str(h[0], "kind") == "ENTITY_KIND_TASK")
+          fail("NOT_FOUND", "A removed task does not exist.");
+      }
     for (auto &x : links)
       if (!taskNode(d, nodes, x))
         violation("REFERENCE_NOT_FOUND", x, "A linked task does not exist.");

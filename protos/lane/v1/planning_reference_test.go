@@ -61,9 +61,10 @@ func validDate(s string) bool {
 	return d <= days[m-1]
 }
 
-// refState holds the live (non-deleted) head of every entity.
+// refState holds live heads and deleted task identities for endpoint checks.
 type refState struct {
-	entities map[string]*lanev1.EntityVersion
+	entities     map[string]*lanev1.EntityVersion
+	deletedTasks map[string]bool
 }
 
 func loadState(t *testing.T, raw json.RawMessage) *refState {
@@ -74,7 +75,7 @@ func loadState(t *testing.T, raw json.RawMessage) *refState {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	st := &refState{entities: map[string]*lanev1.EntityVersion{}}
+	st := &refState{entities: map[string]*lanev1.EntityVersion{}, deletedTasks: map[string]bool{}}
 	for _, item := range doc.Entities {
 		version := new(lanev1.EntityVersion)
 		if err := protojson.Unmarshal(item, version); err != nil {
@@ -85,6 +86,8 @@ func loadState(t *testing.T, raw json.RawMessage) *refState {
 		}
 		if !version.Deleted {
 			st.entities[version.EntityId] = version
+		} else if version.Kind == lanev1.EntityKind_ENTITY_KIND_TASK {
+			st.deletedTasks[version.EntityId] = true
 		}
 	}
 	return st
@@ -339,7 +342,7 @@ func (s *refState) writeTask(id string, in *lanev1.Task, edits *lanev1.Relations
 		}
 	}
 	if edits != nil {
-		for _, ref := range [][]string{edits.AddSubtaskIds, edits.AddBlockedTaskIds} {
+		for _, ref := range [][]string{edits.AddSubtaskIds, edits.RemoveSubtaskIds, edits.AddBlockedTaskIds, edits.RemoveBlockedTaskIds} {
 			for _, r := range ref {
 				links = append(links, link{r, true})
 			}
@@ -348,6 +351,15 @@ func (s *refState) writeTask(id string, in *lanev1.Task, edits *lanev1.Relations
 	for _, l := range links {
 		if l.id == id {
 			return nil, violation(lanev1.ConstraintViolation_CONSTRAINT_VIOLATION_SELF_LINK)
+		}
+	}
+	if edits != nil {
+		for _, ref := range [][]string{edits.RemoveSubtaskIds, edits.RemoveBlockedTaskIds} {
+			for _, r := range ref {
+				if s.deletedTasks[r] {
+					return nil, &ruleError{reason: lanev1.ErrorReason_ERROR_REASON_NOT_FOUND}
+				}
+			}
 		}
 	}
 	for _, l := range links {

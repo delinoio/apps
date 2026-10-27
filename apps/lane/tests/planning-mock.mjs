@@ -163,10 +163,11 @@ const taskResult = (state, t) =>
   t.entityId === state.conflictTask && state.heads
     ? // Explicit head set: several versions are a conflict, a single one is resolved.
       (() => {
-        const all = state.heads.map(({ versionId, title }) => ({
+        const all = state.heads.map(({ versionId, title, task, origin }) => ({
           ...t,
           versionId,
-          task: { ...t.task, title },
+          origin: origin ?? t.origin,
+          task: { ...t.task, ...task, title },
         }));
         return {
           result:
@@ -205,6 +206,36 @@ export async function handle(state, method, input) {
     case "ListRepositories":
       return { body: { items: state.repositories.map(applied) } };
     case "ListTasks":
+      if (state.proposalMode) {
+        const matching = pick(state.tasks, input.repositoryId)
+          .filter(
+            (task) =>
+              !input.proposal?.length ||
+              input.proposal.includes(task.task.proposal),
+          )
+          .filter(
+            (task) =>
+              !input.progress?.length ||
+              input.progress.includes(task.task.progress),
+          )
+          .filter((task) => {
+            const search = input.search?.toLowerCase();
+            return (
+              !search ||
+              task.task.title.toLowerCase().includes(search) ||
+              task.task.description.toLowerCase().includes(search)
+            );
+          });
+        const offset = Number(input.page?.cursor || 0);
+        const size = input.page?.size || 100;
+        return {
+          body: {
+            items: matching.slice(offset, offset + size).map(applied),
+            nextCursor:
+              offset + size < matching.length ? String(offset + size) : "",
+          },
+        };
+      }
       return {
         body: {
           items: pick(state.tasks, input.repositoryId).map((t) =>

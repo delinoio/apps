@@ -300,20 +300,7 @@ pub async fn dispatch_with_config(
             }
             if let Some(tasks) = normalized["tasks"].as_array_mut() {
                 for task in tasks {
-                    let request_id = string(&task["meta"], "requestId").to_owned();
-                    task["meta"] = json!({"requestId":request_id,"origin":p.origin()});
-                    task["description"] = json!(string(task, "description"));
-                    if task.get("progress").is_none() || task["progress"] == "PROGRESS_UNSPECIFIED"
-                    {
-                        task["progress"] = json!("PROGRESS_TODO");
-                    }
-                    if task.get("proposal").is_none() || task["proposal"] == "PROPOSAL_UNSPECIFIED"
-                    {
-                        task["proposal"] = json!("PROPOSAL_REGULAR");
-                    }
-                    if let Some(url) = task["repository"]["url"].as_str() {
-                        task["repository"]["url"] = json!(crate::entities::normalize_url(url)?);
-                    }
+                    *task = crate::entities::normalize_create_task_request(p, task)?;
                 }
             }
         }
