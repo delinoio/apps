@@ -437,7 +437,7 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
                 }
             } finally { runtime.submit { runtime.store().acquire(space, owner, 0) }.get() }
         } catch (failure: Exception) {
-            if (failure is LaneTransport.Failure && failure.status == 401) return recoverDeletion(space)
+            if (failure is LaneTransport.Failure && failure.status == 401 && recoverDeletion(space)) return true
             val reason = when {
                 failure is LaneTransport.Failure && ConnectErrors.reason(failure.body) != null -> ConnectErrors.reason(failure.body)!!.removePrefix("ERROR_REASON_")
                 failure is LaneTransport.Failure && failure.status == 401 -> "UNAUTHENTICATED"
