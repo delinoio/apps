@@ -3,14 +3,17 @@
 #import "LaneHTTPSImageData.h"
 #include <assert.h>
 #include <atomic>
+#include <stdio.h>
 
 typedef NS_ENUM(NSInteger, LaneFixture) { LaneFixturePNG, LaneFixtureHTTP, LaneFixtureInvalid,
-    LaneFixtureError, LaneFixtureDelay, LaneFixtureRedirect };
+    LaneFixtureError, LaneFixtureDelay, LaneFixtureRedirect, LaneFixtureDeclaredOversize,
+    LaneFixtureStreamingOversize };
 static std::atomic<LaneFixture> fixture;
 static std::atomic<NSUInteger> requests;
 static std::atomic<NSUInteger> httpRequests;
 static std::atomic<NSUInteger> callbacks;
 static NSData *png;
+static NSData *oversized;
 
 @interface LaneImageProtocol : NSURLProtocol
 @end
@@ -37,10 +40,16 @@ static NSData *png;
     return;
   }
   NSInteger status = fixture == LaneFixtureHTTP ? 404 : 200;
+  NSDictionary *headers = fixture == LaneFixtureDeclaredOversize
+      ? @{@"Content-Type": @"image/png", @"Content-Length": @"8388609"}
+      : @{@"Content-Type": @"image/png"};
   NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:status
-      HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"image/png"}];
+      HTTPVersion:@"HTTP/1.1" headerFields:headers];
   [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
-  [self.client URLProtocol:self didLoadData:fixture == LaneFixtureInvalid ? [@"invalid" dataUsingEncoding:NSUTF8StringEncoding] : png];
+  if (fixture != LaneFixtureDeclaredOversize)
+    [self.client URLProtocol:self didLoadData:fixture == LaneFixtureInvalid
+        ? [@"invalid" dataUsingEncoding:NSUTF8StringEncoding]
+        : fixture == LaneFixtureStreamingOversize ? oversized : png];
   [self.client URLProtocolDidFinishLoading:self];
 }
 - (void)stopLoading {}
@@ -68,6 +77,9 @@ int main() {
   @autoreleasepool {
     png = [[NSData alloc] initWithBase64EncodedString:
         @"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=" options:0];
+    NSMutableData *large = [png mutableCopy];
+    [large increaseLengthBy:8 * 1024 * 1024];
+    oversized = large;
     assert([LaneHTTPSImageData isPNG:png]);
     for (NSString *source in @[@"http://fixture.test/image.png", @"data:image/png;base64,x", @"https://user:pass@fixture.test/image.png"])
       assert(![LaneHTTPSImageData allowsURL:[NSURL URLWithString:source]]);
@@ -80,6 +92,8 @@ int main() {
     check(images, LaneFixtureInvalid, NO);
     check(images, LaneFixtureError, NO);
     check(images, LaneFixtureRedirect, NO);
+    check(images, LaneFixtureDeclaredOversize, NO);
+    check(images, LaneFixtureStreamingOversize, NO);
     fixture = LaneFixtureDelay;
     requests = 0;
     callbacks = 0;
@@ -91,6 +105,7 @@ int main() {
     cancel();
     [NSThread sleepForTimeInterval:0.2];
     assert(callbacks.load() == 0);
+    puts("PASS: HTTPS image transport, redirect, response limits, failures, and cancellation");
   }
   return 0;
 }

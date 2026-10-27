@@ -4,14 +4,53 @@
 static NSString *const LaneImageErrorDomain = @"io.delino.lane.image";
 static NSUInteger const LaneImageMaxBytes = 8 * 1024 * 1024;
 
-@interface LaneHTTPSRedirectGuard : NSObject <NSURLSessionTaskDelegate>
+@interface LaneHTTPSResponseGuard : NSObject <NSURLSessionDataDelegate>
+@property(nonatomic, strong) NSProgress *progress;
+@property(nonatomic, copy) LaneHTTPSImageDataCompletion completion;
+@property(nonatomic, strong) NSMutableData *buffer;
+@property(nonatomic) BOOL accepted;
+- (instancetype)initWithProgress:(NSProgress *)progress completion:(LaneHTTPSImageDataCompletion)completion;
 @end
-@implementation LaneHTTPSRedirectGuard
+@implementation LaneHTTPSResponseGuard
+- (instancetype)initWithProgress:(NSProgress *)progress completion:(LaneHTTPSImageDataCompletion)completion {
+  if ((self = [super init])) {
+    _progress = progress;
+    _completion = [completion copy];
+    _buffer = [NSMutableData data];
+  }
+  return self;
+}
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
     willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request
     completionHandler:(void (^)(NSURLRequest *_Nullable))completionHandler {
   // NSURLSession follows redirects by default. Reject a downgrade before it sends a request.
   completionHandler([LaneHTTPSImageData allowsURL:request.URL] ? request : nil);
+}
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
+    didReceiveResponse:(NSURLResponse *)response
+    completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
+  BOOL valid = [response isKindOfClass:NSHTTPURLResponse.class] &&
+      ((NSHTTPURLResponse *)response).statusCode == 200 &&
+      (response.expectedContentLength < 0 || response.expectedContentLength <= (long long)LaneImageMaxBytes);
+  self.accepted = valid;
+  completionHandler(valid ? NSURLSessionResponseAllow : NSURLSessionResponseCancel);
+}
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
+  if (!self.accepted) return;
+  if (data.length > LaneImageMaxBytes - self.buffer.length) {
+    self.accepted = NO;
+    [dataTask cancel];
+    return;
+  }
+  [self.buffer appendData:data];
+}
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+  BOOL valid = !error && self.accepted && [LaneHTTPSImageData isPNG:self.buffer];
+  // NSURLSession errors can include the source URL, so report a fixed host error.
+  if (!self.progress.cancelled)
+    self.completion(valid ? [self.buffer copy] : nil,
+        valid ? nil : [NSError errorWithDomain:LaneImageErrorDomain code:1 userInfo:nil]);
+  [session finishTasksAndInvalidate];
 }
 @end
 
@@ -48,20 +87,11 @@ static NSUInteger const LaneImageMaxBytes = 8 * 1024 * 1024;
     });
     return ^{ [progress cancel]; };
   }
-  NSURLSession *session = [NSURLSession sessionWithConfiguration:self.configuration
-      delegate:[LaneHTTPSRedirectGuard new] delegateQueue:nil];
+  LaneHTTPSResponseGuard *guard = [[LaneHTTPSResponseGuard alloc] initWithProgress:progress completion:completion];
+  NSURLSession *session = [NSURLSession sessionWithConfiguration:self.configuration delegate:guard delegateQueue:nil];
   NSURLRequest *request = [NSURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
       timeoutInterval:15];
-  NSURLSessionDataTask *task = [session dataTaskWithRequest:request
-      completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        // Do not expose NSURLSession errors: their userInfo can contain the source URL.
-        BOOL valid = !error && [response isKindOfClass:NSHTTPURLResponse.class] &&
-            ((NSHTTPURLResponse *)response).statusCode == 200 && data.length <= LaneImageMaxBytes &&
-            [LaneHTTPSImageData isPNG:data];
-        if (!progress.cancelled)
-          completion(valid ? data : nil, valid ? nil : [NSError errorWithDomain:LaneImageErrorDomain code:1 userInfo:nil]);
-        [session finishTasksAndInvalidate];
-      }];
+  NSURLSessionDataTask *task = [session dataTaskWithRequest:request];
   [task resume];
   return ^{
     [progress cancel];
