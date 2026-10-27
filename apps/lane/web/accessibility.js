@@ -71,12 +71,6 @@ export function installAccessibility(view) {
           String(button.classList.contains("command-selected")),
         );
       }
-      if (button.classList.contains("app-switch")) {
-        button.setAttribute(
-          "aria-pressed",
-          String(button.classList.contains("selected")),
-        );
-      }
       // Toggle chips and collapsible regions expose their state to screen readers.
       // The web runtime removes aria-*="false", so only the active state is observable.
       for (const [source, aria] of [
@@ -120,9 +114,10 @@ export function installAccessibility(view) {
     }
     const tabList = root.querySelector(".tab-scroll");
     tabList?.setAttribute("role", "tablist");
+    tabList?.setAttribute("aria-orientation", "vertical");
     if (tabList && !wired.has(tabList)) {
       wired.add(tabList);
-      // The pinned web runtime resets the horizontal offset on resize instead
+      // The pinned web runtime resets the scroll offset on resize instead
       // of reapplying native scroll-to-index. Keep the selected tab visible
       // until web-core implements that native behavior on viewport changes.
       new ResizeObserver(() =>
@@ -134,9 +129,9 @@ export function installAccessibility(view) {
       ).observe(tabList);
     }
     for (const panel of root.querySelectorAll(".tab-panel")) {
-      const id = panel
-        .querySelector("[data-tab-id]")
-        ?.getAttribute("data-tab-id");
+      const id =
+        panel.getAttribute("data-tab-id") ??
+        panel.querySelector("[data-tab-id]")?.getAttribute("data-tab-id");
       if (id) {
         panel.id = `panel-${id}`;
         panel.setAttribute("role", "tabpanel");
@@ -149,12 +144,7 @@ export function installAccessibility(view) {
         requestAnimationFrame(() => {
           const selected = root.querySelector('[data-tab-selected="true"]');
           selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
-          if (
-            !previousDialog &&
-            root.querySelector("#lane-root")?.getAttribute("data-app") ===
-              "Lane"
-          )
-            focus(selected);
+          if (!previousDialog) focus(selected);
         });
       previousTab = selectedTab;
     }
@@ -404,10 +394,7 @@ export function installAccessibility(view) {
           (node) =>
             node instanceof Element && node.hasAttribute("data-workspace-tab"),
         );
-      if (
-        tab &&
-        ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
-      ) {
+      if (tab && ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
         const tabs = [...root.querySelectorAll("[data-workspace-tab]")];
         const index = tabs.indexOf(tab);
         const next =
@@ -415,7 +402,7 @@ export function installAccessibility(view) {
             ? 0
             : event.key === "End"
               ? tabs.length - 1
-              : (index + (event.key === "ArrowLeft" ? -1 : 1) + tabs.length) %
+              : (index + (event.key === "ArrowUp" ? -1 : 1) + tabs.length) %
                 tabs.length;
         event.preventDefault();
         event.stopPropagation();

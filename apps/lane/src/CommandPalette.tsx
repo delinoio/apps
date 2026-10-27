@@ -20,29 +20,15 @@ export function CommandPalette({
   items,
   repositoryStatus,
   onSelect,
-  openRequest = 0,
 }: {
-  openRequest?: number;
   items: Destination[];
   repositoryStatus: string;
   onSelect: (destination: Destination) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [newTab, setNewTab] = useState(false);
-  useEffect(() => {
-    if (openRequest) {
-      setNewTab(true);
-      setQuery("");
-      setIndex(0);
-      setOpen(true);
-    }
-  }, [openRequest]);
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
-  const results = filterDestinations(
-    newTab ? items.filter((item) => item.kind !== DestinationKind.App) : items,
-    query,
-  );
+  const results = filterDestinations(items, query);
   const selectedIndex = Math.min(index, Math.max(0, results.length - 1));
   const selected = results[selectedIndex];
   const close = () => setOpen(false);
@@ -67,7 +53,6 @@ export function CommandPalette({
     const events = lynx.getJSModule("GlobalEventEmitter");
     const toggle = () => {
       if (!NativeModules.LaneOnline && hasOpenDialog()) return;
-      setNewTab(false);
       setQuery("");
       setIndex(0);
       setOpen((previous) => !previous);

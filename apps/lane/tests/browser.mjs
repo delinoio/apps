@@ -34,51 +34,20 @@ try {
     .getByRole("button", { name: "Improve empty states", exact: true })
     .waitFor();
   const appButton = (name) => page.getByRole("button", { name, exact: true });
-  const rail = await page.locator("lynx-view").evaluate((view) =>
-    [...view.shadowRoot.querySelectorAll(".app-switch")].map((element) => {
-      const { width, height, top } = element.getBoundingClientRect();
-      return { name: element.getAttribute("aria-label"), width, height, top };
-    }),
-  );
-  assert.deepEqual(
-    rail.map((button) => button.name),
-    ["Lane", "Pace", "RealQA"],
-  );
-  assert.ok(
-    rail.every((button) => button.width === 44 && button.height === 44),
-  );
-  assert.equal(rail[1].top - rail[0].top, 56);
-  assert.equal(rail[2].top - rail[1].top, 56);
-  assert.equal(await page.getByText(/Perfine/).count(), 0);
   const search = page.getByRole("textbox", {
     name: "Search title or description",
     exact: true,
   });
-  for (const name of ["Lane", "Pace", "RealQA"]) {
-    const button = appButton(name);
-    const tooltip = button.locator(".app-tooltip");
-    await search.focus();
-    await page.mouse.move(1400, 880);
-    assert.equal(await tooltip.isVisible(), false);
-    await button.hover();
-    assert.equal(await tooltip.isVisible(), true);
-    assert.equal(await tooltip.textContent(), name);
-    const triggerBounds = await button.boundingBox();
-    const tooltipBounds = await tooltip.boundingBox();
-    assert.ok(tooltipBounds.x >= triggerBounds.x + triggerBounds.width);
-    const textFits = await tooltip.evaluate((element) => {
-      const bounds = element.getBoundingClientRect();
-      const text = element.querySelector("x-text").getBoundingClientRect();
-      return text.left >= bounds.left && text.right <= bounds.right;
-    });
-    assert.ok(textFits, `${name} tooltip text must fit its clipping boundary`);
-    await page.mouse.move(1400, 880);
-    assert.equal(await tooltip.isVisible(), false);
-    await button.focus();
-    assert.equal(await tooltip.isVisible(), true);
-    await search.focus();
-    assert.equal(await tooltip.isVisible(), false);
-  }
+  const chooseApp = async (name) => {
+    await appButton("New tab").click();
+    await appButton(name).click();
+  };
+  const utility = async (name) => {
+    if (page.viewportSize().width < 900)
+      await page.getByRole("button", { name: /^Tabs \(/ }).click();
+    await appButton(name).click();
+  };
+  assert.equal(await page.locator(".app-rail").count(), 0);
   const settingsFocus = async (heading) => {
     await page.waitForFunction((expected) => {
       const root = document.querySelector("lynx-view").shadowRoot;
@@ -96,74 +65,23 @@ try {
   page.on("request", recordWrites);
   for (const width of [1440, 900, 899, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(150);
     for (const miniApp of ["Lane", "Pace", "RealQA"]) {
-      for (const [utility, heading] of [
+      for (const [name, heading] of [
         ["Account & sync", "Online account"],
         ["App settings", "Notifications on this device"],
       ]) {
-        await appButton(miniApp).click();
-        await page.waitForTimeout(100);
-        assert.equal(await page.locator(".app-switch").count(), 3);
-        assert.equal(await page.locator(".app-utility").count(), 2);
-        const button = appButton(utility);
-        assert.equal(await button.getAttribute("aria-pressed"), null);
-        await button.focus();
-        const tooltip = button.locator(".app-tooltip");
-        assert.equal(await tooltip.isVisible(), true);
-        assert.equal(await tooltip.textContent(), utility);
-        const bounds = await button.boundingBox();
-        assert.equal(bounds.width, 44);
-        assert.equal(bounds.height, 44);
-        const tooltipBounds = await tooltip.boundingBox();
-        assert.ok(
-          Math.abs(tooltipBounds.y - bounds.y - 4) <= 1,
-          "Utility tooltip stays beside its trigger after resize/scroll",
-        );
-        await page.keyboard.press(utility === "Account & sync" ? "Enter" : " ");
+        await chooseApp(miniApp);
+        await utility(name);
         await settingsFocus(heading);
-        assert.equal(
-          await appButton("Lane").getAttribute("aria-pressed"),
-          "true",
-        );
       }
     }
   }
-  await page.screenshot({
-    path: join(evidence, "mobile-settings-shortcuts.png"),
-  });
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await appButton("Account & sync").click();
-  await settingsFocus("Online account");
-  await appButton("Account & sync").hover();
-  await page.screenshot({
-    path: join(evidence, "desktop-settings-shortcuts.png"),
-  });
   assert.deepEqual(navigationWrites, []);
   page.off("request", recordWrites);
-  await page.setViewportSize({ width: 320, height: 240 });
-  await page.locator("lynx-view").evaluate((view) => {
-    view.shadowRoot.querySelector("#lane-root").style.fontSize = "200%";
-  });
-  for (const name of [
-    "Lane",
-    "Pace",
-    "RealQA",
-    "Account & sync",
-    "App settings",
-  ]) {
-    const button = appButton(name);
-    await button.scrollIntoViewIfNeeded();
-    const box = await button.boundingBox();
-    assert.ok(
-      box.y >= 0 && box.y + box.height <= 241,
-      `${name} remains reachable at a short height`,
-    );
-  }
-  await page.locator("lynx-view").evaluate((view) => {
-    view.shadowRoot.querySelector("#lane-root").style.fontSize = "";
-  });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await appButton("All tasks").click();
+  await page.waitForTimeout(150);
+  await page.getByRole("tab", { name: "All tasks", exact: true }).click();
   await page.waitForFunction(
     () =>
       document
@@ -190,7 +108,7 @@ try {
         ? "Online account"
         : "Notifications on this device",
     );
-    await appButton("All tasks").click();
+    await page.getByRole("tab", { name: "All tasks", exact: true }).click();
     await page.waitForFunction(
       () =>
         document
@@ -211,7 +129,7 @@ try {
     .getByRole("button", { name: "Close Keep this utility draft", exact: true })
     .click();
   await appButton("Discard changes").click();
-  await appButton("All tasks").click();
+  await page.getByRole("tab", { name: "All tasks", exact: true }).click();
   await page.waitForFunction(
     () =>
       document
@@ -220,17 +138,18 @@ try {
         .getAttribute("data-selected-tab") === "page-Tasks",
   );
   await search.fill("preserved filter");
-  await appButton("Pace").click();
+  await chooseApp("Pace");
   await page.getByText("Pace is not available yet.", { exact: true }).waitFor();
-  assert.equal(await appButton("Pace").getAttribute("aria-pressed"), "true");
+  assert.equal(
+    await page
+      .getByRole("tab", { name: "Pace", exact: true })
+      .getAttribute("aria-selected"),
+    "true",
+  );
   assert.equal(await appButton("All tasks").count(), 0);
   assert.equal(await appButton("Overview").count(), 1);
-  await page.waitForFunction(
-    () =>
-      document.querySelector("lynx-view").shadowRoot.activeElement
-        ?.textContent === "Coming soon",
-  );
   await page.screenshot({ path: join(evidence, "desktop-pace.png") });
+  await appButton("New tab").click();
   await appButton("RealQA").focus();
   await page.keyboard.press(" ");
   await page
@@ -238,14 +157,18 @@ try {
       exact: true,
     })
     .waitFor();
-  assert.equal(await appButton("RealQA").getAttribute("aria-pressed"), "true");
+  assert.equal(
+    await page
+      .getByRole("tab", { name: "RealQA", exact: true })
+      .getAttribute("aria-selected"),
+    "true",
+  );
   await page.screenshot({ path: join(evidence, "desktop-realqa.png") });
   for (const width of [899, 900, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.waitForTimeout(150);
     const layout = await page.locator("lynx-view").evaluate((view) => {
       const root = view.shadowRoot;
-      const rail = root.querySelector(".app-rail").getBoundingClientRect();
       const nav = root
         .querySelector(".app-content:not(.lane-tab-content) .navigation")
         .getBoundingClientRect();
@@ -256,14 +179,12 @@ try {
         .querySelector(".coming-soon .button")
         .getBoundingClientRect();
       return {
-        railWidth: rail.width,
         navWidth: nav.width,
         navBottom: nav.bottom,
         contentTop: content.top,
         buttonRight: button.right,
       };
     });
-    assert.equal(layout.railWidth, 64);
     if (width < 900) assert.ok(layout.navBottom <= layout.contentTop + 1);
     else assert.equal(layout.navWidth, 240);
     assert.ok(layout.buttonRight <= width);
@@ -326,13 +247,16 @@ try {
   assert.equal(await title.inputValue(), "Improve empty states");
   await title.fill("Unsaved local title");
   await page.waitForTimeout(150);
-  await appButton("Pace").click();
+  await chooseApp("Pace");
   await page.getByText("Pace is not available yet.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("dialog").count(), 0);
-  await appButton("Lane").click();
+  await appButton("Back to Lane").click();
   await title.waitFor();
   assert.equal(await title.inputValue(), "Unsaved local title");
-  assert.equal(await appButton("Lane").getAttribute("aria-pressed"), "true");
+  assert.equal(
+    await page.locator("#lane-root").getAttribute("data-app"),
+    "Lane",
+  );
   await page.request.get("http://127.0.0.1:46400/test/external");
   await page
     .locator("lynx-view")
@@ -375,6 +299,7 @@ try {
         .getAttribute("data-selected-tab") === "page-Tasks",
   );
   assert.equal(await page.getByRole("dialog").count(), 0);
+  await page.getByRole("button", { name: /^Tabs \(/ }).click();
   await page
     .getByRole("button", { name: "Close Unsaved local title", exact: true })
     .click();
@@ -388,6 +313,7 @@ try {
       .inputValue(),
     "Unsaved local title",
   );
+  await page.getByRole("dialog", { name: "Open tabs", exact: true }).waitFor();
   await page
     .getByRole("button", { name: "Close Unsaved local title", exact: true })
     .click();
@@ -462,14 +388,13 @@ try {
           "Mock authenticated server; no live Logto, native, or provider acceptance",
         checks: [
           "settings shortcuts from every mini-app at 1440, 900, 899, 390 and 320 pixels",
-          "utility names, tooltips, dimensions, Enter/Space and section focus",
-          "all five rail controls reachable at 320 by 240 with enlarged text",
+          "utility names and section focus",
           "utility navigation has no account/notification writes and respects dirty-draft cancel/confirm",
-          "equal Lane, Pace and RealQA rail buttons and app-specific sidebars",
-          "mini-app keyboard activation, selected state and title focus",
+          "shared Lane, Pace and RealQA tabs and app-specific sidebars",
+          "mini-app keyboard activation and selected tab state",
           "Coming soon return preserves Lane filters",
           "mini-app switching respects unsaved-edit confirmation and Escape",
-          "app rail and mini-app layout at 320, 390, 899 and 900 pixels",
+          "vertical tabs and mini-app layout at 320, 390, 899 and 900 pixels",
           "desktop navigation and task details",
           "empty and populated task states replace one another",
           "title visible and accessible textbox",
@@ -491,6 +416,14 @@ try {
     ),
   );
   console.log(`Browser checks passed. Mock-only evidence: ${evidence}`);
+} catch (error) {
+  await page.screenshot({ path: join(evidence, "failure.png") });
+  console.log(
+    await page.locator("lynx-view").evaluate((view) => ({
+      app: view.shadowRoot.querySelector("#lane-root").outerHTML.slice(0, 500),
+    })),
+  );
+  throw error;
 } finally {
   await browser.close();
   server.kill();

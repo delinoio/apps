@@ -369,88 +369,6 @@ text {
   min-height: 0;
   height: 100%;
 }
-.app-rail-scroll {
-  width: 64px;
-  height: 100%;
-  flex-shrink: 0;
-  z-index: 2;
-}
-.app-rail-spacer {
-  flex: 1;
-  min-height: 12px;
-}
-.app-selectors,
-.app-utilities {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.app-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-  width: 64px;
-  padding: 24px 10px;
-  border-right: 1px solid #e4e8ef;
-  background-color: #fff;
-  z-index: 2;
-}
-.app-switch,
-.app-utility {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
-  padding: 8px;
-  border: 2px solid transparent;
-  border-radius: 9px;
-  background-color: transparent;
-}
-.app-switch.selected {
-  background-color: #e8f0fe;
-}
-.app-switch:focus,
-.app-utility:focus {
-  border-color: #075aff;
-}
-.app-switch:hover,
-.app-utility:hover {
-  background-color: #e8f0fe;
-}
-.app-selection {
-  position: absolute;
-  left: -8px;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  border-radius: 3px;
-  background-color: #075aff;
-}
-.app-tooltip {
-  display: none;
-  /* Pre-3.5 Lynx targets can paint text under display:none. Clip this parent
-     until all supported targets suppress that painting without the workaround. */
-  overflow: hidden;
-  /* Fixed tooltips escape the narrow scroll container without clipping. */
-  position: fixed;
-  left: 60px;
-  /* The tooltip sits outside its 44px trigger; size it independently of that box. */
-  width: max-content;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background-color: #172033;
-}
-.app-tooltip text {
-  color: #fff;
-  font-size: 0.85rem;
-}
-.app-switch:hover .app-tooltip,
-.app-switch:focus .app-tooltip,
-.app-utility:hover .app-tooltip,
-.app-utility:focus .app-tooltip {
-  display: flex;
-}
 .app-icon {
   position: relative;
   width: 24px;
@@ -885,8 +803,7 @@ text {
   margin-bottom: 16px;
 }
 
-/* Tabs own their sidebar and content; only the app rail is shared. Inactive
-   panes stay mounted to retain input, editor ownership and scroll position. */
+/* Inactive Lane panes retain editor ownership, drafts and scroll position. */
 .tab-shell {
   display: flex;
   flex-direction: column;
@@ -907,30 +824,38 @@ text {
 }
 .tab-bar {
   display: flex;
-  flex-direction: row;
-  height: 56px;
+  flex-direction: column;
+  width: 240px;
+  height: 100%;
   flex-shrink: 0;
+  min-height: 0;
   background-color: #f7f9fc;
-  border-bottom: 1px solid #e4e8ef;
+  border-right: 1px solid #e4e8ef;
+}
+.tab-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 12px;
+  flex-shrink: 0;
 }
 .tab-scroll {
   flex: 1;
-  min-width: 0;
-  height: 56px;
+  min-height: 0;
+  width: 100%;
 }
 .workspace-tab {
   display: flex;
   flex-direction: row;
   align-items: center;
   flex-shrink: 0;
-  width: 240px;
-  height: 56px;
-  border-right: 1px solid #e4e8ef;
-  border-bottom: 2px solid transparent;
+  width: 100%;
+  min-height: 52px;
+  border-left: 3px solid transparent;
 }
 .workspace-tab.selected {
-  background-color: #fff;
-  border-bottom-color: #075aff;
+  background-color: #e8f0fe;
+  border-left-color: #075aff;
 }
 .workspace-tab .tab-select {
   flex: 1;
@@ -977,8 +902,10 @@ text {
 }
 .tab-actions {
   display: flex;
-  flex-direction: row;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 12px;
+  gap: 8px;
   flex-shrink: 0;
 }
 .tab-actions .button {
@@ -989,10 +916,10 @@ text {
 }
 .tab-tooltip {
   display: none;
-  /* Match app-rail tooltips: fixed positioning escapes the scroll-view clip. */
+  /* Fixed positioning escapes the vertical scroll-view clip. */
   position: fixed;
-  top: 58px;
-  left: 72px;
+  bottom: 120px;
+  left: 16px;
   width: max-content;
   max-width: calc(100vw - 88px);
   overflow: hidden;
@@ -1013,30 +940,90 @@ text {
   border: 2px solid #075aff;
 }
 
-.open-tab-row {
-  width: 100%;
-}
-.open-tab-choice {
+.mobile-tab-toggle {
   display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e4e8ef;
+  flex-shrink: 0;
+}
+.tab-sidebar {
+  width: 240px;
+  height: 100%;
+  flex-shrink: 0;
+  min-height: 0;
+}
+.dialog .tab-sidebar {
+  width: 100%;
+  height: 500px;
+  max-height: 65vh;
+}
+.dialog .tab-bar {
+  width: 100%;
+  border-right: 0;
+}
+.new-tab-page {
+  display: flex;
+  flex-direction: column;
+  padding: 32px;
+  gap: 12px;
+}
+.miniapp-picker {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  margin-top: 24px;
+}
+.miniapp-card {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  min-height: 200px;
+  padding: 24px 16px;
+  gap: 16px;
 }
-.open-tab-choice .button {
-  width: 100%;
-  min-width: 0;
-  align-items: flex-start;
+.miniapp-card .app-icon,
+.miniapp-card .app-icon image {
+  width: 64px;
+  height: 64px;
 }
-.open-tab-choice text {
-  width: 100%;
+.miniapp-card text {
+  text-align: center;
   white-space: normal;
+}
+.mobile .miniapp-picker {
+  flex-direction: column;
+}
+.mobile .new-tab-page {
+  padding: 20px;
+}
+
+.dialog .tab-title {
   word-break: break-all;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
-.open-tab-close {
-  width: 44px;
-  flex-shrink: 0;
+.dialog .workspace-tab,
+.dialog .workspace-tab .tab-select {
+  height: auto;
+  min-height: 52px;
 }
-.open-tab-close .button {
-  width: 44px;
-  min-height: 44px;
+
+.tab-panel.app-content {
+  flex-direction: row;
+}
+.mobile .tab-panel.app-content {
+  flex-direction: column;
+}
+
+.new-tab-page .coming-soon-title {
+  text-align: left;
+}
+.lane-icon {
+  border-radius: 4px;
+}
+.miniapp-card .app-icon image {
+  border-radius: 8px;
 }

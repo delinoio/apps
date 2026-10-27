@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "@lynx-js/react";
 import type { LaneAdapter } from "./adapter";
 import { getAdapter, listenHost, type OpenRoute } from "./runtime";
 import {
-  AppRail,
+  NewTabPage,
   ComingSoon,
   MiniApp,
   MiniAppNavigation,
@@ -43,7 +43,6 @@ const initialTab = (): WorkspaceTab => ({
 });
 export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const realqa = useRealQA();
-  const [miniApp, setMiniApp] = useState(MiniApp.Lane);
   const [realqaDirty, setRealqaDirty] = useState(false);
   const [adapter, setAdapter] = useState<LaneAdapter>();
   const [resetAdapter, setResetAdapter] = useState<LaneAdapter>();
@@ -56,7 +55,12 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const cancelDiscard = useRef<(() => void) | undefined>(undefined);
   const [discard, setDiscard] = useState<() => void>();
   const [openTabs, setOpenTabs] = useState(false);
-  const [paletteRequest, setPaletteRequest] = useState(0);
+  const lastLaneTab = useRef(initialTab().id);
+  const activeTab = tabs.find((tab) => tab.id === selected);
+  const miniApp =
+    activeTab?.target.kind === TabKind.NewTab
+      ? undefined
+      : (activeTab?.target.app ?? MiniApp.Lane);
   const settingsRequest = useRef(0);
   const [settingsTarget, setSettingsTarget] = useState<{
     section: SettingsSection;
@@ -75,6 +79,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     const first = initialTab();
     setTabs([first]);
     setSelected(first.id);
+    lastLaneTab.current = first.id;
     setReports({});
     setEpoch((v) => v + 1);
     setOpenTabs(false);
@@ -130,30 +135,51 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const open = (target: TabTarget, section?: SettingsSection) => {
     const proceed = () => {
       const id = tabIdentity(target);
-      setTabs((previous) =>
-        previous.some((tab) => tab.id === id)
-          ? previous
-          : [...previous, { id, target }],
-      );
+      const replacing = state.current.selected;
+      setTabs((previous) => {
+        const withoutPicker = previous.filter(
+          (tab) => tab.id !== replacing || tab.target.kind !== TabKind.NewTab,
+        );
+        return withoutPicker.some((tab) => tab.id === id)
+          ? withoutPicker
+          : [...withoutPicker, { id, target }];
+      });
       setSelected(id);
       if (target.page === LanePage.Settings)
         setSettingsTarget(
           section ? { section, request: ++settingsRequest.current } : undefined,
         );
       setRealqaDirty(false);
-      setMiniApp(MiniApp.Lane);
+      if (!target.app && target.kind !== TabKind.NewTab)
+        lastLaneTab.current = id;
       setOpenTabs(false);
     };
     leaveRealQA(proceed);
   };
-  const selectApp = (app: MiniApp) => {
-    if (app === state.current.miniApp) return;
-    const proceed = () => {
+  const selectTab = (id: string) => {
+    if (id === state.current.selected) {
+      setOpenTabs(false);
+      return;
+    }
+    leaveRealQA(() => {
+      const target = state.current.tabs.find((tab) => tab.id === id)?.target;
+      if (target && !target.app && target.kind !== TabKind.NewTab)
+        lastLaneTab.current = id;
       setRealqaDirty(false);
-      setMiniApp(app);
-    };
-    leaveRealQA(proceed);
+      setSelected(id);
+      setOpenTabs(false);
+    });
   };
+  const selectApp = (app: MiniApp) => {
+    if (app === state.current.miniApp && app !== MiniApp.Lane) return;
+    if (app === MiniApp.Lane) {
+      const previous = state.current.tabs.find(
+        (tab) => tab.id === lastLaneTab.current,
+      );
+      open(previous?.target ?? allTasks());
+    } else open({ kind: TabKind.App, app, label: app });
+  };
+  const createTab = () => open({ kind: TabKind.NewTab, label: "New tab" });
   const removeTab = (id: string) => {
     const currentTabs = state.current.tabs;
     const currentSelected = state.current.selected;
@@ -164,6 +190,9 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     else {
       setTabs(next);
       setSelected(selectedNext!);
+      const target = next.find((tab) => tab.id === selectedNext)?.target;
+      if (target && !target.app && target.kind !== TabKind.NewTab)
+        lastLaneTab.current = selectedNext!;
       setReports((previous) => {
         const copy = { ...previous };
         delete copy[id];
@@ -172,7 +201,24 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     }
     setOpenTabs(false);
   };
-  const closeTab = (id: string) => guard(() => removeTab(id), false, id);
+  const closeTab = (id: string) => {
+    if (id === "app-RealQA" && realqa.busy) return;
+    const action = () => guard(() => removeTab(id), false, id);
+    if (id === state.current.selected) leaveRealQA(action);
+    else action();
+  };
+  const tabReports = {
+    ...reports,
+    "app-RealQA": {
+      id: "app-RealQA",
+      title: "RealQA",
+      dirty: realqaDirty,
+      busy: realqa.busy,
+      exitBusy: false,
+      repositories: [],
+      repositoryStatus: "",
+    },
+  };
   const latest = reports[selected] ?? Object.values(reports)[0];
   const repositories = latest?.repositories ?? [];
   const repositoryItems = repositories.flatMap((result) =>
@@ -265,7 +311,6 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     if (route.spaceId && route.spaceId !== adapter.spaceId)
       guard(() => {
         setSwitching(true);
-        setMiniApp(MiniApp.Lane);
         setRealqaDirty(false);
         state.current.miniApp = MiniApp.Lane;
         state.current.realqaDirty = false;
@@ -293,7 +338,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         .select("#lane-workspace")
         .invoke({ method: "setFocus", params: { focus: true } })
         .exec();
-  }, [miniApp, adapter]);
+  }, [selected, adapter]);
   const dirty = Object.values(reports).some((entry) => entry.dirty);
   // Updates are cancelled on normal exit. Only in-flight business mutations
   // block shutdown; otherwise an updater would block its own safe restart.
@@ -326,29 +371,37 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   return (
     <view
       id="lane-root"
-      data-app={miniApp}
+      data-app={miniApp ?? "new-tab"}
       data-selected-tab={selected}
       data-tab-generation={String(epoch)}
       className={mobile ? "app mobile" : "app desktop"}
       bindlayoutchange={(e) => setMobile(e.detail.width < 900)}
     >
       <view className="shell">
-        <AppRail
-          selected={miniApp}
-          select={selectApp}
-          openSettings={openSettings}
-        />
+        {!mobile && (
+          <TabBar
+            tabs={tabs}
+            selected={selected}
+            reports={tabReports}
+            select={selectTab}
+            close={closeTab}
+            create={createTab}
+            openSettings={openSettings}
+          />
+        )}
         <view className="tab-shell">
-          {miniApp === MiniApp.Lane && (
-            <TabBar
-              tabs={tabs}
-              selected={selected}
-              reports={reports}
-              select={setSelected}
-              close={closeTab}
-              create={() => setPaletteRequest((v) => v + 1)}
-              showAll={() => setOpenTabs(true)}
-            />
+          {mobile && (
+            <view className="mobile-tab-toggle">
+              <Button
+                label={`Tabs (${tabs.length})`}
+                onClick={() => setOpenTabs(true)}
+              >
+                Tabs
+              </Button>
+              <Button label="New tab" onClick={createTab}>
+                +
+              </Button>
+            </view>
           )}
           {error && (
             <Notice>
@@ -375,49 +428,66 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
             />
           )}
           {adapter &&
-            tabs.map((tab) => (
-              <view
-                key={`${epoch}-${tab.id}`}
-                className="tab-panel"
-                style={{
-                  display:
+            tabs
+              .filter(
+                (tab) => !tab.target.app && tab.target.kind !== TabKind.NewTab,
+              )
+              .map((tab) => (
+                <view
+                  key={`${epoch}-${tab.id}`}
+                  className="tab-panel"
+                  style={{
+                    display:
+                      miniApp === MiniApp.Lane && selected === tab.id
+                        ? "flex"
+                        : "none",
+                  }}
+                  data-active-tab={
                     miniApp === MiniApp.Lane && selected === tab.id
-                      ? "flex"
-                      : "none",
-                }}
-                data-active-tab={
-                  miniApp === MiniApp.Lane && selected === tab.id
-                    ? "true"
-                    : "false"
-                }
-                accessibility-elements-hidden={
-                  miniApp !== MiniApp.Lane || selected !== tab.id
-                }
-              >
-                <LaneWorkspace
-                  adapter={adapter}
-                  target={tab.target}
-                  tabId={tab.id}
-                  mobile={mobile}
-                  active={miniApp === MiniApp.Lane && selected === tab.id}
-                  onOpen={open}
-                  onReport={onReport}
-                  onRemoved={removeTab}
-                  onCloseTab={closeTab}
-                  revision={revision}
-                  onChange={refresh}
-                  beforeDataChange={beforeDataChange}
-                  onReset={reset}
-                  settingsTarget={
-                    tab.target.page === LanePage.Settings
-                      ? settingsTarget
-                      : undefined
+                      ? "true"
+                      : "false"
                   }
-                />
-              </view>
-            ))}
-          {miniApp !== MiniApp.Lane && (
-            <view className="app-content">
+                  accessibility-elements-hidden={
+                    miniApp !== MiniApp.Lane || selected !== tab.id
+                  }
+                >
+                  <LaneWorkspace
+                    adapter={adapter}
+                    target={tab.target}
+                    tabId={tab.id}
+                    mobile={mobile}
+                    active={miniApp === MiniApp.Lane && selected === tab.id}
+                    onOpen={open}
+                    onReport={onReport}
+                    onRemoved={removeTab}
+                    onCloseTab={closeTab}
+                    revision={revision}
+                    onChange={refresh}
+                    beforeDataChange={beforeDataChange}
+                    onReset={reset}
+                    settingsTarget={
+                      tab.target.page === LanePage.Settings
+                        ? settingsTarget
+                        : undefined
+                    }
+                  />
+                </view>
+              ))}
+          {activeTab?.target.kind === TabKind.NewTab && (
+            <view
+              className="tab-panel"
+              data-tab-id={selected}
+              data-active-tab="true"
+            >
+              <NewTabPage open={selectApp} />
+            </view>
+          )}
+          {(miniApp === MiniApp.Pace || miniApp === MiniApp.RealQA) && (
+            <view
+              className="tab-panel app-content"
+              data-tab-id={selected}
+              data-active-tab="true"
+            >
               <MiniAppNavigation app={miniApp} />
               <view id="lane-workspace" className="workspace" focusable>
                 {miniApp === MiniApp.RealQA ? (
@@ -443,7 +513,6 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         items={destinations(repositoryItems)}
         repositoryStatus={latest?.repositoryStatus ?? "Loading repositories..."}
         onSelect={selectDestination}
-        openRequest={paletteRequest}
       />
       <RealQADialogs
         controller={realqa}
@@ -451,31 +520,19 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       />
       {openTabs && (
         <Dialog title="Open tabs" onClose={() => setOpenTabs(false)}>
-          {tabs.map((tab) => (
-            <view className="row open-tab-row" key={tab.id}>
-              <view className="open-tab-choice">
-                <Button
-                  pressed={tab.id === selected}
-                  label={`${reports[tab.id]?.title ?? tab.target.label}${reports[tab.id]?.dirty ? ", Unsaved changes" : ""}`}
-                  onClick={() => {
-                    setSelected(tab.id);
-                    setOpenTabs(false);
-                  }}
-                >
-                  {`${reports[tab.id]?.title ?? tab.target.label}${reports[tab.id]?.dirty ? " · Unsaved changes" : ""}`}
-                </Button>
-              </view>
-              <view className="open-tab-close">
-                <Button
-                  label={`Close ${reports[tab.id]?.title ?? tab.target.label}`}
-                  disabled={reports[tab.id]?.busy}
-                  onClick={() => closeTab(tab.id)}
-                >
-                  ×
-                </Button>
-              </view>
-            </view>
-          ))}
+          <TabBar
+            fullTitles
+            tabs={tabs}
+            selected={selected}
+            reports={tabReports}
+            select={selectTab}
+            close={closeTab}
+            create={() => {
+              setOpenTabs(false);
+              createTab();
+            }}
+            openSettings={openSettings}
+          />
         </Dialog>
       )}
       {discard && (

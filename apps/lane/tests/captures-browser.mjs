@@ -83,6 +83,7 @@ try {
       await page.locator(".capture-image").waitFor();
     }
   }
+  await button("New tab").click();
   await button("RealQA").click();
   await page
     .getByText("Capture on desktop. View saved captures in Lane.", {

@@ -98,8 +98,10 @@ try {
   assert.equal(await field("Title").inputValue(), "B unsaved");
   await selectTab("All tasks");
   assert.equal(await field("Search title or description").inputValue(), "Task");
+  await button("New tab").click();
   await button("Pace").click();
   await button("Back to Lane").click();
+  await button("Close Pace").click();
   assert.equal(await field("Search title or description").inputValue(), "Task");
   await button("Settings").click();
   await selectTab("Settings");
@@ -142,62 +144,45 @@ try {
   await button("Keep editing").click();
   assert.equal(await field("Title").inputValue(), "B unsaved");
 
-  // Full layout: icon rail remains global; sidebar and editor are in the panel.
+  // Vertical tabs replace the icon rail. Narrow screens open the same list.
   for (const width of [1440, 900, 899, 390, 360]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.waitForFunction(
-      (mobile) =>
-        document
-          .querySelector("lynx-view")
-          .shadowRoot.querySelector("#lane-root")
-          .classList.contains("mobile") === mobile,
-      width < 900,
-    );
-    await page.waitForTimeout(150);
-    const layout = await page.locator("lynx-view").evaluate((view) => {
-      const root = view.shadowRoot;
-      const rect = (selector) => {
-        const r = root.querySelector(selector).getBoundingClientRect();
-        return {
-          x: r.x,
-          y: r.y,
-          right: r.right,
-          bottom: r.bottom,
-          width: r.width,
-          height: r.height,
-        };
-      };
-      return {
-        rail: rect(".app-rail-scroll"),
-        tabs: rect(".tab-bar"),
-        panel: rect('[data-active-tab="true"]'),
-        sidebar: rect('[data-active-tab="true"] .navigation'),
-        editor: rect('[data-active-tab="true"] .editor'),
-      };
-    });
-    assert.ok(Math.abs(layout.tabs.x - layout.rail.right) < 2);
-    assert.ok(
-      layout.sidebar.y >= layout.tabs.bottom - 2,
-      "sidebar belongs below tabs",
-    );
-    assert.ok(layout.editor.right <= width + 1, "editor fits viewport");
-    assert.ok(layout.tabs.right <= width + 1, "tab actions fit viewport");
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator(".app-rail-scroll").count(), 0);
+    if (width >= 900) {
+      const tabs = await page.locator(".tab-bar").boundingBox();
+      const panel = await page
+        .locator('[data-active-tab="true"]')
+        .boundingBox();
+      assert.equal(tabs.width, 240);
+      assert.ok(panel.x >= tabs.x + tabs.width - 1);
+      assert.equal(
+        await page.getByRole("tablist").getAttribute("aria-orientation"),
+        "vertical",
+      );
+    } else {
+      await button("Tabs (5)").click();
+      await tab("B unsaved, Unsaved changes").waitFor();
+      await page.keyboard.press("Escape");
+      await page
+        .getByRole("dialog", { name: "Open tabs", exact: true })
+        .waitFor({ state: "detached" });
+    }
+    const editor = await page
+      .locator('[data-active-tab="true"] .editor')
+      .boundingBox();
+    assert.ok(editor.x + editor.width <= width + 1);
     await page.screenshot({ path: join(evidence, `tabs-${width}.png`) });
   }
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForTimeout(200);
   // Browser zoom enlarges real text and controls, rather than changing only
   // a parent font that rem-sized controls can ignore.
   await page.evaluate(() => {
     document.body.style.zoom = "2";
   });
-  await page.waitForFunction(() =>
-    document
-      .querySelector("lynx-view")
-      .shadowRoot.querySelector("#lane-root")
-      .classList.contains("mobile"),
-  );
-  await button("New tab").waitFor();
-  const enlargedAction = await button("Open tabs (5)").boundingBox();
+  await page.waitForTimeout(300);
+  const enlargedAction = await button("New tab").boundingBox();
   assert.ok(
     enlargedAction.x >= 0 && enlargedAction.x + enlargedAction.width <= 1441,
   );
@@ -229,16 +214,9 @@ try {
         ?.getAttribute("aria-selected") === "true",
   );
   await button("New tab").click();
-  await field("Go to a page or repository").waitFor();
-  assert.equal(
-    await button("Lane, Apps").count(),
-    0,
-    "new tab picker excludes mini-apps",
-  );
-  await page.keyboard.press("Escape");
-  await button("Open tabs (5)").click();
-  await page.getByRole("dialog", { name: "Open tabs", exact: true }).waitFor();
-  await page.keyboard.press("Escape");
+  for (const app of ["Lane", "Pace", "RealQA"]) await button(app).waitFor();
+  await page.screenshot({ path: join(evidence, "new-tab-desktop.png") });
+  await button("Lane").click();
   await selectTab("B unsaved, Unsaved changes");
   await button("Close B unsaved").click();
   await button("Discard changes").click();
@@ -266,10 +244,10 @@ try {
   await field("Title").fill(longTitle);
   await tab(`${longTitle}, Unsaved changes`).waitFor();
   await page.setViewportSize({ width: 360, height: 900 });
-  await button("Open tabs (5)").click();
+  await button("Tabs (5)").click();
   const longChoice = page
     .getByRole("dialog", { name: "Open tabs", exact: true })
-    .getByRole("button", {
+    .getByRole("tab", {
       name: `${longTitle}, Unsaved changes`,
       exact: true,
     });
@@ -283,7 +261,7 @@ try {
       choiceBounds.x + choiceBounds.width <=
         menuBounds.x + menuBounds.width + 1,
   );
-  assert.equal(await longChoice.getAttribute("aria-pressed"), "true");
+  assert.equal(await longChoice.getAttribute("aria-selected"), "true");
   assert.ok((await longChoice.textContent()).includes("Unsaved changes"));
   await page.screenshot({
     path: join(evidence, "tabs-long-title-menu-360.png"),

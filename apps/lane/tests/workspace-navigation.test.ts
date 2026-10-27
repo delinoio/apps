@@ -111,7 +111,10 @@ test("a composer initialized before tab reads loads every repository page itself
 
 function tap(tree: HostNode[], label: string) {
   const target = visibleNodes(tree).find(
-    (n) => n.props["accessibility-label"] === label && n.props.bindtap,
+    (n) =>
+      n.props["accessibility-label"] === label &&
+      n.props.bindtap &&
+      !n.props["data-workspace-tab"],
   );
   assert.ok(target, `visible action ${label}`);
   target.props.bindtap();
@@ -140,6 +143,8 @@ async function realqaMain() {
       local: async () => ({}),
     },
   });
+  await view.settle();
+  tap(view.tree(), "New tab");
   await view.settle();
   tap(view.tree(), "RealQA");
   await view.settle();
@@ -227,6 +232,14 @@ test("mobile repository scope opens the destination tab without changing the ori
   const selected = () =>
     nodes().find((n) => n.props.id === "lane-root")?.props["data-selected-tab"];
   const selectRepositoryTab = async (id: string) => {
+    const count = nodes().filter((n) => n.props["data-workspace-tab"]).length;
+    if (!count) {
+      const toggle = nodes().find((n) =>
+        n.props["accessibility-label"]?.startsWith("Tabs ("),
+      );
+      toggle!.props.bindtap();
+      await view.settle();
+    }
     const tab = nodes().find(
       (n) => n.props["data-workspace-tab"] === `repository-${id}`,
     );
@@ -353,6 +366,100 @@ test("planning operation reports survive manager unmount until every request set
       busy(),
       false,
       "failure also releases the last operation after navigation",
+    );
+  } finally {
+    view.unmount();
+  }
+});
+
+test("mini-app chooser shares tabs and reuses destinations", async () => {
+  const { App, runtime } = await loadApp();
+  const view = runtime.mount(App, {
+    providedAdapter: {
+      mode: "web",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      call: async () => ({ items: [], nextCursor: "" }),
+      local: async () => ({}),
+    },
+  });
+  const nodes = () => visibleNodes(view.tree());
+  const selected = () =>
+    nodes().find((n) => n.props.id === "lane-root")?.props["data-selected-tab"];
+  const tabIds = () =>
+    nodes()
+      .filter((n) => n.props["data-workspace-tab"])
+      .map((n) => n.props["data-workspace-tab"]);
+  try {
+    await view.settle();
+    nodes()
+      .find(
+        (n) => n.props["accessibility-label"] === "Search title or description",
+      )!
+      .props.bindinput({ detail: { value: "retained" } });
+    tap(view.tree(), "New tab");
+    await view.settle();
+    assert.equal(selected(), "new-tab");
+    assert.deepEqual(
+      nodes()
+        .filter((n) => n.props.className === "button miniapp-card")
+        .map((n) => n.props["accessibility-label"]),
+      ["Lane", "Pace", "RealQA"],
+    );
+    tap(view.tree(), "Pace");
+    await view.settle();
+    assert.equal(selected(), "app-Pace");
+    assert.deepEqual(tabIds(), ["page-Tasks", "app-Pace"]);
+    tap(view.tree(), "Back to Lane");
+    await view.settle();
+    assert.equal(selected(), "page-Tasks");
+    tap(view.tree(), "New tab");
+    await view.settle();
+    tap(view.tree(), "Pace");
+    await view.settle();
+    assert.deepEqual(
+      tabIds(),
+      ["page-Tasks", "app-Pace"],
+      "reopening an app consumes the chooser without duplicating the app",
+    );
+    tap(view.tree(), "Close Pace");
+    await view.settle();
+    assert.equal(selected(), "page-Tasks");
+    const search = nodes().find(
+      (n) => n.props["accessibility-label"] === "Search title or description",
+    );
+    assert.ok(search, "the retained Lane pane is visible again");
+    tap(view.tree(), "New tab");
+    await view.settle();
+    tap(view.tree(), "Lane");
+    await view.settle();
+    assert.deepEqual(tabIds(), ["page-Tasks"]);
+  } finally {
+    view.unmount();
+  }
+});
+
+test("closing the selected RealQA tab asks before discarding its edits", async () => {
+  const view = await realqaMain();
+  const app = () =>
+    visibleNodes(view.tree()).find((n) => n.props.id === "lane-root");
+  try {
+    tap(view.tree(), "Close RealQA");
+    await view.settle();
+    assert.equal(app()?.props["data-selected-tab"], "app-RealQA");
+    tap(view.tree(), "Keep editing");
+    await view.settle();
+    assert.equal(app()?.props["data-selected-tab"], "app-RealQA");
+    tap(view.tree(), "Close RealQA");
+    await view.settle();
+    tap(view.tree(), "Discard changes");
+    await view.settle();
+    assert.equal(app()?.props["data-selected-tab"], "page-Tasks");
+    assert.ok(
+      !visibleNodes(view.tree()).some(
+        (n) => n.props["data-workspace-tab"] === "app-RealQA",
+      ),
     );
   } finally {
     view.unmount();
