@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "@lynx-js/react";
 import { parseMarkdown, type MarkdownSpan } from "./markdown";
 import { hostAction } from "./runtime";
 export function Button({
-  id: givenId,
+  id,
   children,
   onClick,
   disabled = false,
@@ -31,20 +31,20 @@ export function Button({
   const [generatedId] = useState(
     () => "button-" + Math.random().toString(36).slice(2),
   );
-  const id = givenId ?? generatedId;
+  const buttonId = id ?? generatedId;
   useEffect(() => {
     "background only";
     if (focusOnShow)
       lynx
         .createSelectorQuery()
-        .select(`#${id}`)
+        .select(`#${buttonId}`)
         .invoke({ method: "setFocus", params: { focus: true } })
         .exec();
-  }, [focusOnShow, id]);
+  }, [focusOnShow, buttonId]);
   const selected = pressed ?? primary;
   return (
     <view
-      id={id}
+      id={buttonId}
       data-dialog-default={focusOnShow ? "true" : undefined}
       className={`button ${primary || pressed ? "primary" : ""} ${disabled ? "disabled" : ""}`}
       data-pressed={pressed === undefined ? undefined : String(pressed)}
@@ -234,20 +234,31 @@ export function Dialog({
   title,
   children,
   onClose,
+  focusHeading = false,
   footer,
-  className,
   returnFocusId,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  focusHeading?: boolean;
   footer?: ReactNode;
-  className?: string;
   returnFocusId?: string;
+  className?: string;
 }) {
+  const [headingId] = useState(
+    () => "dialog-heading-" + Math.random().toString(36).slice(2),
+  );
   useEffect(() => {
     "background only";
     openDialogs++;
+    if (focusHeading)
+      lynx
+        .createSelectorQuery()
+        .select(`#${headingId}`)
+        .invoke({ method: "setFocus", params: { focus: true } })
+        .exec();
     return () => {
       openDialogs--;
       if (returnFocusId)
@@ -257,7 +268,7 @@ export function Dialog({
           .invoke({ method: "setFocus", params: { focus: true } })
           .exec();
     };
-  }, [returnFocusId]);
+  }, [focusHeading, headingId, returnFocusId]);
   return (
     <view
       className="overlay"
@@ -265,10 +276,28 @@ export function Dialog({
         if (e.key === "Escape") onClose();
       }}
     >
-      <view className={`dialog ${className ?? ""}`} accessibility-label={title}>
+      <view
+        className={className ? `dialog ${className}` : "dialog"}
+        accessibility-label={title}
+      >
         <view className="row between">
-          <text className="heading">{title}</text>
-          <Button focusOnShow={!!returnFocusId} onClick={onClose}>
+          {focusHeading ? (
+            <text
+              id={headingId}
+              className="heading"
+              accessibility-heading
+              focusable
+              data-dialog-default="true"
+            >
+              {title}
+            </text>
+          ) : (
+            <text className="heading">{title}</text>
+          )}
+          <Button
+            focusOnShow={!focusHeading && !!returnFocusId}
+            onClick={onClose}
+          >
             Close
           </Button>
         </view>
