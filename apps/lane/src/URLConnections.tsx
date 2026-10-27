@@ -273,12 +273,14 @@ export function URLConnections({
                   );
                 // An input accepted before the busy transition can still be
                 // queued when this reply arrives. Clear only its submitted draft.
-                setEditing((current) =>
-                  current?.sessionId === editing.sessionId &&
-                  current.requestId === editing.requestId
-                    ? undefined
-                    : current,
-                );
+                setEditing((current) => {
+                  if (current?.sessionId !== editing.sessionId) return current;
+                  if (current.requestId === editing.requestId) return undefined;
+                  const savedVersionId = reply.result?.version?.versionId;
+                  return savedVersionId
+                    ? { ...current, base: savedVersionId }
+                    : current;
+                });
               })
             }
           >

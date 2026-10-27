@@ -251,6 +251,49 @@ for (const mode of ["create", "edit"] as const) {
     f.view.unmount();
   });
 
+  test(`${mode} advances a retained draft to the successful reply version`, async () => {
+    const f = mount(
+      mode === "edit" ? [applied("https://old.example/app", "repo-one")] : [],
+    );
+    await openDraft(f, mode);
+    f.input().props.bindinput({
+      detail: { value: "https://later.example/app" },
+    });
+    f.button("Two").props.bindtap();
+    f.button("Save").props.bindtap();
+    await f.view.settle();
+
+    const first = f.calls[0].input;
+    f.calls[0].resolve({
+      result: {
+        result: ResultKind.APPLIED,
+        version: rule("https://submitted.example/app", "repo-one", "saved-v2"),
+      },
+    });
+    await f.view.settle();
+    assert.equal(f.dirty(), true);
+    assert.equal(f.calls.length, 1);
+
+    await f.tap("Save");
+    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls[1].method, "SaveURLConnection");
+    assert.equal(f.calls[1].input.expectedVersionId, "saved-v2");
+    assert.deepEqual(f.calls[1].input.connection, {
+      prefix: "https://later.example/app",
+      repositoryId: "repo-two",
+    });
+    assert.notEqual(f.calls[1].input.meta.requestId, first.meta.requestId);
+    f.calls[1].resolve({
+      result: {
+        result: ResultKind.APPLIED,
+        version: rule("https://later.example/app", "repo-two", "saved-v3"),
+      },
+    });
+    await f.view.settle();
+    assert.equal(f.dirty(), false);
+    f.view.unmount();
+  });
+
   test(`${mode} retains failed and conflicting drafts with retry identity`, async () => {
     const f = mount(
       mode === "edit" ? [applied("https://old.example/app", "repo-one")] : [],
