@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "runId": "40444320173",
-  "base": "1844458abd2dbc7f0d5c0a93a1a9cab75d90ab75",
+  "runId": "40470874265",
+  "base": "6403d55a337060401a2a9c68f3794515e29d1cbe",
   "versions": {
     "delino": "0.2.1",
     "delitools": "0.2.1",
     "devbase": "0.2.1",
-    "lane": "0.2.2",
+    "lane": "0.3.0",
     "perfine": "0.2.2"
   },
   "components": [
@@ -15,19 +15,16 @@
       "apps": ["lane"],
       "binaries": true,
       "mobile": false,
-      "version": "0.2.2",
-      "tag": "lane@v0.2.2"
-    },
-    {
-      "component": "perfine",
-      "apps": [],
-      "binaries": true,
-      "mobile": false,
-      "version": "0.2.2",
-      "tag": "perfine@v0.2.2"
+      "version": "0.3.0",
+      "tag": "lane@v0.3.0"
     }
   ],
   "servers": ["delcore-api", "lane-api"],
-  "records": ["lane-windows-release-paths"],
-  "publicNotes": []
+  "records": ["lane-windows-fixture-paths", "lane-workspace-tabs"],
+  "publicNotes": [
+    {
+      "packages": ["@apps/lane"],
+      "note": "Open tasks and pages in tabs, each with its own sidebar, filters and unsaved input. Switch between tasks without losing drafts, and use the tab menu to find or close an open view."
+    }
+  ]
 }
