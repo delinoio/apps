@@ -8,7 +8,7 @@
 - Protocol CI validates Buf lint, generated-binding freshness and consumer builds without running Buf breaking comparisons. Keep the local comparison command available under the repository workflow contract.
 - Resolve affected project selection before runner allocation. Keep macOS and iOS runners out of PR, main-push and affected manual CI; retain the separate owning mobile release gates. The Perfine and Lane binary reusable workflows called by the main-only unified release may use macOS runners for their owning distribution gates only; follow the release sections of the repository workflow contract.
 - Preserve main-only mobile dispatch, the protected release environment, and opt-in test-channel uploads.
-- Keep Delino web publication in the shared release workflow and shared production environment; follow the application membership and environment ownership in the repository workflow contract.
+- Keep every web app in the shared `delino-site-production` environment, native signing in repository-wide `release-signing`, and store/registry publication in repository-wide `release-publish`. Do not create app-specific release environments; follow the application membership and environment ownership in the repository workflow contract.
 - Follow the release preparation and project publication procedures in the repository workflow contract when changing release automation.
 
 ## Owning contracts

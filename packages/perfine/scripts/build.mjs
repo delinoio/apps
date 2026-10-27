@@ -168,13 +168,18 @@ export function stage({
         join(output, "action", name),
       );
   const archives = archiveNames(releaseVersion, target);
-  execFileSync("tar", [
-    "-czf",
-    join(output, archives.standalone),
-    "-C",
-    join(output, "standalone"),
-    ".",
-  ]);
+  execFileSync(
+    "tar",
+    [
+      "-czf",
+      // Relative archive paths keep GNU tar from treating a Windows drive as a remote host.
+      archives.standalone,
+      "-C",
+      "standalone",
+      ".",
+    ],
+    { cwd: output },
+  );
   for (const kind of ["npm", "platform"])
     npm(["pack", "--ignore-scripts", "--pack-destination", output], {
       cwd: join(output, kind),

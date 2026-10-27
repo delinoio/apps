@@ -53,12 +53,17 @@ const directory = mkdtempSync(join(tmpdir(), "perfine install 한글-"));
 try {
   const standalone = join(directory, "standalone");
   mkdirSync(standalone);
-  execFileSync("tar", [
-    "-xzf",
-    join(release, names.standalone),
-    "-C",
-    standalone,
-  ]);
+  execFileSync(
+    "tar",
+    [
+      "-xzf",
+      // A relative archive path also works with GNU tar on Windows.
+      names.standalone,
+      "-C",
+      standalone,
+    ],
+    { cwd: release },
+  );
   npm(
     [
       "install",

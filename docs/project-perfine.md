@@ -14,7 +14,7 @@ All optimization work must be possible locally without a Perfine server account 
 
 ## Domain Ownership Map
 
-The main-only `.github/workflows/release.yml` selects Perfine distribution publication from changesets and calls reusable deployment workflows. Follow the [release procedure](repository-workflow-contract.md#project-release-preparation) for commit identity, independent success tags and recovery.
+The main-only `.github/workflows/release.yml` selects Perfine distribution publication through shared `release-publish` from changesets and calls reusable deployment workflows. Follow the [release procedure](repository-workflow-contract.md#project-release-preparation) for commit identity, independent success tags and recovery.
 
 - `crates/perfine-core`: Local Apache-2.0 engine and adapters.
 - `cmds/perfine`: Rust CLI and MCP.

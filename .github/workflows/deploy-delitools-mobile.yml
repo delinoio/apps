@@ -50,7 +50,7 @@ jobs:
     needs: preflight
     if: ${{ inputs.platform == 'all' || inputs.platform == 'android' }}
     runs-on: ubuntu-22.04
-    environment: delitools-mobile
+    environment: release-signing
     env:
       DELITOOLS_BUILD_NUMBER: ${{ inputs.build_number }}
       TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.DELITOOLS_ANDROID_KEYSTORE_PASSWORD }}
@@ -74,7 +74,7 @@ jobs:
         with: { distribution: temurin, java-version: "17" }
       - name: Install pinned Android SDK packages
         run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;37.0.0" "ndk;29.0.14206865"
           echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @apps/delitools mobile:android:init --ci
@@ -101,11 +101,6 @@ jobs:
           name: delitools-android-${{ inputs.build_number }}-${{ inputs.revision }}
           path: mobile-artifacts/
           if-no-files-found: error
-      - name: Upload to Google Play internal testing
-        if: ${{ inputs.publish }}
-        env:
-          DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-        run: node apps/delitools/scripts/publish-android.mjs mobile-artifacts/delitools-android.aab
       - name: Remove signing material
         if: ${{ always() }}
         run: rm -f "$RUNNER_TEMP/delitools-upload.jks"
@@ -114,11 +109,11 @@ jobs:
     needs: preflight
     if: ${{ inputs.platform == 'all' || inputs.platform == 'ios' }}
     runs-on: macos-15
-    environment: delitools-mobile
+    environment: release-signing
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       DELITOOLS_BUILD_NUMBER: ${{ inputs.build_number }}
-      APPLE_DEVELOPMENT_TEAM: ${{ vars.DELITOOLS_APPLE_TEAM_ID }}
+      APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
     steps:
@@ -164,15 +159,58 @@ jobs:
           name: delitools-ios-${{ inputs.build_number }}-${{ inputs.revision }}
           path: mobile-artifacts/
           if-no-files-found: error
-      - name: Upload to TestFlight
-        if: ${{ inputs.publish }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/delitools-keys"
-          cp "$APPLE_API_KEY_PATH" "$RUNNER_TEMP/delitools-keys/AuthKey_$APPLE_API_KEY.p8"
-          API_PRIVATE_KEYS_DIR="$RUNNER_TEMP/delitools-keys" xcrun altool --upload-app --type ios --file "mobile-artifacts/delitools-ios.ipa" --apiKey "$APPLE_API_KEY" --apiIssuer "$APPLE_API_ISSUER"
       - name: Remove signing material
         if: ${{ always() }}
         run: |
           rm -f "$RUNNER_TEMP/delitools-auth.p8"
           rm -rf "$RUNNER_TEMP/delitools-keys" "$RUNNER_TEMP/delitools-ipa"
+
+  android-publish:
+    needs: android
+    if: ${{ inputs.publish && (inputs.platform == 'all' || inputs.platform == 'android') }}
+    runs-on: ubuntu-latest
+    environment: release-publish
+    env:
+      DELITOOLS_BUILD_NUMBER: ${{ inputs.build_number }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { ref: "${{ inputs.revision }}", persist-credentials: false }
+      - uses: ./.github/actions/setup-ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: delitools-android-${{ inputs.build_number }}-${{ inputs.revision }}
+          path: mobile-artifacts/
+      - name: Upload to Google Play internal testing
+        env:
+          DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: node apps/delitools/scripts/publish-android.mjs mobile-artifacts/delitools-android.aab
+
+  ios-publish:
+    needs: ios
+    if: ${{ inputs.publish && (inputs.platform == 'all' || inputs.platform == 'ios') }}
+    runs-on: macos-15
+    environment: release-publish
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: delitools-ios-${{ inputs.build_number }}-${{ inputs.revision }}
+          path: mobile-artifacts/
+      - name: Upload to TestFlight
+        env:
+          PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/delitools-keys"
+          test -n "$APPLE_API_ISSUER"
+          test -n "$APPLE_API_KEY"
+          printf '%s' "$PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/delitools-keys/AuthKey_$APPLE_API_KEY.p8"
+          test -s "$RUNNER_TEMP/delitools-keys/AuthKey_$APPLE_API_KEY.p8"
+          API_PRIVATE_KEYS_DIR="$RUNNER_TEMP/delitools-keys" xcrun altool --upload-app --type ios --file "mobile-artifacts/delitools-ios.ipa" --apiKey "$APPLE_API_KEY" --apiIssuer "$APPLE_API_ISSUER"
+      - name: Remove publishing material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/delitools-keys"

@@ -4,7 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "scripts": {
-    "prepare": "./scripts/install-git-hooks.sh",
+    "prepare": "sh ./scripts/install-git-hooks.sh",
     "dev": "node scripts/dev.mjs",
     "dev:db:up": "docker compose up -d --wait",
     "dev:db:down": "docker compose down",
