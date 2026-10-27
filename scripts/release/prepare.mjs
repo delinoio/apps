@@ -93,11 +93,26 @@ export function prepare({ directory, runId, loadRecords }) {
     ...Object.keys(changes),
     ...plan.records.map((id) => `.changeset/${id}.md`),
   );
-  git(
-    directory,
-    "commit",
-    "-m",
-    "chore(release): consume changesets and prepare selected components",
+  // This commit formats its staged release files through the normal hooks.
+  // Scope local formatting mode to the commit: CI validation still checks all
+  // tracked files. Keep this adaptation while staged formatting rejects CI.
+  execFileSync(
+    "git",
+    [
+      "commit",
+      "-m",
+      "chore(release): consume changesets and prepare selected components",
+    ],
+    {
+      cwd: directory,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CI: "false",
+        TURBO_SCM_BASE: undefined,
+        TURBO_SCM_HEAD: undefined,
+      },
+    },
   );
   const committed = git(directory, "rev-parse", "HEAD");
   // Never force or rebase a release: every published artifact must use this commit.

@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { prepare } from "./prepare.mjs";
 const git = (cwd, ...args) =>
@@ -63,6 +64,54 @@ test("one commit consumes changesets and pushes the exact deployment source with
     JSON.parse(readFileSync(join(repo, "apps/devbase/package.json"))).version,
     "1.1.0",
   );
+});
+test("CI release commits run the staged formatter and preserve the parent environment", (t) => {
+  const { repo, remote, options } = fixture(t);
+  const script = fileURLToPath(new URL("./prepare.mjs", import.meta.url));
+  const formatter = fileURLToPath(
+    new URL("../ci/format-changed.mjs", import.meta.url),
+  );
+  writeFileSync(
+    join(repo, ".git/hooks/pre-commit"),
+    // Match Lefthook's stage_fixed behavior after formatting succeeds.
+    `#!/bin/sh\nset -e\n"${process.execPath}" ${JSON.stringify(formatter)} --staged --write\ngit add -- .release/plan.json apps/devbase/package.json\n`,
+    { mode: 0o755 },
+  );
+  const source = `
+    import assert from 'node:assert/strict';
+    import { prepare } from ${JSON.stringify(script)};
+    const before = { ...process.env };
+    prepare({
+      ...${JSON.stringify(options)},
+      loadRecords: () => (${JSON.stringify(options.loadRecords())}),
+    });
+    assert.deepEqual({ ...process.env }, before);
+  `;
+  execFileSync(process.execPath, ["--input-type=module", "-e", source], {
+    cwd: repo,
+    env: {
+      ...process.env,
+      CI: "true",
+      TURBO_SCM_BASE: "invalid-comparison",
+      TURBO_SCM_HEAD: "invalid-comparison",
+    },
+  });
+  assert.equal(
+    git(repo, "rev-parse", "HEAD"),
+    git(remote, "rev-parse", "main"),
+  );
+  assert.equal(git(repo, "rev-list", "--count", "HEAD"), "2");
+  assert.equal(git(repo, "status", "--porcelain"), "");
+});
+test("a rejected release commit hook prevents the push", (t) => {
+  const { repo, remote, options } = fixture(t);
+  const before = git(remote, "rev-parse", "main");
+  writeFileSync(join(repo, ".git/hooks/pre-commit"), "#!/bin/sh\nexit 1\n", {
+    mode: 0o755,
+  });
+  assert.throws(() => prepare(options), /Command failed: git commit/);
+  assert.equal(git(remote, "rev-parse", "main"), before);
+  assert.equal(git(repo, "rev-list", "--count", "HEAD"), "1");
 });
 test("remote main race refuses release without any remote tag or release commit", (t) => {
   const { root, repo, remote, options } = fixture(t);
