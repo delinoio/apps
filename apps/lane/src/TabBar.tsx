@@ -34,7 +34,7 @@ export function TabBar({
         .select(`#tab-${selected}`)
         .invoke({ method: "setFocus", params: { focus: true } })
         .exec();
-  }, [selected, tabs]);
+  }, [selected]);
   const index = tabs.findIndex((tab) => tab.id === selected);
   const moveFocus = (id: string, key: string) => {
     "background only";

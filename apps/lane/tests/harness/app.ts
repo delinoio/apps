@@ -12,14 +12,25 @@ const harness = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 export interface AppBundle {
   App: (props: any) => unknown;
   runtime: typeof import("./lynx-react.ts");
-  host: { route?: (route: any) => void };
+  host: {
+    route?: (route: any) => void;
+    emit: (name: string, value?: unknown) => void;
+  };
 }
 
 // The host bridge needs native modules. The App only reaches it for the
 // adapter (provided by tests), host event subscriptions and shortcuts.
 const hostStub = `export const getAdapter = () => { throw new Error("host unavailable in tests"); };
-export const host = { route: undefined };
-export const listenHost = (route) => { host.route = route; return () => { host.route = undefined; }; };
+export const host = { route: undefined, emit: (name, value) => lynx.getJSModule("GlobalEventEmitter").emit(name, value) };
+export const listenHost = (route, _error, ended) => {
+  host.route = route;
+  const events = lynx.getJSModule("GlobalEventEmitter");
+  events.addListener("lane.sessionEnded", ended);
+  return () => {
+    host.route = undefined;
+    events.removeListener("lane.sessionEnded", ended);
+  };
+};
 export const hostAction = () => Promise.reject(new Error("host unavailable in tests"));
 export const listenReauthentication = () => () => {};`;
 
@@ -67,9 +78,23 @@ export { host } from "./src/runtime.ts";`,
   });
   // Components reach for the Lynx element API from background-only effects.
   const query: any = new Proxy(() => query, { get: () => query });
+  const listeners = new Map<string, Set<(value: unknown) => void>>();
+  const events = {
+    addListener(name: string, callback: (value: unknown) => void) {
+      const callbacks = listeners.get(name) ?? new Set();
+      callbacks.add(callback);
+      listeners.set(name, callbacks);
+    },
+    removeListener(name: string, callback: (value: unknown) => void) {
+      listeners.get(name)?.delete(callback);
+    },
+    emit(name: string, value?: unknown) {
+      for (const callback of listeners.get(name) ?? []) callback(value);
+    },
+  };
   (globalThis as any).lynx = {
     createSelectorQuery: () => query,
-    getJSModule: () => ({ addListener() {}, removeListener() {} }),
+    getJSModule: () => events,
   };
   // The web host is the simplest surface: no desktop capture bridge and no
   // global shortcut handling.
