@@ -92,7 +92,9 @@ have distinct identities. `New task` opens a separate draft; the strip's `New
 tab` action opens the page/repository picker without mini-app destinations.
 The existing command shortcut retains its app destinations. The open-tabs menu
 shows the count, complete titles, selection and unsaved state, with selection
-and individual close actions.
+and individual close actions. A repository tab keeps its repository identity:
+on mobile, choosing another repository selects or opens that repository tab;
+choosing `All repositories` selects the `All tasks` page.
 
 Keep each pane mounted while inactive so its sidebar selection and scroll,
 repository, search, filters, sort, list scroll, editor scroll and drafts survive

@@ -518,7 +518,30 @@ export function LaneWorkspace({
                               ] as const,
                           ),
                         ]}
-                        onChange={setRepository}
+                        onChange={(id) => {
+                          if (target.kind !== TabKind.Repository) {
+                            setRepository(id);
+                            return;
+                          }
+                          if (!id) {
+                            onOpen({
+                              kind: TabKind.Page,
+                              page: LanePage.Tasks,
+                              label: "All tasks",
+                            });
+                            return;
+                          }
+                          const destination = repositories.find(
+                            (r) => r.version?.entityId === id,
+                          )?.version;
+                          onOpen({
+                            kind: TabKind.Repository,
+                            repositoryId: id,
+                            label: destination
+                              ? repositoryName(destination)
+                              : "Repository",
+                          });
+                        }}
                       />
                     )}
                     <Choices

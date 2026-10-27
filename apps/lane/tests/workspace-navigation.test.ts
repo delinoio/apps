@@ -197,3 +197,71 @@ test("open-only host routes ask before leaving an edited RealQA view", async () 
     view.unmount();
   }
 });
+
+test("mobile repository scope opens the destination tab without changing the original identity", async () => {
+  const { App, runtime } = await loadApp();
+  const view = runtime.mount(App, {
+    providedAdapter: {
+      mode: "web",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      local: async () => ({}),
+      call: async (method: any) => ({
+        items:
+          method.name === "ListRepositories"
+            ? [repository("repo-a"), repository("repo-b")]
+            : [],
+        nextCursor: "",
+      }),
+    },
+  });
+  const nodes = () => visibleNodes(view.tree());
+  const selected = () =>
+    nodes().find((n) => n.props.id === "lane-root")?.props["data-selected-tab"];
+  const selectRepositoryTab = async (id: string) => {
+    const tab = nodes().find(
+      (n) => n.props["data-workspace-tab"] === `repository-${id}`,
+    );
+    assert.ok(tab);
+    tab.props.bindtap();
+    await view.settle();
+  };
+  try {
+    await view.settle();
+    tap(view.tree(), "repo-a");
+    await view.settle();
+    nodes()
+      .find((n) => n.props.id === "lane-root")!
+      .props.bindlayoutchange({ detail: { width: 390 } });
+    await view.settle();
+    tap(view.tree(), "repo-b");
+    await view.settle();
+    assert.equal(selected(), "repository-repo-b");
+    await selectRepositoryTab("repo-a");
+    assert.ok(
+      nodes().some(
+        (n) =>
+          n.props["accessibility-label"] === "repo-a" &&
+          n.props.className?.includes("primary"),
+      ),
+    );
+    await selectRepositoryTab("repo-b");
+    tap(view.tree(), "All repositories");
+    await view.settle();
+    assert.equal(selected(), "page-Tasks");
+    await selectRepositoryTab("repo-a");
+    tap(view.tree(), "+ New task");
+    await view.settle();
+    assert.ok(
+      nodes().some(
+        (n) =>
+          n.props["accessibility-label"] === "repo-a" &&
+          n.props.className?.includes("primary"),
+      ),
+      "the original tab still creates tasks in repository A",
+    );
+  } finally {
+    view.unmount();
+  }
+});
