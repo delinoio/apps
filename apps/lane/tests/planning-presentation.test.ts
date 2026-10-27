@@ -107,18 +107,20 @@ test("planning panels preserve item semantics, variants and dirty navigation", a
     );
 
   assert.match(content(row("label Bug")), /Bug#D64545/);
-  assert.match(content(row("label Feature")), /Feature#075AFFConflict/);
-  assert.equal(row("label Feature").props["data-pressed"], "false");
+  const conflictedFeature = button("Edit label Feature, Conflict");
+  assert.match(content(conflictedFeature), /Feature#075AFFConflict/);
+  assert.equal(conflictedFeature.props["data-pressed"], "false");
   assert.equal(
     find(
-      [row("label Feature")],
+      [conflictedFeature],
       (node) => node.props.className === "planning-row-swatch",
     ).length,
     1,
   );
-  await tap("Edit label Feature");
-  assert.equal(row("label Feature").props["data-pressed"], "true");
-  assert.equal(row("label Feature").props["accessibility-value"], "Selected");
+  await tap("Edit label Feature, Conflict");
+  const selectedFeature = button("Edit label Feature, Conflict");
+  assert.equal(selectedFeature.props["data-pressed"], "true");
+  assert.equal(selectedFeature.props["accessibility-value"], "Selected");
   assert.ok(
     content(view.tree()[0]).includes(
       "Changes are saved only when you choose Save.",
@@ -139,10 +141,16 @@ test("planning panels preserve item semantics, variants and dirty navigation", a
   await view.settle();
   assert.equal(dirty.at(-1), true);
   await tap("Edit label Bug");
-  assert.equal(row("label Feature").props["data-pressed"], "true");
+  assert.equal(
+    button("Edit label Feature, Conflict").props["data-pressed"],
+    "true",
+  );
   assert.ok(content(view.tree()[0]).includes("Discard unsaved changes?"));
   await tap("Keep editing");
-  assert.equal(row("label Feature").props["data-pressed"], "true");
+  assert.equal(
+    button("Edit label Feature, Conflict").props["data-pressed"],
+    "true",
+  );
   await tap("Edit label Bug");
   await tap("Discard changes");
   assert.equal(row("label Bug").props["data-pressed"], "true");
