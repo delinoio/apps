@@ -581,7 +581,7 @@ pub(crate) async fn new_entity(
         &p.account_id,
         entity_id,
         v,
-        kind == TASK && (v["task"].get("prompt").is_some() || v["task"].get("captures").is_some()),
+        kind == TASK && prompt_version(false, &[], &v["task"]),
     )
     .await?;
     add_head(db, &p.account_id, entity_id, string(v, "versionId")).await?;
