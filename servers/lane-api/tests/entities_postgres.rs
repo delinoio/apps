@@ -3084,6 +3084,136 @@ async fn stale_specialized_edits_use_the_submitted_base_for_membership() {
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL"]
+async fn sync_capture_only_initial_task_is_not_prompt_history() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+
+    let task = id();
+    let first_capture = image()["capture"].clone();
+    let mut initial = pushed_task(
+        &task,
+        &id(),
+        &[],
+        task_fields(
+            "Capture only",
+            REPO,
+            json!({"captures":[first_capture.clone()]}),
+        ),
+        3,
+    );
+    initial["promptRestoration"] = json!(false);
+    let create = mutation(initial.clone());
+    let applied = f.push(create.clone()).await.unwrap();
+    assert_eq!(
+        applied["results"][0]["result"]["result"],
+        "RESULT_KIND_APPLIED"
+    );
+    let first_version = string(&initial, "versionId").to_owned();
+    assert!(
+        f.envelope(&first_version).await["task"]
+            .get("prompt")
+            .is_none()
+    );
+    assert!(!f.flag(&first_version).await);
+    assert_eq!(f.history(&task, false).await, vec![first_version.clone()]);
+    assert!(f.history(&task, true).await.is_empty());
+    assert_eq!(f.count("lane_attachments").await, 1);
+    assert_eq!(f.count("lane_attachment_identities").await, 1);
+
+    let versions = f.count("lane_versions").await;
+    let replay = f.push(create).await.unwrap();
+    assert_eq!(
+        replay["results"][0]["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    assert_eq!(f.count("lane_versions").await, versions);
+    assert_eq!(f.count("lane_attachments").await, 1);
+    assert_eq!(f.count("lane_attachment_identities").await, 1);
+
+    let second_capture = image()["capture"].clone();
+    let added = version_id(
+        &f.edit(&task, &first_version, |body| {
+            body["captures"] = json!([first_capture.clone(), second_capture.clone()]);
+        })
+        .await,
+    );
+    assert!(f.flag(&added).await);
+    let reordered = version_id(
+        &f.edit(&task, &added, |body| {
+            body["captures"] = json!([second_capture, first_capture]);
+        })
+        .await,
+    );
+    assert!(f.flag(&reordered).await);
+    let removed = version_id(
+        &f.edit(&task, &reordered, |body| {
+            body["captures"] = json!([]);
+        })
+        .await,
+    );
+    assert!(f.flag(&removed).await);
+    let title_only = version_id(
+        &f.edit(&task, &removed, |body| body["title"] = json!("Renamed"))
+            .await,
+    );
+    assert!(!f.flag(&title_only).await);
+    assert_eq!(f.history(&task, false).await.len(), 5);
+    let mut prompt_versions = vec![added, removed, reordered];
+    prompt_versions.sort();
+    assert_eq!(f.history(&task, true).await, prompt_versions);
+
+    for (prompt, captures, expected_member) in [
+        (Some(""), Some(json!([image()["capture"].clone()])), true),
+        (Some("text"), None, true),
+        (None, None, false),
+        (None, Some(json!([])), false),
+    ] {
+        let entity = id();
+        let mut body = task_fields("Prompt presence", REPO, json!({}));
+        if let Some(prompt) = prompt {
+            body["prompt"] = json!(prompt);
+        }
+        if let Some(captures) = captures {
+            body["captures"] = captures;
+        }
+        let initial = pushed_task(&entity, &id(), &[], body, 3);
+        assert_eq!(
+            f.push(mutation(initial.clone())).await.unwrap()["results"][0]["result"]["result"],
+            "RESULT_KIND_APPLIED"
+        );
+        let version = string(&initial, "versionId").to_owned();
+        assert_eq!(f.flag(&version).await, expected_member);
+        assert_eq!(f.history(&entity, false).await, vec![version.clone()]);
+        assert_eq!(
+            f.history(&entity, true).await,
+            if expected_member {
+                vec![version]
+            } else {
+                vec![]
+            }
+        );
+    }
+
+    let captured_task = id();
+    let captured = f
+        .capture(
+            "CreateCaptureTask",
+            json!({"id":captured_task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Empty description","description":"","images":[image()]}),
+        )
+        .await
+        .unwrap();
+    let captured_version = version_id(&captured);
+    assert_eq!(captured["result"]["version"]["task"]["prompt"], "");
+    assert!(f.flag(&captured_version).await);
+    assert_eq!(
+        f.history(&captured_task, true).await,
+        vec![captured_version]
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
 async fn capture_changes_and_normalization_decide_membership() {
     let mut f = Fixture::new().await;
     f.repo(REPO, "https://example.com/repo").await;
