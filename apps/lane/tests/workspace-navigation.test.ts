@@ -54,6 +54,7 @@ test("a composer initialized before tab reads loads every repository page itself
     },
   };
   const cursors: string[] = [];
+  let ruleReads = 0;
   const completions: ((result: any) => void)[] = [];
   const view = runtime.mount(App, {
     providedAdapter: {
@@ -72,6 +73,7 @@ test("a composer initialized before tab reads loads every repository page itself
             });
           return { items: [repository("repo-b")], nextCursor: "" };
         }
+        if (method.name === "ListURLConnections") ruleReads++;
         return { items: [], nextCursor: "" };
       },
     },
@@ -79,6 +81,11 @@ test("a composer initialized before tab reads loads every repository page itself
   try {
     await view.settle();
     assert.deepEqual(cursors, ["", ""]);
+    assert.equal(
+      ruleReads,
+      1,
+      "URL rules load while repository choices are still pending",
+    );
     assert.ok(
       !visibleNodes(view.tree()).some((n) => n.props["data-workspace-tab"]),
     );

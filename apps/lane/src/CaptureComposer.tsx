@@ -61,7 +61,7 @@ export function CaptureComposer({
   useEffect(() => {
     if (!adapter) return;
     let active = true;
-    const load = async () => {
+    const loadRepositories = async () => {
       // Composer windows replace the tab tree, so their repository choices must
       // be loaded by the composer rather than by a retained Lane workspace.
       const repositoryResults: UI<EntityResult>[] = [];
@@ -75,6 +75,8 @@ export function CaptureComposer({
         repositoryCursor = r.nextCursor;
       } while (repositoryCursor);
       setRepositories(repositoryResults);
+    };
+    const loadRules = async () => {
       const all: { prefix: string; repositoryId: string }[] = [];
       let cursor = "";
       do {
@@ -90,10 +92,15 @@ export function CaptureComposer({
       } while (cursor);
       if (active) setRules(all);
     };
-    void load().catch((e) => setSaveError(e.message));
-    const stop = adapter.subscribe(() => {
-      void load().catch((e) => setSaveError(e.message));
-    });
+    const load = () => {
+      // Either lookup can fail independently; a slow repository list must not
+      // suppress URL-rule selection or warnings for the current capture.
+      void Promise.all([loadRepositories(), loadRules()]).catch((e) => {
+        if (active) setSaveError(e.message);
+      });
+    };
+    load();
+    const stop = adapter.subscribe(load);
     return () => {
       active = false;
       stop();
