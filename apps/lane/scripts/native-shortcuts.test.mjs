@@ -151,25 +151,41 @@ int main() { @autoreleasepool {
 function runFixture(source, flags) {
   const directory = mkdtempSync(join(tmpdir(), "lane-shortcuts-"));
   try {
-    const input = join(directory, flags.length ? "fixture.mm" : "fixture.cc");
+    const windows = process.platform === "win32";
+    const input = join(
+      directory,
+      flags.length ? "fixture.mm" : windows ? "fixture.cpp" : "fixture.cc",
+    );
     const output = join(directory, "fixture");
     writeFileSync(input, source);
-    execFileSync(
-      flags.length ? "clang++" : "c++",
-      ["-std=c++17", ...flags, input, "-o", output],
-      {
-        stdio: "pipe",
-      },
-    );
-    execFileSync(output, [], { stdio: "pipe" });
+    if (windows) {
+      const executable = `${output}.exe`;
+      execFileSync(
+        "cl.exe",
+        ["/nologo", "/std:c++17", "/EHsc", "/TP", input, `/Fe:${executable}`],
+        { stdio: "pipe" },
+      );
+      execFileSync(executable, [], { stdio: "pipe" });
+    } else {
+      execFileSync(
+        flags.length ? "clang++" : "c++",
+        ["-std=c++17", ...flags, input, "-o", output],
+        { stdio: "pipe" },
+      );
+      execFileSync(output, [], { stdio: "pipe" });
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 }
 
-test("Windows native shortcut validation preserves bindings before registration", () => {
-  runFixture(windows, []);
-});
+// Windows native builds use the documented MSVC host toolchain. Keep the
+// fixture off Linux, where Lane has no native desktop compiler contract.
+test(
+  "Windows native shortcut validation preserves bindings before registration",
+  { skip: !["darwin", "win32"].includes(process.platform) },
+  () => runFixture(windows, []),
+);
 
 test(
   "macOS native shortcut validation preserves bindings before registration",
