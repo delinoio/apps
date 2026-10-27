@@ -10,6 +10,7 @@ import {
   existsSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { normalizeLauncherArchive } from "./archive.mjs";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 export const root = resolve(
@@ -185,6 +186,11 @@ export function stage({
       cwd: join(output, kind),
       stdio: "pipe",
     });
+  const entryArchive = join(output, archives.entry);
+  writeFileSync(
+    entryArchive,
+    normalizeLauncherArchive(readFileSync(entryArchive)),
+  );
   const files = Object.values(archives);
   writeFileSync(
     join(output, "SHA256SUMS"),
