@@ -136,6 +136,65 @@ test("repository directory distinguishes load, empty and retained-row refresh fa
   }
 });
 
+test("a successful refresh clears its error without clearing task-open errors", async () => {
+  const { App, runtime } = await loadApp();
+  let invalidate = () => {};
+  let failTaskRefresh = false;
+  const view = runtime.mount(App, {
+    providedAdapter: {
+      mode: "web",
+      spaceId: "fixture",
+      open: async () => {},
+      close() {},
+      subscribe: (callback: () => void) => {
+        invalidate = callback;
+        return () => {};
+      },
+      local: async () => ({}),
+      call: (method: { name: string }) => {
+        if (method.name === "ListRepositories")
+          return Promise.resolve({
+            items: [
+              version("website", "Website", "github.com/example/website"),
+            ],
+            nextCursor: "",
+          });
+        if (method.name === "ListTasks" && failTaskRefresh)
+          return Promise.reject(new Error("Task refresh failed"));
+        return Promise.resolve({ items: [], nextCursor: "" });
+      },
+    },
+  });
+  const nodes = () => visible(view.tree());
+  const text = () => nodes().map(words).join(" ");
+  const action = (label: string) => {
+    const found = nodes().find(
+      (node) =>
+        node.props["accessibility-label"] === label && node.props.bindtap,
+    );
+    assert.ok(found, label);
+    return found;
+  };
+  try {
+    await view.settle();
+    action("Repositories").props.bindtap();
+    await view.settle();
+    assert.match(text(), /Website/);
+
+    failTaskRefresh = true;
+    invalidate();
+    await view.settle();
+    assert.match(text(), /Task refresh failed/);
+
+    failTaskRefresh = false;
+    action("Retry").props.bindtap();
+    await view.settle();
+    assert.doesNotMatch(text(), /Task refresh failed/);
+  } finally {
+    view.unmount();
+  }
+});
+
 test("submitted repository save locks the form and cannot close a newer editor", async () => {
   const { App, runtime } = await loadApp();
   const saves: { input: any; reply: Reply }[] = [];

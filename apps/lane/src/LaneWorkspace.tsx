@@ -84,8 +84,9 @@ export function LaneWorkspace({
 }) {
   const [planningDirty, setPlanningDirty] = useState(false);
   const [taskError, setTaskError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
   const [repositoryError, setRepositoryError] = useState("");
-  const error = taskError || repositoryError;
+  const error = taskError || refreshError || repositoryError;
   const [loading, setLoading] = useState(true);
   const page = target.page ?? LanePage.Tasks;
   const [repository, setRepository] = useState(target.repositoryId ?? "");
@@ -204,6 +205,7 @@ export function LaneWorkspace({
             setDraft((d) => (d ? receiveExternal(d, r.result!) : d));
           }
         }
+        if (active) setRefreshError("");
       } catch (e) {
         if (active) {
           if (!repositoriesLoaded) {
@@ -212,7 +214,7 @@ export function LaneWorkspace({
               e instanceof Error ? e.message : "Refresh failed.",
             );
           } else {
-            setTaskError(e instanceof Error ? e.message : "Refresh failed.");
+            setRefreshError(e instanceof Error ? e.message : "Refresh failed.");
           }
         }
       }
