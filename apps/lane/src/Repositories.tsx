@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { UI } from "./serializable";
-import { useEffect, useState } from "@lynx-js/react";
+import { useCallback, useEffect, useState } from "@lynx-js/react";
 import {
   LaneService,
   type EntityResult as ProtoEntityResult,
@@ -44,7 +44,19 @@ export function Repositories({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [planningDirty, setPlanningDirty] = useState(false);
-  const [planningBusy, setPlanningBusy] = useState(false);
+  const [planningOperations, setPlanningOperations] = useState(0);
+  // The repository pane outlives its planning manager. Retain each operation
+  // until its promise settles, including operations from an older manager.
+  const beginPlanningOperation = useCallback(() => {
+    setPlanningOperations((count) => count + 1);
+    let finished = false;
+    return () => {
+      if (finished) return;
+      finished = true;
+      setPlanningOperations((count) => count - 1);
+    };
+  }, []);
+  const planningBusy = planningOperations > 0;
   const stored = editing?.base
     ? items.find((item) => item.version?.entityId === editing.id)?.version
     : undefined;
@@ -106,7 +118,7 @@ export function Repositories({
         planning={planning}
         refresh={refresh}
         dirty={setPlanningDirty}
-        busyChanged={setPlanningBusy}
+        beginOperation={beginPlanningOperation}
         back={() => setDetail("")}
       />
     );

@@ -265,3 +265,89 @@ test("mobile repository scope opens the destination tab without changing the ori
     view.unmount();
   }
 });
+
+test("planning operation reports survive manager unmount until every request settles", async () => {
+  const { App, runtime } = await loadApp();
+  const label = {
+    version: {
+      entityId: "label",
+      versionId: "version",
+      body: {
+        case: "label",
+        value: { repositoryId: "repo-a", name: "Backend", color: "#075AFF" },
+      },
+    },
+    alternatives: [],
+  };
+  const pending: {
+    resolve: (value: any) => void;
+    reject: (error: Error) => void;
+  }[] = [];
+  const view = runtime.mount(App, {
+    providedAdapter: {
+      mode: "web",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      local: async () => ({}),
+      call: async (method: any) => {
+        if (method.name === "SavePlanningItem")
+          return new Promise((resolve, reject) =>
+            pending.push({ resolve, reject }),
+          );
+        return {
+          items:
+            method.name === "ListRepositories"
+              ? [repository("repo-a")]
+              : method.name === "ListPlanningItems"
+                ? [label]
+                : [],
+          nextCursor: "",
+        };
+      },
+    },
+  });
+  const busy = () =>
+    visibleNodes(view.tree())
+      .find((n) => n.props["accessibility-label"] === "Close Repositories")
+      ?.props.className.includes("disabled");
+  const startAndLeave = async () => {
+    tap(view.tree(), "Labels, milestones and cycles");
+    await view.settle();
+    tap(view.tree(), "Edit label Backend");
+    await view.settle();
+    tap(view.tree(), "Save");
+    await view.settle();
+    tap(view.tree(), "Back to repositories");
+    await view.settle();
+    assert.equal(
+      busy(),
+      true,
+      "the hidden request still blocks closing the repository tab",
+    );
+  };
+  try {
+    await view.settle();
+    tap(view.tree(), "Repositories");
+    await view.settle();
+    await startAndLeave();
+    await startAndLeave();
+    assert.equal(pending.length, 2);
+    pending[0].resolve({ result: { result: 1, version: label.version } });
+    await view.settle();
+    assert.equal(
+      busy(),
+      true,
+      "finishing an older manager cannot release a newer operation",
+    );
+    pending[1].reject(new Error("Simulated save failure"));
+    await view.settle();
+    assert.equal(
+      busy(),
+      false,
+      "failure also releases the last operation after navigation",
+    );
+  } finally {
+    view.unmount();
+  }
+});

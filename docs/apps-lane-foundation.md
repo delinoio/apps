@@ -108,6 +108,9 @@ saves or discards input. Each tab owns its reads, mutations, conflict state and
 retry identity: a late response can refresh its owning pane but cannot select
 that pane or replace another tab's editor. Closing the pane invalidates its
 outstanding read ownership; an already submitted mutation is not rolled back.
+The repository pane owns pending planning-operation reports until their promises
+settle, even after the planning manager closes. Overlapping old and reopened
+managers must keep the pane busy until every operation finishes.
 Leaving the Events tab ends a pending event-detail inspection, while retaining
 its list filters and receiver draft; a late inspection must not open a dialog
 when that tab returns. Subscribe to shared data invalidation once per window.

@@ -56,7 +56,7 @@ export function PlanningManager({
   planning,
   refresh,
   dirty,
-  busyChanged,
+  beginOperation,
   back,
 }: {
   adapter: LaneAdapter;
@@ -64,7 +64,7 @@ export function PlanningManager({
   planning: PlanningState;
   refresh: () => void;
   dirty: (value: boolean) => void;
-  busyChanged?: (value: boolean) => void;
+  beginOperation?: () => () => void;
   back: () => void;
 }) {
   const repositoryId = repository.version!.entityId;
@@ -73,9 +73,6 @@ export function PlanningManager({
   const [attempted, setAttempted] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    busyChanged?.(busy);
-  }, [busy, busyChanged]);
   const [deleting, setDeleting] = useState(false);
   const [history, setHistory] = useState<EntityVersion[] | null>(null);
   const [historyCursor, setHistoryCursor] = useState("");
@@ -102,6 +99,7 @@ export function PlanningManager({
   const run = async (action: () => Promise<void>) => {
     if (lock.current) return;
     lock.current = true;
+    const finishOperation = beginOperation?.();
     setBusy(true);
     setError("");
     try {
@@ -111,6 +109,7 @@ export function PlanningManager({
     } finally {
       lock.current = false;
       setBusy(false);
+      finishOperation?.();
     }
   };
   const unsaved =
