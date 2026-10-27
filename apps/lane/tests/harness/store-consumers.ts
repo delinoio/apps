@@ -42,9 +42,9 @@ const plugin: Plugin = {
       loader: "js",
     }));
     b.onLoad(
-      { filter: /\/src\/(realqa-host\.ts|RealQA\.tsx|runtime\.ts)$/ },
+      { filter: /[\\/]src[\\/](realqa-host\.ts|RealQA\.tsx|runtime\.ts)$/ },
       (args) => ({
-        contents: stubs[args.path.slice(lane.length)],
+        contents: stubs[args.path.slice(lane.length).replaceAll("\\", "/")],
         loader: "js",
       }),
     );

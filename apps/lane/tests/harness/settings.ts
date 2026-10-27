@@ -44,9 +44,12 @@ const plugin: Plugin = {
       loader: "js",
     }));
     b.onLoad(
-      { filter: /\/src\/(AppUpdates\.tsx|ResetDevelopment\.tsx|runtime\.ts)$/ },
+      {
+        filter:
+          /[\\/]src[\\/](AppUpdates\.tsx|ResetDevelopment\.tsx|runtime\.ts)$/,
+      },
       (args) => {
-        const key = args.path.slice(lane.length);
+        const key = args.path.slice(lane.length).replaceAll("\\", "/");
         return { contents: stubs[key], loader: "js" };
       },
     );
