@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -14,6 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
+import { desktopTarCommand } from "./desktop-archive.mjs";
 import {
   acquireNugetPackage,
   ensureWindowsAppSdk,
@@ -36,6 +38,51 @@ function write(path, content = "fixture") {
   writeFileSync(path, content);
   return path;
 }
+
+test("Windows ZIP extraction selects the system tool independently of PATH", () => {
+  assert.equal(
+    desktopTarCommand("win32", {
+      SystemRoot: "C:\\Windows",
+      PATH: "D:\\Git\\usr\\bin",
+    }),
+    "C:\\Windows\\System32\\tar.exe",
+  );
+  for (const SystemRoot of [undefined, "", "Windows"])
+    assert.throws(
+      () => desktopTarCommand("win32", { SystemRoot }),
+      /absolute SystemRoot/,
+    );
+});
+
+test(
+  "native desktop tar extracts a ZIP through absolute paths with spaces",
+  {
+    skip: !["win32", "darwin"].includes(process.platform),
+  },
+  (context) => {
+    const root = fixture(context);
+    const archive = join(root, "SDK package.zip");
+    const destination = join(root, "extracted SDK");
+    mkdirSync(destination);
+    writeFileSync(
+      archive,
+      Buffer.from(
+        "UEsDBBQAAAAAANuKW12XvlOVFQAAABUAAAAPAAAAc2RrL3BheWxvYWQudHh0dmVyaWZpZWQgWklQIHBheWxvYWQKUEsBAhQDFAAAAAAA24pbXZe+U5UVAAAAFQAAAA8AAAAAAAAAAAAAAIABAAAAAHNkay9wYXlsb2FkLnR4dFBLBQYAAAAAAQABAD0AAABCAAAAAAA=",
+        "base64",
+      ),
+    );
+    const result = spawnSync(
+      desktopTarCommand(),
+      ["-xf", archive, "-C", destination],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.error?.message || result.stderr);
+    assert.equal(
+      readFileSync(join(destination, "sdk/payload.txt"), "utf8"),
+      "verified ZIP payload\n",
+    );
+  },
+);
 
 function harness(context, arch = "x64") {
   const root = fixture(context);
@@ -74,7 +121,7 @@ function harness(context, arch = "x64") {
     },
     runCommand: (command, args) => {
       commands.push({ command, args });
-      if (command === "tar") {
+      if (command === desktopTarCommand()) {
         const component = args[1].split(/[\\/]/).at(-1).replace(".nupkg", "");
         if (args[0] === "-tf") return entries[component].join("\n");
         if (failure === "extraction")
@@ -241,7 +288,9 @@ test("generates both projections with OS metadata, validates files and reuses a 
     paths.notices.map(({ name }) => name),
     ["foundation-license.txt", "runtime-NOTICE.txt", "cppwinrt-LICENSE.txt"],
   );
-  const generated = fixture.commands.find(({ command }) => command !== "tar");
+  const generated = fixture.commands.find(
+    ({ command }) => command !== desktopTarCommand(),
+  );
   assert.equal(generated.args.filter((value) => value === "-input").length, 3);
   assert.ok(generated.args.some((value) => value.endsWith("Windows.winmd")));
   assert.ok(generated.args.includes("-reference"));

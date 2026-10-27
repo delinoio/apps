@@ -21,6 +21,7 @@ import {
   resolve,
 } from "node:path";
 import { spawnSync } from "node:child_process";
+import { desktopTarCommand } from "./desktop-archive.mjs";
 
 export const windowsAppSdkKeys = Object.freeze([
   "LANE_WINDOWS_APP_SDK_INCLUDE_DIR",
@@ -372,7 +373,7 @@ export async function ensureWindowsAppSdk({
         fetchImpl,
       });
       const entries = validateArchiveEntries(
-        runCommand("tar", ["-tf", archive]),
+        runCommand(desktopTarCommand(), ["-tf", archive]),
       );
       const selected = entries.filter((entry) =>
         component === "foundation"
@@ -393,7 +394,14 @@ export async function ensureWindowsAppSdk({
         throw new Error(`Required SDK files missing from ${spec.id}`);
       const extracted = join(stage, component);
       mkdirSync(extracted);
-      runCommand("tar", ["-xf", archive, "-C", extracted, "--", ...selected]);
+      runCommand(desktopTarCommand(), [
+        "-xf",
+        archive,
+        "-C",
+        extracted,
+        "--",
+        ...selected,
+      ]);
       fileInventory(extracted);
     }
     const includes = join(stage, "include");
