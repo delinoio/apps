@@ -33,6 +33,7 @@ only for the behavior specified here; Pace remains outside this scope.
 
 - Support full-screen, individual-window, rectangular-region, and Chrome DOM-element capture. Full-screen capture asks the user to select a monitor and adds one image from that monitor.
 - Provide four separately configurable shortcuts. All start unassigned. Reject conflicts with OS or other application shortcuts, explain the conflict, and preserve any previous valid binding. Support assigning, changing, canceling, and clearing a shortcut.
+- Reserve Lane's Command+Q/O/K shortcuts on macOS and Ctrl+Q/O/K shortcuts on Windows for application navigation. Apply the same check when restoring saved capture shortcuts. Reject a collision before global registration and leave the capture mode inactive or keep its previous valid binding.
 - Provide the same capture actions from the RealQA start screen and the composer's `Add capture` menu.
 - Lane must already be running. Closing its main window does not disable capture shortcuts or the enabled background host. Fully quitting Lane stops this functionality; the extension explains that Lane must be started. Do not add automatic cold launch from an extension request.
 - Each successful capture opens the floating composer or appends to the existing unsaved composer. Multiple captures belong to one new task. Preserve per-image browser metadata and edit state.
