@@ -14,6 +14,8 @@ use super::{
 use crate::protocol::fingerprint;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use caseless::Caseless;
+use chrono::{DateTime, Utc};
+use rusqlite::OptionalExtension;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -109,6 +111,158 @@ fn in_points(range: &Value, value: Option<u64>) -> bool {
         return false;
     }
     min.is_none_or(|m| value >= m) && max.is_none_or(|m| value <= m)
+}
+#[derive(Clone, Copy)]
+enum Completed {
+    Omitted,
+    None,
+    All,
+    Since(DateTime<Utc>),
+}
+fn timestamp(value: &str) -> Option<DateTime<Utc>> {
+    let parsed = DateTime::parse_from_rfc3339(value)
+        .ok()?
+        .with_timezone(&Utc);
+    (parsed.timestamp_subsec_nanos() % 1_000 == 0).then_some(parsed)
+}
+fn completed_filter(request: &Value) -> Result<Completed> {
+    let Some(filter) = request.get("completed") else {
+        return Ok(Completed::Omitted);
+    };
+    let selection = strv(filter, "selection");
+    let cutoff = filter.get("cutoff");
+    match selection {
+        "COMPLETED_SELECTION_NONE" | "COMPLETED_SELECTION_ALL" if cutoff.is_none() => {
+            Ok(if selection == "COMPLETED_SELECTION_NONE" {
+                Completed::None
+            } else {
+                Completed::All
+            })
+        }
+        "COMPLETED_SELECTION_LAST_24_HOURS"
+        | "COMPLETED_SELECTION_LAST_7_DAYS"
+        | "COMPLETED_SELECTION_LAST_30_DAYS" => cutoff
+            .and_then(Value::as_str)
+            .and_then(timestamp)
+            .map(Completed::Since)
+            .ok_or_else(|| invalid("Completed duration requires a microsecond-precision cutoff.")),
+        _ => Err(invalid("Invalid completed selection or cutoff.")),
+    }
+}
+fn terminal(progress: &str) -> bool {
+    matches!(progress, "PROGRESS_DONE" | "PROGRESS_CANCELED")
+}
+// A transition is identified by its version ID, not only its timestamp. Equal timestamps
+// on distinct parent paths cannot establish a unique entry into the current exact state.
+fn terminal_entry(
+    c: &Connection,
+    entity: &str,
+    version: &Value,
+    progress: &str,
+    visiting: &mut HashSet<String>,
+) -> Result<Option<(String, DateTime<Utc>)>> {
+    let id = strv(version, "versionId");
+    if !visiting.insert(id.to_owned()) {
+        return Ok(None);
+    }
+    let parents = version["parentVersionIds"].as_array();
+    let answer = if parents.is_none_or(Vec::is_empty) {
+        timestamp(strv(version, "createdAt")).map(|time| (id.to_owned(), time))
+    } else {
+        let parents = parents.expect("nonempty parent array");
+        let mut same = Vec::new();
+        let mut different = 0;
+        let mut missing = false;
+        for parent_id in parents {
+            let Some(parent_id) = parent_id.as_str() else {
+                missing = true;
+                break;
+            };
+            let raw: Option<String> = c
+                .query_row(
+                    "SELECT envelope_json FROM versions WHERE entity_id=? AND version_id=?",
+                    [entity, parent_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(raw) = raw else {
+                missing = true;
+                break;
+            };
+            let parent: Value = serde_json::from_str(&raw)?;
+            if strv(&parent["task"], "progress") == progress && parent["deleted"] != true {
+                same.push(parent);
+            } else {
+                different += 1;
+            }
+        }
+        if missing || (!same.is_empty() && different != 0) {
+            None
+        } else if same.is_empty() {
+            timestamp(strv(version, "createdAt")).map(|time| (id.to_owned(), time))
+        } else {
+            let mut candidate = None;
+            let mut unique = true;
+            for parent in same {
+                let entry = terminal_entry(c, entity, &parent, progress, visiting)?;
+                if entry.is_none()
+                    || candidate
+                        .as_ref()
+                        .is_some_and(|current| Some(current) != entry.as_ref())
+                {
+                    unique = false;
+                }
+                if candidate.is_none() {
+                    candidate = entry;
+                }
+            }
+            unique.then_some(candidate).flatten()
+        }
+    };
+    visiting.remove(id);
+    Ok(answer)
+}
+fn completed_matches(
+    c: &Connection,
+    entity: &str,
+    heads: &[Value],
+    selected: &Value,
+    completed: Completed,
+) -> Result<bool> {
+    if matches!(completed, Completed::Omitted | Completed::All) {
+        return Ok(true);
+    }
+    let progress = strv(&selected["task"], "progress");
+    if !terminal(progress) {
+        return Ok(true);
+    }
+    let Completed::Since(cutoff) = completed else {
+        return Ok(false);
+    };
+    Ok(entry_for_heads(c, entity, heads, progress)?.is_none_or(|(_, time)| time >= cutoff))
+}
+fn entry_for_heads(
+    c: &Connection,
+    entity: &str,
+    heads: &[Value],
+    progress: &str,
+) -> Result<Option<(String, DateTime<Utc>)>> {
+    let mut candidate = None;
+    for head in heads {
+        if strv(&head["task"], "progress") != progress {
+            return Ok(None); // Unresolved heads make the terminal entry UNKNOWN.
+        }
+        let entry = terminal_entry(c, entity, head, progress, &mut HashSet::new())?;
+        if entry.is_none()
+            || candidate
+                .as_ref()
+                .is_some_and(|current| Some(current) != entry.as_ref())
+        {
+            return Ok(None);
+        }
+        candidate = entry;
+    }
+    Ok(candidate)
 }
 fn validate_filter(request: &Value) -> Result<()> {
     let filter = &request["filter"];
@@ -470,6 +624,7 @@ impl Store {
             }
         }
         validate_filter(request)?;
+        let completed = completed_filter(request)?;
         let mut query = request.clone();
         query.as_object_mut().unwrap().remove("page");
         let scope = format!(
@@ -513,6 +668,11 @@ impl Store {
             [&start],
         )? {
             let heads = heads(c, &id)?;
+            // The first head is the existing local sort projection. Other filters
+            // still inspect every head, but completed time must use one current progress.
+            if !completed_matches(c, &id, &heads, &heads[0], completed)? {
+                continue;
+            }
             let mut matched = false;
             for h in &heads {
                 let task = &h["task"];
@@ -626,3 +786,7 @@ impl Store {
         Ok(json!({"items": items, "nextCursor": next}))
     }
 }
+
+#[cfg(test)]
+#[path = "completed_tests.rs"]
+mod completed_tests;

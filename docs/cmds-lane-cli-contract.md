@@ -63,6 +63,7 @@ Names are public command groups; help must spell out required arguments and loca
 
 `task list` accepts, in addition to the existing options:
 
+- `--completed none|last-24-hours|last-7-days|last-30-days|all`. A duration also requires `--completed-cutoff <UTC RFC 3339 timestamp>` at microsecond precision. Reuse that exact cutoff with `--cursor` on later pages. Omit both flags to keep the previous result set. `--request-json` and local MCP accept the same typed `CompletedFilter` as remote calls.
 - `--priority V` (repeatable) with `--priority-unassigned`; `--type V` with `--type-unassigned`; `--label-id UUID` with `--unlabeled`.
 - `--start-from D`, `--start-to D`, `--start-unassigned`; `--due-from D`, `--due-to D`, `--due-unassigned`; `--points-min N`, `--points-max N`, `--points-unassigned`.
 - `--milestone-id UUID` with `--no-milestone`; `--cycle-id UUID` with `--no-cycle`.
@@ -70,6 +71,8 @@ Names are public command groups; help must spell out required arguments and loca
 - `--sort priority|type|start-date|due-date|story-points|milestone-name|cycle-start-date` and `--direction asc|desc`.
 
 Filter fields combine with AND, selected values within a field with OR, and an unassigned flag adds that field's unassigned case. Unassigned values sort last in both directions, ties break by task ID, and pages continue consistently through `--cursor`. The semantics are identical to the [protocol contract](protos-lane-v1-contract.md#task-list-filtering-and-sorting).
+
+For a completed duration, the local store follows its existing first-head sort projection's immutable parent graph. It uses the unique entry into the exact Done or Canceled state, even when the parent is outside a displayed history page. If missing or divergent ancestry prevents a unique entry, the entry is UNKNOWN and passes duration selections. Future entries pass the inclusive cutoff. `none` hides terminal tasks; `all` and omission keep them. The completed predicate runs before sorting and pagination, combines with every other filter, and binds the selection and cutoff to the cursor. The existing conflict result and head selection remain unchanged. Filtering does not write task versions or change the local format.
 
 `label create --repository-id UUID --name N --color #RRGGBB [--description D]`, `milestone create --repository-id UUID --name N [--description D] [--target-date D] [--completed true|false]` and `cycle create --repository-id UUID --name N --start-date D --end-date D [--description D]` create items. `list` accepts `--repository-id UUID` and the usual paging options, and `get ID` reads one item. `edit ID --expected-version UUID` replaces the supplied fields and cannot change an item's kind or repository. `delete ID` is itself confirmation and detaches the item from tasks while keeping the tasks. `history ID [--page-size N --cursor T]` shows before/after values, time and origin; there is no restore command. `conflict list/get --kind label|milestone|cycle` reads planning-item conflicts and `conflict resolve` submits the complete expected head set. All of these accept `--request-id` and `--request-json`, and `--remote` for server data. `label create` and `label edit` read `--color` as the `#RRGGBB` label color; the terminal option keeps its `auto` and `never` values (`--color=never`) and both can appear in one invocation.
 
