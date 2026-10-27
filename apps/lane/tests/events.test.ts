@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import test from "node:test";
+import { EventState } from "@repo/protos/lane/v1/lane_pb";
 import {
   loadEvents,
   type EventsBundle,
@@ -112,6 +113,11 @@ async function open() {
   };
   const dialogButton = (label: string) =>
     all([dialog()], (n) => isButton(n) && text(n) === label)[0];
+  const filterButton = (label: string) =>
+    all(
+      view.tree(),
+      (n) => isButton(n) && n.props["accessibility-label"] === label,
+    )[0];
   const edit = async () => {
     const [edit] = all(
       view.tree(),
@@ -129,7 +135,12 @@ async function open() {
     await view.settle();
   };
   const notices = () =>
-    all([dialog()], (n) => n.props.className === "notice").map(text);
+    all(
+      [dialog()],
+      (n) =>
+        n.props.className === "notice" ||
+        n.props.className === "notice events-feedback",
+    ).map(text);
   const selected = (option: string) =>
     /(^| )primary( |$)/.test(choice(option).props.className);
   return {
@@ -140,6 +151,7 @@ async function open() {
     input,
     choice,
     dialogButton,
+    filterButton,
     edit,
     tap,
     type,
@@ -268,6 +280,39 @@ test("receiver editing and ordinary save are unchanged without a pending save", 
     await view.settle();
     assert.equal(view.dialog(), undefined);
     assert.equal(view.count("ListReceivers"), loadsBefore + 1);
+  } finally {
+    view.unmount();
+  }
+});
+
+test("repository and event state filters send separate scopes and expose selection", async () => {
+  const view = await open();
+  try {
+    await view.tap(view.filterButton("Repository: Repo One"));
+    let reads = view.calls.filter((call) => call.name === "ListReceivers");
+    let events = view.calls.filter((call) => call.name === "ListEvents");
+    assert.equal(reads.at(-1)?.request.repositoryId, "R1");
+    assert.equal(events.at(-1)?.request.repositoryId, "R1");
+    assert.deepEqual(events.at(-1)?.request.states, []);
+    assert.equal(
+      view.filterButton("Repository: Repo One").props["data-pressed"],
+      "true",
+    );
+
+    await view.tap(view.filterButton("Event state: Processing"));
+    reads = view.calls.filter((call) => call.name === "ListReceivers");
+    events = view.calls.filter((call) => call.name === "ListEvents");
+    assert.equal(reads.at(-1)?.request.repositoryId, "R1");
+    assert.equal(reads.at(-1)?.request.states, undefined);
+    assert.deepEqual(events.at(-1)?.request.states, [EventState.LEASED]);
+    assert.equal(
+      view.filterButton("Event state: Processing").props["data-pressed"],
+      "true",
+    );
+    assert.equal(
+      view.filterButton("Event state: Pending").props["data-pressed"],
+      "false",
+    );
   } finally {
     view.unmount();
   }

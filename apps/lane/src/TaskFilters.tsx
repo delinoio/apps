@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { SortDirection, TaskSortKey } from "@repo/protos/lane/v1/lane_pb";
-import { Button, Choices, Field, MultiChoices, Notice } from "./components";
+import {
+  Button,
+  Choices,
+  Field,
+  MenuChoices,
+  MultiChoices,
+  Notice,
+} from "./components";
 import {
   PlanningKind,
   activeFilterCount,
@@ -30,6 +37,7 @@ export function TaskFilters({
   setSortKey,
   sortDirection,
   setSortDirection,
+  separateSort = false,
 }: {
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -44,6 +52,7 @@ export function TaskFilters({
   setSortKey: (key: TaskSortKey) => void;
   sortDirection: SortDirection;
   setSortDirection: (direction: SortDirection) => void;
+  separateSort?: boolean;
 }) {
   const count = activeFilterCount(filter);
   const patch = (changes: Partial<FilterState>) =>
@@ -249,15 +258,42 @@ export function TaskFilters({
           </text>
         </view>
       )}
-      <Choices
-        exclusive
+      {!separateSort && (
+        <TaskSortControls
+          sortKey={sortKey}
+          setSortKey={setSortKey}
+          sortDirection={sortDirection}
+          setSortDirection={setSortDirection}
+        />
+      )}
+    </view>
+  );
+}
+
+export function TaskSortControls({
+  sortKey,
+  setSortKey,
+  sortDirection,
+  setSortDirection,
+  compact = false,
+}: {
+  sortKey: TaskSortKey;
+  setSortKey: (key: TaskSortKey) => void;
+  sortDirection: SortDirection;
+  setSortDirection: (direction: SortDirection) => void;
+  compact?: boolean;
+}) {
+  const Control = compact ? MenuChoices : Choices;
+  return (
+    <view className={compact ? "proposal-sort" : "task-sort"}>
+      <Control
         label="Sort by"
         value={sortKey}
         options={sortKeyOptions}
         onChange={setSortKey}
+        {...(!compact ? { exclusive: true } : {})}
       />
-      <Choices
-        exclusive
+      <Control
         label="Sort direction"
         value={
           sortDirection === SortDirection.UNSPECIFIED
@@ -267,6 +303,7 @@ export function TaskFilters({
         options={sortDirectionOptions}
         onChange={setSortDirection}
         disabled={sortKey === TaskSortKey.UNSPECIFIED}
+        {...(!compact ? { exclusive: true } : {})}
       />
       {sortKey !== TaskSortKey.UNSPECIFIED && (
         <text className="muted">

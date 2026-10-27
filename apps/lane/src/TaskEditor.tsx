@@ -5,13 +5,14 @@ import { useEffect, useRef, useState } from "@lynx-js/react";
 import { create } from "@bufbuild/protobuf";
 import {
   LaneService,
+  OriginKind,
   Proposal,
   TaskSchema,
   ResultKind,
   type EntityResult as ProtoEntityResult,
   type EntityVersion as ProtoEntityVersion,
 } from "@repo/protos/lane/v1/lane_pb";
-import { meta, newId, type LaneAdapter } from "./adapter";
+import { LaneError, meta, newId, type LaneAdapter } from "./adapter";
 import { RequestAttempt, SpecializedAction } from "./requestAttempt";
 import { Button, Choices, Dialog, Field, Markdown, Notice } from "./components";
 import { TaskProperties } from "./TaskProperties";
@@ -36,6 +37,7 @@ import {
   headIds,
   heads,
   historyEntryChanges,
+  historyBaseline,
   progressOptions,
   promptForPresence,
   proposalOptions,
@@ -46,6 +48,63 @@ import {
 } from "./model";
 import { hostAction } from "./runtime";
 import type { EditorCompletion } from "./editorLifetime";
+
+enum HistoryMode {
+  Task = "task",
+  Prompts = "prompts",
+}
+
+type HistorySession = {
+  mode: HistoryMode;
+  versions: EntityVersion[];
+  cursor: string;
+  loading: boolean;
+  loadingMore: boolean;
+  error: string;
+  retryable: boolean;
+  restoreError: string;
+  restoreErrorId: string;
+  restoreRetryable: boolean;
+  restoringId: string;
+};
+
+const historyFieldLabels: Record<string, string> = {
+  title: "Title",
+  description: "Description",
+  progress: "Progress",
+  proposal: "Proposal",
+  repositoryId: "Repository",
+};
+
+function historyOrigin(version: EntityVersion): string {
+  const kind = version.origin?.kind;
+  const name =
+    kind === OriginKind.APP
+      ? "App"
+      : kind === OriginKind.CLI
+        ? "CLI"
+        : kind === OriginKind.MCP
+          ? "MCP"
+          : "Unknown";
+  return [
+    name,
+    version.origin?.deviceName,
+    version.origin?.accountId || "Local account",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function historyRetryable(error: unknown): boolean {
+  if (!(error instanceof LaneError)) return true;
+  if (
+    /PERMISSION|UNAUTH|FORBIDDEN|CONFLICT|STALE|DELETED|NOT_FOUND/.test(
+      error.detail.reason,
+    )
+  )
+    return false;
+  return error.detail.retryable !== false;
+}
 export function TaskEditor({
   adapter,
   draft,
@@ -85,12 +144,21 @@ export function TaskEditor({
   }, [busy, busyChanged]);
   const [error, setError] = useState("");
   const [repositoryUrl, setRepositoryUrl] = useState("");
-  const [history, setHistory] = useState<EntityVersion[] | null>(null);
-  const [historyCursor, setHistoryCursor] = useState("");
-  const [prompts, setPrompts] = useState(false);
+  const [historySession, setHistorySession] = useState<HistorySession>();
+  const historyOwner = useRef({ generation: 0, pending: false, active: false });
+  // Retained task tabs can mount several editors; each dialog must return focus
+  // to its own launcher rather than a launcher in another tab.
+  const [historyTriggers] = useState(() => ({
+    task: `task-history-${Math.random().toString(36).slice(2)}`,
+    prompts: `prompt-versions-${Math.random().toString(36).slice(2)}`,
+  }));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [resolve, setResolve] = useState(false);
   const [resolution, setResolution] = useState<EntityVersion>();
+  const [selectedHeadId, setSelectedHeadId] = useState<string>();
+  const [compareFocusId] = useState(
+    () => "compare-conflict-" + Math.random().toString(36).slice(2),
+  );
   // Head set the user reviewed when the resolution session began. The resolution is
   // always submitted against this snapshot, never against a later refreshed `current`.
   const [reviewedHeads, setReviewedHeads] = useState<string[]>();
@@ -98,6 +166,7 @@ export function TaskEditor({
   // inspection and explicit reuse after the current versions are reviewed again.
   const [retained, setRetained] = useState<EntityVersion>();
   const resolutionStaleNow = resolutionStale(reviewedHeads, current);
+  const currentHeads = current ? heads(current) : [];
   // Preserve the request across an unchanged retry, including response loss.
   const [attempt, setAttempt] = useState<{ key: string; requestId: string }>();
   // Proposal decisions and prompt restorations keep their request identity across
@@ -114,6 +183,26 @@ export function TaskEditor({
   const [attempted, setAttempted] = useState(false);
   // Guards double submission before React re-renders the disabled state.
   const submitting = useRef(false);
+  const editResolution = (
+    patch: Partial<NonNullable<ReturnType<typeof taskOf>>>,
+  ) => {
+    if (submitting.current || !resolution || !taskOf(resolution)) return;
+    setResolution({
+      ...resolution,
+      body: {
+        case: "task",
+        value: createUITask({ ...taskOf(resolution)!, ...patch }),
+      },
+    });
+  };
+  useEffect(() => {
+    setHistorySession(undefined);
+    return () => {
+      historyOwner.current.generation++;
+      historyOwner.current.pending = false;
+      historyOwner.current.active = false;
+    };
+  }, [adapter, draft.id]);
   useEffect(() => {
     setPointsText(pointsOf(draft.task.storyPoints));
   }, [draft.id, draft.base]);
@@ -290,15 +379,154 @@ export function TaskEditor({
       await options.reload().catch(() => undefined);
       completion.saved(reply.result);
     });
-  const loadHistory = async (onlyPrompts: boolean, more = false) => {
-    const r = await adapter.call(LaneService.method.listHistory, {
-      id: draft.id,
-      promptsOnly: onlyPrompts,
-      page: { size: 100, cursor: more ? historyCursor : "" },
+  const closeHistory = () => {
+    historyOwner.current.generation++;
+    historyOwner.current.pending = false;
+    historyOwner.current.active = false;
+    setHistorySession(undefined);
+  };
+  const loadHistory = async (mode: HistoryMode, cursor = "") => {
+    if (historyOwner.current.pending) return;
+    historyOwner.current.pending = true;
+    const generation = historyOwner.current.generation;
+    const more = !!cursor;
+    setHistorySession((session) =>
+      session && session.mode === mode
+        ? {
+            ...session,
+            loading: !more,
+            loadingMore: more,
+            error: "",
+          }
+        : session,
+    );
+    try {
+      const reply = await adapter.call(LaneService.method.listHistory, {
+        id: draft.id,
+        promptsOnly: mode === HistoryMode.Prompts,
+        page: { size: 100, cursor },
+      });
+      if (historyOwner.current.generation !== generation) return;
+      setHistorySession((session) =>
+        session && session.mode === mode
+          ? {
+              ...session,
+              versions: more
+                ? [...session.versions, ...reply.versions]
+                : reply.versions,
+              cursor: reply.nextCursor,
+              loading: false,
+              loadingMore: false,
+              error: "",
+            }
+          : session,
+      );
+    } catch (cause) {
+      if (historyOwner.current.generation !== generation) return;
+      setHistorySession((session) =>
+        session && session.mode === mode
+          ? {
+              ...session,
+              loading: false,
+              loadingMore: false,
+              error: describeError(cause),
+              retryable: historyRetryable(cause),
+            }
+          : session,
+      );
+    } finally {
+      if (historyOwner.current.generation === generation)
+        historyOwner.current.pending = false;
+    }
+  };
+  const openHistory = (mode: HistoryMode) => {
+    if (submitting.current || historyOwner.current.active) return;
+    historyOwner.current.generation++;
+    historyOwner.current.active = true;
+    setHistorySession({
+      mode,
+      versions: [],
+      cursor: "",
+      loading: true,
+      loadingMore: false,
+      error: "",
+      retryable: false,
+      restoreError: "",
+      restoreErrorId: "",
+      restoreRetryable: false,
+      restoringId: "",
     });
-    setPrompts(onlyPrompts);
-    setHistory(more ? [...(history || []), ...r.versions] : r.versions);
-    setHistoryCursor(r.nextCursor);
+    void loadHistory(mode);
+  };
+  const restoreHistoryPrompt = async (version: EntityVersion) => {
+    if (
+      submitting.current ||
+      !historySession ||
+      historySession.mode !== HistoryMode.Prompts ||
+      readOnly ||
+      draft.dirty ||
+      busy
+    )
+      return;
+    submitting.current = true;
+    const generation = historyOwner.current.generation;
+    setBusy(true);
+    setHistorySession((session) =>
+      session
+        ? {
+            ...session,
+            restoringId: version.versionId,
+            restoreError: "",
+            restoreErrorId: "",
+            restoreRetryable: false,
+          }
+        : session,
+    );
+    const completion = beginCompletion();
+    try {
+      const reply = await actions.submit(
+        {
+          action: SpecializedAction.RestorePrompt,
+          id: draft.id,
+          expectedVersionId: draft.base,
+          sourceVersionId: version.versionId,
+        },
+        (requestId) =>
+          adapter.call(LaneService.method.restorePrompt, {
+            meta: { requestId },
+            id: draft.id,
+            expectedVersionId: draft.base,
+            sourceVersionId: version.versionId,
+          }),
+      );
+      if (!reply.result)
+        throw new Error("The server returned no task. Your input is retained.");
+      completion.saved(reply.result);
+      if (reply.result.result === ResultKind.CONFLICT)
+        throw new Error(
+          "The task changed. Resolve the conflict before restoring a prompt.",
+        );
+      if (historyOwner.current.generation === generation) closeHistory();
+    } catch (cause) {
+      if (historyOwner.current.generation === generation)
+        setHistorySession((session) =>
+          session
+            ? {
+                ...session,
+                restoreError: describeError(cause),
+                restoreErrorId: version.versionId,
+                restoreRetryable: historyRetryable(cause),
+              }
+            : session,
+        );
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+      if (historyOwner.current.generation === generation)
+        setHistorySession((session) =>
+          session ? { ...session, restoringId: "" } : session,
+        );
+    }
   };
   return (
     <view className="editor">
@@ -541,14 +769,16 @@ export function TaskEditor({
         {draft.base && (
           <>
             <Button
+              id={historyTriggers.task}
               disabled={busy}
-              onClick={() => void run(() => loadHistory(false))}
+              onClick={() => openHistory(HistoryMode.Task)}
             >
               History
             </Button>
             <Button
+              id={historyTriggers.prompts}
               disabled={busy}
-              onClick={() => void run(() => loadHistory(true))}
+              onClick={() => openHistory(HistoryMode.Prompts)}
             >
               Prompt versions
             </Button>
@@ -566,12 +796,14 @@ export function TaskEditor({
         )}
         {conflicted(current) && (
           <Button
+            id={compareFocusId}
             onClick={() => {
               // Reopening keeps an existing session; a stale one stays blocked until
               // the user explicitly reviews the current versions.
               if (!reviewedHeads) {
                 setReviewedHeads(headIds(current));
-                setResolution(heads(current!)[0]);
+                setResolution(currentHeads[0]);
+                setSelectedHeadId(currentHeads[0]?.versionId);
               }
               setResolve(true);
             }}
@@ -616,75 +848,178 @@ export function TaskEditor({
           </Button>
         </Dialog>
       )}
-      {history && (
+      {historySession && (
         <Dialog
-          title={prompts ? "Prompt versions" : "Task history"}
-          onClose={() => setHistory(null)}
+          title={
+            historySession.mode === HistoryMode.Prompts
+              ? "Prompt versions"
+              : "Task history"
+          }
+          className="history-dialog"
+          returnFocusId={
+            historySession.mode === HistoryMode.Prompts
+              ? historyTriggers.prompts
+              : historyTriggers.task
+          }
+          onClose={closeHistory}
+          footer={
+            <view className="history-footer">
+              {historySession.error && (
+                <Notice>{historySession.error} Your input is retained.</Notice>
+              )}
+              {historySession.error &&
+                historySession.retryable &&
+                !historySession.loading && (
+                  <Button
+                    disabled={historySession.loadingMore}
+                    onClick={() =>
+                      void loadHistory(
+                        historySession.mode,
+                        historySession.cursor,
+                      )
+                    }
+                  >
+                    Retry loading history
+                  </Button>
+                )}
+              {historySession.loadingMore && (
+                <text accessibility-live-region="polite">
+                  Loading more history…
+                </text>
+              )}
+              {historySession.cursor && !historySession.error && (
+                <Button
+                  disabled={
+                    historySession.loadingMore || historySession.loading
+                  }
+                  onClick={() =>
+                    void loadHistory(historySession.mode, historySession.cursor)
+                  }
+                >
+                  Load more history
+                </Button>
+              )}
+            </view>
+          }
         >
-          {history.map((version) => (
-            <view className="card" key={version.versionId}>
-              <text className="label">
-                {version.createdAt
-                  ? new Date(
-                      Number(version.createdAt.seconds) * 1000,
-                    ).toLocaleString()
-                  : ""}
+          {historySession.mode === HistoryMode.Task && (
+            <text className="history-intro">
+              Changes to this task, with time and origin.
+            </text>
+          )}
+          {historySession.loading && (
+            <text accessibility-live-region="polite">Loading history…</text>
+          )}
+          {!historySession.loading &&
+            !historySession.error &&
+            historySession.versions.length === 0 && (
+              <text className="empty">
+                {historySession.mode === HistoryMode.Prompts
+                  ? "No prompt versions available."
+                  : "No task history available."}
               </text>
-              <text className="muted">
-                {["Unknown", "App", "CLI", "MCP"][version.origin?.kind || 0]} ·{" "}
-                {version.origin?.deviceName} ·{" "}
-                {version.origin?.accountId || "Local account"}
-              </text>
-              {prompts ? (
+            )}
+          {historySession.versions.map((version) => (
+            <view className="card history-card" key={version.versionId}>
+              {version.createdAt && (
+                <text className="history-time">
+                  {new Date(
+                    Number(version.createdAt.seconds) * 1000,
+                  ).toLocaleString()}
+                </text>
+              )}
+              <text className="history-origin">{historyOrigin(version)}</text>
+              {historySession.mode === HistoryMode.Prompts ? (
                 <>
-                  <Markdown source={taskOf(version)?.prompt ?? "(No prompt)"} />
+                  {taskOf(version)?.prompt === undefined ? (
+                    <text className="muted">(No prompt)</text>
+                  ) : taskOf(version)?.prompt === "" ? (
+                    <text className="muted">Empty prompt</text>
+                  ) : (
+                    <Markdown source={taskOf(version)!.prompt!} />
+                  )}
                   <Captures
                     adapter={adapter}
                     taskId={draft.id}
                     captures={taskOf(version)?.captures || []}
                   />
                   <Button
-                    disabled={busy || readOnly || draft.dirty}
-                    onClick={() =>
-                      void run(async (completion) => {
-                        const r = await actions.submit(
-                          {
-                            action: SpecializedAction.RestorePrompt,
-                            id: draft.id,
-                            expectedVersionId: draft.base,
-                            sourceVersionId: version.versionId,
-                          },
-                          (requestId) =>
-                            adapter.call(LaneService.method.restorePrompt, {
-                              meta: { requestId },
-                              id: draft.id,
-                              expectedVersionId: draft.base,
-                              sourceVersionId: version.versionId,
-                            }),
-                        );
-                        setHistory(null);
-                        completion.saved(r.result);
-                      })
+                    disabled={
+                      busy ||
+                      readOnly ||
+                      draft.dirty ||
+                      (historySession.restoreErrorId === version.versionId &&
+                        !historySession.restoreRetryable)
                     }
+                    onClick={() => void restoreHistoryPrompt(version)}
                   >
-                    Restore this prompt as a new version
+                    {historySession.restoringId === version.versionId
+                      ? "Restoring…"
+                      : historySession.restoreErrorId === version.versionId
+                        ? "Retry restoring this prompt"
+                        : "Restore this prompt as a new version"}
                   </Button>
+                  {historySession.restoreErrorId === version.versionId && (
+                    <Notice>
+                      {historySession.restoreError} Your input is retained.
+                    </Notice>
+                  )}
                 </>
               ) : (
-                historyEntryChanges(history, version, lookup).map((c) => (
-                  <view key={c.field}>
-                    <text className="label">{c.field}</text>
-                    <text text-selection>Before: {c.before}</text>
-                    <text text-selection>After: {c.after}</text>
-                  </view>
-                ))
+                <>
+                  {historyBaseline(historySession.versions, version).kind ===
+                    "pending" && (
+                    <text className="muted">
+                      Earlier version is not loaded yet.
+                    </text>
+                  )}
+                  {historyBaseline(historySession.versions, version).kind ===
+                    "merge" && (
+                    <text className="muted">
+                      This resolution has multiple parent versions.
+                    </text>
+                  )}
+                  {historyEntryChanges(
+                    historySession.versions,
+                    version,
+                    lookup,
+                  ).map((change) => (
+                    <view className="history-change" key={change.field}>
+                      <text className="history-field">
+                        {historyFieldLabels[change.field] ?? change.field}
+                      </text>
+                      <view className="history-values">
+                        <view className="history-value">
+                          <text className="history-value-label">Before</text>
+                          <text text-selection>{change.before}</text>
+                        </view>
+                        <view className="history-value">
+                          <text className="history-value-label">After</text>
+                          <text text-selection>{change.after}</text>
+                        </view>
+                      </view>
+                    </view>
+                  ))}
+                </>
               )}
             </view>
           ))}
-          {historyCursor && (
-            <Button onClick={() => void run(() => loadHistory(prompts, true))}>
-              Load more history
-            </Button>
+          {historySession.mode === HistoryMode.Prompts && (
+            <>
+              {draft.dirty && (
+                <Notice>Save your changes before restoring a prompt.</Notice>
+              )}
+              {conflicted(current) && (
+                <Notice>
+                  Resolve the task conflict before restoring a prompt.
+                </Notice>
+              )}
+              {draft.deleted && (
+                <Notice>
+                  This task was deleted. Its prompt cannot be restored.
+                </Notice>
+              )}
+            </>
           )}
         </Dialog>
       )}
@@ -692,12 +1027,24 @@ export function TaskEditor({
         <Dialog
           title="Resolve whole-task conflict"
           onClose={() => setResolve(false)}
+          focusHeading
+          returnFocusId={compareFocusId}
+          className="conflict-dialog"
         >
-          <Notice>
-            Compare every field. Select a complete version, optionally edit it,
-            then save a new resolution. A resolution is saved only against the
-            versions you reviewed.
-          </Notice>
+          <text className="conflict-instructions">
+            Compare the current versions, choose a complete version, then edit
+            Your resolution. Saving creates one new version.
+          </text>
+          <view
+            className="conflict-review-notice"
+            accessibility-element
+            accessibility-traits="text"
+          >
+            <text>
+              Save checks exactly the versions you reviewed. Changes to the head
+              set require another review.
+            </text>
+          </view>
           {resolutionStaleNow && (
             <Notice>
               {headIds(current).length < 2
@@ -712,14 +1059,112 @@ export function TaskEditor({
               onClick={() => {
                 if (resolution) setRetained(resolution);
                 setResolution(undefined);
+                setSelectedHeadId(undefined);
                 setReviewedHeads(headIds(current));
               }}
             >
               Review current versions
             </Button>
           )}
+          <view className="conflict-section">
+            <text className="heading" accessibility-heading>
+              Current versions
+            </text>
+            <view className="conflict-heads">
+              {currentHeads.map((v, index) => (
+                <view
+                  className={`conflict-head ${selectedHeadId === v.versionId ? "selected" : ""}`}
+                  data-selected={
+                    selectedHeadId === v.versionId ? "true" : "false"
+                  }
+                  key={v.versionId}
+                >
+                  <view className="row between wrap">
+                    <text
+                      className="conflict-version-title"
+                      accessibility-heading
+                    >
+                      Version {index + 1}
+                    </text>
+                    {selectedHeadId === v.versionId && (
+                      <text
+                        className="conflict-selected"
+                        accessibility-element
+                        accessibility-traits="text"
+                      >
+                        ✓ Selected
+                      </text>
+                    )}
+                  </view>
+                  <text className="conflict-value" text-selection>
+                    Version ID: {v.versionId}
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Origin: {v.origin?.deviceName || "Not set"}
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Title: {taskOf(v)?.title}
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Description: {taskOf(v)?.description || "No description"}
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Prompt:{" "}
+                    {taskOf(v)?.prompt === undefined
+                      ? "Not set"
+                      : taskOf(v)?.prompt === ""
+                        ? "Empty"
+                        : taskOf(v)?.prompt}
+                  </text>
+                  <Captures
+                    adapter={adapter}
+                    taskId={draft.id}
+                    captures={taskOf(v)?.captures || []}
+                  />
+                  <text className="conflict-value" text-selection>
+                    Progress:{" "}
+                    {
+                      progressOptions.find(
+                        ([value]) => value === taskOf(v)?.progress,
+                      )?.[1]
+                    }
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Proposal:{" "}
+                    {
+                      proposalOptions.find(
+                        ([value]) => value === taskOf(v)?.proposal,
+                      )?.[1]
+                    }
+                  </text>
+                  <text className="conflict-value" text-selection>
+                    Repository:{" "}
+                    {repositoryName(
+                      repositories.find(
+                        (r) => r.version?.entityId === taskOf(v)?.repositoryId,
+                      )?.version,
+                    )}
+                  </text>
+                  {taskOf(v) && (
+                    <PlanningSummary task={taskOf(v)!} lookup={lookup} />
+                  )}
+                  <Button
+                    pressed={selectedHeadId === v.versionId}
+                    disabled={resolutionStaleNow || busy}
+                    onClick={() => {
+                      if (submitting.current) return;
+                      setResolution(v);
+                      setSelectedHeadId(v.versionId);
+                    }}
+                  >
+                    Use this version
+                  </Button>
+                </view>
+              ))}
+            </view>
+          </view>
           {!resolutionStaleNow && retained && taskOf(retained) && (
-            <view className="card">
+            <view className="card conflict-retained">
               <text>Retained resolution from an earlier review</text>
               <text text-selection>Title: {taskOf(retained)?.title}</text>
               <text text-selection>
@@ -733,237 +1178,158 @@ export function TaskEditor({
                     ? "Empty"
                     : taskOf(retained)?.prompt}
               </text>
-              <Button onClick={() => setResolution(retained)}>
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  if (submitting.current) return;
+                  setResolution(retained);
+                  setSelectedHeadId(undefined);
+                }}
+              >
                 Use retained resolution
               </Button>
             </view>
           )}
-          {heads(current).map((v) => (
-            <view className="card" key={v.versionId}>
-              <text>
-                {v.versionId} · {v.origin?.deviceName}
-              </text>
-              <text text-selection>Title: {taskOf(v)?.title}</text>
-              <text text-selection>Description: {taskOf(v)?.description}</text>
-              <text text-selection>
-                Prompt:{" "}
-                {taskOf(v)?.prompt === undefined
-                  ? "Not set"
-                  : taskOf(v)?.prompt === ""
-                    ? "Empty"
-                    : taskOf(v)?.prompt}
-              </text>
-              <Captures
-                adapter={adapter}
-                taskId={draft.id}
-                captures={taskOf(v)?.captures || []}
-              />
-              <text>
-                Progress:{" "}
-                {
-                  progressOptions.find(
-                    ([value]) => value === taskOf(v)?.progress,
-                  )?.[1]
-                }
-              </text>
-              <text>
-                Proposal:{" "}
-                {
-                  proposalOptions.find(
-                    ([value]) => value === taskOf(v)?.proposal,
-                  )?.[1]
-                }
-              </text>
-              <text>
-                Repository:{" "}
-                {repositoryName(
-                  repositories.find(
-                    (r) => r.version?.entityId === taskOf(v)?.repositoryId,
-                  )?.version,
-                )}
-              </text>
-              {taskOf(v) && (
-                <PlanningSummary task={taskOf(v)!} lookup={lookup} />
-              )}
-              <Button
-                primary={resolution?.versionId === v.versionId}
-                disabled={resolutionStaleNow}
-                onClick={() => setResolution(v)}
+          <view className="conflict-resolution">
+            <text className="heading" accessibility-heading>
+              Your resolution
+            </text>
+            <text className="muted">
+              {selectedHeadId
+                ? currentHeads.some((v) => v.versionId === selectedHeadId)
+                  ? `Started from Version ${currentHeads.findIndex((v) => v.versionId === selectedHeadId) + 1}`
+                  : "Started from a previous version"
+                : resolution
+                  ? "Retained resolution from an earlier review"
+                  : "Choose a current version or explicitly use the retained resolution."}
+            </text>
+            {resolution && taskOf(resolution) && (
+              <>
+                <Field
+                  label="Resolved title"
+                  value={taskOf(resolution)!.title}
+                  disabled={busy}
+                  onChange={(title) => editResolution({ title })}
+                />
+                <Field
+                  label="Resolved description"
+                  multiline
+                  value={taskOf(resolution)!.description}
+                  disabled={busy}
+                  onChange={(description) => editResolution({ description })}
+                />
+                <Choices
+                  label="Resolved prompt presence"
+                  exclusive
+                  disabled={busy}
+                  value={
+                    taskOf(resolution)!.prompt === undefined
+                      ? "absent"
+                      : "present"
+                  }
+                  options={[
+                    ["absent", "No prompt"],
+                    ["present", "Include prompt"],
+                  ]}
+                  onChange={(value) =>
+                    editResolution({
+                      prompt: promptForPresence(
+                        taskOf(resolution)!.prompt,
+                        value,
+                      ),
+                    })
+                  }
+                />
+                <text className="muted">
+                  Typing into Resolved prompt includes it. An included empty
+                  prompt is different from No prompt.
+                </text>
+                <Field
+                  label="Resolved prompt"
+                  multiline
+                  value={taskOf(resolution)!.prompt || ""}
+                  disabled={busy}
+                  onChange={(prompt) => editResolution({ prompt })}
+                />
+                <view className="conflict-status-groups">
+                  <Choices
+                    label="Resolved progress"
+                    disabled={busy}
+                    value={taskOf(resolution)!.progress}
+                    options={progressOptions}
+                    onChange={(progress) => editResolution({ progress })}
+                  />
+                  <Choices
+                    label="Resolved proposal"
+                    disabled={busy}
+                    value={taskOf(resolution)!.proposal}
+                    options={proposalOptions}
+                    onChange={(proposal) => editResolution({ proposal })}
+                  />
+                </view>
+                <Choices
+                  label="Resolved repository"
+                  disabled={busy}
+                  value={taskOf(resolution)!.repositoryId}
+                  options={repositories.map(
+                    (r) =>
+                      [r.version!.entityId, repositoryName(r.version)] as const,
+                  )}
+                  onChange={(repositoryId) => editResolution({ repositoryId })}
+                />
+              </>
+            )}
+          </view>
+          <view className="conflict-footer">
+            <text className="muted">
+              Save resolution creates a new whole-task version.
+            </text>
+            <Button
+              primary
+              disabled={
+                busy || !resolution || !reviewedHeads || resolutionStaleNow
+              }
+              onClick={() =>
+                void run(async (completion) => {
+                  if (!reviewedHeads || resolutionStale(reviewedHeads, current))
+                    throw new Error(
+                      "The task changed after you started this resolution. Review the current versions before saving.",
+                    );
+                  const r = await adapter.call(
+                    LaneService.method.resolveConflict,
+                    {
+                      meta: meta(),
+                      id: draft.id,
+                      expectedHeadIds: reviewedHeads,
+                      resolved: resolution,
+                    },
+                  );
+                  if (!r.result || r.result.result === ResultKind.CONFLICT)
+                    throw new Error(
+                      "The conflict changed. Your resolution is retained. Review the current versions before resolving again.",
+                    );
+                  setResolve(false);
+                  setReviewedHeads(undefined);
+                  setRetained(undefined);
+                  setResolution(undefined);
+                  setSelectedHeadId(undefined);
+                  completion.saved(r.result);
+                })
+              }
+            >
+              {busy ? "Saving…" : "Save resolution"}
+            </Button>
+            {busy && <Notice>Saving resolution…</Notice>}
+            {error && (
+              <view
+                className="notice conflict-error"
+                accessibility-element
+                accessibility-traits="text"
               >
-                Use this version
-              </Button>
-            </view>
-          ))}
-          {resolution && taskOf(resolution) && (
-            <>
-              <Field
-                label="Resolved title"
-                value={taskOf(resolution)!.title}
-                onChange={(title) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        title,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Field
-                label="Resolved description"
-                multiline
-                value={taskOf(resolution)!.description}
-                onChange={(description) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        description,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Choices
-                label="Resolved prompt presence"
-                value={
-                  taskOf(resolution)!.prompt === undefined
-                    ? "absent"
-                    : "present"
-                }
-                options={[
-                  ["absent", "No prompt"],
-                  ["present", "Include prompt"],
-                ]}
-                onChange={(value) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        prompt:
-                          value === "absent"
-                            ? undefined
-                            : taskOf(resolution)!.prompt || "",
-                      }),
-                    },
-                  })
-                }
-              />
-              <Field
-                label="Resolved prompt"
-                multiline
-                value={taskOf(resolution)!.prompt || ""}
-                onChange={(prompt) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        prompt,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Choices
-                label="Resolved progress"
-                value={taskOf(resolution)!.progress}
-                options={progressOptions}
-                onChange={(progress) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        progress,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Choices
-                label="Resolved proposal"
-                value={taskOf(resolution)!.proposal}
-                options={proposalOptions}
-                onChange={(proposal) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        proposal,
-                      }),
-                    },
-                  })
-                }
-              />
-              <Choices
-                label="Resolved repository"
-                value={taskOf(resolution)!.repositoryId}
-                options={repositories.map(
-                  (r) =>
-                    [r.version!.entityId, repositoryName(r.version)] as const,
-                )}
-                onChange={(repositoryId) =>
-                  setResolution({
-                    ...resolution,
-                    body: {
-                      case: "task",
-                      value: createUITask({
-                        ...taskOf(resolution)!,
-                        repositoryId,
-                      }),
-                    },
-                  })
-                }
-              />
-            </>
-          )}
-          <Button
-            primary
-            disabled={
-              busy || !resolution || !reviewedHeads || resolutionStaleNow
-            }
-            onClick={() =>
-              void run(async (completion) => {
-                if (!reviewedHeads || resolutionStale(reviewedHeads, current))
-                  throw new Error(
-                    "The task changed after you started this resolution. Review the current versions before saving.",
-                  );
-                const r = await adapter.call(
-                  LaneService.method.resolveConflict,
-                  {
-                    meta: meta(),
-                    id: draft.id,
-                    expectedHeadIds: reviewedHeads,
-                    resolved: resolution,
-                  },
-                );
-                if (!r.result || r.result.result === ResultKind.CONFLICT)
-                  throw new Error(
-                    "The conflict changed. Your resolution is retained. Review the current versions before resolving again.",
-                  );
-                setResolve(false);
-                setReviewedHeads(undefined);
-                setRetained(undefined);
-                setResolution(undefined);
-                completion.saved(r.result);
-              })
-            }
-          >
-            Save resolution
-          </Button>
-          {error && <Notice>{error}</Notice>}
+                <text>{error}</text>
+              </view>
+            )}
+          </view>
         </Dialog>
       )}
     </view>

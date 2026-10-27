@@ -11,7 +11,7 @@ import {
 } from "@repo/protos/lane/v1/lane_pb";
 import { newId, type LaneAdapter } from "./adapter";
 
-import { Button, Choices, Field, Notice } from "./components";
+import { Button, Choices, Field, MenuChoices, Notice } from "./components";
 import {
   blankTask,
   conflicted,
@@ -24,7 +24,7 @@ import {
   type Draft,
 } from "./model";
 import { TaskEditor } from "./TaskEditor";
-import { TaskFilters } from "./TaskFilters";
+import { TaskFilters, TaskSortControls } from "./TaskFilters";
 import { usePlanning } from "./usePlanning";
 
 import {
@@ -104,6 +104,10 @@ export function LaneWorkspace({
   };
   const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
+  const searchFocusPending = useRef(page === "Proposals");
+  useEffect(() => {
+    if (active && page === "Proposals") searchFocusPending.current = false;
+  }, [active, page]);
   const [progress, setProgress] = useState<Progress>(Progress.UNSPECIFIED);
   const [proposal, setProposal] = useState<Proposal>(Proposal.UNSPECIFIED);
   const [filter, setFilter] = useState<FilterState>(emptyFilter);
@@ -113,6 +117,9 @@ export function LaneWorkspace({
     SortDirection.ASCENDING,
   );
   const [listError, setListError] = useState("");
+  // The web host resets a hidden scroll-view. Retain each Lane task pane's last
+  // active offset until the host preserves hidden scroll offsets itself.
+  const taskScrollTop = useRef(0);
   const [draft, setDraft] = useState<Draft>();
   const [current, setCurrent] = useState<EntityResult>();
 
@@ -469,8 +476,17 @@ export function LaneWorkspace({
         {adapter && (page === "Tasks" || page === "Proposals") && (
           <view className="task-workspace">
             {(!mobile || !draft) && (
-              <view className="task-list">
-                <scroll-view className="rows" scroll-orientation="vertical">
+              <view
+                className={`task-list ${page === "Proposals" ? "proposal-list" : ""}`}
+              >
+                <scroll-view
+                  className="rows"
+                  scroll-orientation="vertical"
+                  scroll-top={active ? taskScrollTop.current : undefined}
+                  bindscroll={(event) => {
+                    if (active) taskScrollTop.current = event.detail.scrollTop;
+                  }}
+                >
                   <view className="task-list-content">
                     <view className="row between">
                       <view>
@@ -507,6 +523,7 @@ export function LaneWorkspace({
                       label="Search title or description"
                       value={search}
                       onChange={setSearch}
+                      focus={active && searchFocusPending.current}
                     />
                     {mobile && (
                       <Choices
@@ -548,27 +565,55 @@ export function LaneWorkspace({
                         }}
                       />
                     )}
-                    <Choices
-                      label="Progress filter"
-                      value={progress}
-                      options={[
-                        [Progress.UNSPECIFIED, "All"],
-                        ...progressOptions,
-                      ]}
-                      onChange={setProgress}
-                    />
-                    <Choices
-                      label="Proposal filter"
-                      value={proposal}
-                      options={[
-                        [
-                          Proposal.UNSPECIFIED,
-                          page === "Proposals" ? "Pending proposals" : "All",
-                        ],
-                        ...proposalOptions,
-                      ]}
-                      onChange={setProposal}
-                    />
+                    <view
+                      className={
+                        page === "Proposals" ? "proposal-controls" : undefined
+                      }
+                    >
+                      {page === "Proposals" ? (
+                        <>
+                          <MenuChoices
+                            label="Proposal disposition"
+                            value={proposal}
+                            options={[
+                              [Proposal.UNSPECIFIED, "Pending proposals"],
+                              ...proposalOptions,
+                            ]}
+                            onChange={setProposal}
+                          />
+                          <MenuChoices
+                            label="Progress"
+                            value={progress}
+                            options={[
+                              [Progress.UNSPECIFIED, "All"],
+                              ...progressOptions,
+                            ]}
+                            onChange={setProgress}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <Choices
+                            label="Progress filter"
+                            value={progress}
+                            options={[
+                              [Progress.UNSPECIFIED, "All"],
+                              ...progressOptions,
+                            ]}
+                            onChange={setProgress}
+                          />
+                          <Choices
+                            label="Proposal filter"
+                            value={proposal}
+                            options={[
+                              [Proposal.UNSPECIFIED, "All"],
+                              ...proposalOptions,
+                            ]}
+                            onChange={setProposal}
+                          />
+                        </>
+                      )}
+                    </view>
                     <TaskFilters
                       open={filtersOpen}
                       setOpen={setFiltersOpen}
@@ -582,7 +627,17 @@ export function LaneWorkspace({
                       setSortKey={setSortKey}
                       sortDirection={sortDirection}
                       setSortDirection={setSortDirection}
+                      separateSort={page === "Proposals"}
                     />
+                    {page === "Proposals" && (
+                      <TaskSortControls
+                        compact
+                        sortKey={sortKey}
+                        setSortKey={setSortKey}
+                        sortDirection={sortDirection}
+                        setSortDirection={setSortDirection}
+                      />
+                    )}
                     <view
                       className="task-results"
                       key={
@@ -593,6 +648,20 @@ export function LaneWorkspace({
                             : "populated"
                       }
                     >
+                      {page === "Proposals" && (
+                        <text
+                          className="result-announcement"
+                          accessibility-live-region="polite"
+                        >
+                          {filterInvalid
+                            ? "Fix filter values to update proposals."
+                            : loading
+                              ? "Loading proposals."
+                              : listError
+                                ? "Proposal list error."
+                                : "Proposals updated."}
+                        </text>
+                      )}
                       {filterInvalid ? (
                         <Notice>
                           Fix the highlighted filter values to update the list.
@@ -603,7 +672,9 @@ export function LaneWorkspace({
                       ) : listError && tasks.length === 0 ? (
                         <view className="empty">
                           <text className="heading">
-                            Tasks could not be loaded
+                            {page === "Proposals"
+                              ? "Proposals could not be loaded"
+                              : "Tasks could not be loaded"}
                           </text>
                           <text>{listError}</text>
                           <Button primary onClick={refresh}>
@@ -613,14 +684,22 @@ export function LaneWorkspace({
                       ) : tasks.length === 0 ? (
                         <view className="empty">
                           <text className="heading">
-                            {activeFilters || search
-                              ? "No tasks match"
-                              : "No tasks here yet"}
+                            {page === "Proposals"
+                              ? activeFilters || search || progress
+                                ? "No proposals match"
+                                : "No proposals here yet"
+                              : activeFilters || search
+                                ? "No tasks match"
+                                : "No tasks here yet"}
                           </text>
                           <text>
-                            {activeFilters || search
-                              ? "No task matches the search and filters. Change them or clear the filters."
-                              : "Create a task with a title, or change your filters."}
+                            {page === "Proposals"
+                              ? activeFilters || search || progress
+                                ? "Change the search or filters to find proposals."
+                                : "There are no proposals for this disposition. Change the filters to see other tasks."
+                              : activeFilters || search
+                                ? "No task matches the search and filters. Change them or clear the filters."
+                                : "Create a task with a title, or change your filters."}
                           </text>
                           {activeFilters > 0 && (
                             <Button onClick={() => setFilter(emptyFilter())}>
@@ -634,39 +713,83 @@ export function LaneWorkspace({
                           return (
                             t && (
                               <view
-                                className={`task-row ${draft?.id === r.version?.entityId ? "selected" : ""}`}
+                                className={`task-row ${page === "Proposals" ? "proposal-row" : ""} ${draft?.id === r.version?.entityId ? "selected" : ""}`}
                                 key={r.version?.entityId}
                               >
-                                <Button
-                                  onClick={() =>
-                                    onOpen({
-                                      kind: TabKind.Task,
-                                      taskId: r.version!.entityId,
-                                      repositoryId: repository,
-                                      label: t.title,
-                                    })
-                                  }
-                                >
-                                  {t.title}
-                                </Button>
-                                <text className="badge">
-                                  {
-                                    progressOptions.find(
-                                      ([v]) => v === t.progress,
-                                    )?.[1]
-                                  }
-                                </text>
-                                {t.proposal === Proposal.PENDING && (
-                                  <text className="badge">Proposal</text>
+                                {page === "Proposals" ? (
+                                  <>
+                                    <view className="proposal-row-main">
+                                      <Button
+                                        onClick={() =>
+                                          onOpen({
+                                            kind: TabKind.Task,
+                                            taskId: r.version!.entityId,
+                                            repositoryId: repository,
+                                            label: t.title,
+                                          })
+                                        }
+                                      >
+                                        {t.title}
+                                      </Button>
+                                      {conflicted(r) && (
+                                        <text className="badge">Conflict</text>
+                                      )}
+                                      <TaskMetadataLine
+                                        task={t}
+                                        lookup={lookup}
+                                        qualify={!repository}
+                                      />
+                                    </view>
+                                    <view className="proposal-row-states">
+                                      <text className="proposal-disposition">
+                                        {proposalOptions.find(
+                                          ([value]) => value === t.proposal,
+                                        )?.[1] ?? "Unknown disposition"}
+                                      </text>
+                                      <text className="proposal-progress">
+                                        <text accessibility-elements-hidden>
+                                          {progressSymbol(t.progress)}
+                                        </text>{" "}
+                                        {progressOptions.find(
+                                          ([value]) => value === t.progress,
+                                        )?.[1] ?? "Unknown progress"}
+                                      </text>
+                                    </view>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Button
+                                      onClick={() =>
+                                        onOpen({
+                                          kind: TabKind.Task,
+                                          taskId: r.version!.entityId,
+                                          repositoryId: repository,
+                                          label: t.title,
+                                        })
+                                      }
+                                    >
+                                      {t.title}
+                                    </Button>
+                                    <text className="badge">
+                                      {
+                                        progressOptions.find(
+                                          ([v]) => v === t.progress,
+                                        )?.[1]
+                                      }
+                                    </text>
+                                    {t.proposal === Proposal.PENDING && (
+                                      <text className="badge">Proposal</text>
+                                    )}
+                                    {conflicted(r) && (
+                                      <text className="badge">Conflict</text>
+                                    )}
+                                    <TaskMetadataLine
+                                      task={t}
+                                      lookup={lookup}
+                                      qualify={!repository}
+                                    />
+                                  </>
                                 )}
-                                {conflicted(r) && (
-                                  <text className="badge">Conflict</text>
-                                )}
-                                <TaskMetadataLine
-                                  task={t}
-                                  lookup={lookup}
-                                  qualify={!repository}
-                                />
                               </view>
                             )
                           );
@@ -830,6 +953,23 @@ export function LaneWorkspace({
       </view>
     </view>
   );
+}
+
+function progressSymbol(progress: Progress): string {
+  switch (progress) {
+    case Progress.TODO:
+      return "○";
+    case Progress.IN_PROGRESS:
+      return "◐";
+    case Progress.BLOCKED:
+      return "!";
+    case Progress.DONE:
+      return "✓";
+    case Progress.CANCELED:
+      return "×";
+    default:
+      return "?";
+  }
 }
 
 // Compact planning metadata under a row; names are always text, color never alone.
