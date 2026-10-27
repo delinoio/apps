@@ -4,7 +4,7 @@ import type { EntityResult } from "@repo/protos/lane/v1/lane_pb";
 import type { UI } from "./serializable";
 import type { LaneAdapter } from "./adapter";
 import { Button, Dialog, Field, Notice } from "./components";
-import { captureModes, realqa, type CaptureMode } from "./realqa-host";
+import { captureModes, realqa, CaptureMode } from "./realqa-host";
 import type { RealQAController } from "./useRealQA";
 import { URLConnections } from "./URLConnections";
 import { hostAction } from "./runtime";
@@ -13,17 +13,44 @@ export function CaptureActions({
 }: {
   controller: RealQAController;
 }) {
+  const [width, setWidth] = useState(0);
+  const details = {
+    [CaptureMode.Screen]: ["▣", "Choose a monitor"],
+    [CaptureMode.Window]: ["▯", "Choose a window"],
+    [CaptureMode.Region]: ["▱", "Select an area"],
+    [CaptureMode.DOM]: ["⌗", "Capture a visible element"],
+  };
   return (
-    <view className="row wrap capture-actions">
-      {captureModes.map(([mode, label]) => (
-        <Button
-          key={mode}
-          disabled={controller.busy}
-          onClick={() => void controller.capture(mode)}
-        >
-          {label}
-        </Button>
-      ))}
+    <view
+      className={`capture-actions capture-columns-${width >= 940 ? 4 : width >= 460 ? 2 : 1}`}
+      bindlayoutchange={(event) => setWidth(event.detail.width)}
+    >
+      {captureModes.map(([mode, label]) => {
+        const activate = () => {
+          if (!controller.busy) void controller.capture(mode);
+        };
+        return (
+          <view
+            key={mode}
+            className={`button realqa-capture-card ${controller.busy ? "disabled" : ""}`}
+            accessibility-element
+            accessibility-traits="button"
+            accessibility-label={`${label}. ${details[mode][1]}`}
+            accessibility-value={controller.busy ? "Disabled" : undefined}
+            focusable={!controller.busy}
+            bindtap={activate}
+            bindkeydown={(event) => {
+              if (event.key === "Enter" || event.key === " ") activate();
+            }}
+          >
+            <text className="realqa-capture-icon" accessibility-elements-hidden>
+              {details[mode][0]}
+            </text>
+            <text className="realqa-capture-label">{label}</text>
+            <text className="muted">{details[mode][1]}</text>
+          </view>
+        );
+      })}
     </view>
   );
 }
@@ -45,6 +72,7 @@ export function RealQA({
     value: string;
   }>();
   const [urlDirty, setUrlDirty] = useState(false);
+  const [narrow, setNarrow] = useState(false);
   useEffect(() => {
     dirty(urlDirty || !!shortcut);
     return () => dirty(false);
@@ -64,28 +92,38 @@ export function RealQA({
     );
   return (
     <scroll-view className="page-scroll" scroll-orientation="vertical">
-      <view className="section realqa-home">
-        <text className="heading" accessibility-heading>
-          RealQA
-        </text>
-        <text>
-          Capture a problem, annotate it, and save it as a Lane task. Saved
-          captures appear in Lane tasks.
-        </text>
-        <Button onClick={back}>Open Lane</Button>
+      <view
+        className={`realqa-home ${narrow ? "compact" : ""}`}
+        bindlayoutchange={(event) => setNarrow(event.detail.width < 900)}
+      >
+        <view className="realqa-header">
+          <view className="realqa-header-copy">
+            <text className="heading" accessibility-heading>
+              RealQA
+            </text>
+            <text>
+              Capture a problem, annotate it, and save it as a Lane task.
+            </text>
+            <text className="muted">Saved captures appear in Lane tasks.</text>
+          </view>
+          <Button onClick={back}>Open Lane</Button>
+        </view>
         <CaptureActions controller={controller} />
+        <view className="realqa-permission-row">
+          <text>
+            Screen capture permission: {state?.permission || "Loading…"}
+          </text>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void run(() => realqa({ op: "openPermissionSettings" }))
+            }
+          >
+            Open capture permission settings
+          </Button>
+        </view>
         {controller.error && <Notice>{controller.error}</Notice>}
-        {state?.permission && (
-          <text>Screen capture permission: {state.permission}</text>
-        )}
-        <Button
-          onClick={() =>
-            void run(() => realqa({ op: "openPermissionSettings" }))
-          }
-        >
-          Open capture permission settings
-        </Button>
-        <view className="section">
+        <view className="realqa-section">
           <text className="heading" accessibility-heading>
             Keyboard shortcuts
           </text>
@@ -93,35 +131,40 @@ export function RealQA({
             Shortcuts work while Lane is running. Each shortcut is local to this
             device.
           </text>
-          {captureModes.map(([mode, label]) => (
-            <view className="card" key={mode}>
-              <text>
-                {label}: {state?.shortcuts[mode] || "Not set"}
-              </text>
-              <view className="row wrap">
-                <Button
-                  disabled={busy}
-                  onClick={() =>
-                    setShortcut({ mode, value: state?.shortcuts[mode] || "" })
-                  }
-                >
-                  {state?.shortcuts[mode] ? "Change" : "Assign"}
-                </Button>
-                {state?.shortcuts[mode] && (
+          <view className="realqa-group">
+            {captureModes.map(([mode, label]) => (
+              <view className="realqa-setting-row" key={mode}>
+                <view className="realqa-row-value">
+                  <text className="realqa-row-title">{label}</text>
+                  <text className="realqa-shortcut-value">
+                    {state ? state.shortcuts[mode] || "Not set" : "Loading…"}
+                  </text>
+                </view>
+                <view className="realqa-row-actions">
                   <Button
-                    disabled={busy}
+                    disabled={busy || !state}
                     onClick={() =>
-                      void run(() =>
-                        realqa({ op: "shortcut", mode, accelerator: "" }),
-                      )
+                      setShortcut({ mode, value: state?.shortcuts[mode] || "" })
                     }
                   >
-                    Clear
+                    {state?.shortcuts[mode] ? "Change" : "Assign"}
                   </Button>
-                )}
+                  {state?.shortcuts[mode] && (
+                    <Button
+                      disabled={busy}
+                      onClick={() =>
+                        void run(() =>
+                          realqa({ op: "shortcut", mode, accelerator: "" }),
+                        )
+                      }
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </view>
               </view>
-            </view>
-          ))}
+            ))}
+          </view>
         </view>
         {adapter ? (
           <URLConnections
@@ -130,61 +173,88 @@ export function RealQA({
             dirty={setUrlDirty}
           />
         ) : (
-          <Notice>Open Lane storage to manage URL connections.</Notice>
+          <view className="realqa-section">
+            <text className="heading" accessibility-heading>
+              URL connections
+            </text>
+            <Notice>Open Lane storage to manage URL connections.</Notice>
+          </view>
         )}
-        <view className="section">
+        <view className="realqa-section">
           <text className="heading" accessibility-heading>
             Chrome connection
           </text>
-          <text>{chrome?.state || "Disconnected"}</text>
+          <text className="muted">Approvals are local to this device.</text>
+          <text>{chrome?.state || (state ? "Disconnected" : "Loading…")}</text>
           {chrome?.message && <Notice>{chrome.message}</Notice>}
-          {chrome?.profile && <text>Profile: {chrome.profile}</text>}
-          {chrome?.extensionId && <text>Extension: {chrome.extensionId}</text>}
-          {chrome?.pending?.map((pending) => (
-            <view className="card" key={pending.id}>
-              <text>Approval pending · {pending.profileName}</text>
-              <text>Extension: {pending.extensionId}</text>
-              <view className="row wrap">
-                <Button
-                  disabled={busy}
-                  onClick={() =>
-                    void run(() =>
-                      realqa({ op: "chrome.approve", id: pending.id }),
-                    )
-                  }
-                >
-                  Approve
-                </Button>
-                <Button
-                  disabled={busy}
-                  onClick={() =>
-                    void run(() =>
-                      realqa({ op: "chrome.reject", id: pending.id }),
-                    )
-                  }
-                >
-                  Reject
-                </Button>
-              </view>
+          {chrome?.profile && (
+            <text className="realqa-long-value">Profile: {chrome.profile}</text>
+          )}
+          {chrome?.extensionId && (
+            <text className="realqa-long-value">
+              Extension: {chrome.extensionId}
+            </text>
+          )}
+          {!!(chrome?.pending?.length || chrome?.connections?.length) && (
+            <view className="realqa-group">
+              {chrome?.pending?.map((pending) => (
+                <view className="realqa-setting-row" key={pending.id}>
+                  <view className="realqa-row-value">
+                    <text className="realqa-long-value">
+                      Approval pending · {pending.profileName}
+                    </text>
+                    <text className="realqa-long-value">
+                      Extension: {pending.extensionId}
+                    </text>
+                  </view>
+                  <view className="realqa-row-actions">
+                    <Button
+                      disabled={busy}
+                      onClick={() =>
+                        void run(() =>
+                          realqa({ op: "chrome.approve", id: pending.id }),
+                        )
+                      }
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      disabled={busy}
+                      onClick={() =>
+                        void run(() =>
+                          realqa({ op: "chrome.reject", id: pending.id }),
+                        )
+                      }
+                    >
+                      Reject
+                    </Button>
+                  </view>
+                </view>
+              ))}
+              {chrome?.connections?.map((connection) => (
+                <view className="realqa-setting-row" key={connection.profileId}>
+                  <view className="realqa-row-value">
+                    <text className="realqa-long-value">
+                      {connection.profileName} ·{" "}
+                      {connection.connected ? "Connected" : "Disconnected"}
+                    </text>
+                    <text className="realqa-long-value">
+                      Extension: {connection.extensionId}
+                    </text>
+                  </view>
+                  <Button
+                    disabled={busy}
+                    onClick={() => setDisconnect(connection.profileId)}
+                  >
+                    Disconnect
+                  </Button>
+                </view>
+              ))}
             </view>
-          ))}
-          {chrome?.connections?.map((connection) => (
-            <view className="card" key={connection.profileId}>
-              <text>
-                {connection.profileName} ·{" "}
-                {connection.connected ? "Connected" : "Disconnected"}
-              </text>
-              <text>Extension: {connection.extensionId}</text>
-              <Button
-                disabled={busy}
-                onClick={() => setDisconnect(connection.profileId)}
-              >
-                Disconnect
-              </Button>
-            </view>
-          ))}
+          )}
           {chrome?.listingUrl ? (
             <Button
+              disabled={busy}
               onClick={() =>
                 void run(() => hostAction("openURL", chrome.listingUrl!))
               }
@@ -203,6 +273,7 @@ export function RealQA({
         </view>
         {shortcut && (
           <Dialog
+            className="realqa-dialog"
             title="Assign keyboard shortcut"
             onClose={() => setShortcut(undefined)}
           >
@@ -237,6 +308,7 @@ export function RealQA({
         )}
         {disconnect && (
           <Dialog
+            className="realqa-dialog"
             title="Disconnect Chrome?"
             onClose={() => setDisconnect(undefined)}
           >
@@ -244,7 +316,10 @@ export function RealQA({
               This revokes this profile's permission. New captures require
               approval again.
             </text>
-            <Button onClick={() => setDisconnect(undefined)}>Cancel</Button>
+            {controller.error && <Notice>{controller.error}</Notice>}
+            <Button focusOnShow onClick={() => setDisconnect(undefined)}>
+              Cancel
+            </Button>
             <Button
               disabled={busy}
               onClick={() =>
@@ -281,13 +356,18 @@ export function RealQADialogs({
     <>
       {pending && (
         <Dialog
+          className="realqa-dialog"
           title="Approve Chrome connection?"
           onClose={() =>
             void run(() => realqa({ op: "chrome.reject", id: pending.id }))
           }
         >
-          <text>Profile: {pending.profileName}</text>
-          <text>Extension: {pending.extensionId}</text>
+          <text className="realqa-long-value">
+            Profile: {pending.profileName}
+          </text>
+          <text className="realqa-long-value">
+            Extension: {pending.extensionId}
+          </text>
           <Notice>
             Allow this Chrome profile to send explicit captures to Lane on this
             device.
@@ -302,6 +382,7 @@ export function RealQADialogs({
             Approve
           </Button>
           <Button
+            focusOnShow
             disabled={busy}
             onClick={() =>
               void run(() => realqa({ op: "chrome.reject", id: pending.id }))
@@ -314,16 +395,28 @@ export function RealQADialogs({
       )}
       {sources && (
         <Dialog
+          className="realqa-dialog"
           title={
             sources.mode === "screen" ? "Choose a monitor" : "Choose a window"
           }
           onClose={() => controller.setSources(undefined)}
         >
           {!sources.sources.length && (
-            <Notice>
-              No capture sources are available. Check screen capture permissions
-              and retry.
-            </Notice>
+            <>
+              <Notice>
+                No capture sources are available. Check screen capture
+                permissions and retry.
+              </Notice>
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  controller.setSources(undefined);
+                  void controller.capture(sources.mode);
+                }}
+              >
+                Retry sources
+              </Button>
+            </>
           )}
           {sources.sources.map((source) => (
             <Button
@@ -348,6 +441,7 @@ export function RealQADialogs({
       )}
       {controller.discard && (
         <Dialog
+          className="realqa-dialog"
           title="Discard unsaved captures?"
           onClose={() => controller.setDiscard(false)}
         >
@@ -373,6 +467,7 @@ export function RealQADialogs({
       )}
       {controller.saved && (
         <Dialog
+          className="realqa-dialog"
           title="Saved to Lane"
           onClose={() => controller.setSaved(undefined)}
         >
