@@ -28,11 +28,17 @@ const browser = await chromium.launch({
   channel: process.env.LANE_BROWSER_CHANNEL || "chrome",
   headless: true,
 });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+let page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.setDefaultTimeout(90000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 const button = (name) => page.getByRole("button", { name, exact: true });
+async function freshPage() {
+  await page.close();
+  page = await browser.newPage({ viewport: { width: 360, height: 840 } });
+  page.setDefaultTimeout(90000);
+  page.on("pageerror", (error) => errors.push(error.message));
+}
 async function fixture(body = {}) {
   const response = await page.request.get(
     `${base}/test/captures?body=${encodeURIComponent(JSON.stringify(body))}`,
@@ -146,6 +152,17 @@ try {
   assert.equal(await page.locator(".capture-result").count(), 2);
   for (const width of [1440, 900, 899, 390, 360]) {
     await page.setViewportSize({ width, height: 840 });
+    await page.waitForFunction(
+      (expected) => {
+        const stage = document
+          .querySelector("lynx-view")
+          .shadowRoot.querySelector(".capture-stage");
+        return (
+          stage && Math.abs(stage.getBoundingClientRect().height - expected) < 1
+        );
+      },
+      width < 900 ? 220 : 320,
+    );
     await page
       .locator(".capture-result")
       .last()
@@ -223,6 +240,7 @@ try {
     ],
     ["deleted", "This capture was deleted.", false],
   ]) {
+    await freshPage();
     await fixture({ captures: [captures[0]], replies: { [ids[0]]: mode } });
     await openPrompt();
     await page.getByText(message, { exact: true }).waitFor();
@@ -243,6 +261,7 @@ try {
       assert.equal((await fixture()).requests.length, count + 1);
     }
   }
+  await freshPage();
   await fixture({ captures: [] });
   await openPrompt();
   assert.equal(await page.locator(".capture-result").count(), 0);
