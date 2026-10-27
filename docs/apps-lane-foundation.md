@@ -171,9 +171,9 @@ while any tab has an unsaved draft; leaving the Settings tab cancels an update
 before installation as existing Settings navigation does.
 
 At widths below 900 pixels, place existing contextual navigation inside the tab
-panel above its page, retaining mobile list/detail behavior. Only the tab strip
-scrolls horizontally; selected tabs stay reachable, and `New tab` and the
-open-tabs menu stay fixed at its right. Preserve wrapping content and reachable
+panel above its page, retaining mobile list/detail behavior. The `Tabs` button
+opens the vertical list in a dialog, and `New tab` remains beside that button.
+The list scrolls vertically and keeps selected rows reachable. Preserve wrapping content and reachable
 controls at 1440, 900, 899, 390 and 360 pixels and with enlarged text. Validate
 keyboard, focus restoration, screen-reader roles, hidden panels and independent
 scroll/draft retention. Fixtures and shared compilation do not establish actual
@@ -183,6 +183,31 @@ Tabs and unsaved drafts live only in the current window's memory, without
 server or cross-device synchronization, automatic saves or restart recovery.
 Pace and RealQA remain single mini-app views. Drag reordering, pinned/grouped
 or split tabs, detached windows and OS-global tab shortcuts are out of scope.
+
+On macOS and Windows, application-local shortcuts operate on the shared
+displayed tab order:
+
+| Action                             | macOS                                                                             | Windows                     |
+| ---------------------------------- | --------------------------------------------------------------------------------- | --------------------------- |
+| New tab                            | Command+T                                                                         | Ctrl+T                      |
+| Close selected tab                 | Command+W                                                                         | Ctrl+W, Ctrl+F4             |
+| Reopen latest closed tab           | Command+Shift+T                                                                   | Ctrl+Shift+T                |
+| Next tab                           | Ctrl+Tab, Ctrl+PageDown, Command+Option+Right, Command+Shift+], Command+PageDown  | Ctrl+Tab, Ctrl+PageDown     |
+| Previous tab                       | Ctrl+Shift+Tab, Ctrl+PageUp, Command+Option+Left, Command+Shift+[, Command+PageUp | Ctrl+Shift+Tab, Ctrl+PageUp |
+| Select tab 1–8 or last             | Command+1–9                                                                       | Ctrl+1–9                    |
+| Move selected tab earlier or later | Ctrl+Shift+PageUp/PageDown                                                        | Ctrl+Shift+PageUp/PageDown  |
+| Move focused row first or last     | Command+Shift+Home/End                                                            | Ctrl+Shift+Home/End         |
+
+New tab opens or selects the existing chooser. Closing uses the existing draft
+and busy guards and keeps the window open. Closed history retains at most 20
+safe descriptors per window and clears on data-space or account changes and
+window disposal. Reopening reads saved destinations again; discarded draft
+input does not return. Adjacent and numbered selection use displayed order;
+9 selects the last tab. Reordering moves the existing mounted pane without
+changing its identity or selection. First/last movement requires focus on a
+tab row, so an editor retains its text-selection keys. A modal or command
+palette blocks these commands. Browser-owned web tab shortcuts remain with
+the browser; desktop shortcuts do not register as OS-global hotkeys.
 
 ### Desktop app updates
 

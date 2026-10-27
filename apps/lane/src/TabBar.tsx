@@ -12,6 +12,7 @@ export function TabBar({
   close,
   create,
   openSettings,
+  onRowFocus,
   fullTitles = false,
 }: {
   fullTitles?: boolean;
@@ -22,6 +23,7 @@ export function TabBar({
   close: (id: string) => void;
   create: () => void;
   openSettings: (section: SettingsSection) => void;
+  onRowFocus?: (id: string, focused: boolean) => void;
 }) {
   const [height, setHeight] = useState(720);
   const [focused, setFocused] = useState(selected);
@@ -46,7 +48,7 @@ export function TabBar({
         .invoke({ method: "setFocus", params: { focus: true } })
         .exec();
   }, [focused, selected, tabs]);
-  const index = tabs.findIndex((tab) => tab.id === selected);
+  const index = tabs.findIndex((tab) => tab.id === focused);
   const moveFocus = (id: string, key: string) => {
     "background only";
     const current = tabs.findIndex((tab) => tab.id === id);
@@ -110,9 +112,19 @@ export function TabBar({
                     accessibility-label={`${title}${report?.dirty ? ", Unsaved changes" : ""}`}
                     accessibility-value={active ? "Selected" : ""}
                     focusable={tab.id === focused}
+                    bindfocus={() => onRowFocus?.(tab.id, true)}
+                    bindblur={() => onRowFocus?.(tab.id, false)}
                     bindtap={() => select(tab.id)}
                     bindkeydown={(event) => {
                       if (NativeModules.LaneOnline) return;
+                      if (
+                        event.repeat ||
+                        event.altKey ||
+                        event.ctrlKey ||
+                        event.metaKey ||
+                        event.shiftKey
+                      )
+                        return;
                       if (
                         ["ArrowUp", "ArrowDown", "Home", "End"].includes(
                           event.key,

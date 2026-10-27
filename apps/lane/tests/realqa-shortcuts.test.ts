@@ -7,6 +7,20 @@ import test from "node:test";
 import { RealQA } from "../native/desktop/realqa.mjs";
 
 const modes = ["screen", "window", "region", "dom"];
+const reserved = [
+  ...["Command", "Cmd", "Meta"].flatMap((prefix) => [
+    ...["K", "Q", "O", "T", "W", ..."123456789"].map(
+      (key) => `${prefix}+${key}`,
+    ),
+    `${prefix}+Shift+T`,
+  ]),
+  ...["Ctrl", "Control"].flatMap((prefix) => [
+    ...["K", "Q", "O", "T", "W", ..."123456789"].map(
+      (key) => `${prefix}+${key}`,
+    ),
+    `${prefix}+Shift+T`,
+  ]),
+];
 
 function fixture(t: { after: (cleanup: () => void) => void }) {
   const directory = mkdtempSync(join(tmpdir(), "lane-realqa-shortcuts-"));
@@ -17,7 +31,7 @@ function fixture(t: { after: (cleanup: () => void) => void }) {
   const native = {
     capture(raw: string, callback: (response: string) => void) {
       const { mode, accelerator } = JSON.parse(raw);
-      if (/^(Command|Cmd|Meta)\+K$|^(Ctrl|Control)\+K$/.test(accelerator)) {
+      if (reserved.includes(accelerator)) {
         callback(
           JSON.stringify({
             ok: false,
@@ -46,13 +60,7 @@ function fixture(t: { after: (cleanup: () => void) => void }) {
 test("rejected capture shortcuts preserve the native and persisted assignment", async (t) => {
   const { host, active, settingsPath } = fixture(t);
   for (const mode of modes) {
-    for (const accelerator of [
-      "Command+K",
-      "Cmd+K",
-      "Meta+K",
-      "Ctrl+K",
-      "Control+K",
-    ]) {
+    for (const accelerator of reserved) {
       await assert.rejects(
         host.dispatch({ op: "shortcut", mode, accelerator }),
         (error: any) => error.detail?.reason === "ERROR_REASON_CONFLICT",
@@ -62,13 +70,7 @@ test("rejected capture shortcuts preserve the native and persisted assignment", 
     }
     const previous = `Ctrl+Shift+${modes.indexOf(mode) + 1}`;
     await host.dispatch({ op: "shortcut", mode, accelerator: previous });
-    for (const accelerator of [
-      "Command+K",
-      "Cmd+K",
-      "Meta+K",
-      "Ctrl+K",
-      "Control+K",
-    ]) {
+    for (const accelerator of reserved) {
       await assert.rejects(
         host.dispatch({ op: "shortcut", mode, accelerator }),
         (error: any) => error.detail?.reason === "ERROR_REASON_CONFLICT",
@@ -87,7 +89,7 @@ test("startup reports a conflicting stored shortcut and restores other modes", a
   const { host, active, events, settingsPath } = fixture(t);
   writeFileSync(
     settingsPath,
-    JSON.stringify({ screen: "Command+K", window: "Ctrl+Shift+8" }),
+    JSON.stringify({ screen: "Command+T", window: "Ctrl+Shift+8" }),
   );
   await host.start();
   assert.equal(host.shortcuts.screen, "");
@@ -107,6 +109,6 @@ test("startup reports a conflicting stored shortcut and restores other modes", a
   ]);
   assert.equal(
     JSON.parse(readFileSync(settingsPath, "utf8")).screen,
-    "Command+K",
+    "Command+T",
   );
 });

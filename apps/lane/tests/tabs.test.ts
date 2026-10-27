@@ -153,7 +153,7 @@ test("reopen inserts at the previous position or selects an existing pane", () =
   assert.equal(duplicate.tabs, restored.tabs);
   assert.equal(duplicate.selected, "repository-b");
 });
-test("tab commands reject invalid indexes and row moves without an owner", () => {
+test("tab commands reject invalid indexes and accept focused-row requests", () => {
   assert.equal(
     tabCommandRequest({ command: TabCommand.SelectIndex, index: 8 }),
     undefined,
@@ -162,7 +162,9 @@ test("tab commands reject invalid indexes and row moves without an owner", () =>
     tabCommandRequest({ command: TabCommand.SelectIndex, index: -1 }),
     undefined,
   );
-  assert.equal(tabCommandRequest({ command: TabCommand.MoveFirst }), undefined);
+  assert.deepEqual(tabCommandRequest({ command: TabCommand.MoveFirst }), {
+    command: TabCommand.MoveFirst,
+  });
   assert.equal(tabCommandRequest({ command: "unknown" }), undefined);
   assert.deepEqual(
     tabCommandRequest({ command: TabCommand.SelectIndex, index: 7 }),

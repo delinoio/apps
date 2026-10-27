@@ -57,6 +57,42 @@ test("tab commands use displayed order and reopen explicit closes in LIFO order"
     await command(TabCommand.MoveEarlier);
     assert.deepEqual(order(), ["page-Tasks", "repository-b", "repository-a"]);
     assert.equal(selected(), "repository-b");
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.MoveFirst });
+    await view.settle();
+    assert.deepEqual(
+      order(),
+      ["page-Tasks", "repository-b", "repository-a"],
+      "row-only movement ignores content focus",
+    );
+    const row = nodes(view.tree()).find(
+      (node) => node.props["data-workspace-tab"] === "repository-a",
+    );
+    row?.props.bindfocus();
+    await view.settle();
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.MoveFirst });
+    await view.settle();
+    assert.deepEqual(order(), ["repository-a", "page-Tasks", "repository-b"]);
+    nodes(view.tree())
+      .find((node) => node.props["data-workspace-tab"] === "repository-a")
+      ?.props.bindblur();
+    await view.settle();
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.MoveLast });
+    await view.settle();
+    assert.deepEqual(
+      order(),
+      ["repository-a", "page-Tasks", "repository-b"],
+      "editor focus cannot move a row",
+    );
+    nodes(view.tree())
+      .find((node) => node.props["data-workspace-tab"] === "repository-a")
+      ?.props.bindfocus();
+    await view.settle();
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.MoveLast });
+    await view.settle();
+    nodes(view.tree())
+      .find((node) => node.props["data-workspace-tab"] === "repository-a")
+      ?.props.bindblur();
+    await view.settle();
     assert.equal(
       taskReads,
       readsBeforeMove,
@@ -162,6 +198,13 @@ test("a discarded new-task draft reopens empty with a new identity", async () =>
     assert.equal(selected(), original);
     await command(TabCommand.Close);
     assert.ok(find("Keep editing"));
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.Close });
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.Close });
+    await view.settle();
+    assert.ok(
+      find("Keep editing"),
+      "repeated close keeps the pending confirmation",
+    );
     await command(TabCommand.Reopen);
     assert.equal(selected(), original, "the dialog blocks reopening");
     find("Keep editing")?.props.bindtap();

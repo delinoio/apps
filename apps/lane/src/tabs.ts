@@ -3,6 +3,8 @@ import type { UI } from "./serializable";
 import type { EntityResult } from "@repo/protos/lane/v1/lane_pb";
 import type { MiniApp } from "./AppNavigation";
 import { LanePage } from "./navigation.ts";
+import { TabCommand } from "./tab-commands.ts";
+export { TabCommand } from "./tab-commands.ts";
 
 export enum TabKind {
   App = "app",
@@ -34,19 +36,6 @@ export interface WorkspaceReport {
   repositoryStatus: string;
   savedTaskId?: string;
 }
-export enum TabCommand {
-  New = "new",
-  Close = "close",
-  Reopen = "reopen",
-  Next = "next",
-  Previous = "previous",
-  SelectIndex = "select-index",
-  SelectLast = "select-last",
-  MoveEarlier = "move-earlier",
-  MoveLater = "move-later",
-  MoveFirst = "move-first",
-  MoveLast = "move-last",
-}
 export interface TabCommandRequest {
   command: TabCommand;
   // SelectIndex uses zero-based displayed order. Row moves require tabId.
@@ -67,11 +56,7 @@ export function tabCommandRequest(
       (request.index as number) > 7)
   )
     return undefined;
-  if (
-    (request.command === TabCommand.MoveFirst ||
-      request.command === TabCommand.MoveLast) &&
-    typeof request.tabId !== "string"
-  )
+  if (request.tabId !== undefined && typeof request.tabId !== "string")
     return undefined;
   return request as unknown as TabCommandRequest;
 }
