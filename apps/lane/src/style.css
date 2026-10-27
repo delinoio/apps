@@ -257,6 +257,107 @@ text {
   flex: 1;
   min-height: 0;
 }
+.conflict-dialog {
+  width: 1120px;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 16px;
+}
+.conflict-dialog .dialog-scroll {
+  padding-bottom: 8px;
+}
+.conflict-dialog .heading:focus {
+  border-bottom: 3px solid #075aff;
+}
+.conflict-instructions {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.conflict-review-notice {
+  padding: 14px;
+  background-color: #eaf1ff;
+  border: 1px solid #c6d8ff;
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+.conflict-section {
+  margin-top: 24px;
+}
+.conflict-heads {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.conflict-head {
+  display: flex;
+  flex-direction: column;
+  width: calc(50% - 8px);
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #dce2ec;
+  border-radius: 12px;
+  background-color: #fff;
+  gap: 12px;
+}
+.conflict-head.selected {
+  border: 2px solid #075aff;
+  background-color: #f7faff;
+}
+.conflict-version-title {
+  font-size: 1rem;
+  font-weight: 650;
+}
+.conflict-selected {
+  color: #075aff;
+  font-weight: 650;
+}
+.conflict-value,
+.conflict-retained text {
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.5;
+}
+.conflict-head .button,
+.conflict-footer .button {
+  min-height: 44px;
+}
+.conflict-resolution {
+  border-top: 2px solid #dce2ec;
+  margin-top: 24px;
+  padding-top: 24px;
+}
+.conflict-status-groups {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.conflict-status-groups .field {
+  width: calc(50% - 8px);
+  min-width: 0;
+}
+.conflict-footer {
+  border-top: 1px solid #e4e8ef;
+  margin-top: 24px;
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.conflict-error {
+  background-color: #fff1f0;
+}
+.mobile .conflict-head {
+  width: 100%;
+  padding: 16px;
+}
+.mobile .conflict-status-groups .field {
+  width: 100%;
+}
 .paragraph {
   margin-top: 12px;
   margin-bottom: 12px;
