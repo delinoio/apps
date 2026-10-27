@@ -19,6 +19,20 @@ import {
 } from "./events-model";
 import { repositoryName } from "./model";
 import { hostAction } from "./runtime";
+
+function eventStateLabel(state: EventState): string {
+  switch (state) {
+    case EventState.PENDING:
+      return "Pending";
+    case EventState.LEASED:
+      return "Processing";
+    case EventState.COMPLETED:
+      return "Completed";
+    default:
+      return "Unknown";
+  }
+}
+
 export function Events({
   adapter,
   repositories,
@@ -122,132 +136,216 @@ export function Events({
     await loader.current?.refresh();
   };
   return (
-    <view className="section">
-      <text className="heading">Events and webhook receivers</text>
-      <Notice>
-        Lane retains events. Your existing agent claims and processes them
-        through MCP; reading does not complete an event.
-      </Notice>
-      <Choices
-        label="Repository"
-        value={repositoryId}
-        options={[
-          ["", "All repositories"],
-          ...repositories.map(
-            (r) => [r.version!.entityId, repositoryName(r.version)] as const,
-          ),
-        ]}
-        onChange={setRepositoryId}
-      />
-      <Choices
-        label="Event state"
-        value={state}
-        options={[
-          [EventState.UNSPECIFIED, "All"],
-          [EventState.PENDING, "Pending"],
-          [EventState.LEASED, "Processing"],
-          [EventState.COMPLETED, "Completed"],
-        ]}
-        onChange={setState}
-      />
-      <view className="row wrap">
-        <Button onClick={() => void load()}>Refresh events</Button>
-        <Button
-          primary
-          onClick={() =>
-            setEditing({
-              id: newId(),
-              repositoryId:
-                repositoryId || repositories[0]?.version?.entityId || "",
-              name: "",
-            })
-          }
-        >
-          Create receiver
-        </Button>
-      </view>
-      {(error || view.error || detail.error) && (
-        <Notice>{error || view.error || detail.error}</Notice>
-      )}
-      <text className="heading">Receiving settings</text>
-      {receivers.map((r) => (
-        <view className="card" key={r.id}>
-          <text>{r.name}</text>
-          <text>
-            Repository:{" "}
-            {repositories.find((x) => x.version?.entityId === r.repositoryId)
-              ? repositoryName(
-                  repositories.find(
-                    (x) => x.version?.entityId === r.repositoryId,
-                  )?.version,
-                )
-              : r.repositoryId}
-          </text>
-          <view className="row wrap">
-            <Button
-              onClick={() =>
-                setEditing({
-                  id: r.id,
-                  revision: r.revision,
-                  repositoryId: r.repositoryId,
-                  name: r.name,
-                })
-              }
-            >
-              Edit receiver
-            </Button>
-            <Button
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  const result = await adapter.call(
-                    WebhookService.method.rotateReceiverKey,
-                    { meta: meta(), id: r.id, expectedRevision: r.revision },
-                  );
-                  setSecret({ secret: result.secret });
-                  await load();
-                })
-              }
-            >
-              Rotate signing key
-            </Button>
-            <Button onClick={() => setDeleting({ kind: "receiver", id: r.id })}>
-              Delete receiver
-            </Button>
-          </view>
-        </view>
-      ))}
-      <text className="heading">Retained events</text>
-      {events.length === 0 && view.loading && (
-        <text className="muted">Loading events...</text>
-      )}
-      {events.length === 0 && !view.loading && (
-        <text className="muted">No events match these filters.</text>
-      )}
-      {events.map((e) => (
-        <view className="card" key={e.id}>
-          <text>
-            {e.eventType} · {EventState[e.state]}
-          </text>
-          <text>Sender event: {e.senderEventId}</text>
+    <view className="section events-page">
+      <view className="events-header">
+        <text className="events-title">Events and webhook receivers</text>
+        <view className="events-actions">
+          <Button onClick={() => void load()}>Refresh events</Button>
           <Button
+            primary
             onClick={() => {
               setError("");
-              void reader.current?.inspect(e.id);
+              setEditing({
+                id: newId(),
+                repositoryId:
+                  repositoryId || repositories[0]?.version?.entityId || "",
+                name: "",
+              });
             }}
           >
-            Inspect event
+            Create receiver
           </Button>
         </view>
-      ))}
-      {cursor && cursorKey === eventsQueryKey(query) && (
-        <Button
-          disabled={view.loading || view.loadingMore}
-          onClick={() => void loader.current?.loadMore(query)}
-        >
-          Load more events
-        </Button>
+      </view>
+      <view className="events-guidance">
+        <text>
+          Lane retains events. Your existing agent processes them through MCP.
+          Reading does not complete an event.
+        </text>
+      </view>
+      <view className="events-filters">
+        <Choices
+          label="Repository"
+          value={repositoryId}
+          exclusive
+          options={[
+            ["", "All repositories"],
+            ...repositories.map(
+              (r) => [r.version!.entityId, repositoryName(r.version)] as const,
+            ),
+          ]}
+          onChange={setRepositoryId}
+        />
+        <Choices
+          label="Event state"
+          value={state}
+          exclusive
+          options={[
+            [EventState.UNSPECIFIED, "All"],
+            [EventState.PENDING, "Pending"],
+            [EventState.LEASED, "Processing"],
+            [EventState.COMPLETED, "Completed"],
+          ]}
+          onChange={setState}
+        />
+      </view>
+      {error && !editing && !selected && !deleting && !secret && (
+        <text className="events-feedback" accessibility-live-region="polite">
+          {error}
+        </text>
       )}
+      <view className="events-section">
+        <text className="events-section-title">Receiving settings</text>
+        {receivers.length === 0 && view.loading && !view.receiversLoaded && (
+          <text className="events-feedback" accessibility-live-region="polite">
+            Loading receivers...
+          </text>
+        )}
+        {receivers.length === 0 &&
+          view.receiversLoaded &&
+          !view.loading &&
+          !view.error && (
+            <text className="events-empty">
+              No receivers for this repository.
+            </text>
+          )}
+        <view className="events-list">
+          {receivers.map((r) => (
+            <view className="events-receiver-row" key={r.id}>
+              <view className="events-row-copy">
+                <text className="events-row-title">{r.name}</text>
+                <text className="events-row-meta">
+                  Repository:{" "}
+                  {repositories.find(
+                    (x) => x.version?.entityId === r.repositoryId,
+                  )
+                    ? repositoryName(
+                        repositories.find(
+                          (x) => x.version?.entityId === r.repositoryId,
+                        )?.version,
+                      )
+                    : r.repositoryId}
+                </text>
+              </view>
+              <view className="events-row-actions">
+                <Button
+                  onClick={() => {
+                    setError("");
+                    setEditing({
+                      id: r.id,
+                      revision: r.revision,
+                      repositoryId: r.repositoryId,
+                      name: r.name,
+                    });
+                  }}
+                >
+                  Edit receiver
+                </Button>
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const result = await adapter.call(
+                        WebhookService.method.rotateReceiverKey,
+                        {
+                          meta: meta(),
+                          id: r.id,
+                          expectedRevision: r.revision,
+                        },
+                      );
+                      setSecret({ secret: result.secret });
+                      await load();
+                    })
+                  }
+                >
+                  Rotate signing key
+                </Button>
+                <view className="events-danger-action">
+                  <Button
+                    onClick={() => {
+                      setError("");
+                      setDeleting({ kind: "receiver", id: r.id });
+                    }}
+                  >
+                    Delete receiver
+                  </Button>
+                </view>
+              </view>
+            </view>
+          ))}
+        </view>
+      </view>
+      <view className="events-section">
+        <text className="events-section-title">Retained events</text>
+        {view.error && (
+          <text className="events-feedback" accessibility-live-region="polite">
+            {view.error} Use Refresh events to retry, or retry Load more events
+            when available.
+          </text>
+        )}
+        {events.length === 0 && view.loading && !view.eventsLoaded && (
+          <text className="events-feedback" accessibility-live-region="polite">
+            Loading events...
+          </text>
+        )}
+        {events.length === 0 &&
+          view.eventsLoaded &&
+          !view.loading &&
+          !view.error && (
+            <text className="events-empty">No events match these filters.</text>
+          )}
+        <view className="events-list">
+          {events.map((e) => (
+            <view className="events-event-row" key={e.id}>
+              <view className="events-row-copy">
+                <text className="events-row-title">{e.eventType}</text>
+                <text className="events-row-meta">
+                  Sender event: {e.senderEventId}
+                </text>
+              </view>
+              <text
+                className={`events-state events-state-${eventStateLabel(e.state).toLowerCase()}`}
+                accessibility-label={`State: ${eventStateLabel(e.state)}`}
+              >
+                {eventStateLabel(e.state)}
+              </text>
+              <Button
+                onClick={() => {
+                  setError("");
+                  void reader.current?.inspect(e.id);
+                }}
+              >
+                Inspect event
+              </Button>
+            </view>
+          ))}
+        </view>
+        {detail.loading && !selected && (
+          <text className="events-feedback" accessibility-live-region="polite">
+            Loading event details...
+          </text>
+        )}
+        {detail.error && !selected && (
+          <text className="events-feedback" accessibility-live-region="polite">
+            {detail.error} Select Inspect event to retry.
+          </text>
+        )}
+        {cursor && cursorKey === eventsQueryKey(query) && (
+          <view className="events-continuation">
+            <Button
+              disabled={view.loading || view.loadingMore}
+              onClick={() => void loader.current?.loadMore(query)}
+            >
+              {view.error ? "Retry load more events" : "Load more events"}
+            </Button>
+            {view.loadingMore && (
+              <text accessibility-live-region="polite">
+                Loading more events...
+              </text>
+            )}
+          </view>
+        )}
+      </view>
       {editing && (
         <Dialog title="Webhook receiver" onClose={() => setEditing(undefined)}>
           <Field
@@ -276,7 +374,14 @@ export function Events({
             Changing the repository applies only to future events. Existing
             events and their linked task IDs stay in their original repository.
           </Notice>
-          {error && <Notice>{error}</Notice>}
+          {error && (
+            <text
+              className="events-feedback"
+              accessibility-live-region="polite"
+            >
+              {error}
+            </text>
+          )}
           <Button
             primary
             disabled={
@@ -337,9 +442,13 @@ export function Events({
             key invalidates the old key immediately. Lost keys require rotation.
           </Notice>
           {secret.endpoint && (
-            <text text-selection>Endpoint: {secret.endpoint}</text>
+            <text className="events-break-text" text-selection>
+              Endpoint: {secret.endpoint}
+            </text>
           )}
-          <text text-selection>{secret.secret}</text>
+          <text className="events-break-text" text-selection>
+            {secret.secret}
+          </text>
           <Button
             onClick={() =>
               void run(() => hostAction("copyText", secret.secret))
@@ -347,6 +456,14 @@ export function Events({
           >
             Copy signing key
           </Button>
+          {error && (
+            <text
+              className="events-feedback"
+              accessibility-live-region="polite"
+            >
+              {error}
+            </text>
+          )}
           <text>
             Send the Lane common format with event ID, type, occurrence time and
             JSON object payload. Sign the exact body and timestamp. Retries keep
@@ -356,37 +473,63 @@ export function Events({
       )}
       {selected && (
         <Dialog title="Event details" onClose={closeDetail}>
-          <text>
-            {selected.event.eventType} · {EventState[selected.event.state]}
+          <view className="events-detail-heading">
+            <text className="events-row-title events-break-text">
+              {selected.event.eventType}
+            </text>
+            <text
+              className={`events-state events-state-${eventStateLabel(selected.event.state).toLowerCase()}`}
+            >
+              {eventStateLabel(selected.event.state)}
+            </text>
+          </view>
+          <text className="events-row-meta events-break-text">
+            Sender event: {selected.event.senderEventId}
           </text>
-          <text text-selection>
-            {JSON.stringify(selected.event.payload, null, 2)}
-          </text>
-          <text className="heading">Processing history</text>
+          <text className="events-detail-label">JSON payload</text>
+          <view className="events-payload">
+            <text className="events-payload-text" text-selection>
+              {JSON.stringify(selected.event.payload, null, 2)}
+            </text>
+          </view>
+          <text className="events-section-title">Processing history</text>
+          {detail.loading && (
+            <text
+              className="events-feedback"
+              accessibility-live-region="polite"
+            >
+              Loading event details...
+            </text>
+          )}
           {selected.processing.map((p) => (
-            <view className="card" key={p.id}>
-              <text>
-                {p.origin?.deviceName} ·{" "}
-                {p.completedAt
-                  ? new Date(
-                      Number(p.completedAt.seconds) * 1000,
-                    ).toLocaleString()
-                  : ""}
-              </text>
+            <view className="events-processing-row" key={p.id}>
+              {p.origin?.deviceName && (
+                <text className="events-break-text">{p.origin.deviceName}</text>
+              )}
+              {p.completedAt && (
+                <text className="events-row-meta">
+                  Completed{" "}
+                  {new Date(
+                    Number(p.completedAt.seconds) * 1000,
+                  ).toLocaleString()}
+                </text>
+              )}
               {p.taskIds.length === 0 && (
                 <text>Completed without creating tasks.</text>
               )}
-              {p.taskIds.map((id) => (
-                <Button
-                  key={id}
-                  onClick={() => {
-                    closeDetail();
-                    openTask(id);
-                  }}
-                >
-                  Open linked task {id}
-                </Button>
-              ))}
+              <view className="events-row-actions">
+                {p.taskIds.map((id) => (
+                  <Button
+                    key={id}
+                    onClick={() => {
+                      closeDetail();
+                      openTask(id);
+                    }}
+                  >
+                    Open linked task {id}
+                  </Button>
+                ))}
+              </view>
             </view>
           ))}
           <Button
@@ -408,14 +551,24 @@ export function Events({
           >
             Reopen for processing
           </Button>
-          <Button
-            onClick={() =>
-              setDeleting({ kind: "event", id: selected.event.id })
-            }
-          >
-            Delete event
-          </Button>
-          {(error || detail.error) && <Notice>{error || detail.error}</Notice>}
+          <view className="events-danger-action">
+            <Button
+              onClick={() => {
+                setError("");
+                setDeleting({ kind: "event", id: selected.event.id });
+              }}
+            >
+              Delete event
+            </Button>
+          </view>
+          {(error || detail.error) && (
+            <text
+              className="events-feedback"
+              accessibility-live-region="polite"
+            >
+              {error || detail.error}
+            </text>
+          )}
         </Dialog>
       )}
       {deleting && (
@@ -450,7 +603,14 @@ export function Events({
           >
             Delete permanently
           </Button>
-          {error && <Notice>{error}</Notice>}
+          {error && (
+            <text
+              className="events-feedback"
+              accessibility-live-region="polite"
+            >
+              {error}
+            </text>
+          )}
         </Dialog>
       )}
     </view>
