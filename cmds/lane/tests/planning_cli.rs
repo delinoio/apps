@@ -78,9 +78,9 @@ fn completed_flags_filter_before_paging_and_keep_omission_compatible() {
     let omitted = h.ok(&["task", "list"]);
     assert_eq!(omitted["items"].as_array().unwrap().len(), 1);
     let none = h.ok(&["task", "list", "--completed", "none"]);
-    assert!(none["items"].as_array().unwrap().is_empty());
+    assert_eq!(none["items"].as_array().unwrap().len(), 0);
     let done_and_none = h.ok(&["task", "list", "--progress", "done", "--completed", "none"]);
-    assert!(done_and_none["items"].as_array().unwrap().is_empty());
+    assert_eq!(done_and_none["items"].as_array().unwrap().len(), 0);
     let recent = h.ok(&[
         "task",
         "list",
@@ -98,7 +98,7 @@ fn completed_flags_filter_before_paging_and_keep_omission_compatible() {
         "--completed-cutoff",
         "2099-01-01T00:00:00Z",
     ]);
-    assert!(expired["items"].as_array().unwrap().is_empty());
+    assert_eq!(expired["items"].as_array().unwrap().len(), 0);
     let missing = h.fail(&["task", "list", "--completed", "last-24-hours"], 2);
     assert_eq!(missing["reason"], "ERROR_REASON_INVALID_INPUT");
     let extra = h.fail(

@@ -88,7 +88,7 @@ fn completed_cursor_binds_cutoff_and_selection() {
         "completed":{"selection":"COMPLETED_SELECTION_LAST_24_HOURS","cutoff":"2026-10-27T12:00:00Z"}
     })).unwrap();
     let cursor = strv(&first, "nextCursor");
-    assert!(!cursor.is_empty());
+    assert_ne!(cursor, "");
     for completed in [
         json!({"selection":"COMPLETED_SELECTION_LAST_24_HOURS","cutoff":"2026-10-27T12:00:00.000001Z"}),
         json!({"selection":"COMPLETED_SELECTION_LAST_7_DAYS","cutoff":"2026-10-27T12:00:00Z"}),
