@@ -45,14 +45,19 @@ internal class LaneRuntime(val application: LaneApplication) {
     fun <T> submit(action: () -> T) = executor.submit<T> { action() }
     fun execute(action: () -> Unit) { executor.execute(action) }
     fun engine(method: String, request: String) = store().invoke(method, request)
+    private fun openStoreHandle(space: String): String = BridgeJson.response(store().open(
+        JSONObject().put("formatVersion", 3).put("spaceId", space).toString()
+    )).getString("spaceId")
+    private fun releaseStoreHandle(space: String) { BridgeJson.response(store().release(space)) }
     fun workerStoreLease() = WorkerStoreLease(::execute,
-        {
-            val space = BridgeJson.response(store().open("{\"formatVersion\":3,\"spaceId\":\"\"}"))
-                .getString("spaceId")
-            pollSafely()
-            space
-        },
-        { space -> BridgeJson.response(store().release(space)) })
+        { openStoreHandle("").also { pollSafely() } }, ::releaseStoreHandle)
+    fun backgroundStoreLease(space: String) = WorkerStoreLease(::execute,
+        { openStoreHandle(space) }, ::releaseStoreHandle)
+    /** Use only from the serial store executor; the caller owns the handle for this action. */
+    fun <T> withStoreHandle(space: String, action: () -> T): T {
+        val opened = openStoreHandle(space)
+        return try { action() } finally { releaseStoreHandle(opened) }
+    }
 
     fun foreground(session: LaneSession) = execute {
         sessions.add(session)

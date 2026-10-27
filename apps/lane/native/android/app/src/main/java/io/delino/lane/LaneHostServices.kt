@@ -362,86 +362,92 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
         var success = true
         for (space in credentials.spaces().filter { selectedSpace == null || it == selectedSpace }) {
             if (stopped()) return false
-            val owner = uuid7()
-            try {
-                val status = runtime.submit { BridgeJson.response(runtime.engine("GetLocalStatus", BridgeJson.request(space))) }.get()
-                if (status.optBoolean("reconnectRequired")) continue
-                val acquired = runtime.submit { BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired") }.get()
-                if (!acquired) continue
-                try {
-                    val info = JSONObject(transport.rpc("lane.v1.SyncService", "GetSyncInfo", "{}", accessToken(space)))
-                    val identity = credentials.get(space) ?: throw SyncBoundary.Failure("UNAUTHENTICATED")
-                    if (info.optString("accountId") != identity.getString("account_id") ||
-                        info.optString("tenantId") != identity.getString("tenant_id")) throw SyncBoundary.Failure("FORBIDDEN")
-                    if (info.optInt("formatVersion") != 3) throw SyncBoundary.Failure("UNSUPPORTED_FORMAT")
-                    var more = true
-                    while (more && !stopped()) {
-                        val pending = runtime.submit {
-                            check(BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired"))
-                            BridgeJson.response(runtime.store().pending(space, owner))
-                        }.get()
-                        val token = accessToken(space)
-                        if (info.getString("epoch") != pending.getString("epoch")) {
-                            // A fresh grant may read an old generation's deletion directive. Never upload first.
-                            val response = JSONObject(transport.rpc("lane.v1.SyncService", "PullChanges", JSONObject()
-                                .put("formatVersion", 3).put("epoch", pending.getString("epoch"))
-                                .put("cursor", pending.optString("cursor")).put("pageSize", 100).toString(), token))
-                            SyncBoundary.validatePull(response, identity.getString("account_id"), true)
-                            runtime.submit { BridgeJson.response(runtime.store().apply(space, JSONObject()
-                                .put("formatVersion", 3).put("epoch", pending.getString("epoch")).put("owner", owner)
-                                .put("pull", response).toString())); runtime.pollSafely() }.get()
-                            onDisconnect(space)
-                            break
-                        }
-                        val mutations = pending.getJSONArray("mutations")
-                        for (index in 0 until mutations.length()) {
-                            if (stopped() || credentials.get(space) == null) break
-                            runtime.submit { check(BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired")) }.get()
-                            val mutation = mutations.getJSONObject(index)
-                            val push = JSONObject().put("formatVersion", 3).put("epoch", pending.getString("epoch"))
-                                .put("deviceId", pending.getString("deviceId")).put("mutations", org.json.JSONArray().put(mutation))
-                            val response = try {
-                                JSONObject(transport.rpc("lane.v1.SyncService", "PushChanges", push.toString(), token))
-                            } catch (failure: LaneTransport.Failure) {
-                                if (failure.status != 413) throw failure
-                                JSONObject().put("results", org.json.JSONArray().put(JSONObject()
-                                    .put("requestId", mutation.getJSONObject("meta").getString("requestId"))
-                                    .put("error", JSONObject().put("reason", "ERROR_REASON_ITEM_TOO_LARGE").put("retryable", false))))
-                            }
-                            if (credentials.get(space) == null) break
-                            runtime.submit { BridgeJson.response(runtime.store().apply(space, JSONObject()
-                                .put("formatVersion", 3).put("epoch", pending.getString("epoch")).put("owner", owner)
-                                .put("push", response).toString())) }.get()
-                        }
-                        if (stopped() || credentials.get(space) == null) break
-                        runtime.submit { check(BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired")) }.get()
-                        val pull = JSONObject().put("formatVersion", 3).put("epoch", pending.getString("epoch"))
-                            .put("cursor", pending.optString("cursor")).put("pageSize", 100)
-                        val response = JSONObject(transport.rpc("lane.v1.SyncService", "PullChanges", pull.toString(), token))
-                        val accountDeleted = SyncBoundary.validatePull(response, identity.getString("account_id"), false)
-                        runtime.submit {
-                            BridgeJson.response(runtime.store().apply(space, JSONObject().put("formatVersion", 3)
-                                .put("epoch", pending.getString("epoch")).put("owner", owner).put("pull", response).toString()))
-                            runtime.pollSafely()
-                        }.get()
-                        if (accountDeleted) { onDisconnect(space); break }
-                        more = response.optBoolean("hasMore")
-                    }
-                } finally { runtime.submit { runtime.store().acquire(space, owner, 0) }.get() }
-            } catch (failure: Exception) {
-                if (failure is LaneTransport.Failure && failure.status == 401 && recoverDeletion(space)) continue
-                success = false
-                val reason = when {
-                    failure is LaneTransport.Failure && ConnectErrors.reason(failure.body) != null -> ConnectErrors.reason(failure.body)!!.removePrefix("ERROR_REASON_")
-                    failure is LaneTransport.Failure && failure.status == 401 -> "UNAUTHENTICATED"
-                    failure is LaneTransport.Failure && failure.status == 403 -> "FORBIDDEN"
-                    failure is SyncBoundary.Failure -> failure.reason
-                    else -> "DEPENDENCY_UNAVAILABLE"
-                }
-                runtime.submit { runtime.safe { runtime.store().log("lane_sync_failed"); runtime.store().syncFailure(space, "ERROR_REASON_$reason") } }.get()
+            val handled = runtime.backgroundStoreLease(space).run(stopped) {
+                synchronizeSpace(stopped, space)
             }
+            if (!handled) success = false
         }
         return success
+    }
+    private fun synchronizeSpace(stopped: () -> Boolean, space: String): Boolean {
+        val owner = uuid7()
+        try {
+            val status = runtime.submit { BridgeJson.response(runtime.engine("GetLocalStatus", BridgeJson.request(space))) }.get()
+            if (status.optBoolean("reconnectRequired")) return true
+            val acquired = runtime.submit { BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired") }.get()
+            if (!acquired) return true
+            try {
+                val info = JSONObject(transport.rpc("lane.v1.SyncService", "GetSyncInfo", "{}", accessToken(space)))
+                val identity = credentials.get(space) ?: throw SyncBoundary.Failure("UNAUTHENTICATED")
+                if (info.optString("accountId") != identity.getString("account_id") ||
+                    info.optString("tenantId") != identity.getString("tenant_id")) throw SyncBoundary.Failure("FORBIDDEN")
+                if (info.optInt("formatVersion") != 3) throw SyncBoundary.Failure("UNSUPPORTED_FORMAT")
+                var more = true
+                while (more && !stopped()) {
+                    val pending = runtime.submit {
+                        check(BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired"))
+                        BridgeJson.response(runtime.store().pending(space, owner))
+                    }.get()
+                    val token = accessToken(space)
+                    if (info.getString("epoch") != pending.getString("epoch")) {
+                        // A fresh grant may read an old generation's deletion directive. Never upload first.
+                        val response = JSONObject(transport.rpc("lane.v1.SyncService", "PullChanges", JSONObject()
+                            .put("formatVersion", 3).put("epoch", pending.getString("epoch"))
+                            .put("cursor", pending.optString("cursor")).put("pageSize", 100).toString(), token))
+                        SyncBoundary.validatePull(response, identity.getString("account_id"), true)
+                        runtime.submit { BridgeJson.response(runtime.store().apply(space, JSONObject()
+                            .put("formatVersion", 3).put("epoch", pending.getString("epoch")).put("owner", owner)
+                            .put("pull", response).toString())); runtime.pollSafely() }.get()
+                        onDisconnect(space)
+                        break
+                    }
+                    val mutations = pending.getJSONArray("mutations")
+                    for (index in 0 until mutations.length()) {
+                        if (stopped() || credentials.get(space) == null) break
+                        runtime.submit { check(BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired")) }.get()
+                        val mutation = mutations.getJSONObject(index)
+                        val push = JSONObject().put("formatVersion", 3).put("epoch", pending.getString("epoch"))
+                            .put("deviceId", pending.getString("deviceId")).put("mutations", org.json.JSONArray().put(mutation))
+                        val response = try {
+                            JSONObject(transport.rpc("lane.v1.SyncService", "PushChanges", push.toString(), token))
+                        } catch (failure: LaneTransport.Failure) {
+                            if (failure.status != 413) throw failure
+                            JSONObject().put("results", org.json.JSONArray().put(JSONObject()
+                                .put("requestId", mutation.getJSONObject("meta").getString("requestId"))
+                                .put("error", JSONObject().put("reason", "ERROR_REASON_ITEM_TOO_LARGE").put("retryable", false))))
+                        }
+                        if (credentials.get(space) == null) break
+                        runtime.submit { BridgeJson.response(runtime.store().apply(space, JSONObject()
+                            .put("formatVersion", 3).put("epoch", pending.getString("epoch")).put("owner", owner)
+                            .put("push", response).toString())) }.get()
+                    }
+                    if (stopped() || credentials.get(space) == null) break
+                    runtime.submit { check(BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired")) }.get()
+                    val pull = JSONObject().put("formatVersion", 3).put("epoch", pending.getString("epoch"))
+                        .put("cursor", pending.optString("cursor")).put("pageSize", 100)
+                    val response = JSONObject(transport.rpc("lane.v1.SyncService", "PullChanges", pull.toString(), token))
+                    val accountDeleted = SyncBoundary.validatePull(response, identity.getString("account_id"), false)
+                    runtime.submit {
+                        BridgeJson.response(runtime.store().apply(space, JSONObject().put("formatVersion", 3)
+                            .put("epoch", pending.getString("epoch")).put("owner", owner).put("pull", response).toString()))
+                        runtime.pollSafely()
+                    }.get()
+                    if (accountDeleted) { onDisconnect(space); break }
+                    more = response.optBoolean("hasMore")
+                }
+            } finally { runtime.submit { runtime.store().acquire(space, owner, 0) }.get() }
+        } catch (failure: Exception) {
+            if (failure is LaneTransport.Failure && failure.status == 401) return recoverDeletion(space)
+            val reason = when {
+                failure is LaneTransport.Failure && ConnectErrors.reason(failure.body) != null -> ConnectErrors.reason(failure.body)!!.removePrefix("ERROR_REASON_")
+                failure is LaneTransport.Failure && failure.status == 401 -> "UNAUTHENTICATED"
+                failure is LaneTransport.Failure && failure.status == 403 -> "FORBIDDEN"
+                failure is SyncBoundary.Failure -> failure.reason
+                else -> "DEPENDENCY_UNAVAILABLE"
+            }
+            runtime.submit { runtime.safe { runtime.store().log("lane_sync_failed"); runtime.store().syncFailure(space, "ERROR_REASON_$reason") } }.get()
+            return false
+        }
     }
     private fun recoverDeletion(space: String): Boolean {
         val identity = credentials.get(space) ?: return false
@@ -490,9 +496,11 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
         for (index in 0 until spaces.length()) {
             val space = spaces.getString(index)
             val token = credentials.get(space) ?: continue
-            val status = BridgeJson.response(runtime.engine("GetLocalStatus", BridgeJson.request(space)))
-            if (token.getString("account_id") == accountId && token.getString("device_id") == status.getString("deviceId") &&
-                status.optBoolean("syncEnabled")) scheduleNow(space)
+            runtime.withStoreHandle(space) {
+                val status = BridgeJson.response(runtime.engine("GetLocalStatus", BridgeJson.request(space)))
+                if (token.getString("account_id") == accountId && token.getString("device_id") == status.getString("deviceId") &&
+                    status.optBoolean("syncEnabled")) scheduleNow(space)
+            }
         }
     }
     fun refreshAllPush() { credentials.spaces().forEach { space -> runtime.safe { refreshPush(space); "{}" } } }

@@ -71,6 +71,23 @@ class StoreHandlesTest {
     private fun lease(store: Store, execute: (() -> Unit) -> Unit, open: () -> String = { store.open() }) =
         WorkerStoreLease(execute, open) { store.close(it) }
 
+    @Test fun scopedBackgroundLeaseOpensAndReleasesAnExplicitNonActiveSpace() {
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val store = Store()
+            store.active = "B"
+            val result = lease(store, { executor.execute(it) }) { store.open("A") }.run({ false }) {
+                assertEquals(1, store.count("A"))
+                assertEquals(0, store.count("B"))
+                true
+            }
+            assertTrue(result)
+            assertTrue(store.canReset("A"))
+            assertTrue(store.canReset("B"))
+            assertEquals(listOf("A"), store.releases)
+        } finally { executor.shutdownNow() }
+    }
+
     @Test fun completedRetryAndFailedWorkersBalanceOnlySuccessfulOpens() {
         val executor = Executors.newSingleThreadExecutor()
         try {
