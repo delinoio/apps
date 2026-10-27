@@ -4,6 +4,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, Request, StatusCode},
 };
+use connectrpc::ErrorCode;
 use lane_api::{
     Fault, Result,
     mcp::{Backend, router_with_backend},
@@ -22,6 +23,8 @@ struct MockDispatch {
     calls: Mutex<Vec<(String, String, Value)>>,
     fail: bool,
     revoked: bool,
+    auth_fault: Option<(ErrorCode, i32)>,
+    execute_fault: Option<(ErrorCode, i32)>,
 }
 impl Backend for MockDispatch {
     fn max_request_bytes(&self) -> usize {
@@ -29,6 +32,9 @@ impl Backend for MockDispatch {
     }
     async fn authenticate(&self, headers: &HeaderMap) -> Result<()> {
         self.auth_calls.fetch_add(1, Ordering::SeqCst);
+        if let Some((code, reason)) = self.auth_fault {
+            return Err(Fault::new(code, reason, "fixture authentication fault"));
+        }
         if self.authenticated
             && headers
                 .get("authorization")
@@ -52,6 +58,9 @@ impl Backend for MockDispatch {
             .push((service.into(), method.into(), arguments));
         if self.revoked {
             return Err(Fault::unauthenticated());
+        }
+        if let Some((code, reason)) = self.execute_fault {
+            return Err(Fault::new(code, reason, "fixture tool fault"));
         }
         if self.fail {
             return Err(Fault::stale());
@@ -420,6 +429,172 @@ async fn domain_errors_are_tool_results_but_revocation_is_http_401() {
             assert!(value["result"]["structuredContent"]["error"]["correlationId"].is_string());
         }
     }
+}
+
+#[tokio::test]
+async fn shared_faults_use_lane_reasons_in_authentication_and_tool_results() {
+    for (code, raw_reason, expected_reason, expected_status, challenge) in [
+        (
+            ErrorCode::Unauthenticated,
+            2,
+            12,
+            StatusCode::UNAUTHORIZED,
+            true,
+        ),
+        (
+            ErrorCode::PermissionDenied,
+            3,
+            13,
+            StatusCode::FORBIDDEN,
+            false,
+        ),
+        (
+            ErrorCode::Unavailable,
+            9,
+            14,
+            StatusCode::SERVICE_UNAVAILABLE,
+            false,
+        ),
+    ] {
+        let backend = Arc::new(MockDispatch {
+            auth_fault: Some((code, raw_reason)),
+            ..Default::default()
+        });
+        let (status, headers, body) =
+            send(router_with_backend(backend), rpc("ping", json!({}))).await;
+        assert_eq!(status, expected_status);
+        assert_eq!(headers.contains_key("www-authenticate"), challenge);
+        if challenge {
+            assert_eq!(
+                headers["www-authenticate"],
+                "Bearer resource_metadata=\"https://lane.example/.well-known/oauth-protected-resource/mcp\""
+            );
+        }
+        assert_eq!(body["error"]["code"], -32000);
+        assert_eq!(body["error"]["data"]["code"], code.as_str());
+        assert_eq!(body["error"]["data"]["reason"], expected_reason);
+        assert_eq!(
+            body["error"]["data"]["retryable"],
+            code == ErrorCode::Unavailable
+        );
+        assert!(
+            body["error"]["data"]["correlationId"]
+                .as_str()
+                .is_some_and(|id| !id.is_empty())
+        );
+    }
+
+    for (code, raw_reason, expected_reason, violation) in [
+        (ErrorCode::PermissionDenied, 3, 13, None),
+        (ErrorCode::NotFound, 4, 2, None),
+        (ErrorCode::Unavailable, 9, 14, None),
+        (ErrorCode::AlreadyExists, 10, 6, None),
+        (ErrorCode::Aborted, 3, 3, None),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (1 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_PARENT_CYCLE"),
+        ),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (2 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE"),
+        ),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (3 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_DUPLICATE_CYCLE"),
+        ),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (4 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_SELF_LINK"),
+        ),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (5 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_CROSS_REPOSITORY"),
+        ),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (6 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"),
+        ),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (7 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_DUPLICATE_NAME"),
+        ),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (8 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_LABEL_LIMIT"),
+        ),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (9 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_DATE_ORDER"),
+        ),
+        (
+            ErrorCode::FailedPrecondition,
+            19 | (10 << 8),
+            19,
+            Some("CONSTRAINT_VIOLATION_FIELD_RANGE"),
+        ),
+    ] {
+        let backend = Arc::new(MockDispatch {
+            authenticated: true,
+            execute_fault: Some((code, raw_reason)),
+            ..Default::default()
+        });
+        let (status, _, body) = send(
+            router_with_backend(backend),
+            rpc(
+                "tools/call",
+                json!({"name":"lane_get_task", "arguments":{"id":"fixture"}}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["isError"], true);
+        let error = &body["result"]["structuredContent"]["error"];
+        assert_eq!(error["code"], code.as_str());
+        assert_eq!(error["reason"], expected_reason);
+        assert_eq!(error["violation"].as_str(), violation);
+        assert_eq!(error["retryable"], code == ErrorCode::Unavailable);
+        assert_eq!(
+            serde_json::from_str::<Value>(body["result"]["content"][0]["text"].as_str().unwrap())
+                .unwrap(),
+            body["result"]["structuredContent"]
+        );
+    }
+
+    let backend = Arc::new(MockDispatch {
+        authenticated: true,
+        execute_fault: Some((ErrorCode::Unauthenticated, 2)),
+        ..Default::default()
+    });
+    let (status, headers, body) = send(
+        router_with_backend(backend),
+        rpc(
+            "tools/call",
+            json!({"name":"lane_get_task", "arguments":{"id":"fixture"}}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(headers.contains_key("www-authenticate"));
+    assert_eq!(body["id"], "test-id");
+    assert_eq!(body["error"]["data"]["reason"], 12);
 }
 
 #[tokio::test]

@@ -267,9 +267,7 @@ try {
   assert.equal(await methodCount("ReopenEvent"), 0);
   assert.equal(await methodCount("DeleteEvent"), 0);
   await button("Reopen for processing").click();
-  await text(/push · PENDING/, false)
-    .first()
-    .waitFor();
+  await dialog.locator(".events-state").getByText("Pending").waitFor();
   const reopen = (await requests()).find((r) => r.method === "ReopenEvent");
   assert.equal(reopen.input.id, "B");
   assert.equal(reopen.input.expectedRevision, "1");
@@ -294,6 +292,32 @@ try {
   const removed = (await requests()).filter((r) => r.method === "DeleteEvent");
   assert.equal(removed.length, 1);
   assert.equal(removed[0].input.id, "B");
+
+  // JSON remains selectable text, including markup-looking data. Each
+  // processing record keeps its own zero-task or linked-task outcome.
+  await start({
+    A: {
+      event: event("A", "EVENT_STATE_COMPLETED", "<b>literal payload</b>"),
+      processing: [
+        { id: "zero", origin: { deviceName: "Device-zero" }, taskIds: [] },
+        {
+          id: "linked",
+          origin: { deviceName: "Device-linked" },
+          taskIds: ["task-1", "task-2"],
+        },
+      ],
+    },
+  });
+  await inspect(0).click();
+  await expectNewReads(1);
+  await release(0);
+  await text("<b>literal payload</b>", false).waitFor();
+  assert.equal(await dialog.locator(".events-payload b").count(), 0);
+  await text("Completed without creating tasks.").waitFor();
+  await button("Open linked task task-1").waitFor();
+  await button("Open linked task task-2").waitFor();
+  await button("Close").click();
+  await dialog.waitFor({ state: "hidden" });
   assert.deepEqual(errors, []);
   console.log("Events detail ownership browser checks passed.");
 } finally {

@@ -81,7 +81,10 @@ try {
   };
   for (const viewport of [
     { width: 1440, height: 900 },
+    { width: 900, height: 900 },
+    { width: 899, height: 900 },
     { width: 390, height: 844 },
+    { width: 360, height: 780 },
     { width: 390, height: 240 },
   ]) {
     await page.setViewportSize(viewport);
@@ -89,10 +92,19 @@ try {
     await button("Improve empty states").waitFor();
     await button(viewport.width < 900 ? "Repos" : "Repositories").click();
     await button("Add repository").click();
-    const url = page.getByRole("textbox", {
-      name: "Repository URL",
-      exact: true,
-    });
+    const url = page.getByRole("textbox", { name: /^Repository URL/ });
+    assert.equal(
+      await url.evaluate((el) => el === el.getRootNode().activeElement),
+      true,
+      "the repository URL receives initial focus",
+    );
+    assert.ok(
+      (
+        await dialog("Add repository")
+          .getByRole("button", { name: "Close" })
+          .boundingBox()
+      ).height >= 44,
+    );
     await url.fill("https://github.com/example/repo");
     await assertBlocked();
     assert.equal(await url.inputValue(), "https://github.com/example/repo");
@@ -112,6 +124,64 @@ try {
       ),
       true,
     );
+    await button("Delete repository").click();
+    assert.equal(
+      await dialog("Permanently delete repository?")
+        .getByRole("button", { name: "Close" })
+        .evaluate((el) => el === el.getRootNode().activeElement),
+      true,
+      "deletion starts on the safe Close action",
+    );
+    await dialog("Permanently delete repository?")
+      .getByRole("button", { name: "Close" })
+      .click();
+    await page.locator("lynx-view").evaluate((view) => {
+      const root = view.shadowRoot;
+      const url = root.querySelector(".repository-url");
+      url.textContent = `example.com/${"very-long-repository-segment".repeat(12)}`;
+    });
+    const overflow = await page.locator("lynx-view").evaluate((view) => {
+      const width = document.documentElement.clientWidth;
+      return [
+        ...view.shadowRoot.querySelectorAll(
+          ".repository-directory, .repository-row, .repository-url, .repository-actions, .repository-actions .button",
+        ),
+      ]
+        .filter((element) => element.getBoundingClientRect().right > width + 1)
+        .map((element) => element.className);
+    });
+    assert.deepEqual(
+      overflow,
+      [],
+      `repository content overflows at ${viewport.width}px`,
+    );
+    if (viewport.width === 360) {
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "24px";
+      });
+      const enlargedOverflow = await page
+        .locator("lynx-view")
+        .evaluate((view) => {
+          const width = document.documentElement.clientWidth;
+          return [
+            ...view.shadowRoot.querySelectorAll(
+              ".repository-directory, .repository-row, .repository-url, .repository-actions, .repository-actions .button",
+            ),
+          ]
+            .filter(
+              (element) => element.getBoundingClientRect().right > width + 1,
+            )
+            .map((element) => element.className);
+        });
+      assert.deepEqual(
+        enlargedOverflow,
+        [],
+        "repository content overflows with enlarged text",
+      );
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "";
+      });
+    }
     await button(viewport.width < 900 ? "Tasks" : "All tasks").click();
     await button("Improve empty states").click();
     const title = page.getByRole("textbox", { name: "Title", exact: true });

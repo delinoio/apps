@@ -22,3 +22,9 @@ xcrun --sdk macosx clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Wno-unused-param
   "${test_output}/store/liblane_unicode.a" "${test_output}/store/liblane_url.a" \
   -framework Foundation -o "${test_output}/sync-upload-test"
 "${test_output}/sync-upload-test"
+xcrun --sdk macosx clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Wno-unused-parameter \
+  -I "${test_root}/../Sources" \
+  "${test_root}/image-data-test.mm" \
+  "${test_root}/../Sources/LaneHTTPSImageData.mm" \
+  -framework Foundation -o "${test_output}/image-data-test"
+"${test_output}/image-data-test"
