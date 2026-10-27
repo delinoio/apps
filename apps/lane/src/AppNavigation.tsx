@@ -92,9 +92,13 @@ export function MiniAppNavigation({ app }: { app: MiniApp }) {
 }
 
 export function ComingSoon({ app, back }: { app: MiniApp; back: () => void }) {
+  const pace = app === MiniApp.Pace;
   return (
-    <scroll-view className="page-scroll" scroll-orientation="vertical">
-      <view className="coming-soon">
+    <scroll-view
+      className={`page-scroll ${pace ? "pace-page-scroll" : ""}`}
+      scroll-orientation="vertical"
+    >
+      <view className={`coming-soon ${pace ? "pace-coming-soon" : ""}`}>
         <view className="coming-soon-icon">
           <AppIcon app={app} />
         </view>
@@ -103,9 +107,15 @@ export function ComingSoon({ app, back }: { app: MiniApp; back: () => void }) {
           Coming soon
         </text>
         <text className="muted">{app} is not available yet.</text>
-        <Button primary onClick={back}>
-          Back to Lane
-        </Button>
+        {pace ? (
+          <view className="pace-return">
+            <Button onClick={back}>Back to Lane</Button>
+          </view>
+        ) : (
+          <Button primary onClick={back}>
+            Back to Lane
+          </Button>
+        )}
       </view>
     </scroll-view>
   );
