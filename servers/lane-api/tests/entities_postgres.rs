@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //! Real domain tests; set TEST_DATABASE_URL to a disposable database and run --ignored.
+use delino_protocol::lane::v1::ResolveConflictRequest;
 use lane_api::{Principal, Result, account_lock, entities, id, string, sync};
 use serde_json::{Value, json};
 use sqlx::{Connection, PgConnection};
@@ -164,6 +165,10 @@ fn mutation(v: Value) -> Value {
         "SAVE"
     };
     json!({"meta":{"requestId":id()},"kind":format!("MUTATION_KIND_{kind}"),"version":v,"expectedHeadIds":[]})
+}
+fn typed_resolution(q: &Value) -> Value {
+    serde_json::to_value(serde_json::from_value::<ResolveConflictRequest>(q.clone()).unwrap())
+        .unwrap()
 }
 const REPO: &str = "019a0000-0000-7000-8000-000000000002";
 const TASK: &str = "019a0000-0000-7000-8000-000000000003";
@@ -368,6 +373,161 @@ async fn stale_interactive_save_preserves_alternative_resolution_and_receipts() 
         5
     );
     assert_eq!(f.heads(TASK).await.len(), 1);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn resolved_task_planning_sets_replay_before_head_validation() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let labels = [id(), id()];
+    for label in &labels {
+        f.call(
+            "CreatePlanningItem",
+            json!({"meta":{"requestId":id()},"id":label,
+            "item":{"label":{"repositoryId":REPO,"name":label,"color":"#abcdef"}}}),
+        )
+        .await
+        .unwrap();
+    }
+    let endpoints = [id(), id()];
+    for endpoint in &endpoints {
+        f.task(endpoint, REPO).await;
+    }
+    let base = f.task(TASK, REPO).await;
+    let first = f
+        .call(
+            "SetProgress",
+            json!({"meta":{"requestId":id()},"id":TASK,
+        "expectedVersionId":base["versionId"],"progress":"PROGRESS_DONE"}),
+        )
+        .await
+        .unwrap();
+    f.call(
+        "SetProgress",
+        json!({"meta":{"requestId":id()},"id":TASK,
+        "expectedVersionId":base["versionId"],"progress":"PROGRESS_BLOCKED"}),
+    )
+    .await
+    .unwrap();
+    let heads = f.heads(TASK).await;
+    assert_eq!(heads.len(), 2);
+    let mut resolved = first["result"]["version"].clone();
+    resolved["task"]["labelIds"] = json!([labels[1], labels[0]]);
+    resolved["task"]["dependsOnTaskIds"] = json!([endpoints[1], endpoints[0]]);
+    resolved["task"]["relatedTaskIds"] = json!([endpoints[1], endpoints[0]]);
+    let q = typed_resolution(&json!({"meta":{"requestId":id()},"id":TASK,
+        "expectedHeadIds":heads,"resolved":resolved}));
+    let before_failed = (
+        f.count("lane_versions").await,
+        f.count("lane_entity_receipts").await,
+    );
+    let mut invalid = q.clone();
+    invalid["meta"]["requestId"] = json!(id());
+    invalid["resolved"]["task"]["labelIds"] = json!([id()]);
+    assert_eq!(
+        lane_api::planning::violation_of(&f.call("ResolveConflict", invalid).await.unwrap_err())
+            .map(|v| v.name()),
+        Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")
+    );
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entity_receipts").await
+        ),
+        before_failed
+    );
+
+    let applied = f
+        .call("ResolveConflict", typed_resolution(&q))
+        .await
+        .unwrap();
+    let version = applied["result"]["version"]["versionId"].clone();
+    let stable = (
+        f.count("lane_versions").await,
+        f.count("lane_entity_receipts").await,
+        f.count("lane_changes").await,
+    );
+    let mut equivalent = q.clone();
+    for (key, values) in [
+        ("labelIds", &labels),
+        ("dependsOnTaskIds", &endpoints),
+        ("relatedTaskIds", &endpoints),
+    ] {
+        equivalent["resolved"]["task"][key] = json!([values[0], values[1], values[0]]);
+        let replay = f
+            .call("ResolveConflict", typed_resolution(&equivalent))
+            .await
+            .unwrap();
+        assert_eq!(replay["result"]["result"], "RESULT_KIND_REPLAYED");
+        assert_eq!(replay["result"]["version"]["versionId"], version);
+        assert_eq!(
+            (
+                f.count("lane_versions").await,
+                f.count("lane_entity_receipts").await,
+                f.count("lane_changes").await
+            ),
+            stable
+        );
+    }
+    for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+        let mut changed = q.clone();
+        changed["resolved"]["task"][key] = json!([]);
+        assert_eq!(
+            f.call("ResolveConflict", changed).await.unwrap_err().reason,
+            6
+        );
+    }
+    for field in ["title", "prompt"] {
+        let mut changed = q.clone();
+        changed["resolved"]["task"][field] = json!("");
+        assert_eq!(
+            f.call("ResolveConflict", changed).await.unwrap_err().reason,
+            6
+        );
+    }
+    let mut changed = q.clone();
+    changed["resolved"]["versionId"] = json!(id());
+    assert_eq!(
+        f.call("ResolveConflict", changed).await.unwrap_err().reason,
+        6
+    );
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entity_receipts").await,
+            f.count("lane_changes").await
+        ),
+        stable
+    );
+    let mut stale = q.clone();
+    stale["meta"]["requestId"] = json!(id());
+    assert_eq!(
+        f.call("ResolveConflict", stale).await.unwrap_err().reason,
+        5
+    );
+    let edited = f
+        .call(
+            "SetProgress",
+            json!({"meta":{"requestId":id()},"id":TASK,
+        "expectedVersionId":version,"progress":"PROGRESS_IN_PROGRESS"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(edited["result"]["result"], "RESULT_KIND_APPLIED");
+    let replay = f.call("ResolveConflict", equivalent.clone()).await.unwrap();
+    assert_eq!(
+        replay["result"]["version"]["versionId"],
+        applied["result"]["version"]["versionId"]
+    );
+    f.call("DeleteTask", json!({"meta":{"requestId":id()},"id":TASK}))
+        .await
+        .unwrap();
+    let redacted = f.call("ResolveConflict", equivalent).await.unwrap();
+    assert_eq!(redacted["result"]["result"], "RESULT_KIND_DELETED");
+    assert_eq!(redacted["result"]["version"]["deleted"], true);
+    assert!(redacted["result"]["version"].get("task").is_none());
     f.close().await;
 }
 

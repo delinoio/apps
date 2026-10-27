@@ -119,6 +119,8 @@ Use database server time and row/account locks. Claim succeeds only for a nondel
 
 CompleteEvent validates the active token, nondeleted event/repository, authorization, all proposed tasks and their request identities in **one transaction**, then creates zero or more tasks and a processing record and marks the event COMPLETED. Zero tasks is valid. Invalid task input or any storage error rolls back the entire completion. Preserve a completion receipt with its task IDs so response-loss retries return the original outcome even though that token is consumed; check an identical authorized receipt before active-lease validation. Changed completion content under the same request ID fails. Unknown, released or expired tokens without that receipt always fail, even if nobody else claimed the event.
 
+Before comparing the completion receipt, normalize each embedded task with the same `CreateTask` request rules, including planning and relationship-edit sets. Keep the order of embedded tasks and the presence of optional prompts in the completion fingerprint.
+
 Deleting an event or its repository invalidates its lease; completion afterward cannot create tasks. Receiver deletion alone does not invalidate leases. Reopening a completed event changes its state to PENDING, preserves prior processing records/task links, and allows a new lease. An old completion replay returns its original outcome without completing the new processing round. Tasks moved later retain IDs and event links; the event stays in its original repository.
 
 ### Task planning operations
