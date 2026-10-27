@@ -334,6 +334,36 @@ try {
     "LYNX-VIEW",
   );
 
+  // A focus event while offline is a no-op. It must not supersede a pending
+  // reconciliation failure that is still responsible for presenting the gate.
+  let releasePendingResume;
+  let sawPendingResume;
+  const pendingResumeStarted = new Promise((resolve) => {
+    sawPendingResume = resolve;
+  });
+  const pendingResume = new Promise((resolve) => {
+    releasePendingResume = resolve;
+  });
+  const holdPendingResume = async (route) => {
+    sawPendingResume();
+    await pendingResume;
+    await route.fulfill({ status: 503, body: "{}" });
+  };
+  await page.route("**/auth/session", holdPendingResume);
+  await returnFocus();
+  await pendingResumeStarted;
+  await page.context().setOffline(true);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("focus"));
+  });
+  releasePendingResume();
+  await page.getByRole("heading", { name: "Unable to connect" }).waitFor();
+  await page.unroute("**/auth/session", holdPendingResume);
+  await page.context().setOffline(false);
+  await retryButton.click();
+  await gate.waitFor({ state: "hidden" });
+
   // Scenario 4 (unauthorized): the sign-in gate appears and no business request follows.
   await control("session-mode?mode=401");
   await control("log-reset");

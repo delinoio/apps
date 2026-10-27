@@ -243,7 +243,7 @@ const start = async () => {
 // Focus and online resume reconcile the API session before business requests
 // continue, because an approval popup may have replaced the session cookie.
 const resume = async () => {
-  if (startPending || !gate.hidden) return;
+  if (startPending || !gate.hidden || !navigator.onLine) return;
   const attempt = ++presentationSeq;
   try {
     await online.resume();
