@@ -482,6 +482,8 @@ logs remain available through the platform's development tools. Apply the conten
 
 ## Build and Test
 
+The Node component-test harness matches both Windows and POSIX source paths and normalizes stub lookup keys to forward slashes. Host-bound collaborators must be replaced on every test host so fixture runs do not activate production host effects or update polling.
+
 Run `pnpm test` in `apps/lane` for TypeScript checks and both shared bundle builds.
 Affected frontend CI runs on Ubuntu. Native compilation, launch, resizing,
 lifecycle, signing, installation and store submission need separate platform

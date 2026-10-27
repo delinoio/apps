@@ -32,7 +32,7 @@ const plugin: Plugin = {
       contents: `export default "";`,
       loader: "js",
     }));
-    b.onLoad({ filter: /\/src\/runtime\.ts$/ }, () => ({
+    b.onLoad({ filter: /[\\/]src[\\/]runtime\.ts$/ }, () => ({
       contents: `export const hostAction = () => Promise.reject(new Error("host unavailable in tests")); export const listenReauthentication = () => () => {};`,
       loader: "js",
     }));

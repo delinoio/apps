@@ -36,7 +36,7 @@ const plugin: Plugin = {
       contents: `export default "";`,
       loader: "js",
     }));
-    b.onLoad({ filter: /\/src\/runtime\.ts$/ }, () => ({
+    b.onLoad({ filter: /[\\/]src[\\/]runtime\.ts$/ }, () => ({
       contents: hostStub,
       loader: "js",
     }));
