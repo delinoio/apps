@@ -47,8 +47,12 @@ static void MockCases(void) {
     ^NSDictionary *(NSArray *items) {
       for (NSDictionary *item in items) [sent addObject:item[@"version"][@"entityId"]];
       NSMutableArray *results = [NSMutableArray new];
-      for (NSDictionary *item in items)
-        [results addObject:@{@"requestId": item[@"meta"][@"requestId"]}];
+      for (NSDictionary *item in items) {
+        NSMutableDictionary *result = [@{@"requestId": item[@"meta"][@"requestId"]} mutableCopy];
+        if ([item[@"version"][@"entityId"] isEqual:ID(11)])
+          result[@"error"] = @{@"reason": @"ERROR_REASON_ITEM_TOO_LARGE", @"retryable": @YES};
+        [results addObject:result];
+      }
       return @{@"results": results};
     },
     ^BOOL(NSDictionary *response) {
@@ -59,7 +63,7 @@ static void MockCases(void) {
         }
       return YES;
     });
-  assert(!failure && queue.count == 0 && sent.count == 2 && rejected.count == 1);
+  assert(!failure && queue.count == 0 && sent.count == 3 && rejected.count == 1);
   assert([rejected[0] isEqual:ID(11)]);
 
   queue = [NSMutableArray new];
@@ -135,6 +139,31 @@ static void MockCases(void) {
       return YES;
     });
   assert(!failure && serverRejected && !queue.count);
+
+  queue = [NSMutableArray arrayWithObjects:Mutation(25, 5000), Mutation(26, 30), nil];
+  __block BOOL replayed = NO;
+  __block NSUInteger replayCalls = 0;
+  failure = LaneUploadPending(Pending(queue), info,
+    ^NSArray *{ return [queue copy]; },
+    ^NSDictionary *(NSArray *items) {
+      ++replayCalls;
+      assert(items.count == 2);
+      assert([items[0][@"version"][@"entityId"] isEqual:ID(25)]);
+      assert([items[1][@"version"][@"entityId"] isEqual:ID(26)]);
+      return @{@"results": @[
+        @{@"requestId": items[0][@"meta"][@"requestId"], @"result": @"RESULT_KIND_REPLAYED"},
+        @{@"requestId": items[1][@"meta"][@"requestId"], @"result": @"RESULT_KIND_APPLIED"}
+      ]};
+    },
+    ^BOOL(NSDictionary *response) {
+      for (NSDictionary *result in response[@"results"])
+        for (NSDictionary *item in [queue copy]) if ([result[@"requestId"] isEqual:item[@"meta"][@"requestId"]]) {
+          replayed |= [result[@"result"] isEqual:@"RESULT_KIND_REPLAYED"];
+          [queue removeObject:item];
+        }
+      return YES;
+    });
+  assert(!failure && replayed && replayCalls == 1 && !queue.count);
 
   for (NSString *reason in @[@"RATE_LIMITED", @"UNAUTHENTICATED", @"STALE_EPOCH", @"DEPENDENCY_UNAVAILABLE"]) {
     __block BOOL applied = NO;

@@ -145,7 +145,7 @@ NSString *LaneUploadPending(NSDictionary *pending, NSDictionary *info,
   NSUInteger decisions = 0;
   while (items.count && calls < LaneUploadCallLimit && decisions < LaneUploadCallLimit) {
     NSDictionary *first = items.firstObject;
-    if (KnownOversized(first, itemLimit) || RequestBytes(pending, @[first]) > requestLimit) {
+    if (RequestBytes(pending, @[first]) > requestLimit) {
       if (!apply(TooLargeResult(first))) return @"ERROR_REASON_DEPENDENCY_UNAVAILABLE";
       ++decisions;
       items = reload();
