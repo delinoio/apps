@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import test from "node:test";
 import assert from "node:assert/strict";
-import { OnlineLane, type Session } from "../web/online.ts";
+import { AuthRequestError, OnlineLane, type Session } from "../web/online.ts";
 Object.defineProperty(globalThis, "navigator", {
   value: { onLine: true },
   configurable: true,
@@ -55,6 +55,7 @@ function harness() {
   let holdList: Promise<void> | undefined;
   let holdSyncInfoFor: { principal: string; gate: Promise<void> } | undefined;
   let failSaves = 0;
+  let proofMode: "ok" | "unauthorized" = "ok";
   const mock: typeof fetch = async (input, init) => {
     const path = new URL(
       typeof input === "string"
@@ -105,7 +106,11 @@ function harness() {
     }
     if (path.endsWith("BeginDataDeletion"))
       return json({ challengeId: "challenge" });
-    if (path === "/auth/reauth/proof") return json({ reauth_proof: "proof" });
+    if (path === "/auth/reauth/proof") {
+      if (proofMode === "unauthorized")
+        return new Response("{}", { status: 401 });
+      return json({ reauth_proof: "proof" });
+    }
     return json({});
   };
   const lane = new OnlineLane({
@@ -154,6 +159,9 @@ function harness() {
     },
     failSaves: (count: number) => {
       failSaves = count;
+    },
+    proofMode: (value: "ok" | "unauthorized") => {
+      proofMode = value;
     },
   };
 }
@@ -328,6 +336,24 @@ test("an identical session keeps in-flight reads and the deletion target", async
   assert.equal(h.sessions.at(-1)?.csrf_token, "csrf-a");
   await h.lane.completeDeletion("challenge");
   assert.equal(count(h, "/auth/reauth/proof"), 1);
+  h.lane.stop();
+});
+
+test("a deletion proof 401 remains visible while the session stays valid", async () => {
+  const h = harness();
+  await h.lane.start();
+  await h.lane.invoke("lane.v1.AccountService", "BeginDataDeletion", {
+    mode: 1,
+    confirmedAccountId: "account-a",
+  });
+  h.proofMode("unauthorized");
+  await assert.rejects(
+    h.lane.completeDeletion("challenge"),
+    (error: unknown) =>
+      error instanceof AuthRequestError && error.status === 401,
+  );
+  assert.equal(h.sessions.at(-1)?.account_id, "account-a");
+  assert.equal(h.events.includes("session:none"), false);
   h.lane.stop();
 });
 

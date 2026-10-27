@@ -10,11 +10,58 @@
 <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
 <link rel="stylesheet" href="./runtime/static/css/client.css" />
 <style>
-html,body{margin:0;height:100%;font:16px system-ui,sans-serif;color:#172033;background:#f7f9fc}lynx-view{display:block;width:100%;height:100%}[hidden]{display:none!important}#account-gate{box-sizing:border-box;max-width:460px;margin:10vh auto;padding:32px;background:white;border:1px solid #e4e8ef;border-radius:16px}h1{color:#075aff}p{line-height:1.6}a,button{display:inline-block;font:inherit;padding:12px 18px;margin:4px;border:1px solid #075aff;border-radius:8px;background:#075aff;color:white;text-decoration:none;cursor:pointer}button{background:white;color:#075aff}:focus-visible{outline:3px solid #075aff;outline-offset:4px}
+html,body{margin:0;height:100%;min-height:100%;font:16px/1.5 system-ui,sans-serif;color:#172033;background:#f7f9fc}
+lynx-view{display:block;width:100%;height:100%}
+[hidden]{display:none!important}
+#account-gate{box-sizing:border-box;width:calc(100% - 32px);max-width:460px;margin:max(24px,10vh) auto 24px;padding:36px;background:#fff;border:1px solid #e4e8ef;border-radius:16px;box-shadow:0 8px 24px rgba(23,32,51,.04)}
+.gate-wordmark{margin:0 0 24px;color:#075aff;font-size:14px;font-weight:700;letter-spacing:.02em}
+#gate-heading{margin:0;color:#172033;font-size:28px;font-weight:600;line-height:1.25}
+.gate-intro{margin:12px 0 24px;color:#4e5b70;line-height:1.6}
+.gate-status{display:flex;align-items:flex-start;gap:12px;min-width:0;margin-bottom:24px;padding:16px;border-radius:10px;background:#f4f6f9;color:#26344a;overflow-wrap:anywhere}
+.gate-status-copy{min-width:0}
+#account-status,#account-guidance{margin:0;line-height:1.6}
+#account-guidance{margin-top:8px;color:#4e5b70}
+.gate-state-icon{box-sizing:border-box;flex:none;width:20px;height:20px;margin-top:2px;border:2px solid currentColor;border-radius:50%}
+#account-gate[data-state="connecting"] .gate-state-icon{border-color:#9eb7eb;border-top-color:#075aff;animation:gate-spin .8s linear infinite}
+#account-gate[data-state="error"] .gate-state-icon::after{content:"!";display:block;text-align:center;font-size:13px;font-weight:700;line-height:16px}
+#account-gate[data-state="signed-out"] .gate-state-icon::after{content:"i";display:block;text-align:center;font-size:13px;font-weight:700;line-height:16px}
+.gate-actions{display:grid;gap:12px}
+.gate-actions a,.gate-actions button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;margin:0;padding:10px 16px;border:1px solid #075aff;border-radius:10px;background:#fff;color:#075aff;font:600 16px/1.4 system-ui,sans-serif;text-align:center;text-decoration:none;cursor:pointer}
+#account-gate:not([data-state="error"]) #sign-in,#account-gate[data-state="error"] #retry{background:#075aff;color:#fff}
+.gate-actions button[aria-disabled="true"]{cursor:wait}
+.gate-footer{margin-top:24px;padding-top:20px;border-top:1px solid #e4e8ef;color:#4e5b70;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.gate-footer p{margin:0}
+.gate-footer p+p{margin-top:4px}
+.gate-footer .gate-provider{margin-top:12px}
+:focus-visible{outline:3px solid #075aff;outline-offset:4px}
+@keyframes gate-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#account-gate[data-state="connecting"] .gate-state-icon{animation:none;border-style:dashed}}
+@media(max-width:899px){#account-gate{padding:24px}}
+@media(max-width:399px){#gate-heading{font-size:24px}}
 </style>
 </head>
 <body>
-<main id="account-gate"><h1>▰ Lane</h1><p>Tasks and prompts, organized by repository.</p><p id="account-status" role="status">Connecting…</p><p>The web app requires a Logto account and an online connection. Task data is stored on the server.</p><a id="sign-in" href="#">Sign in with Logto</a><button id="retry" type="button">Retry connection</button></main>
+<main id="account-gate" data-state="connecting" aria-busy="true">
+  <p class="gate-wordmark">Lane</p>
+  <h1 id="gate-heading" tabindex="-1">Connecting to Lane</h1>
+  <p class="gate-intro">Tasks and prompts, organized by repository.</p>
+  <div class="gate-status" role="status" aria-live="polite" aria-atomic="true">
+    <span class="gate-state-icon" aria-hidden="true"></span>
+    <div class="gate-status-copy">
+      <p id="account-status">Connecting…</p>
+      <p id="account-guidance" hidden></p>
+    </div>
+  </div>
+  <div class="gate-actions">
+    <a id="sign-in" href="#">Sign in with Logto</a>
+    <button id="retry" type="button" aria-disabled="true">Retry connection</button>
+  </div>
+  <div class="gate-footer">
+    <p>An online connection is required.</p>
+    <p>Task data is stored on the server.</p>
+    <p class="gate-provider">Sign in securely with Logto.</p>
+  </div>
+</main>
 <script type="module" src="./host.js"></script>
 </body>
 </html>

@@ -34,6 +34,140 @@ const title = page.getByRole("textbox", { name: "Title", exact: true });
 const gate = page.locator("#account-gate");
 
 try {
+  // A rejected first session keeps normal browser focus and the typed Logto
+  // destination while exposing only the standalone sign-in gate.
+  const signedOut = await browser.newPage({
+    viewport: { width: 1200, height: 900 },
+  });
+  await signedOut.route("**/auth/session", (route) =>
+    route.fulfill({ status: 401, body: "{}" }),
+  );
+  const taskId = "019a0000-0000-7000-8000-000000000001";
+  const accountId = "019a0000-0000-7000-8000-000000000002";
+  await signedOut.goto(
+    `${base}/?task=${taskId}&account=${accountId}&utm=ignored`,
+  );
+  await signedOut.getByRole("heading", { name: "Sign in to Lane" }).waitFor();
+  assert.equal(
+    await signedOut.locator("#account-gate").getAttribute("data-state"),
+    "signed-out",
+  );
+  assert.equal(
+    await signedOut.locator("#account-status").textContent(),
+    "Sign in to use Lane on the web.",
+  );
+  assert.equal(
+    await signedOut.locator("#account-gate").getAttribute("aria-busy"),
+    "false",
+  );
+  assert.equal(
+    await signedOut.getByRole("status").getAttribute("aria-atomic"),
+    "true",
+  );
+  assert.equal(await signedOut.locator("#account-guidance").isHidden(), true);
+  assert.equal(await signedOut.locator("lynx-view").isHidden(), true);
+  assert.equal(
+    await signedOut.evaluate(() => document.activeElement?.tagName),
+    "BODY",
+  );
+  const controls = signedOut.locator("#account-gate a, #account-gate button");
+  assert.deepEqual(await controls.allTextContents(), [
+    "Sign in with Logto",
+    "Retry connection",
+  ]);
+  assert.equal(
+    await signedOut
+      .locator("#sign-in")
+      .evaluate((node) => getComputedStyle(node).backgroundColor),
+    "rgb(7, 90, 255)",
+  );
+  const login = new URL(
+    await signedOut.locator("#sign-in").getAttribute("href"),
+  );
+  assert.equal(login.pathname, "/auth/login");
+  assert.equal(login.searchParams.get("return_to"), `${base}/`);
+  assert.equal(login.searchParams.get("task"), taskId);
+  assert.equal(login.searchParams.get("account"), accountId);
+  assert.equal(login.searchParams.has("utm"), false);
+  await signedOut.keyboard.press("Escape");
+  assert.equal(await signedOut.locator("#account-gate").isVisible(), true);
+  for (const width of [1200, 900, 899, 360]) {
+    await signedOut.setViewportSize({
+      width,
+      height: width === 360 ? 360 : 900,
+    });
+    assert.equal(
+      await signedOut.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+      true,
+      `gate overflows at ${width}px`,
+    );
+  }
+  await signedOut.evaluate(() => {
+    document.body.style.zoom = "2";
+  });
+  assert.equal(
+    await signedOut.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    true,
+    "gate overflows at 200% text scale",
+  );
+  assert.equal(
+    await signedOut.evaluate(
+      () => document.documentElement.scrollHeight > innerHeight,
+    ),
+    true,
+    "short gate page must scroll",
+  );
+  await signedOut.context().setOffline(true);
+  await signedOut.evaluate(() => window.dispatchEvent(new Event("offline")));
+  assert.match(
+    await signedOut.locator("#account-guidance").textContent(),
+    /Reconnect, then select Retry connection/,
+  );
+  await signedOut.context().setOffline(false);
+  await signedOut.close();
+
+  const firstFailure = await browser.newPage({
+    viewport: { width: 360, height: 360 },
+  });
+  await firstFailure.route("**/auth/session", (route) =>
+    route.fulfill({ status: 503, body: "{}" }),
+  );
+  await firstFailure.goto(base);
+  await firstFailure
+    .getByRole("heading", { name: "Unable to connect" })
+    .waitFor();
+  assert.equal(
+    await firstFailure.locator("#account-status").textContent(),
+    "Account request failed (503). Retry explicitly.",
+  );
+  assert.equal(
+    await firstFailure.locator("#account-guidance").isHidden(),
+    true,
+  );
+  assert.equal(
+    await firstFailure
+      .locator("#retry")
+      .evaluate((node) => getComputedStyle(node).backgroundColor),
+    "rgb(7, 90, 255)",
+  );
+  // Use long safe text to verify the status box can grow without clipping.
+  await firstFailure.locator("#account-status").evaluate((node) => {
+    node.textContent = "Connection failed. " + "unbroken-status-".repeat(30);
+    document.body.style.zoom = "2";
+  });
+  assert.equal(
+    await firstFailure.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    true,
+    "long error overflows at 200% text scale",
+  );
+  await firstFailure.close();
+
   await page.goto(base);
   await taskButton("Improve empty states").waitFor();
 
@@ -95,6 +229,7 @@ try {
 
   // Scenario 4 (transient): the view is hidden but its input survives, no business
   // request is sent, and only an explicit retry recovers.
+  await page.locator("body").focus();
   await control("session-mode?mode=503");
   await control("log-reset");
   await returnFocus();
@@ -102,6 +237,20 @@ try {
   await page
     .getByText("Account request failed (503)", { exact: false })
     .waitFor();
+  await page.locator("#gate-heading").focus();
+  assert.equal(await gate.getAttribute("data-state"), "error");
+  assert.equal(
+    await page.getByRole("heading", { name: "Unable to connect" }).count(),
+    1,
+  );
+  assert.match(
+    await page.locator("#account-guidance").textContent(),
+    /current-screen input is retained/,
+  );
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.id),
+    "gate-heading",
+  );
   await returnFocus();
   await page.waitForTimeout(300);
   assert.equal(await sessionReads(), 1, "focus does not retry automatically");
@@ -110,19 +259,162 @@ try {
     [],
   );
   await control("session-mode?mode=ok");
-  await page.getByRole("button", { name: "Retry connection" }).click();
+  // Hold the explicit retry and try mouse, Enter and Space again. The host
+  // starts one attempt, announces busy, then releases it after a failure.
+  let releaseRetry;
+  let sawRetry;
+  const retryStarted = new Promise((resolve) => {
+    sawRetry = resolve;
+  });
+  const heldRetry = new Promise((resolve) => {
+    releaseRetry = resolve;
+  });
+  let retryRequests = 0;
+  const holdSession = async (route) => {
+    retryRequests++;
+    sawRetry();
+    await heldRetry;
+    await route.fulfill({ status: 503, body: "{}" });
+  };
+  await page.route("**/auth/session", holdSession);
+  const retryButton = page.getByRole("button", { name: "Retry connection" });
+  await retryButton.click();
+  await retryStarted;
+  assert.equal(await gate.getAttribute("aria-busy"), "true");
+  assert.equal(await retryButton.getAttribute("aria-disabled"), "true");
+  assert.equal(
+    await page.getByRole("heading", { name: "Connecting to Lane" }).count(),
+    1,
+  );
+  assert.equal(
+    await page.locator("#account-status").textContent(),
+    "Connecting…",
+  );
+  await retryButton.press("Enter");
+  await retryButton.press("Space");
+  await retryButton.dispatchEvent("click");
+  assert.equal(retryRequests, 1);
+  releaseRetry();
+  await page.getByRole("heading", { name: "Unable to connect" }).waitFor();
+  await page
+    .getByText("Account request failed (503). Retry explicitly.")
+    .waitFor();
+  assert.equal(await gate.getAttribute("aria-busy"), "false");
+  assert.equal(await retryButton.getAttribute("aria-disabled"), null);
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "retry");
+  await page.context().setOffline(true);
+  await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+  assert.match(
+    await page.locator("#account-guidance").textContent(),
+    /Reconnect, then select Retry connection/,
+  );
+  await page.context().setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.unroute("**/auth/session", holdSession);
+  await page.locator("lynx-view").evaluate((view) => {
+    const root = view.shadowRoot;
+    const activePanel = root?.querySelector(
+      '.tab-panel[data-active-tab="true"]',
+    );
+    if (!root || !activePanel) throw new Error("active tab panel is missing");
+    const inactivePanel = document.createElement("view");
+    inactivePanel.className = "tab-panel";
+    inactivePanel.dataset.activeTab = "false";
+    inactivePanel.setAttribute("aria-hidden", "true");
+    inactivePanel.style.display = "none";
+    const propertiesHeading = document.createElement("x-text");
+    propertiesHeading.setAttribute("role", "heading");
+    propertiesHeading.dataset.testId = "inactive-properties-heading";
+    const innerBox =
+      propertiesHeading.shadowRoot?.querySelector("#inner-box") ||
+      document.createElement("div");
+    if (!innerBox.isConnected) propertiesHeading.shadowRoot?.append(innerBox);
+    innerBox.textContent = "Properties";
+    innerBox.tabIndex = -1;
+    inactivePanel.append(propertiesHeading);
+    activePanel.parentNode.insertBefore(inactivePanel, activePanel);
+  });
+  await retryButton.click();
   await gate.waitFor({ state: "hidden" });
+  assert.equal(await gate.getAttribute("aria-busy"), "false");
+  assert.equal(
+    await page.evaluate(() => {
+      let active =
+        document.querySelector("lynx-view")?.shadowRoot?.activeElement;
+      while (active?.shadowRoot?.activeElement)
+        active = active.shadowRoot.activeElement;
+      return active?.id;
+    }),
+    "inner-box",
+    "fallback recovery focus uses the focusable heading target",
+  );
+  assert.equal(
+    await page.locator("lynx-view").evaluate((view) => {
+      const root = view.shadowRoot;
+      const activePanel = root?.querySelector(
+        '.tab-panel[data-active-tab="true"]',
+      );
+      return !!activePanel && activePanel.contains(root.activeElement);
+    }),
+    true,
+    "recovery focus stays inside the visible active tab panel",
+  );
+  assert.equal(
+    await page.evaluate(() => {
+      const root = document.querySelector("lynx-view")?.shadowRoot;
+      return root?.querySelector('[data-test-id="inactive-properties-heading"]')
+        ? root.activeElement?.getAttribute("data-test-id") || null
+        : "missing-inactive-heading";
+    }),
+    null,
+    "the retained inactive heading remains unfocused",
+  );
   // Reconnection invalidates every retained pane. Finish those authorized reads
   // before resetting the log for the next rejected-session scenario.
   await page.waitForLoadState("networkidle");
   assert.equal(await title.inputValue(), "Draft of B");
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.tagName),
+    "LYNX-VIEW",
+  );
+
+  // A focus event while offline is a no-op. It must not supersede a pending
+  // reconciliation failure that is still responsible for presenting the gate.
+  let releasePendingResume;
+  let sawPendingResume;
+  const pendingResumeStarted = new Promise((resolve) => {
+    sawPendingResume = resolve;
+  });
+  const pendingResume = new Promise((resolve) => {
+    releasePendingResume = resolve;
+  });
+  const holdPendingResume = async (route) => {
+    sawPendingResume();
+    await pendingResume;
+    await route.fulfill({ status: 503, body: "{}" });
+  };
+  await page.route("**/auth/session", holdPendingResume);
+  await returnFocus();
+  await pendingResumeStarted;
+  await page.context().setOffline(true);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("focus"));
+  });
+  releasePendingResume();
+  await page.getByRole("heading", { name: "Unable to connect" }).waitFor();
+  await page.unroute("**/auth/session", holdPendingResume);
+  await page.context().setOffline(false);
+  await retryButton.click();
+  await gate.waitFor({ state: "hidden" });
 
   // Scenario 4 (unauthorized): the sign-in gate appears and no business request follows.
   await control("session-mode?mode=401");
   await control("log-reset");
   await returnFocus();
   await gate.waitFor({ state: "visible" });
-  await page.getByText("Sign in to Lane to continue.").waitFor();
+  await page.getByText("Sign in to use Lane on the web.").waitFor();
+  assert.equal(await gate.getAttribute("data-state"), "signed-out");
   await page.waitForTimeout(300);
   assert.deepEqual(
     (await log()).filter((e) => e.path.startsWith("/lane.v1.")),
