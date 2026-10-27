@@ -539,6 +539,88 @@ text {
   max-width: 320px;
   margin-top: 12px;
 }
+.pace-page-scroll {
+  background-color: #fff;
+}
+.pace-coming-soon {
+  width: 100%;
+  max-width: 360px;
+  min-height: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 48px 24px;
+  gap: 0;
+  flex-shrink: 0;
+}
+.pace-coming-soon .coming-soon-icon {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 24px;
+  border-radius: 18px;
+  background-color: transparent;
+}
+.pace-coming-soon .coming-soon-icon .app-icon,
+.pace-coming-soon .coming-soon-icon .pace-artwork {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  transform: none;
+}
+.pace-coming-soon .label {
+  margin-bottom: 10px;
+  color: #68758b;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: center;
+}
+.pace-coming-soon .coming-soon-title {
+  margin-bottom: 12px;
+  color: #172033;
+  font-size: 2rem;
+  font-weight: 600;
+  white-space: normal;
+}
+.pace-coming-soon .muted {
+  width: 100%;
+  color: #68758b;
+  font-size: 1rem;
+  white-space: normal;
+}
+.pace-return {
+  width: 100%;
+  max-width: 200px;
+  margin-top: 28px;
+}
+.pace-return .button {
+  width: 100%;
+  max-width: 100%;
+  min-height: 48px;
+  margin-top: 0;
+  border: 1px solid #dce2ec;
+  border-radius: 10px;
+  background-color: #fff;
+}
+.pace-return .button text {
+  color: #075aff;
+  font-size: 1rem;
+  text-align: center;
+  white-space: normal;
+}
+.pace-return .button:focus {
+  border: 1px solid #dce2ec;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px #075aff;
+}
+.pace-return .button:active {
+  background-color: #e7efff;
+}
+.mobile .pace-coming-soon {
+  padding: 32px 16px;
+}
+.mobile .pace-coming-soon .coming-soon-title {
+  font-size: 1.75rem;
+}
 .mobile .navigation {
   border-right: 0;
 }

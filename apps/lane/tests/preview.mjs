@@ -67,10 +67,52 @@ const result = (v) => ({
   alternatives: [],
 });
 // LANE_PREVIEW_SCENARIO=planning serves task planning fixtures and records requests.
-const planning =
-  process.env.LANE_PREVIEW_SCENARIO === "planning"
-    ? createPlanningState(task, repo)
-    : undefined;
+const planning = ["planning", "pace"].includes(
+  process.env.LANE_PREVIEW_SCENARIO,
+)
+  ? createPlanningState(task, repo)
+  : undefined;
+if (planning && process.env.LANE_PREVIEW_SCENARIO === "pace") {
+  planning.repositories = [
+    {
+      ...repo,
+      repository: {
+        normalizedUrl: "github.com/example/pace-fixture",
+        displayName: "pace-fixture",
+      },
+    },
+  ];
+  planning.items = [];
+  planning.tasks = [
+    {
+      ...task,
+      task: {
+        repositoryId: repo.entityId,
+        title: "Pace preservation fixture",
+        prompt: "Retained prompt fixture",
+        priority: "TASK_PRIORITY_HIGH",
+        progress: "PROGRESS_TODO",
+        proposal: "PROPOSAL_REGULAR",
+      },
+    },
+    ...Array.from({ length: 120 }, (_, index) => {
+      const number = index + 1;
+      const suffix = (value) => String(value).padStart(12, "0");
+      return {
+        ...task,
+        entityId: `019a196d-0000-7000-8000-${suffix(number + 100)}`,
+        versionId: `019a196d-0000-7000-8000-${suffix(number + 300)}`,
+        task: {
+          repositoryId: repo.entityId,
+          title: `preserved filter row ${String(number).padStart(3, "0")}`,
+          priority: "TASK_PRIORITY_HIGH",
+          progress: "PROGRESS_TODO",
+          proposal: "PROPOSAL_REGULAR",
+        },
+      };
+    }),
+  ];
+}
 // LANE_PREVIEW_SCENARIO=task-open serves two tasks and lets a test hold, order and
 // release GetTask replies to exercise superseded task-detail reads.
 const taskOpen =

@@ -316,6 +316,31 @@ same artwork in tab rows, chooser cards, contextual heading and coming-soon page
 24-pixel navigation footprint, rounded corners, selection marker and accessible
 app names. This artwork does not replace the Lane launcher icon.
 
+### Pace unavailable view
+
+Pace has one static unavailable view. Show only its embedded 72-by-72-pixel
+decorative artwork, `Pace`, the `Coming soon` heading,
+`Pace is not available yet.`, and one `Back to Lane` button. Use no card or
+additional content. Keep the existing app selection callback, content-focus
+transfer, Lane tabs, filters, pane scroll and drafts. Pace makes no request and
+does not add a screen-specific Escape action.
+
+At app widths of at least 900 pixels, center the group within the available
+content pane when its height permits. Limit the group to 360 pixels including
+24-pixel side and 48-pixel vertical padding. Give the artwork 18-pixel corners,
+then use gaps of 24, 10, 12 and 28 pixels between the artwork, label, heading,
+body and button. Use a 14-pixel medium label, 32-pixel semibold heading and
+16-pixel body. The heading is `#172033`; supporting text is `#68758b`.
+Make the button at most 200 pixels wide and at least 48 pixels tall, with a
+white surface, one-pixel `#dce2ec` border, 10-pixel corners and `#075AFF`
+text. Show a separated blue focus ring and pale-blue active feedback.
+
+Below 900 pixels, preserve the existing rail and contextual navigation. Use
+16-pixel side and 32-pixel vertical padding and a 28-pixel heading. Size the
+group and button to the remaining content width, wrap enlarged text, and keep
+the group scrollable from its top when the height is constrained. The Pace
+content must not create horizontal scrolling at 360 pixels or 200% text.
+
 ### Product contract ownership
 
 The following behavior is authoritative for all Lane entry points. The linked domain contracts specify implementation interfaces and conformance, without narrowing these requirements.

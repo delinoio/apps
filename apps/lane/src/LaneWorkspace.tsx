@@ -113,6 +113,9 @@ export function LaneWorkspace({
     SortDirection.ASCENDING,
   );
   const [listError, setListError] = useState("");
+  // The web host resets a hidden scroll-view. Retain each Lane task pane's last
+  // active offset until the host preserves hidden scroll offsets itself.
+  const taskScrollTop = useRef(0);
   const [draft, setDraft] = useState<Draft>();
   const [current, setCurrent] = useState<EntityResult>();
 
@@ -466,7 +469,14 @@ export function LaneWorkspace({
           <view className="task-workspace">
             {(!mobile || !draft) && (
               <view className="task-list">
-                <scroll-view className="rows" scroll-orientation="vertical">
+                <scroll-view
+                  className="rows"
+                  scroll-orientation="vertical"
+                  scroll-top={active ? taskScrollTop.current : undefined}
+                  bindscroll={(event) => {
+                    if (active) taskScrollTop.current = event.detail.scrollTop;
+                  }}
+                >
                   <view className="task-list-content">
                     <view className="row between">
                       <view>

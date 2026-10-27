@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 const evidence =
   process.env.LANE_BROWSER_EVIDENCE ||
   join(tmpdir(), "lane-ui-browser-evidence");
+const previewBase = `http://127.0.0.1:${process.env.LANE_PREVIEW_PORT || 46400}`;
 await mkdir(evidence, { recursive: true });
 const server = spawn(process.execPath, ["tests/preview.mjs"], {
   stdio: ["ignore", "pipe", "inherit"],
@@ -27,9 +28,13 @@ const context = await browser.newContext({
   viewport: { width: 1440, height: 900 },
 });
 const page = await context.newPage();
+const captureScreenshot = async (path) => {
+  if (process.env.LANE_SKIP_VALIDATION_SCREENSHOTS !== "1")
+    await page.screenshot({ path });
+};
 page.on("pageerror", (e) => errors.push(e.message));
 try {
-  await page.goto("http://127.0.0.1:46400");
+  await page.goto(previewBase);
   await page
     .getByRole("button", { name: "Improve empty states", exact: true })
     .waitFor();
@@ -148,9 +153,129 @@ try {
   );
   assert.equal(await appButton("All tasks").count(), 0);
   assert.equal(await appButton("Overview").count(), 1);
-  await page.screenshot({ path: join(evidence, "desktop-pace.png") });
+  const pace = page.locator(".pace-coming-soon");
+  assert.deepEqual(await pace.locator("x-text").allTextContents(), [
+    "Pace",
+    "Coming soon",
+    "Pace is not available yet.",
+    "Back to Lane",
+  ]);
+  assert.equal(
+    await pace.getByRole("heading", { name: "Coming soon" }).count(),
+    1,
+  );
+  assert.equal(await pace.getByRole("button").count(), 1);
+  assert.equal(
+    await pace
+      .locator(".app-icon")
+      .getAttribute("accessibility-elements-hidden"),
+    "true",
+  );
+  assert.equal(
+    await pace.locator(".pace-artwork").getAttribute("src"),
+    await page.locator(".tab-bar .pace-artwork").getAttribute("src"),
+  );
+  await page.waitForFunction(() =>
+    document
+      .querySelector("lynx-view")
+      .shadowRoot.activeElement?.classList.contains("coming-soon-title"),
+  );
+  const paceLayout = async () =>
+    page.locator("lynx-view").evaluate((view) => {
+      const root = view.shadowRoot;
+      const select = (selector) => root.querySelector(selector);
+      const bounds = (selector) => {
+        const { left, top, right, bottom, width, height } =
+          select(selector).getBoundingClientRect();
+        return { left, top, right, bottom, width, height };
+      };
+      const scroller = select(".pace-page-scroll");
+      return {
+        scroller: bounds(".pace-page-scroll"),
+        group: bounds(".pace-coming-soon"),
+        icon: bounds(".pace-coming-soon .pace-artwork"),
+        button: bounds(".pace-return .button"),
+        scrollWidth: scroller.scrollWidth,
+        clientWidth: scroller.clientWidth,
+        headingSize: getComputedStyle(
+          select(".pace-coming-soon .coming-soon-title"),
+        ).fontSize,
+        bodySize: getComputedStyle(select(".pace-coming-soon .muted")).fontSize,
+        buttonSize: getComputedStyle(select(".pace-return .button x-text"))
+          .fontSize,
+        buttonColor: getComputedStyle(select(".pace-return .button x-text"))
+          .color,
+      };
+    });
+  for (const width of [1440, 900, 899, 390, 360]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(150);
+    const layout = await paceLayout();
+    assert.ok(layout.group.width <= 360);
+    assert.ok(Math.abs(layout.icon.width - 72) <= 1);
+    assert.ok(Math.abs(layout.icon.height - 72) <= 1);
+    assert.ok(layout.button.width <= 200);
+    assert.ok(layout.button.height >= 48);
+    assert.ok(layout.scrollWidth <= layout.clientWidth + 1);
+    assert.ok(layout.group.left >= layout.scroller.left - 1);
+    assert.ok(layout.group.right <= layout.scroller.right + 1);
+    assert.ok(
+      Math.abs(
+        (layout.group.left + layout.group.right) / 2 -
+          (layout.scroller.left + layout.scroller.right) / 2,
+      ) <= 1,
+    );
+    if (width >= 900)
+      assert.ok(
+        Math.abs(
+          (layout.icon.top + layout.button.bottom) / 2 -
+            (layout.scroller.top + layout.scroller.bottom) / 2,
+        ) <= 2,
+        `Pace content is vertically centered at ${width}px: ${JSON.stringify(layout)}`,
+      );
+    assert.equal(layout.headingSize, width < 900 ? "28px" : "32px");
+    assert.equal(layout.buttonColor, "rgb(7, 90, 255)");
+  }
+  await page.setViewportSize({ width: 360, height: 400 });
+  await page.locator("lynx-view").evaluate((view) => {
+    const style = document.createElement("style");
+    style.id = "pace-enlarged-text-test";
+    style.textContent =
+      ".pace-coming-soon .label{font-size:28px!important}" +
+      ".pace-coming-soon .coming-soon-title{font-size:56px!important}" +
+      ".pace-coming-soon .muted,.pace-return .button x-text{font-size:32px!important}";
+    view.shadowRoot.append(style);
+  });
+  await page.waitForTimeout(150);
+  let constrained = await paceLayout();
+  assert.equal(constrained.headingSize, "56px");
+  assert.equal(constrained.bodySize, "32px");
+  assert.equal(constrained.buttonSize, "32px");
+  assert.ok(constrained.icon.top >= constrained.scroller.top - 1);
+  assert.ok(constrained.scrollWidth <= constrained.clientWidth + 1);
+  await appButton("Back to Lane").scrollIntoViewIfNeeded();
+  constrained = await paceLayout();
+  assert.ok(constrained.button.bottom <= constrained.scroller.bottom + 1);
+  await page.locator("lynx-view").evaluate((view) => {
+    view.shadowRoot.querySelector("#pace-enlarged-text-test").remove();
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.keyboard.press("Escape");
+  assert.equal(
+    await page.locator("#lane-root").getAttribute("data-app"),
+    "Pace",
+  );
+  await captureScreenshot(join(evidence, "desktop-pace.png"));
   await appButton("New tab").click();
+  await page.getByRole("heading", { name: "New tab" }).waitFor();
+  await page.waitForTimeout(150);
   await appButton("RealQA").focus();
+  assert.equal(
+    await appButton("RealQA").evaluate(
+      (button) => button.getRootNode().activeElement === button,
+    ),
+    true,
+  );
   await page.keyboard.press(" ");
   await page
     .getByText("Capture on desktop. View saved captures in Lane.", {
@@ -163,7 +288,7 @@ try {
       .getAttribute("aria-selected"),
     "true",
   );
-  await page.screenshot({ path: join(evidence, "desktop-realqa.png") });
+  await captureScreenshot(join(evidence, "desktop-realqa.png"));
   for (const width of [899, 900, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.waitForTimeout(150);
@@ -189,7 +314,7 @@ try {
     else assert.equal(layout.navWidth, 240);
     assert.ok(layout.buttonRight <= width);
   }
-  await page.screenshot({ path: join(evidence, "mobile-realqa.png") });
+  await captureScreenshot(join(evidence, "mobile-realqa.png"));
   await appButton("Open Lane").click();
   await search.waitFor();
   assert.equal(await search.inputValue(), "preserved filter");
@@ -200,7 +325,7 @@ try {
     .getByText("Loading…", { exact: true })
     .waitFor({ state: "hidden" });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.request.get("http://127.0.0.1:46400/test/empty-list?enabled=1");
+  await page.request.get(`${previewBase}/test/empty-list?enabled=1`);
   await page
     .locator("lynx-view")
     .evaluate((view) => view.sendGlobalEvent("lane.onlineChanged", [{}]));
@@ -225,7 +350,7 @@ try {
       .count(),
     0,
   );
-  await page.request.get("http://127.0.0.1:46400/test/empty-list?enabled=0");
+  await page.request.get(`${previewBase}/test/empty-list?enabled=0`);
   await page
     .locator("lynx-view")
     .evaluate((view) => view.sendGlobalEvent("lane.onlineChanged", [{}]));
@@ -247,6 +372,19 @@ try {
   assert.equal(await title.inputValue(), "Improve empty states");
   await title.fill("Unsaved local title");
   await page.waitForTimeout(150);
+  const retainedTab = await page
+    .locator("#lane-root")
+    .getAttribute("data-selected-tab");
+  const tabCount = await page.getByRole("tab").count();
+  const paceMutations = [];
+  const recordPaceMutation = (request) => {
+    if (
+      request.method() !== "GET" &&
+      /SaveTask|SetProposal|CreateTask|DeleteTask/.test(request.url())
+    )
+      paceMutations.push(request.url());
+  };
+  page.on("request", recordPaceMutation);
   await chooseApp("Pace");
   await page.getByText("Pace is not available yet.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("dialog").count(), 0);
@@ -254,10 +392,38 @@ try {
   await title.waitFor();
   assert.equal(await title.inputValue(), "Unsaved local title");
   assert.equal(
+    await page.locator("#lane-root").getAttribute("data-selected-tab"),
+    retainedTab,
+  );
+  assert.equal(await page.getByRole("tab").count(), tabCount);
+  for (const key of ["Enter", " "]) {
+    await chooseApp("Pace");
+    await page
+      .getByText("Pace is not available yet.", { exact: true })
+      .waitFor();
+    await appButton("Back to Lane").focus();
+    assert.equal(
+      await appButton("Back to Lane").evaluate(
+        (button) => getComputedStyle(button).outlineWidth,
+      ),
+      "3px",
+    );
+    await page.keyboard.press(key);
+    await title.waitFor();
+    assert.equal(await title.inputValue(), "Unsaved local title");
+    assert.equal(
+      await page.locator("#lane-root").getAttribute("data-selected-tab"),
+      retainedTab,
+    );
+    assert.equal(await page.getByRole("tab").count(), tabCount);
+  }
+  page.off("request", recordPaceMutation);
+  assert.deepEqual(paceMutations, []);
+  assert.equal(
     await page.locator("#lane-root").getAttribute("data-app"),
     "Lane",
   );
-  await page.request.get("http://127.0.0.1:46400/test/external");
+  await page.request.get(`${previewBase}/test/external`);
   await page
     .locator("lynx-view")
     .evaluate((view) => view.sendGlobalEvent("lane.onlineChanged", [{}]));
@@ -265,7 +431,7 @@ try {
     .getByText("External changes are available.", { exact: false })
     .waitFor();
   assert.equal(await title.inputValue(), "Unsaved local title");
-  await page.request.get("http://127.0.0.1:46400/test/fail-save");
+  await page.request.get(`${previewBase}/test/fail-save`);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByText("Simulated storage failure", { exact: false }).waitFor();
   assert.equal(await title.inputValue(), "Unsaved local title");
@@ -281,7 +447,7 @@ try {
     .click();
   assert.equal(await page.locator("lynx-view script").count(), 0);
   await page.getByText("[Image blocked: blocked]", { exact: true }).waitFor();
-  await page.screenshot({ path: join(evidence, "desktop-editor.png") });
+  await captureScreenshot(join(evidence, "desktop-editor.png"));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(500);
   assert.equal(
@@ -289,7 +455,7 @@ try {
     "app mobile",
   );
   assert.ok(await title.isVisible());
-  await page.screenshot({ path: join(evidence, "mobile-editor.png") });
+  await captureScreenshot(join(evidence, "mobile-editor.png"));
   await page.getByRole("button", { name: "Back to list", exact: true }).click();
   await page.waitForFunction(
     () =>
@@ -321,7 +487,7 @@ try {
     .getByRole("button", { name: "Discard changes", exact: true })
     .click();
   await page.getByRole("button", { name: "+ New task", exact: true }).waitFor();
-  await page.screenshot({ path: join(evidence, "mobile-list.png") });
+  await captureScreenshot(join(evidence, "mobile-list.png"));
   for (const width of [320, 390, 402]) {
     await page.setViewportSize({ width, height: 844 });
     await page.waitForTimeout(150);
@@ -373,7 +539,7 @@ try {
       ":host{font-size:32px}";
   });
   await page.waitForTimeout(300);
-  await page.screenshot({ path: join(evidence, "enlarged-text.png") });
+  await captureScreenshot(join(evidence, "enlarged-text.png"));
   assert.deepEqual(errors, []);
   await writeFile(
     join(evidence, "result.json"),
@@ -392,7 +558,7 @@ try {
           "utility navigation has no account/notification writes and respects dirty-draft cancel/confirm",
           "shared Lane, Pace and RealQA tabs and app-specific sidebars",
           "mini-app keyboard activation and selected tab state",
-          "Coming soon return preserves Lane filters",
+          "Pace layout, constrained scrolling, exact content and return preserve Lane state",
           "mini-app switching respects unsaved-edit confirmation and Escape",
           "vertical tabs and mini-app layout at 320, 390, 899 and 900 pixels",
           "desktop navigation and task details",
@@ -407,7 +573,7 @@ try {
           "discard confirmation retains input on cancel",
           "keyboard activation",
           "new task title autofocus",
-          "text enlargement screenshot",
+          "text enlargement layout",
         ],
         errors,
       },
@@ -417,10 +583,14 @@ try {
   );
   console.log(`Browser checks passed. Mock-only evidence: ${evidence}`);
 } catch (error) {
-  await page.screenshot({ path: join(evidence, "failure.png") });
+  await captureScreenshot(join(evidence, "failure.png"));
   console.log(
     await page.locator("lynx-view").evaluate((view) => ({
       app: view.shadowRoot.querySelector("#lane-root").outerHTML.slice(0, 500),
+      pace: view.shadowRoot
+        .querySelector(".pace-coming-soon")
+        ?.outerHTML.slice(0, 500),
+      paceScroll: view.shadowRoot.querySelector(".pace-page-scroll")?.scrollTop,
     })),
   );
   throw error;
