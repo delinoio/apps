@@ -198,14 +198,80 @@ text {
   min-width: 340px;
   border-left: 1px solid #e4e8ef;
   padding: 24px;
+  background-color: #fff;
 }
 .editor-body {
   flex: 1;
   min-height: 0;
 }
+.editor-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  gap: 20px;
+}
+.editor-intro,
+.editor-text,
+.editor-planning {
+  min-width: 0;
+}
+.editor-content-wide {
+  grid-template-columns: minmax(0, 1fr) 320px;
+  column-gap: 24px;
+}
+.editor-content-wide .editor-intro {
+  grid-column-start: 1;
+  grid-row-start: 1;
+}
+.editor-content-wide .editor-text {
+  grid-column-start: 1;
+  grid-row-start: 2;
+}
+.editor-content-wide .editor-planning {
+  grid-column-start: 2;
+  grid-row-start: 1;
+  grid-row-end: 3;
+  border-left: 1px solid #e4e8ef;
+  padding-left: 24px;
+}
+.editor-content-wide .editor-planning .task-properties {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
 .toolbar {
   border-top: 1px solid #e7ebf1;
   padding-top: 16px;
+}
+.editor-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+.editor-secondary-actions,
+.editor-primary-actions {
+  min-width: 0;
+}
+.editor-delete-action {
+  margin-left: 16px;
+}
+.editor-text-tabs .button[data-pressed="true"] {
+  border-bottom: 3px solid #075aff;
+}
+.editor .button,
+.editor .input {
+  min-height: 44px;
+}
+.editor .input.multiline {
+  min-height: 220px;
+}
+.editor .row {
+  min-width: 0;
+}
+.editor .heading {
+  word-break: break-all;
 }
 .notice {
   padding: 12px;
@@ -1893,6 +1959,41 @@ text {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid #e7ebf1;
+}
+.compact-planning {
+  padding: 16px;
+  background-color: #f8fafc;
+  border: 1px solid #e4e8ef;
+  border-radius: 10px;
+}
+.property-chips,
+.relation-chips,
+.relation-actions {
+  width: 100%;
+  min-width: 0;
+}
+.property-chips .button,
+.relation-chips .button {
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 1;
+  justify-content: flex-start;
+}
+.property-chips .button text,
+.relation-chips .button text,
+.relation-actions text,
+.task-select-options .button text {
+  word-break: break-all;
+}
+.property-popover,
+.relation-actions {
+  width: 100%;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #e4e8ef;
+  border-radius: 8px;
+  background-color: #fff;
 }
 .task-select,
 .task-label-select {

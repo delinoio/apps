@@ -147,6 +147,7 @@ export function TaskRelationships({
   options,
   ownId,
   moved,
+  compact = false,
   openTask,
   openControl,
   setOpenControl,
@@ -158,11 +159,13 @@ export function TaskRelationships({
   options: TaskOptions;
   ownId: string;
   moved: boolean;
+  compact?: boolean;
   openTask: (id: string) => void;
   openControl: string | undefined;
   setOpenControl: (control: string | undefined) => void;
 }) {
   const [adding, setAdding] = useState<Kind>();
+  const [activeLink, setActiveLink] = useState<{ kind: Kind; id: string }>();
   const [menuIndex, setMenuIndex] = useState(0);
   const [triggerId] = useState(
     () => `task-relationship-${Math.random().toString(36).slice(2)}`,
@@ -251,8 +254,19 @@ export function TaskRelationships({
     setAdding(undefined);
     focus(triggerId);
   };
+  const closeLinkActions = () => {
+    if (!activeLink) return;
+    const id = `relationship-chip-${activeLink.kind}-${activeLink.id}`;
+    setActiveLink(undefined);
+    focus(id);
+  };
+  const actionKey = (key: string) => {
+    if (key !== "Escape") return false;
+    closeLinkActions();
+    return true;
+  };
   return (
-    <view className="planning-section">
+    <view className={`planning-section ${compact ? "compact-planning" : ""}`}>
       <view className="row between wrap">
         <text className="heading" accessibility-heading>
           Relationships
@@ -328,80 +342,195 @@ export function TaskRelationships({
           <Button onClick={options.retry}>Retry loading tasks</Button>
         </Notice>
       )}
-      {sections.map(({ kind, title, single }) => {
-        const ids = get(kind);
-        const pending =
-          derived(kind) && !draft.relations && options.status !== "error";
-        const picking = adding === kind;
-        return (
-          <view className="relation" key={kind}>
-            <text className="label" accessibility-heading>
-              {title}
-            </text>
-            {derived(kind) && (
-              <text className="muted">
-                {kind === "subtasks"
-                  ? "Tasks whose parent is this task."
-                  : "Tasks that depend on this task."}
-              </text>
-            )}
-            {ids.length === 0 && !pending && (
-              <text className="muted">None</text>
-            )}
-            {pending && !unavailable && <text className="muted">Loading…</text>}
-            {ids.map((id) => (
-              <view className="linked row wrap" key={id}>
-                <text className="linked-title">{titleOf(id)}</text>
-                <Button
-                  label={`Open ${titleOf(id)}`}
-                  onClick={() => openTask(id)}
-                >
-                  Open
-                </Button>
-                {single && (
+      {compact && (
+        <>
+          {sections.some(({ kind }) => get(kind).length > 0) ? (
+            <view className="row wrap relation-chips">
+              {sections.flatMap(({ kind, title }) =>
+                get(kind).map((id) => (
                   <Button
-                    disabled={disabled || unavailable}
-                    onClick={() => {
-                      setOpenControl(undefined);
-                      setAdding(kind);
+                    key={`${kind}-${id}`}
+                    elementId={`relationship-chip-${kind}-${id}`}
+                    label={`${title}: ${titleOf(id)}; open relationship actions`}
+                    expanded={activeLink?.kind === kind && activeLink.id === id}
+                    onKeyDown={(key) => {
+                      if (
+                        key === "Escape" &&
+                        activeLink?.kind === kind &&
+                        activeLink.id === id
+                      ) {
+                        closeLinkActions();
+                        return true;
+                      }
+                      return false;
                     }}
+                    onClick={() =>
+                      setActiveLink(
+                        activeLink?.kind === kind && activeLink.id === id
+                          ? undefined
+                          : { kind, id },
+                      )
+                    }
                   >
-                    {kind === "parent" ? "Change parent" : "Change original"}
+                    {title}: {titleOf(id)}
                   </Button>
-                )}
+                )),
+              )}
+            </view>
+          ) : (
+            <text className="muted">No relationships.</text>
+          )}
+          {activeLink && (
+            <view className="relation-actions row wrap">
+              <text className="label">
+                {sections.find(({ kind }) => kind === activeLink.kind)?.title}:{" "}
+                {titleOf(activeLink.id)}
+              </text>
+              <Button
+                onKeyDown={actionKey}
+                onClick={() => {
+                  openTask(activeLink.id);
+                  setActiveLink(undefined);
+                }}
+              >
+                Open
+              </Button>
+              {sections.find(({ kind }) => kind === activeLink.kind)
+                ?.single && (
                 <Button
                   disabled={disabled || unavailable}
-                  label={`Remove ${titleOf(id)} from ${title}`}
-                  onClick={() =>
-                    set(
-                      kind,
-                      ids.filter((x) => x !== id),
-                    )
-                  }
+                  onKeyDown={actionKey}
+                  onClick={() => {
+                    setOpenControl(undefined);
+                    setAdding(activeLink.kind);
+                    setActiveLink(undefined);
+                  }}
                 >
-                  Remove
+                  Change
                 </Button>
-              </view>
-            ))}
-            {picking ? (
-              <TaskPicker
-                key={kind}
-                title={title}
-                options={candidates}
-                exclude={single ? [] : ids}
+              )}
+              <Button
                 disabled={disabled || unavailable}
-                onPick={(id) => {
-                  // A save in flight already built its request from the current draft.
-                  if (disabled || unavailable) return;
-                  set(kind, single ? [id] : [...ids, id]);
-                  closePicker();
+                onKeyDown={actionKey}
+                onClick={() => {
+                  set(
+                    activeLink.kind,
+                    get(activeLink.kind).filter((id) => id !== activeLink.id),
+                  );
+                  setActiveLink(undefined);
                 }}
-                onClose={closePicker}
-              />
-            ) : null}
-          </view>
-        );
-      })}
+              >
+                Remove
+              </Button>
+              <Button onKeyDown={actionKey} onClick={closeLinkActions}>
+                Close relationship actions
+              </Button>
+            </view>
+          )}
+          {adding && (
+            <TaskPicker
+              key={adding}
+              title={
+                sections.find(({ kind }) => kind === adding)?.title ??
+                "relationship"
+              }
+              options={candidates}
+              exclude={
+                sections.find(({ kind }) => kind === adding)?.single
+                  ? []
+                  : get(adding)
+              }
+              disabled={disabled || unavailable}
+              onPick={(id) => {
+                if (disabled || unavailable) return;
+                const single = sections.find(
+                  ({ kind }) => kind === adding,
+                )?.single;
+                set(adding, single ? [id] : [...get(adding), id]);
+                closePicker();
+              }}
+              onClose={closePicker}
+            />
+          )}
+        </>
+      )}
+      {!compact &&
+        sections.map(({ kind, title, single }) => {
+          const ids = get(kind);
+          const pending =
+            derived(kind) && !draft.relations && options.status !== "error";
+          const picking = adding === kind;
+          return (
+            <view className="relation" key={kind}>
+              <text className="label" accessibility-heading>
+                {title}
+              </text>
+              {derived(kind) && (
+                <text className="muted">
+                  {kind === "subtasks"
+                    ? "Tasks whose parent is this task."
+                    : "Tasks that depend on this task."}
+                </text>
+              )}
+              {ids.length === 0 && !pending && (
+                <text className="muted">None</text>
+              )}
+              {pending && !unavailable && (
+                <text className="muted">Loading…</text>
+              )}
+              {ids.map((id) => (
+                <view className="linked row wrap" key={id}>
+                  <text className="linked-title">{titleOf(id)}</text>
+                  <Button
+                    label={`Open ${titleOf(id)}`}
+                    onClick={() => openTask(id)}
+                  >
+                    Open
+                  </Button>
+                  {single && (
+                    <Button
+                      disabled={disabled || unavailable}
+                      onClick={() => {
+                        setOpenControl(undefined);
+                        setAdding(kind);
+                      }}
+                    >
+                      {kind === "parent" ? "Change parent" : "Change original"}
+                    </Button>
+                  )}
+                  <Button
+                    disabled={disabled || unavailable}
+                    label={`Remove ${titleOf(id)} from ${title}`}
+                    onClick={() =>
+                      set(
+                        kind,
+                        ids.filter((x) => x !== id),
+                      )
+                    }
+                  >
+                    Remove
+                  </Button>
+                </view>
+              ))}
+              {picking ? (
+                <TaskPicker
+                  key={kind}
+                  title={title}
+                  options={candidates}
+                  exclude={single ? [] : ids}
+                  disabled={disabled || unavailable}
+                  onPick={(id) => {
+                    // A save in flight already built its request from the current draft.
+                    if (disabled || unavailable) return;
+                    set(kind, single ? [id] : [...ids, id]);
+                    closePicker();
+                  }}
+                  onClose={closePicker}
+                />
+              ) : null}
+            </view>
+          );
+        })}
     </view>
   );
 }

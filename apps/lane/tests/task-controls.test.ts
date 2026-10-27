@@ -442,6 +442,86 @@ test("relationship loading, failure and move keep Add guarded and expose retry",
   moved.unmount();
 });
 
+test("compact relationship chips keep linked actions and draft-only edits", async () => {
+  const opened: string[] = [];
+  const view = bundle.runtime.mount(bundle.RelationshipsHost, {
+    compact: true,
+    initial: {
+      id: "task-self",
+      dirty: false,
+      task: {
+        repositoryId: "repo-a",
+        parentTaskId: "task-parent",
+        duplicateOfTaskId: undefined,
+        dependsOnTaskIds: [],
+        relatedTaskIds: [],
+      },
+      relations: { subtasks: [], blocks: [] },
+    },
+    disabled: false,
+    ownId: "task-self",
+    moved: false,
+    options: {
+      tasks: [
+        { id: "task-parent", title: "Parent task" },
+        { id: "task-new", title: "New parent" },
+      ],
+      status: "ready",
+      error: "",
+      retry: () => {},
+    },
+    openTask: (id: string) => opened.push(id),
+  });
+  const tree = () => view.tree();
+  assert.equal(
+    find(tree(), (node) => node.props.className === "relation").length,
+    0,
+  );
+  button(
+    tree(),
+    "Parent: Parent task; open relationship actions",
+  ).props.bindtap();
+  await view.settle();
+  button(tree(), "Open").props.bindkeydown({ key: "Escape" });
+  await view.settle();
+  assert.equal(
+    find(tree(), (node) => textOf(node) === "Close relationship actions")
+      .length,
+    0,
+  );
+  button(
+    tree(),
+    "Parent: Parent task; open relationship actions",
+  ).props.bindtap();
+  await view.settle();
+  button(tree(), "Open").props.bindtap();
+  await view.settle();
+  assert.deepEqual(opened, ["task-parent"]);
+  button(
+    tree(),
+    "Parent: Parent task; open relationship actions",
+  ).props.bindtap();
+  await view.settle();
+  button(tree(), "Change").props.bindtap();
+  await view.settle();
+  button(tree(), "Add New parent to Parent").props.bindtap();
+  await view.settle();
+  assert.equal(bundle.captured.draft?.task.parentTaskId, "task-new");
+  assert.equal(bundle.captured.draft?.dirty, true);
+  button(
+    tree(),
+    "Parent: New parent; open relationship actions",
+  ).props.bindtap();
+  await view.settle();
+  button(tree(), "Remove").props.bindtap();
+  await view.settle();
+  assert.equal(bundle.captured.draft?.task.parentTaskId, undefined);
+  assert.ok(
+    find(tree(), (node) => textOf(node) === "No relationships.").length,
+  );
+  view.unmount();
+});
+
 test("task editor selectors change the draft before explicit Save", async () => {
   const initial = draftFor(
     create(EntityResultSchema, {
@@ -457,6 +537,9 @@ test("task editor selectors change the draft before explicit Save", async () => 
             milestoneId: "missing-milestone",
             cycleId: "missing-cycle",
             progress: Progress.TODO,
+            storyPoints: 0,
+            startDate: "2028-02-29",
+            parentTaskId: "missing-parent",
             proposal: Proposal.REGULAR,
           }),
         },
@@ -495,6 +578,33 @@ test("task editor selectors change the draft before explicit Save", async () => 
   });
   await view.settle();
   const tree = () => view.tree();
+  const layout = () =>
+    find(tree(), (node) =>
+      node.props.className?.startsWith("editor-content"),
+    )[0];
+  assert.equal(layout().props.className, "editor-content");
+  assert.ok(button(tree(), "Edit Points: 0"));
+  assert.ok(button(tree(), "Edit Start: 2028-02-29"));
+  assert.ok(
+    button(tree(), "Parent: (unavailable task); open relationship actions"),
+  );
+  assert.equal(
+    find(
+      tree(),
+      (node) =>
+        node.type === "input" &&
+        node.props["accessibility-label"] === "Start date (YYYY-MM-DD)",
+    ).length,
+    0,
+  );
+  layout().props.bindlayoutchange({ detail: { width: 1100 } });
+  await view.settle();
+  assert.equal(layout().props.className, "editor-content editor-content-wide");
+  layout().props.bindlayoutchange({ detail: { width: 1440 } });
+  await view.settle();
+  assert.equal(layout().props.className, "editor-content editor-content-wide");
+  layout().props.bindlayoutchange({ detail: { width: 1100 } });
+  await view.settle();
   assert.equal(
     button(tree(), "Milestone: (unavailable milestone)").props.focusable,
     true,
@@ -522,6 +632,43 @@ test("task editor selectors change the draft before explicit Save", async () => 
   await view.settle();
   assert.equal(bundle.captured.draft?.dirty, true);
   assert.equal(calls.filter((call) => call.method === "SaveTask").length, 0);
+  layout().props.bindlayoutchange({ detail: { width: 1099 } });
+  await view.settle();
+  assert.equal(layout().props.className, "editor-content");
+  for (const width of [720, 390, 360]) {
+    layout().props.bindlayoutchange({ detail: { width } });
+    await view.settle();
+    assert.equal(layout().props.className, "editor-content");
+    assert.ok(button(tree(), "Edit Points: 0"));
+  }
+  assert.ok(button(tree(), "Edit Priority: High"));
+  assert.ok(button(tree(), "Edit Points: 0"));
+  assert.equal(
+    find(tree(), (node) => node.props.className === "relation").length,
+    0,
+  );
+  button(tree(), "Add or edit property").props.bindtap();
+  await view.settle();
+  button(tree(), "Story points").props.bindkeydown({ key: "Escape" });
+  await view.settle();
+  assert.equal(
+    find(tree(), (node) => textOf(node) === "Story points").length,
+    0,
+  );
+  button(tree(), "Add or edit property").props.bindtap();
+  await view.settle();
+  button(tree(), "Story points").props.bindtap();
+  await view.settle();
+  input(tree(), "Story points (whole number)").props.bindinput({
+    detail: { value: "1.5" },
+  });
+  await view.settle();
+  assert.ok(button(tree(), "Edit Points: 1.5"));
+  assert.equal(calls.filter((call) => call.method === "SaveTask").length, 0);
+  input(tree(), "Story points (whole number)").props.bindinput({
+    detail: { value: "0" },
+  });
+  await view.settle();
   assert.equal(
     button(tree(), "Progress: In progress").props["data-expanded"],
     "false",

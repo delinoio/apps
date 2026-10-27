@@ -140,6 +140,8 @@ export function TaskEditor({
   const [tab, setTab] = useState("Description");
   const [preview, setPreview] = useState(false);
   const [openControl, setOpenControl] = useState<string>();
+  const [contentWidth, setContentWidth] = useState(0);
+  const wideContent = contentWidth >= 1100;
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     busyChanged?.(busy);
@@ -539,297 +541,326 @@ export function TaskEditor({
         <Button onClick={onBack ?? onClose}>Back to list</Button>
       </view>
       <scroll-view className="editor-body" scroll-orientation="vertical">
-        {draft.external && (
-          <Notice>
-            External changes are available. Your input is retained. Saving
-            checks the original version.
-          </Notice>
-        )}
-        {draft.deleted && (
-          <Notice>
-            This task was permanently deleted. Your unsaved input is retained
-            for copying; it cannot be saved to this task.
-          </Notice>
-        )}
-        {readOnly && !draft.deleted && (
-          <Notice>
-            This task has a conflict. Editing is paused until you compare and
-            resolve all versions.
-          </Notice>
-        )}
-        <Field
-          label="Title"
-          value={draft.task.title}
-          onChange={(title) => edit({ title })}
-          disabled={readOnly || busy}
-          focus={!draft.base}
-        />
-        <view className="row wrap">
-          <text>
-            Proposal:{" "}
-            {proposalOptions.find(([v]) => v === draft.task.proposal)?.[1]}
-          </text>
-          {draft.base && draft.task.proposal !== Proposal.REGULAR && (
-            <>
-              <Button
-                disabled={busy || readOnly || draft.dirty}
-                onClick={() =>
-                  void run(async (completion) => {
-                    const r = await actions.submit(
-                      {
-                        action: SpecializedAction.SetProposal,
-                        id: draft.id,
-                        expectedVersionId: draft.base,
-                        proposal: Proposal.REJECTED,
-                      },
-                      (requestId) =>
-                        adapter.call(LaneService.method.setProposal, {
-                          meta: { requestId },
-                          id: draft.id,
-                          expectedVersionId: draft.base,
-                          proposal: Proposal.REJECTED,
-                        }),
-                    );
-                    completion.saved(r.result);
-                  })
-                }
-              >
-                Reject proposal
+        <view
+          className={
+            wideContent
+              ? "editor-content editor-content-wide"
+              : "editor-content"
+          }
+          bindlayoutchange={(event) => setContentWidth(event.detail.width)}
+        >
+          <view className="editor-intro">
+            {draft.external && (
+              <Notice>
+                External changes are available. Your input is retained. Saving
+                checks the original version.
+              </Notice>
+            )}
+            {draft.deleted && (
+              <Notice>
+                This task was permanently deleted. Your unsaved input is
+                retained for copying; it cannot be saved to this task.
+              </Notice>
+            )}
+            {readOnly && !draft.deleted && (
+              <Notice>
+                This task has a conflict. Editing is paused until you compare
+                and resolve all versions.
+              </Notice>
+            )}
+            <Field
+              label="Title"
+              value={draft.task.title}
+              onChange={(title) => edit({ title })}
+              disabled={readOnly || busy}
+              focus={!draft.base}
+            />
+            <view className="row wrap">
+              <text>
+                Proposal:{" "}
+                {proposalOptions.find(([v]) => v === draft.task.proposal)?.[1]}
+              </text>
+              {draft.base && draft.task.proposal !== Proposal.REGULAR && (
+                <>
+                  <Button
+                    disabled={busy || readOnly || draft.dirty}
+                    onClick={() =>
+                      void run(async (completion) => {
+                        const r = await actions.submit(
+                          {
+                            action: SpecializedAction.SetProposal,
+                            id: draft.id,
+                            expectedVersionId: draft.base,
+                            proposal: Proposal.REJECTED,
+                          },
+                          (requestId) =>
+                            adapter.call(LaneService.method.setProposal, {
+                              meta: { requestId },
+                              id: draft.id,
+                              expectedVersionId: draft.base,
+                              proposal: Proposal.REJECTED,
+                            }),
+                        );
+                        completion.saved(r.result);
+                      })
+                    }
+                  >
+                    Reject proposal
+                  </Button>
+                  <Button
+                    primary
+                    disabled={busy || readOnly || draft.dirty}
+                    onClick={() =>
+                      void run(async (completion) => {
+                        const r = await actions.submit(
+                          {
+                            action: SpecializedAction.SetProposal,
+                            id: draft.id,
+                            expectedVersionId: draft.base,
+                            proposal: Proposal.ACCEPTED,
+                          },
+                          (requestId) =>
+                            adapter.call(LaneService.method.setProposal, {
+                              meta: { requestId },
+                              id: draft.id,
+                              expectedVersionId: draft.base,
+                              proposal: Proposal.ACCEPTED,
+                            }),
+                        );
+                        completion.saved(r.result);
+                      })
+                    }
+                  >
+                    Accept proposal
+                  </Button>
+                </>
+              )}
+            </view>
+            {draft.dirty && (
+              <text className="muted">
+                Unsaved changes. Save your edits before a separate proposal or
+                prompt restoration action.
+              </text>
+            )}
+            <TaskSelect
+              control="progress"
+              openControl={openControl}
+              setOpenControl={setOpenControl}
+              label="Progress"
+              value={draft.task.progress}
+              options={progressOptions}
+              onChange={(progress) => edit({ progress })}
+              disabled={busy || readOnly}
+            />
+            <TaskSelect
+              control="repository"
+              openControl={openControl}
+              setOpenControl={setOpenControl}
+              label="Repository / move task"
+              value={draft.task.repositoryId}
+              options={[
+                ...(!draft.base ? [["", "Use a repository URL"] as const] : []),
+                ...repositories
+                  .filter((r) => r.version && !r.version.deleted)
+                  .map(
+                    (r) =>
+                      [r.version!.entityId, repositoryName(r.version)] as const,
+                  ),
+              ]}
+              onChange={changeRepository}
+              disabled={busy || readOnly}
+            />
+            {!draft.base && !draft.task.repositoryId && (
+              <Field
+                label="Repository URL"
+                value={repositoryUrl}
+                disabled={busy || readOnly}
+                onChange={(value) => {
+                  setRepositoryUrl(value);
+                  setDraft({ ...draft, dirty: true });
+                }}
+              />
+            )}
+          </view>
+          <view className="editor-planning">
+            <TaskProperties
+              draft={draft}
+              edit={edit}
+              disabled={busy || readOnly}
+              planning={planning}
+              pointsText={pointsText}
+              setPointsText={(value) => {
+                if (value === pointsText) return;
+                setPointsText(value);
+                setDraft({ ...draft, dirty: true });
+              }}
+              errors={fieldErrors}
+              moved={moved}
+              compact={!wideContent}
+              openControl={openControl}
+              setOpenControl={setOpenControl}
+            />
+            <TaskRelationships
+              draft={draft}
+              setDraft={setDraft}
+              edit={edit}
+              disabled={busy || readOnly}
+              options={options}
+              ownId={draft.id}
+              moved={moved}
+              compact={!wideContent}
+              openControl={openControl}
+              setOpenControl={setOpenControl}
+              openTask={openTask}
+            />
+          </view>
+          <view className="editor-text">
+            <view className="row wrap editor-text-tabs">
+              {["Description", "Prompt"].map((t) => (
+                <Button key={t} pressed={tab === t} onClick={() => setTab(t)}>
+                  {t}
+                </Button>
+              ))}
+              <Button onClick={() => setPreview(!preview)}>
+                {preview ? "Edit source" : "Preview Markdown"}
               </Button>
               <Button
-                primary
-                disabled={busy || readOnly || draft.dirty}
                 onClick={() =>
-                  void run(async (completion) => {
-                    const r = await actions.submit(
-                      {
-                        action: SpecializedAction.SetProposal,
-                        id: draft.id,
-                        expectedVersionId: draft.base,
-                        proposal: Proposal.ACCEPTED,
-                      },
-                      (requestId) =>
-                        adapter.call(LaneService.method.setProposal, {
-                          meta: { requestId },
-                          id: draft.id,
-                          expectedVersionId: draft.base,
-                          proposal: Proposal.ACCEPTED,
-                        }),
-                    );
-                    completion.saved(r.result);
-                  })
+                  void run(() =>
+                    hostAction(
+                      "copyText",
+                      tab === "Description"
+                        ? draft.task.description
+                        : draft.task.prompt || "",
+                    ),
+                  )
                 }
               >
-                Accept proposal
+                Copy source
               </Button>
-            </>
-          )}
-        </view>
-        {draft.dirty && (
-          <text className="muted">
-            Save your edits before a separate proposal or prompt restoration
-            action.
-          </text>
-        )}
-        <TaskSelect
-          control="progress"
-          openControl={openControl}
-          setOpenControl={setOpenControl}
-          label="Progress"
-          value={draft.task.progress}
-          options={progressOptions}
-          onChange={(progress) => edit({ progress })}
-          disabled={busy || readOnly}
-        />
-        <TaskSelect
-          control="repository"
-          openControl={openControl}
-          setOpenControl={setOpenControl}
-          label="Repository / move task"
-          value={draft.task.repositoryId}
-          options={[
-            ...(!draft.base ? [["", "Use a repository URL"] as const] : []),
-            ...repositories
-              .filter((r) => r.version && !r.version.deleted)
-              .map(
-                (r) =>
-                  [r.version!.entityId, repositoryName(r.version)] as const,
-              ),
-          ]}
-          onChange={changeRepository}
-          disabled={busy || readOnly}
-        />
-        {!draft.base && !draft.task.repositoryId && (
-          <Field
-            label="Repository URL"
-            value={repositoryUrl}
-            disabled={busy || readOnly}
-            onChange={(value) => {
-              setRepositoryUrl(value);
-              setDraft({ ...draft, dirty: true });
-            }}
-          />
-        )}
-        <view className="row wrap">
-          {["Description", "Prompt"].map((t) => (
-            <Button key={t} primary={tab === t} onClick={() => setTab(t)}>
-              {t}
-            </Button>
-          ))}
-          <Button onClick={() => setPreview(!preview)}>
-            {preview ? "Edit source" : "Preview Markdown"}
-          </Button>
-          <Button
-            onClick={() =>
-              void run(() =>
-                hostAction(
-                  "copyText",
+            </view>
+            {tab === "Prompt" && (
+              <Choices
+                label="Prompt"
+                value={draft.task.prompt !== undefined ? "present" : "absent"}
+                options={[
+                  ["absent", "No prompt"],
+                  ["present", "Include prompt"],
+                ]}
+                onChange={(v) =>
+                  edit({ prompt: promptForPresence(draft.task.prompt, v) })
+                }
+                disabled={busy || readOnly}
+              />
+            )}
+            {preview ? (
+              <Markdown
+                source={
                   tab === "Description"
                     ? draft.task.description
-                    : draft.task.prompt || "",
-                ),
-              )
-            }
-          >
-            Copy source
-          </Button>
+                    : draft.task.prompt || ""
+                }
+              />
+            ) : (
+              <Field
+                label={
+                  tab === "Description"
+                    ? "Description Markdown"
+                    : "Prompt Markdown"
+                }
+                multiline
+                value={
+                  tab === "Description"
+                    ? draft.task.description
+                    : draft.task.prompt || ""
+                }
+                disabled={
+                  busy ||
+                  readOnly ||
+                  (tab === "Prompt" && draft.task.prompt === undefined)
+                }
+                onChange={(value) =>
+                  edit(
+                    tab === "Description"
+                      ? { description: value }
+                      : { prompt: value },
+                  )
+                }
+              />
+            )}
+            {tab === "Prompt" && (
+              <Captures
+                adapter={adapter}
+                taskId={draft.id}
+                captures={draft.task.captures}
+              />
+            )}
+            {error && <Notice>{error} Your input is retained.</Notice>}
+          </view>
         </view>
-        {tab === "Prompt" && (
-          <Choices
-            label="Prompt"
-            value={draft.task.prompt !== undefined ? "present" : "absent"}
-            options={[
-              ["absent", "No prompt"],
-              ["present", "Include prompt"],
-            ]}
-            onChange={(v) =>
-              edit({ prompt: promptForPresence(draft.task.prompt, v) })
-            }
-            disabled={busy || readOnly}
-          />
-        )}
-        {preview ? (
-          <Markdown
-            source={
-              tab === "Description"
-                ? draft.task.description
-                : draft.task.prompt || ""
-            }
-          />
-        ) : (
-          <Field
-            label={
-              tab === "Description" ? "Description Markdown" : "Prompt Markdown"
-            }
-            multiline
-            value={
-              tab === "Description"
-                ? draft.task.description
-                : draft.task.prompt || ""
-            }
-            disabled={
-              busy ||
-              readOnly ||
-              (tab === "Prompt" && draft.task.prompt === undefined)
-            }
-            onChange={(value) =>
-              edit(
-                tab === "Description"
-                  ? { description: value }
-                  : { prompt: value },
-              )
-            }
-          />
-        )}
-        {tab === "Prompt" && (
-          <Captures
-            adapter={adapter}
-            taskId={draft.id}
-            captures={draft.task.captures}
-          />
-        )}
-        <TaskProperties
-          draft={draft}
-          edit={edit}
-          disabled={busy || readOnly}
-          planning={planning}
-          pointsText={pointsText}
-          setPointsText={(value) => {
-            if (value === pointsText) return;
-            setPointsText(value);
-            setDraft({ ...draft, dirty: true });
-          }}
-          errors={fieldErrors}
-          moved={moved}
-          openControl={openControl}
-          setOpenControl={setOpenControl}
-        />
-        <TaskRelationships
-          draft={draft}
-          setDraft={setDraft}
-          edit={edit}
-          disabled={busy || readOnly}
-          options={options}
-          ownId={draft.id}
-          moved={moved}
-          openControl={openControl}
-          setOpenControl={setOpenControl}
-          openTask={openTask}
-        />
-        {error && <Notice>{error} Your input is retained.</Notice>}
       </scroll-view>
-      <view className="toolbar row wrap">
-        {draft.base && (
-          <>
+      <view className="toolbar editor-actions">
+        <view className="row wrap editor-secondary-actions">
+          {draft.base && (
+            <>
+              <Button
+                id={historyTriggers.task}
+                disabled={busy}
+                onClick={() => openHistory(HistoryMode.Task)}
+              >
+                History
+              </Button>
+              <Button
+                id={historyTriggers.prompts}
+                disabled={busy}
+                onClick={() => openHistory(HistoryMode.Prompts)}
+              >
+                Prompt versions
+              </Button>
+              <view className="editor-delete-action">
+                <Button
+                  disabled={busy}
+                  onClick={() => {
+                    // An earlier save or action failure is not a deletion failure.
+                    setError("");
+                    setConfirmDelete(true);
+                  }}
+                >
+                  Delete task
+                </Button>
+              </view>
+            </>
+          )}
+          {conflicted(current) && (
             <Button
-              id={historyTriggers.task}
-              disabled={busy}
-              onClick={() => openHistory(HistoryMode.Task)}
-            >
-              History
-            </Button>
-            <Button
-              id={historyTriggers.prompts}
-              disabled={busy}
-              onClick={() => openHistory(HistoryMode.Prompts)}
-            >
-              Prompt versions
-            </Button>
-            <Button
-              disabled={busy}
+              id={compareFocusId}
               onClick={() => {
-                // An earlier save or action failure is not a deletion failure.
-                setError("");
-                setConfirmDelete(true);
+                // Reopening keeps an existing session; a stale one stays blocked until
+                // the user explicitly reviews the current versions.
+                if (!reviewedHeads) {
+                  setReviewedHeads(headIds(current));
+                  setResolution(currentHeads[0]);
+                  setSelectedHeadId(currentHeads[0]?.versionId);
+                }
+                setResolve(true);
               }}
             >
-              Delete task
+              Compare conflict
             </Button>
-          </>
-        )}
-        {conflicted(current) && (
-          <Button
-            id={compareFocusId}
-            onClick={() => {
-              // Reopening keeps an existing session; a stale one stays blocked until
-              // the user explicitly reviews the current versions.
-              if (!reviewedHeads) {
-                setReviewedHeads(headIds(current));
-                setResolution(currentHeads[0]);
-                setSelectedHeadId(currentHeads[0]?.versionId);
-              }
-              setResolve(true);
-            }}
-          >
-            Compare conflict
+          )}
+        </view>
+        <view className="row wrap editor-primary-actions">
+          <Button disabled={busy} onClick={onClose}>
+            Cancel
           </Button>
-        )}
-        <Button disabled={busy} onClick={onClose}>
-          Cancel
-        </Button>
-        <Button primary disabled={busy || readOnly} onClick={() => void save()}>
-          {busy ? "Saving…" : error ? "Retry Save" : "Save"}
-        </Button>
+          <Button
+            primary
+            disabled={busy || readOnly}
+            onClick={() => void save()}
+          >
+            {busy ? "Saving…" : error ? "Retry Save" : "Save"}
+          </Button>
+        </view>
       </view>
       {confirmDelete && (
         <Dialog
