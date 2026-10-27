@@ -287,6 +287,35 @@ test("current-query continuation failure keeps the cursor for retry", async () =
   assert.deepEqual(names(h.view().events), ["event-1", "event-2"]);
 });
 
+test("empty messages require successful reads for the current query", async () => {
+  const h = harness();
+  const first = h.loader.reload(A);
+  assert.equal(h.view().receiversLoaded, false);
+  assert.equal(h.view().eventsLoaded, false);
+  h.calls[0].reject(new Error("first page failed"));
+  await first;
+  assert.equal(h.view().error, "first page failed");
+  assert.equal(h.view().receiversLoaded, false);
+  assert.equal(h.view().eventsLoaded, false);
+
+  const retry = h.loader.refresh();
+  h.calls[1].resolve({ items: [], nextCursor: "" });
+  await tick();
+  assert.equal(h.view().receiversLoaded, true);
+  assert.equal(h.view().eventsLoaded, false);
+  h.calls[2].resolve({ items: [], nextCursor: "" });
+  await retry;
+  assert.equal(h.view().eventsLoaded, true);
+
+  const changed = h.loader.reload(B);
+  assert.equal(h.view().receiversLoaded, false);
+  assert.equal(h.view().eventsLoaded, false);
+  h.calls[3].resolve({ items: [], nextCursor: "" });
+  await tick();
+  h.calls[4].resolve({ items: [], nextCursor: "" });
+  await changed;
+});
+
 test("a disposed loader never publishes", async () => {
   const h = harness();
   const first = h.loader.reload(A);
