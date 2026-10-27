@@ -1,63 +1,33 @@
 {
   "schema": 1,
-  "runId": "40441767494",
-  "base": "4b90fe43492d852b555ff3461d2c805260117a35",
+  "runId": "40444320173",
+  "base": "1844458abd2dbc7f0d5c0a93a1a9cab75d90ab75",
   "versions": {
     "delino": "0.2.1",
     "delitools": "0.2.1",
     "devbase": "0.2.1",
-    "lane": "0.2.1",
-    "perfine": "0.2.1"
+    "lane": "0.2.2",
+    "perfine": "0.2.2"
   },
   "components": [
-    {
-      "component": "delino",
-      "apps": ["git-tracker"],
-      "binaries": false,
-      "mobile": false,
-      "version": "0.2.1",
-      "tag": "delino@v0.2.1"
-    },
-    {
-      "component": "delitools",
-      "apps": ["delitools"],
-      "binaries": false,
-      "mobile": true,
-      "version": "0.2.1",
-      "tag": "delitools@v0.2.1"
-    },
-    {
-      "component": "devbase",
-      "apps": ["devbase"],
-      "binaries": false,
-      "mobile": false,
-      "version": "0.2.1",
-      "tag": "devbase@v0.2.1"
-    },
     {
       "component": "lane",
       "apps": ["lane"],
       "binaries": true,
       "mobile": false,
-      "version": "0.2.1",
-      "tag": "lane@v0.2.1"
+      "version": "0.2.2",
+      "tag": "lane@v0.2.2"
     },
     {
       "component": "perfine",
       "apps": [],
       "binaries": true,
       "mobile": false,
-      "version": "0.2.1",
-      "tag": "perfine@v0.2.1"
+      "version": "0.2.2",
+      "tag": "perfine@v0.2.2"
     }
   ],
-  "servers": [
-    "delcore-api",
-    "delitools-api",
-    "devbase-api",
-    "git-tracker-api",
-    "lane-api"
-  ],
-  "records": ["release-shared-environments"],
+  "servers": ["delcore-api", "lane-api"],
+  "records": ["lane-windows-release-paths"],
   "publicNotes": []
 }
