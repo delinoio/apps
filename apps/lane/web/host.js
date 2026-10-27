@@ -43,6 +43,7 @@ const retry = document.getElementById("retry");
 let lastViewFocus;
 let startPending = false;
 let presentationSeq = 0;
+let signedOutTransitions = 0;
 const GateState = Object.freeze({
   Connecting: "connecting",
   SignedOut: "signed-out",
@@ -87,6 +88,7 @@ const revealGate = () => {
   if (viewWasFocused) heading.focus();
 };
 const showSignedOut = () => {
+  ++signedOutTransitions;
   ++presentationSeq;
   setGateState(GateState.SignedOut, "Sign in to use Lane on the web.");
   revealGate();
@@ -260,8 +262,17 @@ window.addEventListener("message", (event) => {
     event.data?.type !== "lane.reauthenticated"
   )
     return;
+  const signedOutBefore = signedOutTransitions;
   void online.completeDeletion(event.data.challengeId).catch((e) => {
-    if (!(e instanceof AuthRequestError && e.status === 401)) showError(e);
+    // Deletion proof expiry can return 401 while /auth/session remains valid.
+    // Suppress 401 only when this reconciliation actually showed the signed-out gate.
+    const reconciledToSignedOut = signedOutTransitions !== signedOutBefore;
+    if (!(
+      e instanceof AuthRequestError &&
+      e.status === 401 &&
+      reconciledToSignedOut
+    ))
+      showError(e);
   });
 });
 window.addEventListener("online", () => {
