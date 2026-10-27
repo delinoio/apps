@@ -22,7 +22,8 @@ internal class LaneSession(val runtime: LaneRuntime, activity: MainActivity) {
     val activity = WeakReference(activity)
     var view: LynxView? = null // UI thread only
     @Volatile var alive = true
-    val spaces = java.util.concurrent.ConcurrentHashMap<String, String>() // worker only: space -> device
+    val handles = SessionStoreHandles()
+    val spaces = handles.spaces // worker owns writes; UI reads route readiness
 }
 
 /** Process owner. Activity destruction releases subscriptions, not the store or workers. */
@@ -44,7 +45,14 @@ internal class LaneRuntime(val application: LaneApplication) {
     fun <T> submit(action: () -> T) = executor.submit<T> { action() }
     fun execute(action: () -> Unit) { executor.execute(action) }
     fun engine(method: String, request: String) = store().invoke(method, request)
-    fun workerOpen(): String = store().open("{\"formatVersion\":3,\"spaceId\":\"\"}")
+    fun workerStoreLease() = WorkerStoreLease(::execute,
+        {
+            val space = BridgeJson.response(store().open("{\"formatVersion\":3,\"spaceId\":\"\"}"))
+                .getString("spaceId")
+            pollSafely()
+            space
+        },
+        { space -> BridgeJson.response(store().release(space)) })
 
     fun foreground(session: LaneSession) = execute {
         sessions.add(session)
@@ -67,10 +75,7 @@ internal class LaneRuntime(val application: LaneApplication) {
         execute {
             host.cancelSession(session)
             allSessions.remove(session)
-            session.spaces.keys.forEach { space ->
-                if (allSessions.none { it.spaces.containsKey(space) }) safe { store().release(space) }
-            }
-            session.spaces.clear()
+            session.handles.releaseAll { space -> safe { store().release(space) } }
         }
     }
     fun open(session: LaneSession, request: String, callback: Callback) = operation(session, callback) {
@@ -89,9 +94,8 @@ internal class LaneRuntime(val application: LaneApplication) {
     }
     fun close(session: LaneSession, space: String, callback: Callback) = operation(session, callback) {
         host.cancelSession(session)
-        session.spaces.remove(space)
-        if (allSessions.none { it !== session && it.spaces.containsKey(space) }) store().release(space)
-        else BridgeJson.success(sequence = sequences[space] ?: "0")
+        session.handles.release(space) { store().release(it) }
+            ?: BridgeJson.success(sequence = sequences[space] ?: "0")
     }
     fun invoke(session: LaneSession, method: String, raw: String, callback: Callback) {
         if (method !in LaneMethods.allowed) {
