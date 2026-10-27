@@ -212,6 +212,7 @@ try {
     .click();
   await active.getByRole("heading", { name: longRepository }).waitFor();
   await button(`Task: ${longTask}`).waitFor();
+  await active.getByText(longLabel, { exact: true }).waitFor();
 
   for (const width of [1440, 900, 899, 390, 360]) {
     await page.setViewportSize({ width, height: 900 });
@@ -230,6 +231,20 @@ try {
     );
     assert.deepEqual(bounds.wide, [], `${width}: repository content overflow`);
   }
+  await page.locator("lynx-view").evaluate((view) => {
+    const style = document.createElement("style");
+    style.textContent =
+      ".repository-task-list x-text,.repository-task-list .button{font-size:1.5rem!important}";
+    view.shadowRoot.append(style);
+  });
+  await page.setViewportSize({ width: 360, height: 420 });
+  await page.waitForTimeout(100);
+  assert.deepEqual(
+    (await overflow()).wide,
+    [],
+    "enlarged repository text overflows",
+  );
+  await page.setViewportSize({ width: 360, height: 900 });
   await button("docs").click();
   await active.getByRole("heading", { name: "docs" }).waitFor();
   assert.equal(
