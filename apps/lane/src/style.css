@@ -1369,17 +1369,17 @@ text {
   font-weight: 650;
   color: #526079;
 }
-.repository-task-columns text:first-child,
+.repository-task-heading,
 .repository-task-cell {
   flex: 36 1 0px;
   min-width: 0;
 }
-.repository-task-columns text:nth-child(2),
+.repository-progress-heading,
 .repository-progress-cell {
   flex: 17 1 0px;
   min-width: 0;
 }
-.repository-task-columns text:nth-child(3),
+.repository-details-heading,
 .repository-details-cell {
   flex: 47 1 0px;
   min-width: 0;

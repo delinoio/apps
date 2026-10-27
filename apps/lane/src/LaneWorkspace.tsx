@@ -691,9 +691,15 @@ export function LaneWorkspace({
                               className="repository-task-columns"
                               accessibility-elements-hidden
                             >
-                              <text>Task</text>
-                              <text>Progress</text>
-                              <text>Details</text>
+                              <text className="repository-task-heading">
+                                Task
+                              </text>
+                              <text className="repository-progress-heading">
+                                Progress
+                              </text>
+                              <text className="repository-details-heading">
+                                Details
+                              </text>
                             </view>
                           )}
                           {tasks.map((r) => {
