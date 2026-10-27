@@ -23,6 +23,12 @@ const repo = {
 const capturePNG =
   "iVBORw0KGgoAAAANSUhEUgAAAeAAAADwCAIAAABXFyDtAAADxElEQVR4nO3doU0FABBEQRw9UjsajQCDAQpA/uPeJZNMAaue3af3jy8Agp7WFwDwJ4EGiBJogCiBBogSaIAogQaIEmiAKIEGiBJogCiBBogSaIAogQaIEmiAKIEGiBJogCiBBogSaIAogQaIEmiAKIEGiBJogCiBBogSaICohwX6+eUbgF8CDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINEJULNACPJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQ8L9OvbJ/DP1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiinsQBRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0Q9QMrcRxzdlKf7wAAAABJRU5ErkJggg==";
 let captureState = "available";
+const captureFixture = {
+  enabled: false,
+  replies: {},
+  requests: [],
+  held: [],
+};
 let task = {
   formatVersion: 1,
   entityId: "019a196d-0000-7000-8000-000000000003",
@@ -175,6 +181,31 @@ createServer(async (req, res) => {
     if (url.pathname === "/test/capture-state") {
       captureState = url.searchParams.get("state") || "available";
       res.end("{}");
+      return;
+    }
+    if (url.pathname === "/test/captures") {
+      const body = JSON.parse(url.searchParams.get("body") || "{}");
+      captureFixture.enabled = true;
+      if ("captures" in body) {
+        task = { ...task, task: { ...task.task, captures: body.captures } };
+        history = [task];
+      }
+      if ("replies" in body) captureFixture.replies = body.replies;
+      if (body.resetRequests) captureFixture.requests = [];
+      if ("release" in body) {
+        const held = captureFixture.held[body.release];
+        held?.settle(body.mode || "available");
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          requests: captureFixture.requests,
+          held: captureFixture.held.map(({ attachmentId, done }) => ({
+            attachmentId,
+            done,
+          })),
+        }),
+      );
       return;
     }
     if (url.pathname === "/test/empty-list") {
@@ -375,6 +406,55 @@ createServer(async (req, res) => {
       }
       switch (method) {
         case "GetAttachment":
+          if (captureFixture.enabled) {
+            const attachmentId = input.attachmentId;
+            captureFixture.requests.push({
+              taskId: input.taskId,
+              attachmentId,
+            });
+            let mode = captureFixture.replies[attachmentId] || "available";
+            if (mode === "hold") {
+              const held = { attachmentId, done: false };
+              captureFixture.held.push(held);
+              mode = await new Promise((settle) => {
+                held.settle = (answer) => {
+                  held.done = true;
+                  settle(answer);
+                };
+              });
+            }
+            if (mode === "error" || mode === "denied") {
+              res.statusCode = mode === "denied" ? 403 : 503;
+              response = {
+                code: mode === "denied" ? "permission_denied" : "unavailable",
+                message:
+                  mode === "denied" ? "Permission denied" : "Retrieval failed",
+              };
+            } else if (mode === "waiting")
+              response = { state: "ATTACHMENT_STATE_WAITING_FOR_SYNC" };
+            else if (mode === "deleted")
+              response = { state: "ATTACHMENT_STATE_DELETED" };
+            else if (mode === "unavailable")
+              response = { state: "ATTACHMENT_STATE_UNSPECIFIED" };
+            else if (mode === "empty")
+              response = { state: "ATTACHMENT_STATE_AVAILABLE" };
+            else if (mode === "unsafe")
+              response = {
+                state: "ATTACHMENT_STATE_AVAILABLE",
+                downloadUrl: "javascript:alert(1)",
+              };
+            else if (mode === "broken")
+              response = {
+                state: "ATTACHMENT_STATE_AVAILABLE",
+                downloadUrl: "https://127.0.0.1:1/missing.png",
+              };
+            else
+              response = {
+                state: "ATTACHMENT_STATE_AVAILABLE",
+                png: capturePNG,
+              };
+            break;
+          }
           if (captureState === "denied") {
             res.statusCode = 403;
             response = {

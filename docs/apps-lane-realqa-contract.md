@@ -94,6 +94,8 @@ only for the behavior specified here; Pace remains outside this scope.
 - Distinguish loading, waiting for synchronization, retrieval failure, permission denial, and deletion. Offer `Retry` for retryable retrieval failures and synchronization wait states. Permission recovery uses existing Lane authentication/authorization flows, never another account.
 - Metadata is inert text or an appropriate URL link, not executable markup. Give attachments accessible names. Keep descriptions and status readable when image bytes are unavailable.
 - Do not add image editing/deletion controls to this read-only attachment section. Preserve existing task editing, history, prompt restoration, moves, and deletion.
+- Render every saved reference in one vertical stack within the existing Prompt, history, or conflict-head scroll. Use one full-width white card per capture, a thin `#E4E8EF` border, 12-pixel corners, a 20-pixel desktop inset, and 16-pixel spacing between cards. Use a neutral stage and show the complete image with `aspectFit` at a 320-pixel desktop or 220-pixel mobile stage height. At narrow widths, use a 12-pixel card inset.
+- Show `Capture i of n` above each image or status. Place selectable URL, Page title, and CSS selector rows below it only when each value is defined, including an empty string. Keep values exact, inert, and wrapped within the card. Use compact label/value columns where space permits and stacked rows on narrow screens. A card's loading, error, permission, or deletion status and eligible Retry remain with that card; no selection, paging, or nested scrolling is added.
 
 ### Shared interaction and accessibility requirements
 

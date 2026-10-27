@@ -94,40 +94,61 @@ function Capture({
   }, [adapter, taskId, capture.attachmentId, attempt]);
   return (
     <view className="card capture-result">
-      <text className="label">{label}</text>
-      {result.source ? (
-        <image
-          className="capture-image"
-          src={result.source}
-          mode="aspectFit"
-          accessibility-label={`${label}${capture.pageTitle ? `: ${capture.pageTitle}` : ""}`}
-          binderror={() =>
-            setResult({
-              message: "Could not load this capture. Retry to renew access.",
-              retry: true,
-            })
-          }
-        />
-      ) : (
-        <Notice>{result.message}</Notice>
-      )}
+      <text className="capture-position">{label}</text>
+      <view className="capture-stage">
+        {result.source ? (
+          <image
+            className="capture-image"
+            src={result.source}
+            mode="aspectFit"
+            accessibility-label={`${label}${capture.pageTitle ? `: ${capture.pageTitle}` : ""}`}
+            binderror={() =>
+              setResult({
+                message: "Could not load this capture. Retry to renew access.",
+                retry: true,
+              })
+            }
+          />
+        ) : (
+          <Notice>{result.message}</Notice>
+        )}
+      </view>
       {result.retry && (
-        <Button onClick={() => setAttempt((value) => value + 1)}>Retry</Button>
+        <view className="capture-retry">
+          <Button onClick={() => setAttempt((value) => value + 1)}>
+            Retry
+          </Button>
+        </view>
       )}
       {capture.pageUrl !== undefined && (
-        <text className="capture-metadata" text-selection>
-          URL: {capture.pageUrl}
-        </text>
+        <view className="capture-metadata">
+          <text className="capture-metadata-label" text-selection>
+            URL:
+          </text>
+          <text className="capture-metadata-value" text-selection>
+            {capture.pageUrl}
+          </text>
+        </view>
       )}
       {capture.pageTitle !== undefined && (
-        <text className="capture-metadata" text-selection>
-          Page title: {capture.pageTitle}
-        </text>
+        <view className="capture-metadata">
+          <text className="capture-metadata-label" text-selection>
+            Page title:
+          </text>
+          <text className="capture-metadata-value" text-selection>
+            {capture.pageTitle}
+          </text>
+        </view>
       )}
       {capture.cssSelector !== undefined && (
-        <text className="capture-metadata" text-selection>
-          CSS selector: {capture.cssSelector}
-        </text>
+        <view className="capture-metadata">
+          <text className="capture-metadata-label" text-selection>
+            CSS selector:
+          </text>
+          <text className="capture-metadata-value" text-selection>
+            {capture.cssSelector}
+          </text>
+        </view>
       )}
     </view>
   );
