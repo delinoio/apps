@@ -311,6 +311,29 @@ try {
   await page.context().setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await page.unroute("**/auth/session", holdSession);
+  await page.locator("lynx-view").evaluate((view) => {
+    const root = view.shadowRoot;
+    const activePanel = root?.querySelector(
+      '.tab-panel[data-active-tab="true"]',
+    );
+    if (!root || !activePanel) throw new Error("active tab panel is missing");
+    const inactivePanel = document.createElement("view");
+    inactivePanel.className = "tab-panel";
+    inactivePanel.dataset.activeTab = "false";
+    inactivePanel.setAttribute("aria-hidden", "true");
+    inactivePanel.style.display = "none";
+    const propertiesHeading = document.createElement("x-text");
+    propertiesHeading.setAttribute("role", "heading");
+    propertiesHeading.dataset.testId = "inactive-properties-heading";
+    const innerBox =
+      propertiesHeading.shadowRoot?.querySelector("#inner-box") ||
+      document.createElement("div");
+    if (!innerBox.isConnected) propertiesHeading.shadowRoot?.append(innerBox);
+    innerBox.textContent = "Properties";
+    innerBox.tabIndex = -1;
+    inactivePanel.append(propertiesHeading);
+    activePanel.parentNode.insertBefore(inactivePanel, activePanel);
+  });
   await retryButton.click();
   await gate.waitFor({ state: "hidden" });
   assert.equal(await gate.getAttribute("aria-busy"), "false");
@@ -324,6 +347,27 @@ try {
     }),
     "inner-box",
     "fallback recovery focus uses the focusable heading target",
+  );
+  assert.equal(
+    await page.locator("lynx-view").evaluate((view) => {
+      const root = view.shadowRoot;
+      const activePanel = root?.querySelector(
+        '.tab-panel[data-active-tab="true"]',
+      );
+      return !!activePanel && activePanel.contains(root.activeElement);
+    }),
+    true,
+    "recovery focus stays inside the visible active tab panel",
+  );
+  assert.equal(
+    await page.evaluate(() => {
+      const root = document.querySelector("lynx-view")?.shadowRoot;
+      return root?.querySelector('[data-test-id="inactive-properties-heading"]')
+        ? root.activeElement?.getAttribute("data-test-id") || null
+        : "missing-inactive-heading";
+    }),
+    null,
+    "the retained inactive heading remains unfocused",
   );
   // Reconnection invalidates every retained pane. Finish those authorized reads
   // before resetting the log for the next rejected-session scenario.

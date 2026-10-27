@@ -66,6 +66,29 @@ const activeViewElement = () => {
     active = active.shadowRoot.activeElement;
   return active;
 };
+const isVisible = (node) => {
+  for (
+    let current = node;
+    current && current !== view;
+    current = current.parentElement
+  ) {
+    if (
+      current.hidden ||
+      current.getAttribute("aria-hidden") === "true" ||
+      getComputedStyle(current).display === "none" ||
+      getComputedStyle(current).visibility === "hidden"
+    )
+      return false;
+  }
+  return !!node;
+};
+const activeViewHeading = () => {
+  const panel = view.shadowRoot?.querySelector(
+    '.tab-panel[data-active-tab="true"]',
+  );
+  const heading = panel?.querySelector('[role="heading"]');
+  return isVisible(heading) ? heading : undefined;
+};
 const setGateState = (state, message, detail = "") => {
   gate.dataset.state = state;
   gate.setAttribute("aria-busy", String(state === GateState.Connecting));
@@ -119,10 +142,16 @@ const restoreViewFocus = () => {
   }
   const target =
     (lastViewFocus?.isConnected && lastViewFocus) ||
-    view.shadowRoot?.querySelector('[role="heading"]') ||
+    activeViewHeading() ||
     view;
   if (target === view) view.tabIndex = -1;
+  const normalizedTarget =
+    target?.shadowRoot?.querySelector("input,textarea,#inner-box") || target;
   focusAccessibleTarget(target);
+  if (target !== view && activeViewElement() !== normalizedTarget) {
+    view.tabIndex = -1;
+    focusAccessibleTarget(view);
+  }
   lastViewFocus = undefined;
 };
 const online = new OnlineLane({
