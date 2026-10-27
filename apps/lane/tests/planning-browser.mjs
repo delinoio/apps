@@ -42,7 +42,8 @@ const box = (name) =>
   });
 const saveButton = () => page.getByRole("button", { name: /^(Retry )?Save$/ });
 const heading = (name) => page.getByRole("heading", { name, exact: true });
-const text = (value, exact = true) => page.getByText(value, { exact });
+const text = (value, exact = true) =>
+  page.getByText(value, { exact }).filter({ visible: true });
 const requests = async () => (await fetch(`${base}/test/requests`)).json();
 const clearRequests = () => fetch(`${base}/test/reset-requests`);
 const plan = (body) =>
@@ -73,7 +74,12 @@ const overflow = () =>
   page.locator("lynx-view").evaluate((view) => {
     const width = document.documentElement.clientWidth;
     const wide = [...view.shadowRoot.querySelectorAll("*")]
-      .filter((e) => !e.closest(".app-tooltip"))
+      .filter(
+        (e) =>
+          !e.closest(
+            '.app-tooltip,.tab-tooltip,.tab-scroll,[data-active-tab="false"]',
+          ),
+      )
       .filter((e) => {
         const r = e.getBoundingClientRect();
         return r.width > 0 && r.height > 0 && r.right > width + 1;
@@ -83,6 +89,13 @@ const overflow = () =>
   });
 const openTask = async (title) => {
   await button("All tasks").click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") === "page-Tasks",
+  );
   await button(title).click();
   await heading("Properties").waitFor();
 };
@@ -120,14 +133,27 @@ try {
   assert.equal(await button("Labels: docs / Backend").count(), 1);
   // A data-space switch must not expose the previous space's planning names while the
   // new space loads or after loading fails; retry restores the options.
-  const openSpace = (spaceId) =>
-    page
+  const openSpace = async (spaceId) => {
+    const generation = await page
+      .locator("#lane-root")
+      .getAttribute("data-tab-generation");
+    await page
       .locator("lynx-view")
       .evaluate(
         (view, spaceId) =>
           view.sendGlobalEvent("lane.openRoute", [{ kind: "open", spaceId }]),
         spaceId,
       );
+    await page.waitForFunction(
+      (before) =>
+        document
+          .querySelector("lynx-view")
+          .shadowRoot.querySelector("#lane-root")
+          .getAttribute("data-tab-generation") !== before,
+      generation,
+    );
+    await button("Filters, 0 active").click();
+  };
   let releasePlanning;
   const held = new Promise((resolve) => (releasePlanning = resolve));
   const holdPlanning = async (route) => {
@@ -466,6 +492,9 @@ try {
     await route.fulfill({ response, json: body });
   };
   await page.route("**/lane.v1.LaneService/ListTasks", storedReference);
+  // Closing the clean tab explicitly starts a fresh task-options lifetime;
+  // selecting an existing tab intentionally keeps its already loaded options.
+  await button("Close Improve empty states").click();
   await openTask("Improve empty states");
   await button("Remove (unavailable task) from Related").click();
   releaseTasks();
@@ -486,16 +515,14 @@ try {
   await button("Add related task").click();
   await button("Add Write onboarding guide to Related").click();
 
-  // Removing a link and Open: unsaved changes ask before leaving.
+  // Related tasks open their own tabs without discarding the relationship draft.
   await button("Remove Plan the launch from Parent").click();
   await button("Open Write onboarding guide").first().click();
-  await text("Discard unsaved changes?").waitFor();
-  await page.keyboard.press("Escape");
-  await text("Discard unsaved changes?").waitFor({ state: "detached" });
-  assert.equal(await box("Title").inputValue(), "Improve empty states");
-  await button("Open Write onboarding guide").first().click();
-  await button("Discard changes").click();
-  await settle(500);
+  await page
+    .getByRole("tab", { name: "Write onboarding guide", exact: true })
+    .waitFor();
+  await settle();
+  assert.equal(await text("Discard unsaved changes?").count(), 0);
   assert.equal(await box("Title").inputValue(), "Write onboarding guide");
 
   // Web saves are online-only: offline fails, retains the draft and needs an explicit retry.
@@ -507,14 +534,30 @@ try {
   await button("Retry Save").waitFor();
   assert.equal(await box("Title").inputValue(), "Offline edit");
   assert.equal((await sent("SaveTask")).length, 0);
+  const reconciliation = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/auth/session") && response.status() === 200,
+  );
   await page.context().setOffline(false);
+  await reconciliation;
   await settle(500);
+  const retriedSave = page.waitForResponse((response) =>
+    response.url().endsWith("/lane.v1.LaneService/SaveTask"),
+  );
   await button("Retry Save").click();
+  await retriedSave;
   await settle();
   assert.equal((await last("SaveTask")).task.title, "Offline edit");
 
   // Title-only creation still works and leaves planning fields unassigned.
   await button("All tasks").click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") === "page-Tasks",
+  );
   await button("+ New task").click();
   await box("Title").fill("Only a title");
   await page
@@ -533,6 +576,13 @@ try {
   // Conflict comparison lists each version's relationship targets, not compact counts.
   await plan({ conflictTask: ids.taskB });
   await button("All tasks").click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("lynx-view")
+        .shadowRoot.querySelector("#lane-root")
+        .getAttribute("data-selected-tab") === "page-Tasks",
+  );
   await button("Offline edit").click();
   await button("Compare conflict").click();
   const compare = page.getByRole("dialog", {
@@ -582,6 +632,13 @@ try {
     // Unchanged heads, including a reordered identical set, permit the edited resolution.
     await plan({ conflictTask: ids.taskB, heads: [h1, h2] });
     await button("All tasks").click();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector("lynx-view")
+          .shadowRoot.querySelector("#lane-root")
+          .getAttribute("data-selected-tab") === "page-Tasks",
+    );
     await button("Offline edit").click();
     await button("Compare conflict").click();
     await resolver().waitFor();
@@ -847,11 +904,16 @@ try {
   await saveButton().click();
   await text("The end date must be on or after the start date.").waitFor();
 
-  // Unsaved planning input asks before Settings, tab changes, item selection or Back.
+  // Workspace tab switching preserves planning input; internal manager
+  // navigation still uses its existing discard confirmation.
   await button("Settings").first().click();
-  await text("Discard unsaved changes?").waitFor();
-  await page.keyboard.press("Escape");
-  await text("Discard unsaved changes?").waitFor({ state: "detached" });
+  await page.getByRole("tab", { name: "Settings", exact: true }).waitFor();
+  await settle();
+  assert.equal(await text("Discard unsaved changes?").count(), 0);
+  await page
+    .getByRole("tab", { name: /Repositories, Unsaved changes/ })
+    .click();
+  await box("Name").waitFor();
   assert.equal(await box("Name").inputValue(), "Sprint 2");
   await button("Labels tab").click();
   await text("Discard unsaved changes?").waitFor();
@@ -901,7 +963,8 @@ try {
   await button("Edit label Backend").click();
   await box("Name").fill("Backend 2");
   await button("Settings").first().click();
-  await button("Discard changes").click();
+  await settle();
+  assert.equal(await text("Discard unsaved changes?").count(), 0);
 
   // Development reset is native only.
   await button("Settings").first().click();
@@ -954,6 +1017,18 @@ try {
     await heading("Properties").scrollIntoViewIfNeeded();
     await page.screenshot({ path: join(evidence, `editor-${width}.png`) });
   }
+} catch (error) {
+  await page.screenshot({ path: join(evidence, "failure.png") });
+  console.error(
+    await page
+      .locator("lynx-view")
+      .evaluate((view) =>
+        [...view.shadowRoot.querySelectorAll(".notice")]
+          .filter((el) => el.getBoundingClientRect().width)
+          .map((el) => el.textContent),
+      ),
+  );
+  throw error;
 } finally {
   await browser.close();
   server.kill();

@@ -56,6 +56,7 @@ export function PlanningManager({
   planning,
   refresh,
   dirty,
+  busyChanged,
   back,
 }: {
   adapter: LaneAdapter;
@@ -63,6 +64,7 @@ export function PlanningManager({
   planning: PlanningState;
   refresh: () => void;
   dirty: (value: boolean) => void;
+  busyChanged?: (value: boolean) => void;
   back: () => void;
 }) {
   const repositoryId = repository.version!.entityId;
@@ -71,6 +73,9 @@ export function PlanningManager({
   const [attempted, setAttempted] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    busyChanged?.(busy);
+  }, [busy, busyChanged]);
   const [deleting, setDeleting] = useState(false);
   const [history, setHistory] = useState<EntityVersion[] | null>(null);
   const [historyCursor, setHistoryCursor] = useState("");

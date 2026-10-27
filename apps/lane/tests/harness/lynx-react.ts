@@ -2,7 +2,7 @@
 // Minimal ReactLynx stand-in for Node tests. It is bundled in place of
 // "@lynx-js/react" so the real Lane components render synchronously-inspectable
 // host trees with working state, refs and effects. It is not a general React
-// implementation: no context, memoization, keyed reordering or Suspense.
+// implementation: no context or Suspense.
 export type Element = {
   type: string | Component | typeof Fragment;
   props: Record<string, unknown>;
@@ -71,6 +71,17 @@ export function useState<T>(initial: T | (() => T)) {
 export function useRef<T>(initial: T) {
   return slot(() => ({ current: initial }));
 }
+export function useCallback<T>(callback: T, deps: unknown[]): T {
+  const cell = slot(() => ({ value: callback, deps }));
+  if (
+    deps.length !== cell.deps.length ||
+    deps.some((d, i) => !Object.is(d, cell.deps[i]))
+  ) {
+    cell.value = callback;
+    cell.deps = deps;
+  }
+  return cell.value;
+}
 export function useEffect(effect: () => void | (() => void), deps?: unknown[]) {
   const cell = slot(() => ({
     deps: undefined as unknown[] | undefined,
@@ -99,7 +110,13 @@ function expand(node: unknown, path: string, out: (HostNode | string)[]) {
     return;
   }
   if (Array.isArray(node)) {
-    node.forEach((child, i) => expand(child, `${path}[${i}]`, out));
+    node.forEach((child, i) => {
+      const key =
+        child && typeof child === "object" && "key" in child
+          ? child.key
+          : undefined;
+      expand(child, `${path}[${key ?? i}]`, out);
+    });
     return;
   }
   const element = node as Element;

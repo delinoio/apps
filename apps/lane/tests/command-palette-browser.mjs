@@ -124,23 +124,22 @@ try {
   await page.keyboard.press("Meta+k");
   await input.fill("Events");
   await page.keyboard.press("Enter");
+  await page.getByRole("tab", { name: "Events", exact: true }).waitFor();
+  assert.equal(
+    await page
+      .getByRole("dialog", { name: "Discard unsaved changes?" })
+      .count(),
+    0,
+  );
   await page
-    .getByRole("dialog", { name: "Discard unsaved changes?" })
-    .waitFor();
-  await page.keyboard.press("Meta+k");
-  assert.equal(await menu.count(), 0);
-  await button("Keep editing").click();
-  await page
-    .getByRole("dialog", { name: "Discard unsaved changes?" })
-    .waitFor({ state: "detached" });
+    .getByRole("tab", {
+      name: "Unsaved command menu draft, Unsaved changes",
+      exact: true,
+    })
+    .click();
+  await title.waitFor();
   assert.equal(await title.inputValue(), "Unsaved command menu draft");
-  await page.keyboard.press("Meta+k");
-  await input.fill("Events");
-  await page.keyboard.press("Enter");
-  await button("Discard changes").click();
-  await page
-    .getByRole("dialog", { name: "Discard unsaved changes?" })
-    .waitFor({ state: "detached" });
+  await page.getByRole("tab", { name: "Events", exact: true }).click();
   await page
     .locator(".workspace")
     .getByText("Events and webhook receivers", { exact: true })
@@ -222,7 +221,7 @@ try {
       result: "passed",
       evidence,
       checks:
-        "Meta/Ctrl+K, focus restore/trap, filtering/empty state, wrapping, app/page/repository navigation, dirty cancel/discard, responsive widths",
+        "Meta/Ctrl+K, focus restore/trap, filtering/empty state, wrapping, app/page/repository navigation, tab draft preservation, responsive widths",
     }),
   );
 } finally {

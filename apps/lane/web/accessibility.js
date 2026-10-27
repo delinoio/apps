@@ -4,11 +4,13 @@
 export function installAccessibility(view) {
   let previousDialog;
   let previousApp;
+  let previousTab;
   let restoreFocus;
   // Dialog fields can take focus before the mutation observer runs, so remember
   // the last control outside any dialog as the focus-return target.
   let lastOutside;
   let previousSettingsTarget;
+  let revealedSettingsTarget;
   let previousCommand;
   const pendingAnnouncements = new WeakSet();
   const wired = new WeakSet();
@@ -31,6 +33,11 @@ export function installAccessibility(view) {
   const update = () => {
     const root = view.shadowRoot;
     if (!root) return;
+    for (const panel of root.querySelectorAll(".tab-panel")) {
+      const hidden = panel.getAttribute("data-active-tab") !== "true";
+      panel.inert = hidden;
+      panel.setAttribute("aria-hidden", String(hidden));
+    }
     for (const icon of root.querySelectorAll(
       '[accessibility-elements-hidden="true"]',
     )) {
@@ -75,7 +82,24 @@ export function installAccessibility(view) {
         const state = button.getAttribute(source);
         if (state !== null) button.setAttribute(aria, state);
       }
-      button.tabIndex = disabled ? -1 : 0;
+      const tab = button.hasAttribute("data-workspace-tab");
+      const hidden = !!button.closest('[data-active-tab="false"]');
+      button.tabIndex =
+        disabled ||
+        hidden ||
+        (tab && button.getAttribute("data-tab-selected") !== "true")
+          ? -1
+          : 0;
+      if (tab) {
+        const selected = button.getAttribute("data-tab-selected") === "true";
+        button.setAttribute("role", "tab");
+        button.setAttribute("aria-selected", String(selected));
+        button.setAttribute(
+          "aria-controls",
+          `panel-${button.getAttribute("data-workspace-tab")}`,
+        );
+        button.title = button.getAttribute("accessibility-label") || "";
+      }
       if (!wired.has(button)) {
         wired.add(button);
         button.addEventListener("keydown", (e) => {
@@ -89,6 +113,46 @@ export function installAccessibility(view) {
           }
         });
       }
+    }
+    const tabList = root.querySelector(".tab-scroll");
+    tabList?.setAttribute("role", "tablist");
+    if (tabList && !wired.has(tabList)) {
+      wired.add(tabList);
+      // The pinned web runtime resets the horizontal offset on resize instead
+      // of reapplying native scroll-to-index. Keep the selected tab visible
+      // until web-core implements that native behavior on viewport changes.
+      new ResizeObserver(() =>
+        requestAnimationFrame(() => {
+          root
+            .querySelector('[data-tab-selected="true"]')
+            ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        }),
+      ).observe(tabList);
+    }
+    for (const panel of root.querySelectorAll(".tab-panel")) {
+      const id = panel
+        .querySelector("[data-tab-id]")
+        ?.getAttribute("data-tab-id");
+      if (id) {
+        panel.id = `panel-${id}`;
+        panel.setAttribute("role", "tabpanel");
+        panel.setAttribute("aria-labelledby", `tab-${id}`);
+      }
+    }
+    const selectedTab = `${root.querySelector("#lane-root")?.getAttribute("data-selected-tab")}:${root.querySelector("#lane-root")?.getAttribute("data-tab-generation")}`;
+    if (selectedTab !== previousTab) {
+      if (previousTab)
+        requestAnimationFrame(() => {
+          const selected = root.querySelector('[data-tab-selected="true"]');
+          selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
+          if (
+            !previousDialog &&
+            root.querySelector("#lane-root")?.getAttribute("data-app") ===
+              "Lane"
+          )
+            focus(selected);
+        });
+      previousTab = selectedTab;
     }
     for (const field of root.querySelectorAll("x-input,x-textarea")) {
       const target = field.shadowRoot?.querySelector("input,textarea");
@@ -131,7 +195,9 @@ export function installAccessibility(view) {
       notice.setAttribute("role", "status");
       notice.setAttribute("aria-live", "polite");
     }
-    const dialogs = root.querySelectorAll(".dialog");
+    const dialogs = [...root.querySelectorAll(".dialog")].filter(
+      (dialog) => !dialog.closest('[data-active-tab="false"]'),
+    );
     const dialog = dialogs[dialogs.length - 1];
     if (dialog !== previousDialog) {
       if (dialog) {
@@ -141,7 +207,12 @@ export function installAccessibility(view) {
             : root.activeElement;
         dialog.setAttribute("role", "dialog");
         dialog.setAttribute("aria-modal", "true");
-        queueMicrotask(() => focus(focusables(dialog)[0]));
+        queueMicrotask(() =>
+          focus(
+            dialog.querySelector('[data-dialog-default="true"]') ||
+              focusables(dialog)[0],
+          ),
+        );
       } else if (previousDialog) {
         if (restoreFocus?.isConnected) focus(restoreFocus);
         else focus(root.querySelector("#lane-workspace"));
@@ -198,7 +269,7 @@ export function installAccessibility(view) {
             return;
           const heading =
             root.querySelector(
-              ".workspace .coming-soon-title, .workspace .heading",
+              '[data-active-tab="true"] .workspace .heading, .coming-soon-title',
             ) || root.querySelector("#lane-workspace");
           if (heading) {
             heading.setAttribute("tabindex", "-1");
@@ -209,11 +280,12 @@ export function installAccessibility(view) {
       previousApp = app;
     }
     const settingsTarget = root
-      .querySelector("[data-settings-target]")
+      .querySelector('[data-active-tab="true"] [data-settings-target]')
       ?.getAttribute("data-settings-target");
     if (settingsTarget !== previousSettingsTarget) {
       previousSettingsTarget = settingsTarget;
-      if (settingsTarget)
+      if (settingsTarget && settingsTarget !== revealedSettingsTarget) {
+        revealedSettingsTarget = settingsTarget;
         requestAnimationFrame(() => {
           if (previousDialog || settingsTarget !== previousSettingsTarget)
             return;
@@ -226,6 +298,7 @@ export function installAccessibility(view) {
             focus(heading);
           }
         });
+      }
     }
   };
   const attach = () => {
@@ -247,6 +320,10 @@ export function installAccessibility(view) {
         "accessibility-label",
         "accessibility-value",
         "data-app",
+        "data-active-tab",
+        "data-selected-tab",
+        "data-tab-generation",
+        "data-tab-selected",
         "data-settings-target",
         "data-pressed",
         "data-expanded",
@@ -317,6 +394,31 @@ export function installAccessibility(view) {
       true,
     );
     root.addEventListener("keydown", (event) => {
+      const tab = event
+        .composedPath()
+        .find(
+          (node) =>
+            node instanceof Element && node.hasAttribute("data-workspace-tab"),
+        );
+      if (
+        tab &&
+        ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+      ) {
+        const tabs = [...root.querySelectorAll("[data-workspace-tab]")];
+        const index = tabs.indexOf(tab);
+        const next =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? tabs.length - 1
+              : (index + (event.key === "ArrowLeft" ? -1 : 1) + tabs.length) %
+                tabs.length;
+        event.preventDefault();
+        event.stopPropagation();
+        focus(tabs[next]);
+        tabs[next]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        return;
+      }
       if (!previousDialog) return;
       if (event.key === "Escape") {
         const close = [...previousDialog.querySelectorAll(".button")].find(

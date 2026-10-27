@@ -8,6 +8,13 @@ const api =
 let previousAccount;
 let currentAccount;
 let approvalPopup;
+let workspaceDirty = false;
+window.addEventListener("beforeunload", (event) => {
+  if (workspaceDirty) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
 const deliverRoute = createRouteDelivery();
 const returnTo = new URL("/", location.href).href;
 const callbackChallenge = new URL(location.href).searchParams.get(
@@ -45,6 +52,7 @@ const online = new OnlineLane({
     gate.hidden = !!session;
     view.hidden = !session;
     if (!session) {
+      workspaceDirty = false;
       view.sendGlobalEvent("lane.sessionEnded", [{}]);
       status.textContent = "Sign in to use Lane on the web.";
     }
@@ -70,6 +78,11 @@ view.onNativeModulesCall = async (name, data, moduleName) => {
           JSON.parse(data.request),
         ),
       };
+    if (moduleName === "LaneHost" && name === "workspace") {
+      const value = JSON.parse(data.value);
+      workspaceDirty = value.dirty === true || value.busy === true;
+      return { ok: true };
+    }
     if (moduleName === "LaneHost" && name === "copyText") {
       await navigator.clipboard.writeText(data.text);
       return { ok: true };

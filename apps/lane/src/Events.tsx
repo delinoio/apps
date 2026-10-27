@@ -24,6 +24,7 @@ export function Events({
   repositories,
   revision,
   openTask,
+  stateChanged,
 }: {
   adapter: LaneAdapter;
   repositories: EntityResult[];
@@ -31,6 +32,7 @@ export function Events({
   // first page of the active query; Events keeps its identity and local state.
   revision: number;
   openTask: (id: string) => void;
+  stateChanged?: (dirty: boolean, busy: boolean) => void;
 }) {
   const [view, setView] = useState<EventsView>(emptyEventsView);
   const { receivers, events, cursor, cursorKey } = view;
@@ -60,6 +62,9 @@ export function Events({
   // A pending current inspection also blocks mutations, as before; obsolete
   // inspections never reach this state.
   const busy = mutating || detail.loading;
+  useEffect(() => {
+    stateChanged?.(!!editing, mutating || savingReceiver);
+  }, [editing, mutating, savingReceiver]);
   const run = async (fn: () => Promise<void>) => {
     setMutating(true);
     setError("");

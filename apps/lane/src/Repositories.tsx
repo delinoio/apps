@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { UI } from "./serializable";
-import { useState } from "@lynx-js/react";
+import { useEffect, useState } from "@lynx-js/react";
 import {
   LaneService,
   type EntityResult as ProtoEntityResult,
@@ -24,6 +24,7 @@ export function Repositories({
   refresh,
   select,
   dirty,
+  busyChanged,
 }: {
   adapter: LaneAdapter;
   items: EntityResult[];
@@ -31,6 +32,7 @@ export function Repositories({
   refresh: () => void;
   select: (id: string) => void;
   dirty: (value: boolean) => void;
+  busyChanged?: (value: boolean) => void;
 }) {
   const [detail, setDetail] = useState("");
   // The editor owns the draft, its lifetime and its retry identity; re-render on change.
@@ -41,6 +43,23 @@ export function Repositories({
   const editing = editor.draft;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [planningDirty, setPlanningDirty] = useState(false);
+  const [planningBusy, setPlanningBusy] = useState(false);
+  const stored = editing?.base
+    ? items.find((item) => item.version?.entityId === editing.id)?.version
+    : undefined;
+  const original = stored ? repositoryDraft(stored) : undefined;
+  const editorDirty =
+    !!editing &&
+    (original
+      ? editing.url !== original.url || editing.name !== original.name
+      : !!editing.url || !!editing.name);
+  useEffect(() => {
+    dirty(editorDirty || planningDirty);
+  }, [editorDirty, planningDirty, dirty]);
+  useEffect(() => {
+    busyChanged?.(busy || planningBusy);
+  }, [busy, planningBusy, busyChanged]);
   const [deleting, setDeleting] = useState<EntityVersion>();
   const [conflict, setConflict] = useState<EntityResult>();
   const errorMessage = (e: unknown) =>
@@ -86,7 +105,8 @@ export function Repositories({
         repository={detailRepository}
         planning={planning}
         refresh={refresh}
-        dirty={dirty}
+        dirty={setPlanningDirty}
+        busyChanged={setPlanningBusy}
         back={() => setDetail("")}
       />
     );

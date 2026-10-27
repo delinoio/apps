@@ -57,6 +57,7 @@ export function TaskEditor({
   openTask,
   beginCompletion,
   onClose,
+  busyChanged,
 }: {
   adapter: LaneAdapter;
   draft: Draft;
@@ -72,10 +73,14 @@ export function TaskEditor({
   // cannot replace, clean, reopen or close another editor.
   beginCompletion: () => EditorCompletion<EntityResult>;
   onClose: () => void;
+  busyChanged?: (busy: boolean) => void;
 }) {
   const [tab, setTab] = useState("Description");
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    busyChanged?.(busy);
+  }, [busy, busyChanged]);
   const [error, setError] = useState("");
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [history, setHistory] = useState<EntityVersion[] | null>(null);
