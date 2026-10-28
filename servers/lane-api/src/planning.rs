@@ -1377,54 +1377,108 @@ fn entry_from_version(
     progress: &str,
     entity_id: &str,
     versions: &HashMap<String, VersionNode>,
-    visiting: &mut HashSet<String>,
     memo: &mut HashMap<String, TerminalEntry>,
 ) -> TerminalEntry {
-    if let Some(entry) = memo.get(version_id) {
-        return entry.clone();
+    enum Work {
+        Enter(String),
+        Resolve {
+            version_id: String,
+            parent_count: usize,
+        },
     }
-    let Some(node) = versions
-        .get(version_id)
-        .filter(|n| n.entity_id == entity_id && n.progress == progress)
-    else {
-        return TerminalEntry::Unknown;
-    };
-    if !visiting.insert(version_id.to_owned()) {
-        return TerminalEntry::Unknown;
-    }
-    let entry = if node.parents.is_empty() {
-        TerminalEntry::Known {
-            version_id: version_id.to_owned(),
-            entered_at: node.created_at,
-        }
-    } else {
-        let mut candidates = Vec::new();
-        for parent_id in &node.parents {
-            let Some(parent) = versions.get(parent_id).filter(|p| p.entity_id == entity_id) else {
-                visiting.remove(version_id);
-                return TerminalEntry::Unknown;
-            };
-            candidates.push(if parent.progress == progress {
-                entry_from_version(parent_id, progress, entity_id, versions, visiting, memo)
-            } else {
-                TerminalEntry::Known {
-                    version_id: version_id.to_owned(),
-                    entered_at: node.created_at,
+
+    // Keep traversal state on the heap. History depth is user-controlled, so recursive ancestry
+    // evaluation could exhaust a Tokio worker stack before the request returns UNKNOWN or a
+    // valid terminal entry. `visiting` remains an active-path set: a cycle edge contributes
+    // UNKNOWN, while each completed node is memoized for later paths and unresolved heads.
+    let mut work = vec![Work::Enter(version_id.to_owned())];
+    let mut results = Vec::new();
+    let mut visiting = HashSet::new();
+
+    while let Some(item) = work.pop() {
+        match item {
+            Work::Enter(current_id) => {
+                if let Some(entry) = memo.get(&current_id) {
+                    results.push(entry.clone());
+                    continue;
                 }
-            });
+                let Some(node) = versions
+                    .get(&current_id)
+                    .filter(|n| n.entity_id == entity_id && n.progress == progress)
+                else {
+                    results.push(TerminalEntry::Unknown);
+                    continue;
+                };
+                if !visiting.insert(current_id.clone()) {
+                    results.push(TerminalEntry::Unknown);
+                    continue;
+                }
+                if node.parents.is_empty() {
+                    let entry = TerminalEntry::Known {
+                        version_id: current_id.clone(),
+                        entered_at: node.created_at,
+                    };
+                    visiting.remove(&current_id);
+                    memo.insert(current_id, entry.clone());
+                    results.push(entry);
+                    continue;
+                }
+
+                // Validate every parent before scheduling same-state ancestry. A missing parent
+                // is not a root and must make this entire candidate UNKNOWN.
+                if node.parents.iter().any(|parent_id| {
+                    versions
+                        .get(parent_id)
+                        .is_none_or(|p| p.entity_id != entity_id)
+                }) {
+                    visiting.remove(&current_id);
+                    let entry = TerminalEntry::Unknown;
+                    memo.insert(current_id, entry.clone());
+                    results.push(entry);
+                    continue;
+                }
+
+                let parent_count = node.parents.len();
+                work.push(Work::Resolve {
+                    version_id: current_id.clone(),
+                    parent_count,
+                });
+                for parent_id in node.parents.iter().rev() {
+                    if versions[parent_id].progress == progress {
+                        work.push(Work::Enter(parent_id.clone()));
+                    } else {
+                        // A state-changing parent establishes this version as the transition;
+                        // no ancestry below that parent can alter the identity.
+                        results.push(TerminalEntry::Known {
+                            version_id: current_id.clone(),
+                            entered_at: node.created_at,
+                        });
+                    }
+                }
+            }
+            Work::Resolve {
+                version_id: current_id,
+                parent_count,
+            } => {
+                let first = results.len() - parent_count;
+                let candidates = &results[first..];
+                let entry = if candidates
+                    .first()
+                    .is_some_and(|candidate| candidates.iter().all(|item| item == candidate))
+                {
+                    candidates[0].clone()
+                } else {
+                    TerminalEntry::Unknown
+                };
+                results.truncate(first);
+                visiting.remove(&current_id);
+                memo.insert(current_id, entry.clone());
+                results.push(entry);
+            }
         }
-        if candidates
-            .iter()
-            .all(|candidate| candidate == &candidates[0])
-        {
-            candidates.remove(0)
-        } else {
-            TerminalEntry::Unknown
-        }
-    };
-    visiting.remove(version_id);
-    memo.insert(version_id.to_owned(), entry.clone());
-    entry
+    }
+
+    results.pop().unwrap_or(TerminalEntry::Unknown)
 }
 
 fn terminal_entry(
@@ -1444,18 +1498,10 @@ fn terminal_entry(
         &node.progress,
         &node.entity_id,
         versions,
-        &mut HashSet::new(),
         &mut memo,
     );
     if heads.iter().all(|head| {
-        entry_from_version(
-            head,
-            &node.progress,
-            &node.entity_id,
-            versions,
-            &mut HashSet::new(),
-            &mut memo,
-        ) == candidate
+        entry_from_version(head, &node.progress, &node.entity_id, versions, &mut memo) == candidate
     }) {
         candidate
     } else {
@@ -2219,6 +2265,36 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn completed_list_conformance_handles_deep_linear_history() {
+        const DEPTH: usize = 20_000;
+        let root_time = timestamp(&json!("2026-10-28T12:00:00.000000Z")).unwrap();
+        let mut versions = HashMap::with_capacity(DEPTH);
+        for index in 0..DEPTH {
+            let version_id = format!("v{index:05}");
+            let parents = (index > 0).then(|| format!("v{:05}", index - 1));
+            versions.insert(
+                version_id,
+                VersionNode {
+                    entity_id: "task".to_owned(),
+                    progress: "PROGRESS_DONE".to_owned(),
+                    parents: parents.into_iter().collect(),
+                    created_at: root_time,
+                },
+            );
+        }
+
+        let selected = format!("v{:05}", DEPTH - 1);
+        assert_eq!(
+            terminal_entry(&selected, std::slice::from_ref(&selected), &versions),
+            TerminalEntry::Known {
+                version_id: "v00000".to_owned(),
+                entered_at: root_time,
+            }
+        );
+    }
+
     fn kind_of(name: &str) -> i16 {
         match name {
             "ENTITY_KIND_REPOSITORY" => e::REPOSITORY,
