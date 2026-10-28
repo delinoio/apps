@@ -488,7 +488,15 @@ export function installAccessibility(view) {
           (node) =>
             node instanceof Element && node.hasAttribute("data-workspace-tab"),
         );
-      if (tab && ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+      if (
+        tab &&
+        !event.repeat &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)
+      ) {
         const tabs = [...root.querySelectorAll("[data-workspace-tab]")];
         const index = tabs.indexOf(tab);
         const next =
