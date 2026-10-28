@@ -40,6 +40,11 @@ try {
   await button("Layout: Board").click();
   for (const width of [900, 899, 360]) {
     await page.setViewportSize({ width, height: 800 });
+    await surface
+      .locator(
+        width >= 900 ? ".task-board:not(.stacked)" : ".task-board.stacked",
+      )
+      .waitFor();
     await surface.locator(".task-board-column").first().waitFor();
     const first = await bounds(".task-board-column:nth-child(1)");
     const second = await bounds(".task-board-column:nth-child(2)");
