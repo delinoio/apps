@@ -522,6 +522,63 @@ test("compact relationship chips keep linked actions and draft-only edits", asyn
   view.unmount();
 });
 
+test("retained task editors restore relationship focus to their own chip", async () => {
+  const props = {
+    compact: true,
+    initial: {
+      id: "task-self",
+      dirty: false,
+      task: {
+        repositoryId: "repo-a",
+        parentTaskId: "task-parent",
+        dependsOnTaskIds: [],
+        relatedTaskIds: [],
+      },
+      relations: { subtasks: [], blocks: [] },
+    },
+    disabled: false,
+    ownId: "task-self",
+    moved: false,
+    options: {
+      tasks: [{ id: "task-parent", title: "Parent task" }],
+      status: "ready",
+      error: "",
+      retry: () => {},
+    },
+    openTask: () => {},
+  };
+  // Both instances remain mounted, as when task tabs retain their editors.
+  const { jsx } = bundle.runtime;
+  const view = bundle.runtime.mount(
+    () =>
+      jsx("view", {
+        children: [
+          jsx("view", {
+            hidden: true,
+            children: jsx(bundle.RelationshipsHost, props),
+          }),
+          jsx("view", { children: jsx(bundle.RelationshipsHost, props) }),
+        ],
+      }),
+    {},
+  );
+  const panels = () => view.tree()[0].children as HostNode[];
+  const label = "Parent: Parent task; open relationship actions";
+  const retainedId = button([panels()[0]], label).props.id;
+  const activeId = button([panels()[1]], label).props.id;
+  assert.notEqual(activeId, retainedId);
+  button([panels()[1]], label).props.bindtap();
+  await view.settle();
+  button([panels()[1]], "Open").props.bindkeydown({ key: "Escape" });
+  await view.settle();
+  assert.deepEqual(bundle.focusCalls.at(-1), {
+    selector: `#${activeId}`,
+    method: "setFocus",
+  });
+  assert.equal(button([panels()[1]], label).props.id, activeId);
+  view.unmount();
+});
+
 test("task editor selectors change the draft before explicit Save", async () => {
   const initial = draftFor(
     create(EntityResultSchema, {

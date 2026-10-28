@@ -256,7 +256,7 @@ export function TaskRelationships({
   };
   const closeLinkActions = () => {
     if (!activeLink) return;
-    const id = `relationship-chip-${activeLink.kind}-${activeLink.id}`;
+    const id = `${triggerId}-chip-${activeLink.kind}-${activeLink.id}`;
     setActiveLink(undefined);
     focus(id);
   };
@@ -350,7 +350,7 @@ export function TaskRelationships({
                 get(kind).map((id) => (
                   <Button
                     key={`${kind}-${id}`}
-                    elementId={`relationship-chip-${kind}-${id}`}
+                    elementId={`${triggerId}-chip-${kind}-${id}`}
                     label={`${title}: ${titleOf(id)}; open relationship actions`}
                     expanded={activeLink?.kind === kind && activeLink.id === id}
                     onKeyDown={(key) => {
