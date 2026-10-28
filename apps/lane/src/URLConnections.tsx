@@ -23,7 +23,10 @@ export function URLConnections({
   dirty: (value: boolean) => void;
 }) {
   const [items, setItems] = useState<UI<EntityResult>[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<LocalStatus>();
+  const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
@@ -56,6 +59,9 @@ export function URLConnections({
   );
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setStatus(undefined);
+    setLoadError("");
     void (async () => {
       const all: UI<EntityResult>[] = [];
       let cursor = "";
@@ -67,15 +73,22 @@ export function URLConnections({
         all.push(...result.items);
         cursor = result.nextCursor;
       } while (cursor);
-      const local = await adapter.local("GetLocalStatus", {});
       if (active) {
         setItems(all);
-        setStatus(local);
-        setError("");
+        setLoaded(true);
       }
-    })().catch((e) => {
-      if (active) setError(e.message);
-    });
+      const local = await adapter.local("GetLocalStatus", {});
+      if (active) {
+        setStatus(local);
+        setLoadError("");
+      }
+    })()
+      .catch((e) => {
+        if (active) setLoadError(e.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
@@ -102,8 +115,20 @@ export function URLConnections({
   const options = repositories
     .filter((r) => r.version && !r.version.deleted && !conflicted(r))
     .map((r) => [r.version!.entityId, repositoryName(r.version)] as const);
+  const displayRepository = (id?: string) => {
+    const repository = repositories.find(
+      (item) => item.version?.entityId === id,
+    );
+    return repository?.version &&
+      !repository.version.deleted &&
+      !conflicted(repository)
+      ? repositoryName(repository.version)
+      : "Repository unavailable";
+  };
   const syncLabel = !status
-    ? "Checking synchronization…"
+    ? loading || !loadError
+      ? "Checking synchronization…"
+      : "Synchronization status unavailable"
     : !status.syncEnabled
       ? "Local only"
       : status.syncErrorReason || status.itemErrors?.length
@@ -112,86 +137,103 @@ export function URLConnections({
           ? "Synchronization pending"
           : "Synchronized";
   return (
-    <view className="section">
-      <text className="heading" accessibility-heading>
-        URL connections
-      </text>
-      <text className="muted">{syncLabel}</text>
+    <view className="realqa-section realqa-url-section">
+      <view className="realqa-section-header">
+        <view className="realqa-section-copy">
+          <text className="heading" accessibility-heading>
+            URL connections
+          </text>
+          <text className="muted">{syncLabel}</text>
+        </view>
+        <Button
+          disabled={busy}
+          onClick={() =>
+            setEditing({
+              sessionId: newId(),
+              id: newId(),
+              prefix: "",
+              repositoryId: "",
+              requestId: newId(),
+            })
+          }
+        >
+          Add connection
+        </Button>
+      </view>
       <text>
         Use the longest matching URL prefix to select a repository for the first
         capture. Conflicting rules are excluded.
       </text>
-      <Button
-        disabled={busy}
-        onClick={() =>
-          setEditing({
-            sessionId: newId(),
-            id: newId(),
-            prefix: "",
-            repositoryId: "",
-            requestId: newId(),
-          })
-        }
-      >
-        Add connection
-      </Button>
-      {!items.length && <text>No URL connections</text>}
-      {items.map((item) => (
-        <view className="card" key={item.version?.entityId}>
-          <text text-selection>{connectionOf(item.version)?.prefix}</text>
-          <text>
-            {repositoryName(
-              repositories.find(
-                (r) =>
-                  r.version?.entityId ===
-                  connectionOf(item.version)?.repositoryId,
-              )?.version,
-            )}
-          </text>
-          <view className="row wrap">
-            <Button
-              disabled={busy || conflicted(item)}
-              onClick={() =>
-                setEditing({
-                  sessionId: newId(),
-                  id: item.version!.entityId,
-                  base: item.version!.versionId,
-                  prefix: connectionOf(item.version)!.prefix,
-                  repositoryId: connectionOf(item.version)!.repositoryId,
-                  requestId: newId(),
-                })
-              }
-            >
-              Edit
-            </Button>
-            <Button
-              disabled={busy}
-              onClick={() => setDeleting(item.version!.entityId)}
-            >
-              Delete
-            </Button>
-            {conflicted(item) && (
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  setResolution({
-                    conflict: item,
-                    requestId: newId(),
-                  });
-                }}
-              >
-                Resolve conflict
-              </Button>
-            )}
-          </view>
-        </view>
-      ))}
       {error && <Notice>{error}</Notice>}
-      {error && !editing && (
+      {loading && !loaded && <text>Loading URL connections…</text>}
+      {!loading && !loaded && loadError && (
+        <text>Could not load URL connections.</text>
+      )}
+      {loaded && !items.length && <text>No URL connections</text>}
+      {items.length > 0 && (
+        <view className="realqa-group">
+          {items.map((item) => (
+            <view className="realqa-setting-row" key={item.version?.entityId}>
+              <view className="realqa-row-value">
+                {heads(item).map((version) => (
+                  <view key={version.versionId} className="realqa-rule-version">
+                    <text className="realqa-long-value" text-selection>
+                      {connectionOf(version)?.prefix}
+                    </text>
+                    <text className="muted realqa-long-value">
+                      {displayRepository(connectionOf(version)?.repositoryId)}
+                    </text>
+                  </view>
+                ))}
+                {conflicted(item) && <text>Conflicting alternatives</text>}
+              </view>
+              <view className="realqa-row-actions">
+                <Button
+                  disabled={busy || conflicted(item)}
+                  onClick={() =>
+                    setEditing({
+                      sessionId: newId(),
+                      id: item.version!.entityId,
+                      base: item.version!.versionId,
+                      prefix: connectionOf(item.version)!.prefix,
+                      repositoryId: connectionOf(item.version)!.repositoryId,
+                      requestId: newId(),
+                    })
+                  }
+                >
+                  Edit
+                </Button>
+                <Button
+                  disabled={busy}
+                  onClick={() => setDeleting(item.version!.entityId)}
+                >
+                  Delete
+                </Button>
+                {conflicted(item) && (
+                  <Button
+                    disabled={busy}
+                    onClick={() => {
+                      setResolution({
+                        conflict: item,
+                        requestId: newId(),
+                      });
+                    }}
+                  >
+                    Resolve conflict
+                  </Button>
+                )}
+              </view>
+            </view>
+          ))}
+        </view>
+      )}
+      {loadError && <Notice>{loadError}</Notice>}
+      {loadError && (
         <Button onClick={() => setRevision((v) => v + 1)}>Retry</Button>
       )}
       {editing && (
         <Dialog
+          className="realqa-dialog"
           title={editing.base ? "Edit URL connection" : "Add URL connection"}
           onClose={() => setDiscard(true)}
         >
@@ -200,6 +242,13 @@ export function URLConnections({
             value={editing.prefix}
             focus
             disabled={busy}
+            error={
+              !editing.prefix.trim()
+                ? "Enter an HTTP or HTTPS URL prefix."
+                : /url|prefix|duplicate|http/i.test(error)
+                  ? error
+                  : undefined
+            }
             onChange={(prefix) => {
               if (lock.current) return;
               setEditing((current) =>
@@ -210,9 +259,6 @@ export function URLConnections({
               );
             }}
           />
-          {!editing.prefix.trim() && (
-            <text>Enter an HTTP or HTTPS URL prefix.</text>
-          )}
           <Choices
             label="Repository"
             value={editing.repositoryId}
@@ -229,9 +275,14 @@ export function URLConnections({
             }}
           />
           {!options.some(([id]) => id === editing.repositoryId) && (
-            <Notice>Select an available repository.</Notice>
+            <text className="validation">Select an available repository.</text>
           )}
           {error && <Notice>{error}</Notice>}
+          {loadError && (
+            <Button onClick={() => setRevision((v) => v + 1)}>
+              Retry loading
+            </Button>
+          )}
           <Button
             disabled={busy}
             primary
@@ -292,10 +343,13 @@ export function URLConnections({
       )}
       {discard && (
         <Dialog
+          className="realqa-dialog"
           title="Discard URL connection changes?"
           onClose={() => setDiscard(false)}
         >
-          <Button onClick={() => setDiscard(false)}>Keep editing</Button>
+          <Button focusOnShow onClick={() => setDiscard(false)}>
+            Keep editing
+          </Button>
           <Button
             onClick={() => {
               setEditing(undefined);
@@ -308,10 +362,11 @@ export function URLConnections({
       )}
       {discardConflict && (
         <Dialog
+          className="realqa-dialog"
           title="Discard conflict resolution?"
           onClose={() => setDiscardConflict(false)}
         >
-          <Button primary onClick={() => setDiscardConflict(false)}>
+          <Button primary focusOnShow onClick={() => setDiscardConflict(false)}>
             Keep editing
           </Button>
           <Button
@@ -326,10 +381,14 @@ export function URLConnections({
       )}
       {deleting && (
         <Dialog
+          className="realqa-dialog"
           title="Delete URL connection?"
           onClose={() => setDeleting(undefined)}
         >
           <text>This removes the matching rule. Saved tasks are retained.</text>
+          <Button focusOnShow onClick={() => setDeleting(undefined)}>
+            Cancel
+          </Button>
           <Button
             disabled={busy}
             onClick={() =>
@@ -345,10 +404,16 @@ export function URLConnections({
             Delete connection
           </Button>
           {error && <Notice>{error}</Notice>}
+          {loadError && (
+            <Button onClick={() => setRevision((v) => v + 1)}>
+              Retry loading
+            </Button>
+          )}
         </Dialog>
       )}
       {resolution && (
         <Dialog
+          className="realqa-dialog"
           title="Resolve URL connection conflict"
           onClose={() => {
             if (resolution.chosen) setDiscardConflict(true);
@@ -360,16 +425,12 @@ export function URLConnections({
             explicitly save the resolution.
           </Notice>
           {heads(resolution.conflict).map((version) => (
-            <view className="card" key={version.versionId}>
-              <text text-selection>{connectionOf(version)?.prefix}</text>
-              <text>
-                {repositoryName(
-                  repositories.find(
-                    (r) =>
-                      r.version?.entityId ===
-                      connectionOf(version)?.repositoryId,
-                  )?.version,
-                )}
+            <view className="realqa-conflict-choice" key={version.versionId}>
+              <text className="realqa-long-value" text-selection>
+                {connectionOf(version)?.prefix}
+              </text>
+              <text className="realqa-long-value">
+                {displayRepository(connectionOf(version)?.repositoryId)}
               </text>
               <Button
                 primary={resolution.chosen?.versionId === version.versionId}
@@ -419,7 +480,20 @@ export function URLConnections({
               }}
             />
           )}
+          {resolution.chosen &&
+            !options.some(
+              ([id]) => id === connectionOf(resolution.chosen)?.repositoryId,
+            ) && (
+              <text className="validation">
+                Select an available repository.
+              </text>
+            )}
           {error && <Notice>{error}</Notice>}
+          {loadError && (
+            <Button onClick={() => setRevision((v) => v + 1)}>
+              Retry loading
+            </Button>
+          )}
           <Button
             primary
             disabled={busy || !resolution.chosen}
