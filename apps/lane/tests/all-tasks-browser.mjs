@@ -32,7 +32,13 @@ const bounds = (selector) =>
     .first()
     .evaluate((element) => {
       const rect = element.getBoundingClientRect();
-      return { x: rect.x, y: rect.y, right: rect.right, width: rect.width };
+      return {
+        x: rect.x,
+        y: rect.y,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+      };
     });
 const assertWithin = (inner, outer, label) => {
   assert.ok(inner.x >= outer.x - 1, `${label} starts outside its pane`);
@@ -48,7 +54,9 @@ try {
   const heading = await bounds(".task-list-content .heading");
   const headerActions = await bounds(".all-task-header-actions");
   assert.ok(
-    Math.abs(heading.y - headerActions.y) < 4,
+    headerActions.x >= heading.right - 1 &&
+      headerActions.y < heading.bottom &&
+      heading.y < headerActions.bottom,
     `Header actions should stay unwrapped at the wide viewport: ${JSON.stringify({ heading, headerActions })}`,
   );
   assertWithin(
