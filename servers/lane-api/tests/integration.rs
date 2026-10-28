@@ -1,7 +1,95 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-use lane_api::{Principal, account_lock, control, entities, id, migration};
+use lane_api::{Principal, account_lock, control, entities, hash, id, migration};
 use serde_json::json;
 use sqlx::Executor;
+
+#[tokio::test]
+#[ignore = "requires disposable LANE_TEST_DATABASE_URL"]
+async fn rejection_migration_preserves_prior_digests_and_legacy_rows() {
+    let url = std::env::var("LANE_TEST_DATABASE_URL").unwrap();
+    let admin = sqlx::PgPool::connect(&url).await.unwrap();
+    let schema = format!("lane_rejection_migration_{}", id().replace('-', ""));
+    admin
+        .execute(format!("CREATE SCHEMA {schema}").as_str())
+        .await
+        .unwrap();
+    let search = schema.clone();
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .after_connect(move |conn, _| {
+            let query = format!("SET search_path TO {search}");
+            Box::pin(async move {
+                conn.execute(query.as_str()).await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await
+        .unwrap();
+    pool.execute("CREATE TABLE lane_schema_migrations(name text PRIMARY KEY,digest text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now())").await.unwrap();
+    let prior = [
+        ("00001_auth", include_str!("../migrations/00001_auth.sql")),
+        (
+            "00002_entities",
+            include_str!("../migrations/00002_entities.sql"),
+        ),
+        (
+            "00003_webhooks",
+            include_str!("../migrations/00003_webhooks.sql"),
+        ),
+        ("00004_push", include_str!("../migrations/00004_push.sql")),
+        (
+            "00005_limits",
+            include_str!("../migrations/00005_limits.sql"),
+        ),
+        (
+            "00006_captures",
+            include_str!("../migrations/00006_captures.sql"),
+        ),
+        (
+            "00007_planning",
+            include_str!("../migrations/00007_planning.sql"),
+        ),
+    ];
+    for (name, sql) in prior {
+        sqlx::raw_sql(sql).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO lane_schema_migrations(name,digest) VALUES($1,$2)")
+            .bind(name)
+            .bind(hash(sql.as_bytes()))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let legacy_account = id();
+    let legacy_request = id();
+    sqlx::query("INSERT INTO lane_sync_rejections(account_id,request_id,reason) VALUES($1,$2,19)")
+        .bind(&legacy_account)
+        .bind(&legacy_request)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(migration::check(&pool).await.is_err());
+    let before: Vec<(String, String)> =
+        sqlx::query_as("SELECT name,digest FROM lane_schema_migrations ORDER BY name")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    migration::migrate(&pool).await.unwrap();
+    migration::check(&pool).await.unwrap();
+    let after: Vec<(String,String)> = sqlx::query_as("SELECT name,digest FROM lane_schema_migrations WHERE name<>'00008_sync_rejections' ORDER BY name")
+        .fetch_all(&pool).await.unwrap();
+    assert_eq!(after, before);
+    let uncorrelated: bool = sqlx::query_scalar("SELECT epoch IS NULL AND device_id IS NULL AND entity_id IS NULL AND version_id IS NULL AND base_heads IS NULL FROM lane_sync_rejections WHERE account_id=$1 AND request_id=$2")
+        .bind(&legacy_account).bind(&legacy_request).fetch_one(&pool).await.unwrap();
+    assert!(uncorrelated);
+    migration::migrate(&pool).await.unwrap();
+    assert!(migration::check(&pool).await.is_ok());
+    pool.close().await;
+    admin
+        .execute(format!("DROP SCHEMA {schema} CASCADE").as_str())
+        .await
+        .unwrap();
+    admin.close().await;
+}
 
 #[tokio::test]
 #[ignore = "requires disposable LANE_TEST_DATABASE_URL"]

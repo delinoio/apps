@@ -164,6 +164,124 @@ fn mutation_kind(v: &Value) -> Result<&'static str> {
         },
     }
 }
+
+/// An account-locked, validated base for a CREATE or SAVE upload.
+pub(crate) struct RejectionCorrelation {
+    pub epoch: String,
+    pub device_id: String,
+    pub entity_id: String,
+    pub version_id: String,
+    pub base_heads: Vec<String>,
+}
+
+pub(crate) async fn rejection_correlation(
+    db: &mut PgConnection,
+    p: &Principal,
+    q: &Value,
+) -> Result<Option<RejectionCorrelation>> {
+    if q["formatVersion"].as_u64() != Some(TRANSPORT_FORMAT)
+        || string(q, "deviceId") != p.device_id
+        || p.device_id.is_empty()
+    {
+        return Ok(None);
+    }
+    if epoch(db, p).await? != string(q, "epoch") {
+        return Ok(None);
+    }
+    let Some(m) = q["mutations"].as_array().and_then(|items| items.first()) else {
+        return Ok(None);
+    };
+    if e::uuid(string(&m["meta"], "requestId")).is_err() {
+        return Ok(None);
+    }
+    let Ok(v) = normalize_version(&m["version"]) else {
+        return Ok(None);
+    };
+    if v["deleted"] == true
+        || (!string(&v["origin"], "accountId").is_empty()
+            && string(&v["origin"], "accountId") != p.account_id)
+    {
+        return Ok(None);
+    }
+    let origin_device = string(&v["origin"], "deviceId");
+    if !origin_device.is_empty() && origin_device != p.device_id {
+        let associated: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM lane_devices WHERE account_id=$1 AND id=$2)",
+        )
+        .bind(&p.account_id)
+        .bind(origin_device)
+        .fetch_one(&mut *db)
+        .await?;
+        if !associated {
+            return Ok(None);
+        }
+    }
+    let Ok(action) = mutation_kind(&m["kind"]) else {
+        return Ok(None);
+    };
+    if !matches!(action, "CREATE" | "SAVE") {
+        return Ok(None);
+    }
+    let Ok(parents) = e::set_ids(&v["parentVersionIds"]) else {
+        return Ok(None);
+    };
+    if e::set_ids(m.get("expectedHeadIds").unwrap_or(&json!([]))).is_err() {
+        return Ok(None);
+    }
+    let original = string(&v, "entityId");
+    let entity_id = e::canonical_repository(db, &p.account_id, original).await?;
+    let existing = e::entity(db, &p.account_id, &entity_id).await?;
+    let kind = match string(&v, "kind") {
+        "ENTITY_KIND_REPOSITORY" => REPOSITORY,
+        "ENTITY_KIND_URL_CONNECTION" => URL_CONNECTION,
+        "ENTITY_KIND_LABEL" => LABEL,
+        "ENTITY_KIND_MILESTONE" => MILESTONE,
+        "ENTITY_KIND_CYCLE" => CYCLE,
+        _ => TASK,
+    };
+    let base_heads = match (action, existing) {
+        ("CREATE", None) if parents.is_empty() => Vec::new(),
+        ("SAVE", Some(current)) if !current.deleted && current.kind == kind => {
+            let heads = e::heads(db, &p.account_id, &entity_id).await?;
+            if heads.len() != 1 || heads != parents {
+                return Ok(None);
+            }
+            heads
+        }
+        _ => return Ok(None),
+    };
+    let version_id = string(&v, "versionId");
+    let present: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM lane_versions WHERE account_id=$1 AND version_id=$2)",
+    )
+    .bind(&p.account_id)
+    .bind(version_id)
+    .fetch_one(&mut *db)
+    .await?;
+    if present {
+        return Ok(None);
+    }
+    Ok(Some(RejectionCorrelation {
+        epoch: string(q, "epoch").to_owned(),
+        device_id: p.device_id.clone(),
+        entity_id,
+        version_id: version_id.to_owned(),
+        base_heads,
+    }))
+}
+
+pub(crate) async fn correction_was_accepted(
+    db: &mut PgConnection,
+    p: &Principal,
+    correlation: &RejectionCorrelation,
+    output: &Value,
+) -> Result<bool> {
+    if output["results"][0]["result"]["result"] != "RESULT_KIND_APPLIED" {
+        return Ok(false);
+    }
+    let heads = e::heads(db, &p.account_id, &correlation.entity_id).await?;
+    Ok(heads.len() == 1 && heads[0] == correlation.version_id)
+}
 /// Apply one immutable mutation in the caller's transaction. The returned object has the
 /// PushChanges response layout so adapters can concatenate results and mappings in input order.
 pub async fn push_item(
