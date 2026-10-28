@@ -78,6 +78,8 @@ export function PlanningManager({
   const [historyCursor, setHistoryCursor] = useState("");
   const [conflict, setConflict] = useState<EntityResult>();
   const [discard, setDiscard] = useState<() => void>();
+  const [sectionWidth, setSectionWidth] = useState(0);
+  const [panelWidth, setPanelWidth] = useState(0);
   const lock = useRef(false);
   // Keep the request ID across an unchanged retry, including response loss.
   const attempt = useRef<{ key: string; requestId: string } | undefined>(
@@ -202,7 +204,10 @@ export function PlanningManager({
   const tab = planningKinds.find(([k]) => k === kind)!;
   const list = itemsOf(planning.items, kind, repositoryId);
   return (
-    <view className="section">
+    <view
+      className={`section planning-section ${sectionWidth >= 1100 ? "planning-wide" : ""}`}
+      bindlayoutchange={(event) => setSectionWidth(event.detail.width)}
+    >
       <view className="row between wrap">
         <view>
           <text className="heading">
@@ -239,14 +244,27 @@ export function PlanningManager({
           <Button onClick={planning.retry}>Retry loading</Button>
         </Notice>
       )}
-      <view className="planning-manager">
+      <view
+        className={`planning-manager ${panelWidth < 900 ? "planning-stacked" : ""}`}
+        bindlayoutchange={(event) => setPanelWidth(event.detail.width)}
+      >
         <view className="planning-list">
-          <view className="row">
+          <view className="row between wrap planning-list-heading">
+            <text className="heading">{tab[1]}</text>
             <Button primary onClick={() => start()}>
               {`New ${noun[kind]}`}
             </Button>
           </view>
-          {planning.status === "loading" && <text>Loading…</text>}
+          {planning.status === "loading" && (
+            <view
+              accessibility-element
+              accessibility-traits="text"
+              accessibility-label="Loading planning items"
+              accessibility-value="Busy"
+            >
+              <text>Loading…</text>
+            </view>
+          )}
           {planning.status === "ready" && list.length === 0 && (
             <view className="empty">
               <text className="heading">{`No ${tab[1].toLowerCase()} yet`}</text>
@@ -259,17 +277,33 @@ export function PlanningManager({
             </view>
           )}
           {list.map((item) => (
-            <view className="planning-row" key={item.id}>
-              <Button
-                pressed={editing?.id === item.id}
-                swatch={
-                  item.kind === PlanningKind.Label ? item.color : undefined
-                }
-                label={`Edit ${noun[kind]} ${item.name}`}
-                onClick={() => start(item)}
-              >
-                {`${item.name} · ${describe(item)}`}
-              </Button>
+            <view
+              className={`button planning-row ${editing?.id === item.id ? "selected" : ""}`}
+              key={item.id}
+              data-pressed={String(editing?.id === item.id)}
+              accessibility-element
+              accessibility-traits="button"
+              accessibility-label={`Edit ${noun[kind]} ${item.name}${item.conflicted ? ", Conflict" : ""}`}
+              accessibility-value={
+                editing?.id === item.id ? "Selected" : undefined
+              }
+              focusable
+              bindtap={() => start(item)}
+              bindkeydown={(event) => {
+                if (event.key === "Enter" || event.key === " ") start(item);
+              }}
+            >
+              {item.kind === PlanningKind.Label && (
+                <view
+                  className="planning-row-swatch"
+                  accessibility-elements-hidden
+                  style={{ backgroundColor: item.color }}
+                />
+              )}
+              <view className="planning-row-copy">
+                <text className="planning-row-name">{item.name}</text>
+                <text className="planning-row-detail">{describe(item)}</text>
+              </view>
               {item.conflicted && <text className="badge">Conflict</text>}
             </view>
           ))}
@@ -283,6 +317,9 @@ export function PlanningManager({
             <view key={editing.id}>
               <text className="heading">
                 {isNew ? `New ${noun[kind]}` : `Edit ${noun[kind]}`}
+              </text>
+              <text className="muted">
+                Changes are saved only when you choose Save.
               </text>
               {changedElsewhere && (
                 <Notice>
@@ -389,7 +426,7 @@ export function PlanningManager({
                 error={errors.description}
               />
               {error && <Notice>{error} Your input is retained.</Notice>}
-              <view className="row wrap">
+              <view className="row wrap planning-actions">
                 <Button
                   primary
                   disabled={busy || readOnly}
@@ -405,12 +442,14 @@ export function PlanningManager({
                     >
                       History
                     </Button>
-                    <Button
-                      disabled={busy || missing}
-                      onClick={() => setDeleting(true)}
-                    >
-                      Delete
-                    </Button>
+                    <view className="planning-delete">
+                      <Button
+                        disabled={busy || missing}
+                        onClick={() => setDeleting(true)}
+                      >
+                        Delete
+                      </Button>
+                    </view>
                   </>
                 )}
                 <Button onClick={() => guard(() => setEditing(undefined))}>
