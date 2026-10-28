@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "@lynx-js/react";
 import { parseMarkdown, type MarkdownSpan } from "./markdown";
 import { hostAction } from "./runtime";
 export function Button({
+  elementId,
   id: suppliedId,
   children,
   onClick,
@@ -13,9 +14,11 @@ export function Button({
   label,
   swatch,
   focusOnShow = false,
+  onKeyDown,
   focusRequest = 0,
 }: {
   id?: string;
+  elementId?: string;
   children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
@@ -28,12 +31,13 @@ export function Button({
   // Decorative color next to the text; the name always stays visible.
   swatch?: string;
   focusOnShow?: boolean;
+  onKeyDown?: (key: string) => boolean;
   focusRequest?: number;
 }) {
   const [generatedId] = useState(
     () => "button-" + Math.random().toString(36).slice(2),
   );
-  const buttonId = suppliedId ?? generatedId;
+  const buttonId = suppliedId ?? elementId ?? generatedId;
   useEffect(() => {
     "background only";
     if (focusOnShow)
@@ -69,6 +73,7 @@ export function Button({
         if (!disabled) onClick?.();
       }}
       bindkeydown={(e) => {
+        if (onKeyDown?.(e.key)) return;
         if (!disabled && (e.key === "Enter" || e.key === " ")) onClick?.();
       }}
     >
@@ -173,6 +178,7 @@ export function Field({
   focus = false,
   error,
   help,
+  onKeyDown,
   prefix,
   focusOnShow = false,
   accessibleHelp = false,
@@ -186,6 +192,7 @@ export function Field({
   // Validation message shown in text next to the field, never by color alone.
   error?: string;
   help?: string;
+  onKeyDown?: (key: string) => void;
   prefix?: ReactNode;
   focusOnShow?: boolean;
   accessibleHelp?: boolean;
@@ -218,6 +225,7 @@ export function Field({
     disabled,
     maxlength: 2147483647,
     bindinput: (e: { detail: { value: string } }) => onChange(e.detail.value),
+    bindkeydown: (e: { key: string }) => onKeyDown?.(e.key),
   };
   return (
     <view className="field" data-invalid={error ? "true" : undefined}>

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { UI } from "./serializable";
 import type { Task as ProtoTask } from "@repo/protos/lane/v1/lane_pb";
-import { Button, Choices, Field, MultiChoices, Notice } from "./components";
+import { Button, Field, Notice } from "./components";
+import { TaskLabelSelect, TaskSelect } from "./TaskControls";
 import type { Draft } from "./model";
 import {
   MAX_LABELS,
@@ -24,6 +25,8 @@ export function TaskProperties({
   setPointsText,
   errors,
   moved,
+  openControl,
+  setOpenControl,
 }: {
   draft: Draft;
   edit: (patch: Partial<Task>) => void;
@@ -33,6 +36,8 @@ export function TaskProperties({
   setPointsText: (value: string) => void;
   errors: TaskFieldErrors;
   moved: boolean;
+  openControl: string | undefined;
+  setOpenControl: (control: string | undefined) => void;
 }) {
   const task = draft.task;
   const repositoryId = task.repositoryId;
@@ -70,16 +75,20 @@ export function TaskProperties({
       <text className="heading" accessibility-heading>
         Properties
       </text>
-      <Choices
-        exclusive
+      <TaskSelect
+        control="priority"
+        openControl={openControl}
+        setOpenControl={setOpenControl}
         label="Priority"
         value={task.priority}
         options={priorityOptions}
         onChange={(priority) => edit({ priority })}
         disabled={disabled}
       />
-      <Choices
-        exclusive
+      <TaskSelect
+        control="type"
+        openControl={openControl}
+        setOpenControl={setOpenControl}
         label="Type"
         value={task.type}
         options={typeOptions}
@@ -134,11 +143,13 @@ export function TaskProperties({
           <Button onClick={planning.retry}>Retry loading options</Button>
         </Notice>
       )}
-      <MultiChoices
-        label="Labels"
+      <TaskLabelSelect
+        openControl={openControl}
+        setOpenControl={setOpenControl}
         selected={task.labelIds}
         options={labelOptions}
         disabled={ownedDisabled}
+        limit={MAX_LABELS}
         onToggle={(id) => {
           if (!task.labelIds.includes(id) && task.labelIds.length >= MAX_LABELS)
             return;
@@ -158,16 +169,20 @@ export function TaskProperties({
           : ""}
       </text>
       {errors.labels && <text className="validation">{errors.labels}</text>}
-      <Choices
-        exclusive
+      <TaskSelect
+        control="milestone"
+        openControl={openControl}
+        setOpenControl={setOpenControl}
         label="Milestone"
         value={task.milestoneId ?? ""}
         options={single(task.milestoneId, milestones, "milestone")}
         onChange={(id) => edit({ milestoneId: id || undefined })}
         disabled={ownedDisabled}
       />
-      <Choices
-        exclusive
+      <TaskSelect
+        control="cycle"
+        openControl={openControl}
+        setOpenControl={setOpenControl}
         label="Cycle"
         value={task.cycleId ?? ""}
         options={single(

@@ -421,8 +421,7 @@ test("mobile repository navigation reuses one tab and explicit drafts retain rep
     assert.ok(
       nodes().some(
         (n) =>
-          n.props["accessibility-label"] === "repo-a" &&
-          n.props.className?.includes("primary"),
+          n.props["accessibility-label"] === "Repository / move task: repo-a",
       ),
       "the explicit new draft uses the current repository",
     );
