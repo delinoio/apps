@@ -505,6 +505,10 @@ const std::vector<std::string> progresses = {
 const std::vector<std::string> proposals = {
     "PROPOSAL_REGULAR", "PROPOSAL_PENDING", "PROPOSAL_ACCEPTED",
     "PROPOSAL_REJECTED"};
+const std::vector<std::string> completedSelections = {
+    "COMPLETED_SELECTION_NONE", "COMPLETED_SELECTION_LAST_24_HOURS",
+    "COMPLETED_SELECTION_LAST_7_DAYS", "COMPLETED_SELECTION_LAST_30_DAYS",
+    "COMPLETED_SELECTION_ALL"};
 std::string fold(const std::string &s) {
   utf8proc_uint8_t *out = nullptr;
   auto n = utf8proc_map(reinterpret_cast<const utf8proc_uint8_t *>(s.data()),
@@ -2364,12 +2368,112 @@ struct Store::Impl {
     }
     return J{{field, result}, {"nextCursor", cursor}};
   }
+  // A candidate identifies the transition version, not just its timestamp.
+  // Two branches with equal timestamps can still enter the state separately.
+  std::optional<int64_t> terminalEntry(Db &d, const J &selected,
+                                       const std::vector<J> &headVersions) {
+    const auto selectedProgress = str(selected.value("task", J::object()), "progress");
+    if (selectedProgress != "PROGRESS_DONE" &&
+        selectedProgress != "PROGRESS_CANCELED")
+      return std::nullopt;
+    if (headVersions.empty())
+      return std::nullopt;
+    const auto selectedId = str(selected, "versionId");
+    bool selectedHead = false;
+    for (const auto &head : headVersions)
+      selectedHead |= str(head, "versionId") == selectedId;
+    if (!selectedHead)
+      return std::nullopt;
+    std::map<std::string, J> versions;
+    auto version = [&](const std::string &versionId) -> J {
+      auto found = versions.find(versionId);
+      if (found != versions.end())
+        return found->second;
+      auto rows = d.run("SELECT envelope_json FROM versions WHERE version_id=?",
+                        {versionId});
+      J value = rows.empty() ? J() : parse(rows[0][0]);
+      versions.emplace(versionId, value);
+      return value;
+    };
+    struct Candidate { std::string versionId; int64_t enteredAt; };
+    // A terminal-entry evaluation can revisit the same version through
+    // multiple merge parents. Cache both successful candidates and UNKNOWN
+    // results for this evaluation, while keeping the active-path cycle guard
+    // separate.
+    std::map<std::string, std::optional<Candidate>> derived;
+    std::function<std::optional<Candidate>(const J &, std::set<std::string> &)> walk;
+    walk = [&](const J &current, std::set<std::string> &visiting)
+        -> std::optional<Candidate> {
+      const auto currentId = str(current, "versionId");
+      if (!current.contains("task") || currentId.empty() || visiting.count(currentId))
+        return std::nullopt;
+      auto cached = derived.find(currentId);
+      if (cached != derived.end())
+        return cached->second;
+      visiting.insert(currentId);
+      const auto progress = str(current["task"], "progress");
+      if (progress != selectedProgress) {
+        visiting.erase(currentId);
+        derived.emplace(currentId, std::nullopt);
+        return std::nullopt;
+      }
+      const auto parents = current.value("parentVersionIds", J::array());
+      std::optional<Candidate> answer;
+      if (parents.empty())
+        answer = Candidate{currentId, parseTimestamp(str(current, "createdAt"))};
+      for (const auto &parentId : parents) {
+        if (!parentId.is_string()) { answer.reset(); break; }
+        const J parent = version(parentId.get<std::string>());
+        if (parent.is_null() || str(parent, "entityId") != str(current, "entityId") ||
+            !parent.contains("task")) { answer.reset(); break; }
+        std::optional<Candidate> candidate;
+        if (str(parent["task"], "progress") == progress)
+          candidate = walk(parent, visiting);
+        else
+          candidate = Candidate{currentId, parseTimestamp(str(current, "createdAt"))};
+        if (!candidate || (answer && answer->versionId != candidate->versionId)) {
+          answer.reset(); break;
+        }
+        answer = candidate;
+      }
+      visiting.erase(currentId);
+      derived.emplace(currentId, answer);
+      return answer;
+    };
+    std::optional<Candidate> answer;
+    for (const auto &head : headVersions) {
+      if (!head.contains("task") ||
+          str(head["task"], "progress") != selectedProgress)
+        return std::nullopt;
+      std::set<std::string> visiting;
+      auto candidate = walk(head, visiting);
+      if (!candidate || (answer && answer->versionId != candidate->versionId))
+        return std::nullopt;
+      answer = candidate;
+    }
+    return answer ? std::optional<int64_t>(answer->enteredAt) : std::nullopt;
+  }
   // ListTasks: existing search/progress/proposal filters AND with the planning
   // filter; one sort key; keyset pagination whose cursor encodes the last sort
   // tuple and task ID so concatenated pages equal the unpaged order.
   J listTasks(Db &d, const std::string &s, const J &q) {
     fields(q, {"page", "repositoryId", "progress", "proposal", "search",
-               "filter", "sortKey", "sortDirection"});
+               "filter", "sortKey", "sortDirection", "completed"});
+    std::string completedSelection;
+    std::optional<int64_t> completedCutoff;
+    if (q.contains("completed") && !q["completed"].is_null()) {
+      const J &completed = q["completed"];
+      require(completed.is_object(), "Invalid completed filter.");
+      fields(completed, {"selection", "cutoff"});
+      completedSelection = enumValue(completed, "selection", "COMPLETED_SELECTION_",
+                                     completedSelections);
+      const bool duration = completedSelection != "COMPLETED_SELECTION_NONE" &&
+                            completedSelection != "COMPLETED_SELECTION_ALL";
+      const bool hasCutoff = completed.contains("cutoff") && !completed["cutoff"].is_null();
+      require(duration == hasCutoff, "Invalid completed cutoff.");
+      if (hasCutoff)
+        completedCutoff = parseTimestamp(str(completed, "cutoff"));
+    }
     auto wanted = str(q, "repositoryId"), search = fold(str(q, "search"));
     std::set<std::string> pg, pr;
     for (auto &v : q.value("progress", J::array()))
@@ -2542,6 +2646,19 @@ struct Store::Impl {
       if (!pr.empty() && !pr.count(str(t, "proposal"))) continue;
       if (!search.empty() && fold(str(t, "title")).find(search) == std::string::npos &&
           fold(str(t, "description")).find(search) == std::string::npos) continue;
+      const auto progress = str(t, "progress");
+      const bool terminal = progress == "PROGRESS_DONE" || progress == "PROGRESS_CANCELED";
+      if (terminal && completedSelection == "COMPLETED_SELECTION_NONE") continue;
+      if (terminal && completedCutoff) {
+        std::vector<J> visibleHeads;
+        if (row.item.value("result", "") == "RESULT_KIND_CONFLICT")
+          for (const auto &head : row.item.value("alternatives", J::array()))
+            visibleHeads.push_back(head);
+        else
+          visibleHeads.push_back(row.item["version"]);
+        const auto enteredAt = terminalEntry(d, row.item["version"], visibleHeads);
+        if (enteredAt && *enteredAt < *completedCutoff) continue;
+      }
       const int priority = int(std::find(priorities.begin(), priorities.end(), str(t, "priority")) - priorities.begin()) + 1;
       const bool hasPriority = t.contains("priority");
       if (prioritiesOn && !(hasPriority ? std::find(priorityFilter.begin(), priorityFilter.end(), priority) != priorityFilter.end() : unassignedPriority)) continue;
@@ -2603,7 +2720,8 @@ struct Store::Impl {
     // Keyset cursor: scoped to this account space, method and query.
     J scope = q;
     scope.erase("page");
-    const auto scoped = hash(s + "ListTasks" + scope.dump());
+    const auto account = registry->one("SELECT account_id FROM spaces WHERE id=?", {s});
+    const auto scoped = hash(s + account + "ListTasks" + scope.dump());
     const auto cursor = str(q.value("page", J::object()), "cursor");
     SortValue after; std::string afterId; bool resume = false;
     if (!cursor.empty()) {

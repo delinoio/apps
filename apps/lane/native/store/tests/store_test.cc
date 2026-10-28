@@ -710,6 +710,7 @@ void unsupported_schema() {
 #include "capture_cases.h"
 #include "shared_fixture_runner.h"
 #include "planning_fixture_runner.h"
+#include "completed_fixture_runner.h"
 #include "planning_cases.h"
 #include "disk_full_vfs.h"
 #include "sync_hard_cases.h"
@@ -786,6 +787,7 @@ int main(int argc, char** argv) {
     {"repository identifier name-only save with counterpart", repository_identifier_name_only_save_with_counterpart},
     {"repository identifier sync, import and merge", repository_identifier_sync_import_and_merge},
     {"malformed repository identifier pull rolls back", repository_identifier_malformed_pull_rolls_back},
+    {"completed deep diamond public API", completed_deep_diamond_api_fixture},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {
@@ -799,7 +801,13 @@ int main(int argc, char** argv) {
 #endif
   if (argc > 2) { std::cerr << "Usage: lane_store_tests [fixture-directory]\n"; return 2; }
   if (argc == 2) fixture_directory = argv[1];
-  if (!fixture_directory.empty()) { failures += run_shared_fixtures(fixture_directory); failures += run_sync_fixtures(fixture_directory); failures += run_planning_fixtures(fixture_directory); }
+  if (!fixture_directory.empty()) {
+    failures += run_shared_fixtures(fixture_directory);
+    failures += run_sync_fixtures(fixture_directory);
+    failures += run_planning_fixtures(fixture_directory);
+    try { failures += run_completed_fixtures(fixture_directory); }
+    catch (const std::exception& e) { ++failures; std::cerr << "FAIL completed-list fixtures: " << e.what() << '\n'; }
+  }
   else std::cout << "Shared fixtures not run: provide fixture-directory or LANE_STORE_FIXTURE_DIR\n";
   return failures ? 1 : 0;
 }
