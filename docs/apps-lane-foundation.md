@@ -109,7 +109,11 @@ contextual sidebar and content. Preserve the English UI, white/gray surfaces,
 
 Open tasks, new-task drafts, pages, repository lists, Pace and RealQA in the same
 tab list. Start with one All tasks tab. Sidebar, command-menu, relationship, event
-and deep-link navigation opens the destination or selects its existing tab. A
+and deep-link navigation replaces the current Lane tab with the destination or
+selects its existing tab. Ordinary navigation must not add a tab. Before replacing
+a pane, apply its unsaved-change confirmation and pending-operation guard; cancel
+keeps the pane and its draft. Remove the replaced pane's state and ignore its late
+reads. Explicit New tab and New task actions still create separate tabs. A
 task has one identity, including after a new draft is saved. Page, repository
 and mini-app destinations have distinct identities. New task opens a separate
 draft. New tab opens or selects a chooser tab with Lane, Pace and RealQA cards
@@ -125,7 +129,7 @@ dialog and shows the count, complete titles, selection and unsaved state, with
 selection and individual close actions. Keep New tab directly reachable beside
 Tabs. Escape dismisses the dialog and restores focus. Stack chooser cards at
 390 pixels without horizontal overflow. A repository tab keeps its repository
-identity: on mobile, choosing another repository opens or selects that tab;
+identity: on mobile, choosing another repository replaces the current tab or selects its existing tab;
 choosing All repositories selects the All tasks page.
 
 Keep each pane mounted while inactive so its sidebar selection and scroll,
@@ -133,7 +137,7 @@ repository, search, filters, sort, list scroll, editor scroll and drafts survive
 tab and mini-app switching. Inactive panels must be hidden from both keyboard
 navigation and assistive technology. A selected task tab retains its associated
 list beside the editor on desktop. `Back to list` selects the corresponding
-list tab without discarding the task tab. The editor's `Cancel` action closes
+list tab if it exists; otherwise it replaces the task tab after the same exit guard. The editor's `Cancel` action closes
 its tab through the same unsaved-change guard and is disabled while saving.
 Save is explicit; tab selection never
 saves or discards input. Each tab owns its reads, mutations, conflict state and
@@ -288,6 +292,30 @@ Validate release selection, transport and archive rejection, cancellation,
 shutdown permission, successful swap/startup and rollback with disposable
 fixtures. Record real macOS and Windows upgrade/restart acceptance separately
 from these fixtures and native packaging builds.
+
+### Settings presentation
+
+Settings uses one centered scrolling column within the existing pane, at most
+960 logical pixels wide. The header explains device, synchronization, and
+account access and keeps Refresh settings explicit. Native desktop shows seven
+expanded sections in order: App updates, Local data and synchronization,
+Notifications on this device, Devices, Approved remote MCP connections,
+Development data, and Delete Lane data. Web uses Online account in place of
+the native account section and omits App updates, Development data, and local
+device removal. Mobile omits the desktop updater. The application rail, sidebar,
+workspace tabs, and RealQA settings remain separate.
+
+Use divided device and connection rows with textual status and the existing
+direct actions. Keep each data-removal action next to its full scope and
+consequences. Show loading before the first status or list result, an empty
+message only after an acknowledged empty list, and an unavailable message on
+list failure. A failed online list must not block native local notification
+preferences. Show the actual notification permission as text. Keep notification
+choices and Save explicit, preserve dirty drafts and server acknowledgements,
+and retain account, deletion, reset, and updater safeguards above. Use readable
+wrapping content and at least 44-pixel controls in the 900-pixel and 360-pixel
+layouts. Keep section reveal targets, keyboard access, dialog focus handling,
+and text alternatives for status and progress.
 
 ### Navigation command menu
 
@@ -569,6 +597,14 @@ Lane has not been deployed, and existing development data may be discarded. This
 - A local store or server schema that does not match the current format is refused with an update/reset instruction. The explicit procedures are `lane data reset` and the native Settings reset in the [local-store contract](apps-lane-local-store-contract.md#development-data-reset), and the disposable development database reset in the [server contract](servers-lane-api-contract.md#development-data-reset).
 - Reset is destructive and explicit: it requires a confirmation control, coordinates with open handles and background workers, respects account boundaries and removes the associated content. Use it only with disposable development data, never production data.
 - Record the reset, validation errors, rejected synchronization and the explicit correction and retry in the user and operator guides.
+
+The native unsupported-format recovery view leads with "Your data has not been changed." It shows a separate safe host diagnostic, then advises a compatible Lane version for data that matters and the existing CLI reset procedure for a specific space. "Reset development data" is an outline action below this guidance. Refusal does not offer an update, retry, migration, backup or export action and does not treat the unsupported store as an empty space. Normal opening and the global startup error boundary remain separate.
+
+Recovery and native Settings use one confirmation dialog. It warns "Permanent local deletion" and lists every repository, task, prompt, label, milestone, cycle, history, attachment and pending change in the selected local space. It states "There is no recovery." It also states that reset does not contact or delete server data or sign the user out, and that an account-linked space needs explicit reconnection before synchronization resumes. Show the exact phrase `reset development data`; only a case-sensitive match after trimming enables the Reset action. Typing the phrase never submits. The visible action order is Cancel, then Reset. Settings keeps its draft guard before the host call.
+
+Focus the phrase input when the dialog opens. While idle, Cancel, Close and Escape dismiss it without a reset and return focus to the trigger. Keep focus and assistive navigation within the active dialog. During a reset, announce "Resetting…", permit only one submission, disable the input and all three dismissal or submission controls, and ignore Escape. On failure, retain the phrase and dialog, announce the error, and require an explicit retry. For `STORAGE_BUSY`, explain that other Lane windows, CLI or MCP handles, or a sync worker must release the space before retrying; the failed attempt changes no data. On success, use the existing selected-space reopen and cached-read invalidation path. A failed reopen must remain visible as failure.
+
+Constrain the recovery content and confirmation to 640 pixels on desktop with 24-pixel padding. Use a white surface, cool-gray border, readable disabled action, visible blue focus, and a scrollable dialog body. At 360 pixels, use 16-pixel side padding, a full-width input and stacked actions in Cancel-then-Reset order. Keep the warning, phrase, title and actions readable with a software keyboard or 200% text. Controls have at least 44-pixel targets. The [local-store reset contract](apps-lane-local-store-contract.md#development-data-reset) owns the selected-space, identity, lease and account safeguards.
 
 ### Local storage, synchronization, and conflicts
 

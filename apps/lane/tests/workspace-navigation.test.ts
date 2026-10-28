@@ -297,7 +297,79 @@ test("history navigation cannot replace a confirmation owned by another action",
   }
 });
 
-test("mobile repository scope opens the destination tab without changing the original identity", async () => {
+for (const confirm of [true, false]) {
+  test(`replacing an edited Lane pane ${confirm ? "uses the latest guarded history target" : "cancels the latest history request"}`, async () => {
+    const { App, runtime, host } = await loadApp();
+    const reports: { path: string; requestId?: number }[] = [];
+    (globalThis as any).NativeModules = {
+      LaneOnline: {},
+      LaneHost: {
+        workspace: (raw: string, callback: () => void) => {
+          const value = JSON.parse(raw);
+          if (value.route) reports.push(value.route);
+          callback();
+        },
+      },
+    };
+    const view = runtime.mount(App, {
+      providedAdapter: {
+        mode: "web",
+        open: async () => {},
+        close() {},
+        subscribe: () => () => {},
+        call: async () => ({ items: [], nextCursor: "" }),
+        local: async () => ({}),
+      },
+    });
+    const selected = () =>
+      visibleNodes(view.tree()).find((node) => node.props.id === "lane-root")
+        ?.props["data-selected-tab"];
+    try {
+      await view.settle();
+      tap(view.tree(), "+ New task");
+      await view.settle();
+      const draft = selected();
+      visibleNodes(view.tree())
+        .find((node) => node.props["accessibility-label"] === "Title")!
+        .props.bindinput({ detail: { value: "Retain unless discarded" } });
+      await view.settle();
+      reports.length = 0;
+      host.route!({
+        kind: "workspace",
+        target: routeTarget("/events"),
+        requestId: 301,
+      });
+      await view.settle();
+      host.route!({
+        kind: "workspace",
+        target: routeTarget("/settings"),
+        requestId: 302,
+      });
+      await view.settle();
+      assert.equal(selected(), draft);
+      assert.equal(reports.length, 0);
+      tap(view.tree(), confirm ? "Discard changes" : "Keep editing");
+      await view.settle();
+      assert.equal(selected(), confirm ? "page-Settings" : draft);
+      assert.equal(reports.at(-1)?.requestId, 302);
+      if (confirm) assert.equal(reports.at(-1)?.path, "/settings");
+      else {
+        assert.match(reports.at(-1)!.path, /^\/tasks\/new\//);
+        assert.ok(
+          visibleNodes(view.tree()).some(
+            (node) =>
+              node.props["accessibility-label"] ===
+              "Retain unless discarded, Unsaved changes",
+          ),
+        );
+      }
+    } finally {
+      view.unmount();
+    }
+  });
+}
+
+test("mobile repository navigation reuses one tab and explicit drafts retain repository scope", async () => {
   const { App, runtime } = await loadApp();
   const view = runtime.mount(App, {
     providedAdapter: {
@@ -318,22 +390,10 @@ test("mobile repository scope opens the destination tab without changing the ori
   const nodes = () => visibleNodes(view.tree());
   const selected = () =>
     nodes().find((n) => n.props.id === "lane-root")?.props["data-selected-tab"];
-  const selectRepositoryTab = async (id: string) => {
-    const count = nodes().filter((n) => n.props["data-workspace-tab"]).length;
-    if (!count) {
-      const toggle = nodes().find((n) =>
-        n.props["accessibility-label"]?.startsWith("Tabs ("),
-      );
-      toggle!.props.bindtap();
-      await view.settle();
-    }
-    const tab = nodes().find(
-      (n) => n.props["data-workspace-tab"] === `repository-${id}`,
-    );
-    assert.ok(tab);
-    tab.props.bindtap();
-    await view.settle();
-  };
+  const tabIds = () =>
+    nodes()
+      .filter((n) => n.props["data-workspace-tab"])
+      .map((n) => n.props["data-workspace-tab"]);
   try {
     await view.settle();
     tap(view.tree(), "repo-a");
@@ -345,19 +405,17 @@ test("mobile repository scope opens the destination tab without changing the ori
     tap(view.tree(), "repo-b");
     await view.settle();
     assert.equal(selected(), "repository-repo-b");
-    await selectRepositoryTab("repo-a");
-    assert.ok(
-      nodes().some(
-        (n) =>
-          n.props["accessibility-label"] === "repo-a" &&
-          n.props.className?.includes("primary"),
-      ),
-    );
-    await selectRepositoryTab("repo-b");
+    // The mobile list is hidden until opened; inspect the same tab list.
+    tap(view.tree(), "Tabs (1)");
+    await view.settle();
+    assert.deepEqual(tabIds(), ["repository-repo-b"]);
+    tap(view.tree(), "repo-b");
+    await view.settle();
     tap(view.tree(), "All repositories");
     await view.settle();
     assert.equal(selected(), "page-Tasks");
-    await selectRepositoryTab("repo-a");
+    tap(view.tree(), "repo-a");
+    await view.settle();
     tap(view.tree(), "+ New task");
     await view.settle();
     assert.ok(
@@ -366,7 +424,7 @@ test("mobile repository scope opens the destination tab without changing the ori
           n.props["accessibility-label"] === "repo-a" &&
           n.props.className?.includes("primary"),
       ),
-      "the original tab still creates tasks in repository A",
+      "the explicit new draft uses the current repository",
     );
   } finally {
     view.unmount();
@@ -438,6 +496,15 @@ test("planning operation reports survive manager unmount until every request set
     tap(view.tree(), "Repositories");
     await view.settle();
     await startAndLeave();
+    tap(view.tree(), "Events");
+    await view.settle();
+    assert.equal(
+      visibleNodes(view.tree()).find((n) => n.props.id === "lane-root")?.props[
+        "data-selected-tab"
+      ],
+      "page-Repositories",
+      "pending planning mutations block ordinary tab replacement",
+    );
     await startAndLeave();
     assert.equal(pending.length, 2);
     pending[0].resolve({ result: { result: 1, version: label.version } });
@@ -547,6 +614,152 @@ test("closing the selected RealQA tab asks before discarding its edits", async (
       !visibleNodes(view.tree()).some(
         (n) => n.props["data-workspace-tab"] === "app-RealQA",
       ),
+    );
+  } finally {
+    view.unmount();
+  }
+});
+
+test("ordinary navigation guards drafts while existing tabs and explicit creation preserve them", async () => {
+  const { App, runtime } = await loadApp();
+  const view = runtime.mount(App, {
+    providedAdapter: {
+      mode: "web",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      local: async () => ({}),
+      call: async (method: any) => ({
+        items: method.name === "ListRepositories" ? [repository("repo-a")] : [],
+        nextCursor: "",
+      }),
+    },
+  });
+  const nodes = () => visibleNodes(view.tree());
+  const tabIds = () =>
+    nodes()
+      .filter((n) => n.props["data-workspace-tab"])
+      .map((n) => n.props["data-workspace-tab"]);
+  try {
+    await view.settle();
+    tap(view.tree(), "+ New task");
+    await view.settle();
+    const draftId = tabIds()[1];
+    nodes()
+      .find((n) => n.props["accessibility-label"] === "Title")!
+      .props.bindinput({ detail: { value: "Keep this draft" } });
+    await view.settle();
+    assert.equal(tabIds().length, 2, "explicit new task adds a tab");
+    tap(view.tree(), "Events");
+    await view.settle();
+    assert.deepEqual(tabIds(), ["page-Tasks", draftId]);
+    tap(view.tree(), "Keep editing");
+    await view.settle();
+    assert.ok(nodes().some((n) => n.props["accessibility-label"] === "Title"));
+    tap(view.tree(), "All tasks");
+    await view.settle();
+    assert.deepEqual(
+      tabIds(),
+      ["page-Tasks", draftId],
+      "existing destination retains the draft pane",
+    );
+    nodes()
+      .find((n) => n.props["data-workspace-tab"] === draftId)!
+      .props.bindtap();
+    await view.settle();
+    tap(view.tree(), "Events");
+    await view.settle();
+    tap(view.tree(), "Discard changes");
+    await view.settle();
+    assert.deepEqual(tabIds(), ["page-Tasks", "page-Events"]);
+    tap(view.tree(), "Settings");
+    await view.settle();
+    assert.deepEqual(
+      tabIds(),
+      ["page-Tasks", "page-Settings"],
+      "discarded report does not prompt again",
+    );
+    tap(view.tree(), "New tab");
+    await view.settle();
+    assert.deepEqual(tabIds(), ["page-Tasks", "page-Settings", "new-tab"]);
+  } finally {
+    view.unmount();
+  }
+});
+
+test("ordinary navigation leaves Settings and cancels an in-progress desktop update", async () => {
+  const { App, runtime } = await loadApp();
+  const actions: string[] = [];
+  (globalThis as any).NativeModules = {
+    bridge: {
+      call: (
+        _channel: string,
+        request: any,
+        callback: (raw: string) => void,
+      ) => {
+        if (request.method !== "update") {
+          callback(
+            JSON.stringify({
+              ok: true,
+              value: { window: "main", shortcuts: {}, draft: null },
+            }),
+          );
+          return;
+        }
+        actions.push(request.args[0]);
+        callback(
+          JSON.stringify({
+            ok: true,
+            response: {
+              phase: "downloading",
+              installedRelease: "lane@v0.3.0",
+              message: "Downloading Lane",
+              progress: 10,
+            },
+          }),
+        );
+      },
+    },
+  };
+  const view = runtime.mount(App, {
+    providedAdapter: {
+      mode: "web",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      local: async () => ({}),
+      call: async () => ({ items: [], nextCursor: "" }),
+    },
+  });
+  const nodes = () => visibleNodes(view.tree());
+  try {
+    await view.settle();
+    tap(view.tree(), "Settings");
+    await view.settle();
+    assert.ok(actions.includes("status"));
+    const close = nodes().find(
+      (n) => n.props["accessibility-label"] === "Close Settings",
+    );
+    assert.ok(
+      close?.props.className.includes("disabled"),
+      "the updater still marks Settings busy",
+    );
+    assert.ok(!actions.includes("cancel"));
+    tap(view.tree(), "All tasks");
+    await view.settle();
+    assert.equal(
+      nodes().find((n) => n.props.id === "lane-root")?.props[
+        "data-selected-tab"
+      ],
+      "page-Tasks",
+    );
+    assert.deepEqual(
+      actions,
+      ["status", "cancel"],
+      "leaving Settings cancels the update exactly once",
+    );
+    assert.ok(
+      !nodes().some((n) => n.props["data-workspace-tab"] === "page-Settings"),
     );
   } finally {
     view.unmount();

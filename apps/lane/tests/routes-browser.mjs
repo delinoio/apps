@@ -38,10 +38,21 @@ try {
   await page.evaluate(() => {
     window.retainedView = document.querySelector("lynx-view");
   });
+  await button("All tasks").click();
+  await path("/tasks");
+  // Explicit creation keeps All tasks available while ordinary navigation
+  // reuses the clean draft pane for a separate Settings tab.
+  await button("+ New task").click();
+  await page.waitForURL(/\/tasks\/new\//);
+  await field("Title").waitFor();
+  await button("Settings").click();
   await tab("All tasks").click();
   await path("/tasks");
   await button("Task A").waitFor();
   await field("Search title or description").fill("Task");
+  await button("+ New task").click();
+  await page.waitForURL(/\/tasks\/new\//);
+  await field("Title").waitFor();
   await button("Task A").click();
   await page.waitForURL(/\/tasks\/[0-9a-f-]+$/);
   await field("Title").waitFor();

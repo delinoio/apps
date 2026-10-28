@@ -137,11 +137,16 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     setOpenTabs(false);
     setSettingsTarget(undefined);
   };
-  const guard = (action: () => void, all = false, id = selected) => {
+  const guard = (
+    action: () => void,
+    all = false,
+    id = selected,
+    busyField: "busy" | "exitBusy" = "busy",
+  ) => {
     const entries = all
       ? Object.values(state.current.reports)
       : [state.current.reports[id]];
-    if (entries.some((entry) => entry?.busy)) {
+    if (entries.some((entry) => entry?.[busyField])) {
       setError(
         "Wait for the current operation to finish before closing or changing data spaces.",
       );
@@ -197,18 +202,37 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     requestId?: number,
   ) => {
     "background only";
+    const id = tabIdentity(target);
+    const replacing = state.current.selected;
+    const existing = state.current.tabs.some((tab) => tab.id === id);
+    const current = state.current.tabs.find((tab) => tab.id === replacing);
+    // Explicit creation and mini-app switching retain their own panes. Ordinary
+    // Lane navigation replaces the current pane only after its exit guard.
+    const replaceCurrent =
+      !existing &&
+      target.kind !== TabKind.NewTab &&
+      target.kind !== TabKind.NewTask &&
+      !target.app &&
+      !!current &&
+      !current.target.app;
     const proceed = () => {
       if (requestId !== undefined) setRouteRequest(requestId);
-      const id = tabIdentity(target);
-      const replacing = state.current.selected;
       setTabs((previous) => {
         const withoutPicker = previous.filter(
-          (tab) => tab.id !== replacing || tab.target.kind !== TabKind.NewTab,
+          (tab) =>
+            tab.id !== replacing ||
+            (!replaceCurrent && tab.target.kind !== TabKind.NewTab),
         );
         return withoutPicker.some((tab) => tab.id === id)
           ? withoutPicker
           : [...withoutPicker, { id, target }];
       });
+      if (replaceCurrent)
+        setReports((previous) => {
+          const copy = { ...previous };
+          delete copy[replacing];
+          return copy;
+        });
       setSelected(id);
       if (target.page === LanePage.Settings)
         setSettingsTarget(
@@ -219,28 +243,35 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         lastLaneTab.current = id;
       setOpenTabs(false);
     };
-    if (requestId === undefined) leaveRealQA(proceed);
+    const confirmNavigation = (action: () => void) =>
+      leaveRealQA(() => {
+        // Leaving Settings cancels its updater on unmount. Only business
+        // mutations must block navigation, as they already block window exit.
+        if (replaceCurrent) guard(action, false, replacing, "exitBusy");
+        else action();
+      });
+    if (requestId === undefined) confirmNavigation(proceed);
     else {
       if (pendingDiscard.current && !guardedRouteAction.current) {
         // A different operation owns this confirmation. Reject navigation now
         // so it cannot acknowledge that operation's eventual destination.
-        const current = state.current.tabs.find(
-          (tab) => tab.id === state.current.selected,
-        );
         reportWorkspaceRoute(
           targetPath(current?.target ?? allTasks()),
           requestId,
         );
         return;
       }
-      // History can move again while the guard is visible. Its retained action
-      // must follow the latest target, matching the latest acknowledgement ID.
+      // History can move again while either exit guard is visible. Keep the
+      // pending action paired with the latest target and acknowledgement ID.
       guardedRouteAction.current = proceed;
-      leaveRealQA(() => {
+      if (pendingDiscard.current) return;
+      confirmNavigation(() => {
         const action = guardedRouteAction.current;
         guardedRouteAction.current = undefined;
         action?.();
       });
+      // A busy pane rejects navigation without showing a discard dialog.
+      if (!pendingDiscard.current) guardedRouteAction.current = undefined;
     }
   };
   const selectTab = (id: string) => {

@@ -74,11 +74,30 @@ const held = async (endpoint, count) => {
 try {
   await page.goto(base);
   await button("Task A").waitFor();
+  await button("Task A").click();
+  await waitTitle("Task A");
+  assert.equal(
+    await page.getByRole("tab").count(),
+    1,
+    "ordinary task click reuses the current tab",
+  );
+  for (const destination of ["Settings", "Events", "All tasks"]) {
+    await button(destination).click();
+    await page.waitForTimeout(100);
+    assert.equal(
+      await page.getByRole("tab").count(),
+      1,
+      "ordinary page click reuses the current tab",
+    );
+  }
+  await button("Task A").waitFor();
   await field("Search title or description").fill("Task");
+  await button("+ New task").click();
   await button("Task A").click();
   await waitTitle("Task A");
   await field("Title").fill("A unsaved");
   await field("Description Markdown").fill("Keep A draft verbatim");
+  await button("+ New task").click();
   await button("Task B").click();
   await waitTitle("Task B");
   await field("Title").fill("B unsaved");
@@ -103,10 +122,12 @@ try {
   await button("Back to Lane").click();
   await button("Close Pace").click();
   assert.equal(await field("Search title or description").inputValue(), "Task");
+  await button("+ New task").click();
   await button("Settings").click();
   await selectTab("Settings");
   await button("All tasks").click();
   await selectTab("All tasks");
+  await button("+ New task").click();
   await button("Events").click();
   await selectTab("Events");
   assert.equal(await page.getByRole("tab").count(), 5);
@@ -282,6 +303,8 @@ try {
   );
   assert.equal(await page.getByRole("tab").count(), 1);
   await button("Task B").waitFor();
+  // Explicit drafts create separate panes; ordinary task clicks replace them.
+  await button("+ New task").click();
   // An old read can finish in its own inactive tab, never pull selection back.
   await control("task-open", "hold=1");
   await button("Task B").click();
@@ -308,6 +331,7 @@ try {
   );
   await control("task-open", "hold=1");
   const readsBeforeClose = (await control("task-open")).length;
+  await button("+ New task").click();
   await button("Task B").click();
   await held("task-open", readsBeforeClose + 1);
   await button("Close Task B").click();

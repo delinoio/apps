@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   loadSettings,
+  type UpdaterHost,
   type HostNode,
   type SettingsBundle,
 } from "./harness/settings.ts";
@@ -46,6 +47,9 @@ async function open(
     content: 1,
     permission: 2,
   },
+  remote?: (name: string, request: unknown) => Promise<unknown>,
+  mobile = false,
+  updater: UpdaterHost = mode === "native" ? "desktop" : "none",
 ) {
   const calls: Call[] = [];
   const handlers: Record<string, (request: any) => Promise<unknown>> = {
@@ -66,14 +70,22 @@ async function open(
       if (!handler) throw new Error(`Unexpected local call ${name}`);
       return handler(request);
     },
-    call: async () => ({ items: [], nextCursor: "" }),
+    call: async (method: { name: string }, request: unknown) =>
+      remote?.(method.name, request) ?? { items: [], nextCursor: "" },
     subscribe: () => () => {},
     close: () => {},
     open: async () => {},
   };
+  (globalThis as any).NativeModules =
+    updater === "desktop"
+      ? { bridge: {} }
+      : updater === "ios" || updater === "android"
+        ? { LaneStore: {}, LaneHost: {} }
+        : {};
   const view = bundle.runtime.mount(bundle.Settings, {
     adapter,
     onReset: () => {},
+    mobile,
   });
   await view.settle();
   const buttons = (label?: string) => {
@@ -215,7 +227,7 @@ test("pending preference save keeps both choices and Save disabled and ignores p
   assert.equal(s.busy(), false);
   assert.equal(s.dirty(), false);
   assert.deepEqual(s.notices(), [SAVED]);
-  assert.equal(s.permission(), "Permission: 3");
+  assert.equal(s.permission(), "Permission: Denied");
   assert.ok(
     s.enabled(s.choice(ENABLE, "On")) &&
       s.enabled(s.choice(CONTENT, "Generic notice")) &&
@@ -332,7 +344,7 @@ test("explicit load disables choices while pending, adopts clean preferences and
   assert.equal(s.dirty(), false);
   assert.equal(s.selected(ENABLE, "On"), true);
   assert.equal(s.selected(CONTENT, "Generic notice"), true);
-  assert.equal(s.permission(), "Permission: 3");
+  assert.equal(s.permission(), "Permission: Denied");
   assert.ok(s.enabled(s.choice(ENABLE, "Off")));
 
   // Dirty draft: the same read must not overwrite independent edits.
@@ -437,7 +449,7 @@ for (const [content, option, submitted] of CONTENT_CASES) {
       ]);
       assert.equal(s.selected(CONTENT, option), true);
       assert.deepEqual(s.notices(), [SAVED]);
-      assert.equal(s.permission(), `Permission: ${PERMISSION}`);
+      assert.equal(s.permission(), "Permission: Granted");
 
       // Reload returns the named response, then a second save still matches.
       s.handlers.GetNotificationPreferences = async () =>
@@ -514,4 +526,184 @@ test("missing and unspecified content keep the Detail default for display and sa
     await s.tap(s.button(SAVE));
     assert.deepEqual(saved(s), [{ enabled: true, content: 1 }]);
   }
+});
+
+test("Settings keeps the approved section order and full deletion scope", async () => {
+  const native = await open("native");
+  const sections = all(native.view.tree(), (n) =>
+    /(^| )settings-card( |$)/.test(n.props.className ?? ""),
+  ).map((card) =>
+    text(
+      all(card.children, (n) =>
+        /(^| )settings-section-title( |$)/.test(n.props.className ?? ""),
+      )[0],
+    ),
+  );
+  assert.equal(bundle.captured.updates?.desktop, true);
+  assert.deepEqual(sections, [
+    "Local data and synchronization",
+    "Notifications on this device",
+    "Devices",
+    "Approved remote MCP connections",
+    "Development data",
+    "Delete Lane data",
+  ]);
+  for (const label of [
+    "Remove only this device’s data",
+    "Delete server and connected-device data",
+    "Delete server data, keep local data",
+  ]) {
+    assert.ok(native.button(label));
+  }
+  assert.match(
+    text(native.view.tree()[0]),
+    /Unsynchronized content cannot be recovered/,
+  );
+
+  const web = await open("web");
+  assert.equal(bundle.captured.updates?.desktop, false);
+  assert.equal(
+    web.button("Delete server data, keep local data").props.focusable,
+    true,
+  );
+  assert.equal(
+    all(
+      web.view.tree(),
+      (n) => isButton(n) && text(n) === "Remove only this device’s data",
+    ).length,
+    0,
+  );
+  const mobile = await open("native", undefined, undefined, true);
+  assert.equal(bundle.captured.updates?.desktop, true);
+  assert.ok(mobile.button("Reset development data"));
+
+  for (const platform of ["ios", "android"] as const) {
+    const native = await open("native", undefined, undefined, false, platform);
+    assert.equal(
+      bundle.captured.updates?.desktop,
+      false,
+      `${platform} hides the desktop-only updater`,
+    );
+  }
+  const desktop = await open("native", undefined, undefined, false, "desktop");
+  assert.equal(bundle.captured.updates?.desktop, true);
+});
+
+test("online list failures remain distinct from empty results and local preferences stay usable", async () => {
+  const s = await open(
+    "native",
+    { enabled: false, content: 1, permission: 2 },
+    async (name) => {
+      if (name === "ListDevices")
+        throw new Error("fixture devices unavailable");
+      return { items: [], nextCursor: "" };
+    },
+  );
+  const page = () => text(s.view.tree()[0]);
+  assert.match(page(), /Devices unavailable\. Refresh settings to try again/);
+  assert.match(page(), /No approved remote MCP connections/);
+  assert.doesNotMatch(page(), /No devices/);
+  assert.ok(s.enabled(s.choice(ENABLE, "On")));
+  assert.equal(s.permission(), "Permission: Granted");
+
+  const empty = await open("native");
+  assert.match(text(empty.view.tree()[0]), /No devices/);
+  assert.match(
+    text(empty.view.tree()[0]),
+    /No approved remote MCP connections/,
+  );
+});
+
+test("initial reads show loading instead of a false disconnected state", async () => {
+  const held = Promise.withResolvers<unknown>();
+  const adapter = {
+    mode: "native",
+    local: (name: string) =>
+      name === "GetLocalStatus"
+        ? held.promise
+        : Promise.resolve({ enabled: false, content: 1, permission: 2 }),
+    call: async () => ({ items: [], nextCursor: "" }),
+  };
+  const view = bundle.runtime.mount(bundle.Settings, {
+    adapter,
+    onReset: () => {},
+  });
+  await view.settle();
+  const first = text(view.tree()[0]);
+  assert.match(first, /Loading account status/);
+  assert.match(first, /Connection: Loading/);
+  assert.match(first, /Pending items: Unknown/);
+  assert.match(first, /Last synchronization: Never/);
+  assert.doesNotMatch(first, /Connection: Disconnected/);
+  held.resolve({
+    spaceId: "space-a",
+    deviceId: "device-a",
+    syncEnabled: true,
+    connected: true,
+    pendingItemCount: "0",
+  });
+  await view.settle();
+  assert.match(text(view.tree()[0]), /Connection: Connected/);
+});
+
+test("device and MCP rows keep their direct commands and disabled states", async () => {
+  const calls: { name: string; request: any }[] = [];
+  const active = await open("native", undefined, async (name, request) => {
+    calls.push({ name, request });
+    if (name === "ListDevices")
+      return {
+        items: [{ id: "device-a", name: "Example laptop" }],
+        nextCursor: "",
+      };
+    if (name === "ListConnections")
+      return {
+        items: [{ id: "connection-a", name: "Example agent" }],
+        nextCursor: "",
+      };
+    return {};
+  });
+  const page = text(active.view.tree()[0]);
+  assert.match(page, /Example laptop/);
+  assert.match(page, /Example agent/);
+  assert.match(page, /Full management access/);
+  await active.tap(active.button("Disconnect device"));
+  await active.tap(active.button("Revoke access"));
+  assert.deepEqual(
+    calls
+      .filter((call) => call.name === "DisconnectDevice")
+      .map((call) => call.request.deviceId),
+    ["device-a"],
+  );
+  assert.deepEqual(
+    calls
+      .filter((call) => call.name === "RevokeConnection")
+      .map((call) => call.request.connectionId),
+    ["connection-a"],
+  );
+
+  const inactive = await open("native", undefined, async (name) => {
+    if (name === "ListDevices")
+      return {
+        items: [
+          {
+            id: "device-a",
+            name: "Example laptop",
+            disconnectedAt: { seconds: "1" },
+          },
+        ],
+        nextCursor: "",
+      };
+    return {
+      items: [
+        {
+          id: "connection-a",
+          name: "Example agent",
+          revokedAt: { seconds: "1" },
+        },
+      ],
+      nextCursor: "",
+    };
+  });
+  assert.ok(inactive.disabled(inactive.button("Disconnect device")));
+  assert.ok(inactive.disabled(inactive.button("Revoke access")));
 });

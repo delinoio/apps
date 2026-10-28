@@ -116,7 +116,10 @@ test.before(async () => {
   bundle = await loadStoreConsumers();
 });
 
-function mount(items: ReturnType<typeof applied>[] = []) {
+function mount(
+  items: ReturnType<typeof applied>[] = [],
+  external?: LaneAdapter,
+) {
   const values = new Map<string, string>();
   const query: any = {
     select: (selector: string) => ({
@@ -129,7 +132,9 @@ function mount(items: ReturnType<typeof applied>[] = []) {
     }),
   };
   (globalThis as any).lynx = { createSelectorQuery: () => query };
-  const mock = deferredAdapter(items);
+  const mock = external
+    ? { adapter: external, calls: [] as Mutation[] }
+    : deferredAdapter(items);
   let dirty = false;
   const view = bundle.runtime.mount(bundle.URLConnections, {
     adapter: mock.adapter,
@@ -343,9 +348,8 @@ test("discard cancellation, missing repository and URL input validation stay int
   f.calls[0].reject(new Error("Invalid URL prefix"));
   await f.view.settle();
   assert.match(f.shown(), /Invalid URL prefix/);
-  const dialog = all(
-    f.view.tree(),
-    (node) => node.props.className === "dialog",
+  const dialog = all(f.view.tree(), (node) =>
+    (node.props.className ?? "").split(" ").includes("dialog"),
   )[0];
   assert.ok(dialog);
   const close = all([dialog], isButton).find((node) => text(node) === "Close");
@@ -359,6 +363,42 @@ test("discard cancellation, missing repository and URL input validation stay int
     "ftp://invalid.example/app",
   );
   f.view.unmount();
+});
+
+test("deferred mutation failures remain visible after dialogs are dismissed", async () => {
+  const deletion = mount([applied("https://one.example/app", "repo-one")]);
+  await deletion.view.settle();
+  await deletion.tap("Delete");
+  deletion.button("Delete connection").props.bindtap();
+  await deletion.view.settle();
+  assert.equal(deletion.calls.length, 1);
+  deletion.button("Cancel").props.bindtap();
+  await deletion.view.settle();
+  assert.equal(deletion.buttons("Delete connection").length, 0);
+  deletion.calls[0].reject(new Error("delete failed"));
+  await deletion.view.settle();
+  assert.match(deletion.shown(), /delete failed/);
+  deletion.view.unmount();
+
+  const save = mount();
+  await openDraft(save, "create");
+  save.button("Save").props.bindtap();
+  await save.view.settle();
+  assert.equal(save.calls.length, 1);
+  const editor = all(save.view.tree(), (node) =>
+    (node.props.className ?? "").split(" ").includes("dialog"),
+  )[0];
+  assert.ok(editor);
+  const close = all([editor], isButton).find((node) => text(node) === "Close");
+  assert.ok(close);
+  close.props.bindtap();
+  await save.view.settle();
+  await save.tap("Discard changes");
+  assert.equal(save.buttons("Save").length, 0);
+  save.calls[0].reject(new Error("save failed"));
+  await save.view.settle();
+  assert.match(save.shown(), /save failed/);
+  save.view.unmount();
 });
 
 test("conflict resolution locks alternatives and retains failed retries", async () => {
@@ -457,5 +497,116 @@ test("a resolution selection accepted just before Save survives the older reply"
   });
   await f.view.settle();
   assert.equal(f.dirty(), false);
+  f.view.unmount();
+});
+
+test("URL rows wait for all pages before showing a settled empty state", async () => {
+  let finishFirst: (value: unknown) => void = () => {};
+  const cursors: string[] = [];
+  const adapter = {
+    subscribe: () => () => {},
+    local: async () => ({ syncEnabled: false }),
+    call: (_method: unknown, input: { page: { cursor: string } }) => {
+      cursors.push(input.page.cursor);
+      if (!input.page.cursor)
+        return new Promise((resolve) => {
+          finishFirst = resolve;
+        });
+      return Promise.resolve({
+        items: [applied("https://two.example/app", "repo-two")],
+        nextCursor: "",
+      });
+    },
+  } as unknown as LaneAdapter;
+  const f = mount([], adapter);
+  assert.match(f.shown(), /Loading URL connections/);
+  assert.doesNotMatch(f.shown(), /No URL connections|Synchronized/);
+  assert.equal(f.buttons("Add connection").length, 1);
+  finishFirst({
+    items: [applied("https://one.example/app", "repo-one")],
+    nextCursor: "next",
+  });
+  await f.view.settle();
+  assert.deepEqual(cursors, ["", "next"]);
+  assert.match(f.shown(), /https:\/\/one\.example\/app/);
+  assert.match(f.shown(), /https:\/\/two\.example\/app/);
+  assert.match(f.shown(), /Local only/);
+  assert.doesNotMatch(f.shown(), /No URL connections/);
+  f.view.unmount();
+
+  const empty = mount();
+  await empty.view.settle();
+  assert.match(empty.shown(), /No URL connections/);
+  assert.equal(empty.buttons("Add connection").length, 1);
+  empty.view.unmount();
+});
+
+test("URL synchronization labels follow local status and failures keep rows", async () => {
+  for (const [status, label] of [
+    [{ syncEnabled: false }, "Local only"],
+    [{ syncEnabled: true, pendingItemCount: "1" }, "Synchronization pending"],
+    [{ syncEnabled: true, pendingItemCount: "0" }, "Synchronized"],
+    [
+      { syncEnabled: true, pendingItemCount: "0", syncErrorReason: "offline" },
+      "Synchronization failed",
+    ],
+    [
+      {
+        syncEnabled: true,
+        pendingItemCount: "0",
+        itemErrors: [{ reason: "blocked" }],
+      },
+      "Synchronization failed",
+    ],
+  ] as const) {
+    const adapter = {
+      subscribe: () => () => {},
+      local: async () => status,
+      call: async () => ({
+        items: [applied("https://one.example/app", "repo-one")],
+        nextCursor: "",
+      }),
+    } as unknown as LaneAdapter;
+    const f = mount([], adapter);
+    await f.view.settle();
+    assert.match(f.shown(), new RegExp(label));
+    assert.match(f.shown(), /https:\/\/one\.example\/app/);
+    f.view.unmount();
+  }
+  let reads = 0;
+  let invalidate = () => {};
+  const adapter = {
+    subscribe: (listener: () => void) => {
+      invalidate = listener;
+      return () => {};
+    },
+    local: async () => ({ syncEnabled: false }),
+    call: async () => {
+      reads++;
+      if (reads === 2) throw new Error("read failed");
+      return {
+        items: [applied("https://one.example/app", "repo-one")],
+        nextCursor: "",
+      };
+    },
+  } as unknown as LaneAdapter;
+  const f = mount([], adapter);
+  await f.view.settle();
+  await f.tap("Add connection");
+  await f.type("https://unsaved.example/app");
+  invalidate();
+  await f.view.settle();
+  assert.match(f.shown(), /read failed/);
+  assert.match(f.shown(), /https:\/\/one\.example\/app/);
+  assert.equal(
+    f.values.get(`#${f.input().props.id}`),
+    "https://unsaved.example/app",
+  );
+  await f.tap("Retry loading");
+  assert.match(f.shown(), /Local only/);
+  assert.equal(
+    f.values.get(`#${f.input().props.id}`),
+    "https://unsaved.example/app",
+  );
   f.view.unmount();
 });

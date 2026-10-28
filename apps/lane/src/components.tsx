@@ -173,6 +173,7 @@ export function Field({
   focus = false,
   error,
   help,
+  prefix,
   focusOnShow = false,
   accessibleHelp = false,
 }: {
@@ -185,6 +186,7 @@ export function Field({
   // Validation message shown in text next to the field, never by color alone.
   error?: string;
   help?: string;
+  prefix?: ReactNode;
   focusOnShow?: boolean;
   accessibleHelp?: boolean;
 }) {
@@ -208,7 +210,7 @@ export function Field({
   }, [id, focus]);
   const props = {
     id,
-    "data-dialog-default": focusOnShow ? "true" : undefined,
+    "data-dialog-default": focus || focusOnShow ? "true" : undefined,
     className: `input ${multiline ? "multiline" : ""}`,
     "accessibility-label": [label, accessibleHelp ? help : undefined, error]
       .filter(Boolean)
@@ -220,6 +222,7 @@ export function Field({
   return (
     <view className="field" data-invalid={error ? "true" : undefined}>
       <text className="label">{label}</text>
+      {prefix}
       {multiline ? <textarea {...props} /> : <input {...props} />}
       {help && <text className="muted">{help}</text>}
       {error && <text className="validation">{error}</text>}
@@ -431,6 +434,7 @@ export function Dialog({
   title,
   children,
   onClose,
+  closeDisabled = false,
   className = "",
   closeFocus = false,
   focusHeading = false,
@@ -440,6 +444,7 @@ export function Dialog({
   title: string;
   children: ReactNode;
   onClose: () => void;
+  closeDisabled?: boolean;
   className?: string;
   closeFocus?: boolean;
   focusHeading?: boolean;
@@ -472,14 +477,15 @@ export function Dialog({
     <view
       className="overlay"
       global-bindkeydown={(e) => {
-        if (e.key === "Escape") onClose();
+        if (e.key === "Escape" && !closeDisabled) onClose();
       }}
     >
       <view
-        className={className ? `dialog ${className}` : "dialog"}
+        className={`dialog ${className}`}
+        accessibility-element={false}
         accessibility-label={title}
       >
-        <view className="row between">
+        <view className="row between dialog-header">
           {focusHeading ? (
             <text
               id={headingId}
@@ -494,6 +500,7 @@ export function Dialog({
             <text className="heading">{title}</text>
           )}
           <Button
+            disabled={closeDisabled}
             focusOnShow={closeFocus || (!focusHeading && !!returnFocusId)}
             onClick={onClose}
           >
