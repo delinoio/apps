@@ -21,7 +21,6 @@ export function Button({
   elementId?: string;
   children: ReactNode;
   onClick?: () => void;
-  onKeyDown?: (key: string) => void;
   disabled?: boolean;
   primary?: boolean;
   // Toggle state for chips; exposed to assistive technology, not only by color.
@@ -32,7 +31,7 @@ export function Button({
   // Decorative color next to the text; the name always stays visible.
   swatch?: string;
   focusOnShow?: boolean;
-  onKeyDown?: (key: string) => boolean;
+  onKeyDown?: (key: string) => void | boolean;
   focusRequest?: number;
 }) {
   const [generatedId] = useState(
@@ -74,8 +73,8 @@ export function Button({
         if (!disabled) onClick?.();
       }}
       bindkeydown={(e) => {
+        if (onKeyDown?.(e.key) === true) return;
         if (disabled) return;
-        if (onKeyDown?.(e.key)) return;
         if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
     >
