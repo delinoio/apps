@@ -160,8 +160,12 @@ fn terminal_entry(
     version: &Value,
     progress: &str,
     visiting: &mut HashSet<String>,
+    cache: &mut HashMap<String, Option<(String, DateTime<Utc>)>>,
 ) -> Result<Option<(String, DateTime<Utc>)>> {
     let id = strv(version, "versionId");
+    if let Some(answer) = cache.get(id) {
+        return Ok(answer.clone());
+    }
     if !visiting.insert(id.to_owned()) {
         return Ok(None);
     }
@@ -204,7 +208,7 @@ fn terminal_entry(
             let mut candidate = None;
             let mut unique = true;
             for parent in same {
-                let entry = terminal_entry(c, entity, &parent, progress, visiting)?;
+                let entry = terminal_entry(c, entity, &parent, progress, visiting, cache)?;
                 if entry.is_none()
                     || candidate
                         .as_ref()
@@ -220,6 +224,7 @@ fn terminal_entry(
         }
     };
     visiting.remove(id);
+    cache.insert(id.to_owned(), answer.clone());
     Ok(answer)
 }
 fn completed_matches(
@@ -248,11 +253,13 @@ fn entry_for_heads(
     progress: &str,
 ) -> Result<Option<(String, DateTime<Utc>)>> {
     let mut candidate = None;
+    let mut visiting = HashSet::new();
+    let mut cache = HashMap::new();
     for head in heads {
         if strv(&head["task"], "progress") != progress {
             return Ok(None); // Unresolved heads make the terminal entry UNKNOWN.
         }
-        let entry = terminal_entry(c, entity, head, progress, &mut HashSet::new())?;
+        let entry = terminal_entry(c, entity, head, progress, &mut visiting, &mut cache)?;
         if entry.is_none()
             || candidate
                 .as_ref()
