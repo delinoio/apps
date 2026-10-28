@@ -2387,15 +2387,25 @@ struct Store::Impl {
       return value;
     };
     struct Candidate { std::string versionId; int64_t enteredAt; };
+    // A terminal-entry evaluation can revisit the same version through
+    // multiple merge parents. Cache both successful candidates and UNKNOWN
+    // results for this evaluation, while keeping the active-path cycle guard
+    // separate.
+    std::map<std::string, std::optional<Candidate>> derived;
     std::function<std::optional<Candidate>(const J &, std::set<std::string> &)> walk;
     walk = [&](const J &current, std::set<std::string> &visiting)
         -> std::optional<Candidate> {
       const auto currentId = str(current, "versionId");
-      if (!current.contains("task") || !visiting.insert(currentId).second)
+      if (!current.contains("task") || currentId.empty() || visiting.count(currentId))
         return std::nullopt;
+      auto cached = derived.find(currentId);
+      if (cached != derived.end())
+        return cached->second;
+      visiting.insert(currentId);
       const auto progress = str(current["task"], "progress");
       if (progress != selectedProgress) {
         visiting.erase(currentId);
+        derived.emplace(currentId, std::nullopt);
         return std::nullopt;
       }
       const auto parents = current.value("parentVersionIds", J::array());
@@ -2418,6 +2428,7 @@ struct Store::Impl {
         answer = candidate;
       }
       visiting.erase(currentId);
+      derived.emplace(currentId, answer);
       return answer;
     };
     std::optional<Candidate> answer;

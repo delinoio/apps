@@ -787,6 +787,7 @@ int main(int argc, char** argv) {
     {"repository identifier name-only save with counterpart", repository_identifier_name_only_save_with_counterpart},
     {"repository identifier sync, import and merge", repository_identifier_sync_import_and_merge},
     {"malformed repository identifier pull rolls back", repository_identifier_malformed_pull_rolls_back},
+    {"completed deep diamond public API", completed_deep_diamond_api_fixture},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {

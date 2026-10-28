@@ -147,6 +147,50 @@ void completed_fixture(const J& document) {
     }
   }
 }
+J deep_diamond_dataset(unsigned depth) {
+  require(depth >= 2, "deep completed fixture depth");
+  const auto entity = uuid();
+  const auto repository = uuid();
+  J dataset = {{"versions", J::array()}, {"rows", J::array()}};
+  auto add = [&](const std::string& versionId, const std::vector<std::string>& parents,
+                 const std::string& createdAt) {
+    J version = {{"formatVersion", 3}, {"entityId", entity},
+                 {"kind", "ENTITY_KIND_TASK"}, {"versionId", versionId},
+                 {"createdAt", createdAt},
+                 {"task", {{"repositoryId", repository}, {"title", "deep diamond"},
+                            {"progress", "PROGRESS_DONE"},
+                            {"proposal", "PROPOSAL_REGULAR"},
+                            {"priority", "TASK_PRIORITY_NORMAL"}}}};
+    if (!parents.empty())
+      version["parentVersionIds"] = parents;
+    dataset["versions"].push_back(std::move(version));
+  };
+  auto frontier = std::vector<std::string>{uuid()};
+  add(frontier.front(), {}, "2026-10-27T00:00:00.000000Z");
+  for (unsigned level = 0; level < depth; ++level) {
+    const auto left = uuid();
+    const auto right = uuid();
+    add(left, {frontier.front()}, "2026-10-28T00:00:00.000000Z");
+    add(right, {frontier.front()}, "2026-10-28T00:00:00.000000Z");
+    const auto merged = uuid();
+    add(merged, {left, right}, "2026-10-28T00:00:00.000000Z");
+    frontier = {merged};
+  }
+  dataset["rows"].push_back({{"selectedVersionId", frontier.front()},
+                              {"headVersionIds", J::array({frontier.front()})}});
+  return dataset;
+}
+void completed_deep_diamond_api_fixture() {
+  CompletedSeed seed(deep_diamond_dataset(24));
+  const J request = {{"completed", {{"selection", "COMPLETED_SELECTION_LAST_24_HOURS"},
+                                    {"cutoff", "2026-10-27T00:00:00.000000Z"}}}};
+  require(completed_ids(seed.f.call("ListTasks", request)).size() == 1,
+          "deep completed diamond is included at its terminal cutoff");
+  auto after = request;
+  after["completed"]["cutoff"] = "2026-10-27T00:00:00.000001Z";
+  require(completed_ids(seed.f.call("ListTasks", after)).empty(),
+          "deep completed diamond respects terminal cutoff precision");
+}
 unsigned run_completed_fixtures(const fs::path& directory) {
   std::ifstream input(directory / "completed-list.json");
   require(input.good(), "missing completed-list fixture");
