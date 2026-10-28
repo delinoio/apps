@@ -48,7 +48,11 @@ test("tab commands use displayed order and reopen explicit closes in LIFO order"
   };
   try {
     await view.settle();
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.New });
+    await view.settle();
     host.route?.({ kind: "repository", id: "a" });
+    await view.settle();
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.New });
     await view.settle();
     host.route?.({ kind: "repository", id: "b" });
     await view.settle();
@@ -135,9 +139,9 @@ test("tab commands use displayed order and reopen explicit closes in LIFO order"
     host.route?.({ kind: "repository", id: "new-space", spaceId: "space-b" });
     await view.settle();
     assert.equal(adapter.spaceId, "space-b");
-    assert.deepEqual(order(), ["page-Tasks", "repository-new-space"]);
+    assert.deepEqual(order(), ["repository-new-space"]);
     await command(TabCommand.Reopen);
-    assert.deepEqual(order(), ["page-Tasks", "repository-new-space"]);
+    assert.deepEqual(order(), ["repository-new-space"]);
     await command(TabCommand.Close);
     await command(TabCommand.Close);
     assert.deepEqual(order(), ["page-Tasks"]);
@@ -325,7 +329,11 @@ test("closing an unselected focused tab restores focus to the selected tab", asy
     );
   try {
     await view.settle();
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.New });
+    await view.settle();
     host.route?.({ kind: "repository", id: "a" });
+    await view.settle();
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.New });
     await view.settle();
     host.route?.({ kind: "repository", id: "b" });
     await view.settle();

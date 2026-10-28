@@ -249,11 +249,22 @@ test("one window subscription serves multiple retained panes and is released onc
     await view.settle();
     visit("All tasks");
     await view.settle();
+    const tabs: any[] = [];
+    const collect = (node: any) => {
+      if (typeof node === "string") return;
+      if (node.props["data-workspace-tab"]) tabs.push(node);
+      node.children.forEach(collect);
+    };
+    view.tree().forEach(collect);
+    assert.deepEqual(
+      tabs.map((node) => node.props["data-workspace-tab"]),
+      ["page-Tasks"],
+    );
     assert.equal(opened, 1);
     assert.equal(
       subscriptions,
       1,
-      "adding and selecting tabs does not multiply invalidations",
+      "replacing tabs does not multiply invalidations",
     );
     assert.equal(
       released,
