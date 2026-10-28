@@ -536,6 +536,69 @@ text {
   flex: 1;
   min-height: 0;
 }
+.store-recovery {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.recovery-diagnostic,
+.reset-warning {
+  padding: 16px;
+  border: 1px solid #dce2ec;
+  border-radius: 8px;
+  background-color: #f7f9fc;
+}
+.recovery-diagnostic,
+.reset-warning,
+.reset-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.reset-dialog {
+  width: 640px;
+  height: 85%;
+  border: 1px solid #dce2ec;
+}
+.reset-content {
+  width: 100%;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+.reset-phrase {
+  width: 100%;
+  padding: 12px;
+  border-radius: 6px;
+  background-color: #eef1f6;
+  font-family: monospace;
+}
+.reset-actions {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.reset-dialog .button,
+.store-recovery .button {
+  min-height: 44px;
+}
+.reset-dialog .button.disabled {
+  opacity: 1;
+  border-color: #c6cfdd;
+}
+.reset-dialog .button.disabled text {
+  color: #40506b;
+}
+.reset-dialog .input {
+  min-height: 44px;
+}
+.reset-dialog .field {
+  margin-top: 0;
+  margin-bottom: 0;
+}
 .conflict-dialog {
   width: 1120px;
   max-width: 100%;
@@ -688,6 +751,21 @@ text {
 }
 .mobile .dialog {
   padding: 16px;
+}
+.mobile .store-recovery {
+  padding: 16px;
+}
+.mobile .overlay {
+  padding: 16px;
+}
+.mobile .reset-dialog .dialog-header {
+  flex-wrap: wrap;
+}
+.mobile .reset-actions {
+  flex-direction: column;
+}
+.mobile .reset-actions .button {
+  width: 100%;
 }
 .mobile .repository-directory {
   padding: 16px;

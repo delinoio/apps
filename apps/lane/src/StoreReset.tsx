@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "@lynx-js/react";
 import type { LaneAdapter } from "./adapter";
-import { Button, Notice } from "./components";
+import { Button } from "./components";
 import { ResetDevelopmentDialog } from "./ResetDevelopment";
 
 /**
@@ -19,18 +19,31 @@ export function StoreReset({
   ready: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const diagnostic =
+    message ===
+    "Unsupported store format. Run the explicit development reset (lane data reset)."
+      ? message
+      : "The local data format is unsupported.";
   return (
-    <view className="section">
+    <view className="section store-recovery">
       <text className="heading">This data space cannot be opened</text>
-      <Notice>{message}</Notice>
+      <text className="bold">Your data has not been changed.</text>
+      <view
+        className="recovery-diagnostic"
+        accessibility-element
+        accessibility-label={`Host diagnostic: ${diagnostic}`}
+      >
+        <text className="bold">Host diagnostic</text>
+        <text>{diagnostic}</text>
+      </view>
       <text>
-        Lane is pre-release and cannot migrate this older format. If its data is
-        disposable, reset the active data space explicitly. Otherwise update
-        Lane or use the CLI reset procedure for a specific space.
+        Lane cannot open this data format. If this data matters, use a
+        compatible Lane version. Reset only disposable development data.
       </text>
-      <Button primary onClick={() => setOpen(true)}>
-        Reset development data
-      </Button>
+      <text>
+        For a specific data space, use the existing CLI reset procedure.
+      </text>
+      <Button onClick={() => setOpen(true)}>Reset development data</Button>
       {open && (
         <ResetDevelopmentDialog
           onClose={() => setOpen(false)}
