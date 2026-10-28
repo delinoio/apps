@@ -876,7 +876,7 @@ text {
 .display-options-menu {
   position: absolute;
   top: 48px;
-  right: 0;
+  left: 0;
   width: 320px;
   max-width: 88vw;
   padding: 16px;
@@ -1129,9 +1129,6 @@ text {
 }
 .task-board.stacked {
   flex-direction: column;
-}
-.mobile .display-options-menu {
-  right: -48px;
 }
 .mobile .nav-items .button {
   flex: 1;

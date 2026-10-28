@@ -63,7 +63,10 @@ try {
   ])
     await button(`Select completed items: ${label}`).waitFor();
   const menu = await bounds(".display-options-menu");
-  assert.ok(menu.x >= 0 && menu.right <= 361, "Display Options fits at 360px");
+  assert.ok(
+    menu.x >= 0 && menu.right <= 361,
+    `Display Options fits at 360px: ${JSON.stringify(menu)}`,
+  );
   await page.keyboard.press("Escape");
   await button("Select completed items: All").waitFor({ state: "hidden" });
   await button("Completed items: None").waitFor();
