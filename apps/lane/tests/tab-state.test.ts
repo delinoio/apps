@@ -255,3 +255,61 @@ test("tab commands keep a busy RealQA tab from being closed through a stale list
     view.unmount();
   }
 });
+
+test("closing an unselected focused tab restores focus to the selected tab", async () => {
+  const { App, runtime, host } = await loadApp();
+  (globalThis as any).NativeModules = {};
+  const view = runtime.mount(App, {
+    providedAdapter: {
+      mode: "web",
+      spaceId: "space-a",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      local: async () => ({}),
+      call: async () => ({ items: [], nextCursor: "" }),
+    },
+  });
+  const tab = (id: string) =>
+    nodes(view.tree()).find((node) => node.props["data-workspace-tab"] === id);
+  const order = () =>
+    nodes(view.tree())
+      .filter((node) => node.props["data-workspace-tab"])
+      .map((node) => node.props["data-workspace-tab"]);
+  const closeButtons = () =>
+    nodes(view.tree()).filter((node) =>
+      String(node.props["accessibility-label"] ?? "").startsWith("Close "),
+    );
+  try {
+    await view.settle();
+    host.route?.({ kind: "repository", id: "a" });
+    await view.settle();
+    host.route?.({ kind: "repository", id: "b" });
+    await view.settle();
+    tab("repository-a")?.props.bindtap();
+    await view.settle();
+    tab("repository-a")?.props.bindkeydown({ key: "ArrowDown" });
+    await view.settle();
+    assert.equal(tab("repository-a")?.props["data-tab-focus"], "false");
+    assert.equal(tab("repository-b")?.props["data-tab-focus"], "true");
+    host.emit("lane.workspace.tabCommand", { command: TabCommand.MoveLater });
+    await view.settle();
+    assert.deepEqual(order(), ["page-Tasks", "repository-b", "repository-a"]);
+    assert.equal(
+      tab("repository-b")?.props["data-tab-focus"],
+      "true",
+      "reordering retains focus on the same tab",
+    );
+    closeButtons()[1]?.props.bindtap();
+    await view.settle();
+    assert.equal(tab("repository-b"), undefined);
+    assert.equal(
+      tab("repository-a")?.props["data-tab-focus"],
+      "true",
+      "focus returns to the selected tab after its focused neighbor closes",
+    );
+    assert.equal(tab("repository-a")?.props.focusable, true);
+  } finally {
+    view.unmount();
+  }
+});
