@@ -29,6 +29,7 @@ export function URLConnections({
   const lock = useRef(false);
   const [revision, setRevision] = useState(0);
   const [editing, setEditing] = useState<{
+    sessionId: string;
     id: string;
     base?: string;
     prefix: string;
@@ -36,14 +37,19 @@ export function URLConnections({
     requestId: string;
   }>();
   const [deleting, setDeleting] = useState<string>();
-  const [conflict, setConflict] = useState<UI<EntityResult>>();
-  const [chosen, setChosen] = useState<UI<EntityVersion>>();
+  const [resolution, setResolution] = useState<{
+    conflict: UI<EntityResult>;
+    chosen?: UI<EntityVersion>;
+    requestId: string;
+  }>();
+  const resolutionRef = useRef(resolution);
+  resolutionRef.current = resolution;
   const [discard, setDiscard] = useState(false);
   const [discardConflict, setDiscardConflict] = useState(false);
   useEffect(() => {
-    dirty(!!editing || !!chosen);
+    dirty(!!editing || !!resolution?.chosen);
     return () => dirty(false);
-  }, [editing, chosen, dirty]);
+  }, [editing, resolution, dirty]);
   useEffect(
     () => adapter.subscribe(() => setRevision((v) => v + 1)),
     [adapter],
@@ -116,8 +122,10 @@ export function URLConnections({
         capture. Conflicting rules are excluded.
       </text>
       <Button
+        disabled={busy}
         onClick={() =>
           setEditing({
+            sessionId: newId(),
             id: newId(),
             prefix: "",
             repositoryId: "",
@@ -145,6 +153,7 @@ export function URLConnections({
               disabled={busy || conflicted(item)}
               onClick={() =>
                 setEditing({
+                  sessionId: newId(),
                   id: item.version!.entityId,
                   base: item.version!.versionId,
                   prefix: connectionOf(item.version)!.prefix,
@@ -163,9 +172,12 @@ export function URLConnections({
             </Button>
             {conflicted(item) && (
               <Button
+                disabled={busy}
                 onClick={() => {
-                  setConflict(item);
-                  setChosen(undefined);
+                  setResolution({
+                    conflict: item,
+                    requestId: newId(),
+                  });
                 }}
               >
                 Resolve conflict
@@ -187,9 +199,16 @@ export function URLConnections({
             label="URL prefix"
             value={editing.prefix}
             focus
-            onChange={(prefix) =>
-              setEditing({ ...editing, prefix, requestId: newId() })
-            }
+            disabled={busy}
+            onChange={(prefix) => {
+              if (lock.current) return;
+              setEditing((current) =>
+                current?.sessionId === editing.sessionId &&
+                current.prefix !== prefix
+                  ? { ...current, prefix, requestId: newId() }
+                  : current,
+              );
+            }}
           />
           {!editing.prefix.trim() && (
             <text>Enter an HTTP or HTTPS URL prefix.</text>
@@ -198,9 +217,16 @@ export function URLConnections({
             label="Repository"
             value={editing.repositoryId}
             options={options}
-            onChange={(repositoryId) =>
-              setEditing({ ...editing, repositoryId, requestId: newId() })
-            }
+            disabled={busy}
+            onChange={(repositoryId) => {
+              if (lock.current) return;
+              setEditing((current) =>
+                current?.sessionId === editing.sessionId &&
+                current.repositoryId !== repositoryId
+                  ? { ...current, repositoryId, requestId: newId() }
+                  : current,
+              );
+            }}
           />
           {!options.some(([id]) => id === editing.repositoryId) && (
             <Notice>Select an available repository.</Notice>
@@ -247,7 +273,16 @@ export function URLConnections({
                   throw new Error(
                     "The rule changed. Close this editor and resolve both alternatives.",
                   );
-                setEditing(undefined);
+                // An input accepted before the busy transition can still be
+                // queued when this reply arrives. Clear only its submitted draft.
+                setEditing((current) => {
+                  if (current?.sessionId !== editing.sessionId) return current;
+                  if (current.requestId === editing.requestId) return undefined;
+                  const savedVersionId = reply.result?.version?.versionId;
+                  return savedVersionId
+                    ? { ...current, base: savedVersionId }
+                    : current;
+                });
               })
             }
           >
@@ -281,8 +316,7 @@ export function URLConnections({
           </Button>
           <Button
             onClick={() => {
-              setChosen(undefined);
-              setConflict(undefined);
+              setResolution(undefined);
               setDiscardConflict(false);
             }}
           >
@@ -313,19 +347,19 @@ export function URLConnections({
           {error && <Notice>{error}</Notice>}
         </Dialog>
       )}
-      {conflict && (
+      {resolution && (
         <Dialog
           title="Resolve URL connection conflict"
           onClose={() => {
-            if (chosen) setDiscardConflict(true);
-            else setConflict(undefined);
+            if (resolution.chosen) setDiscardConflict(true);
+            else setResolution(undefined);
           }}
         >
           <Notice>
             Compare both alternatives. Select one, check its repository, then
             explicitly save the resolution.
           </Notice>
-          {heads(conflict).map((version) => (
+          {heads(resolution.conflict).map((version) => (
             <view className="card" key={version.versionId}>
               <text text-selection>{connectionOf(version)?.prefix}</text>
               <text>
@@ -338,51 +372,76 @@ export function URLConnections({
                 )}
               </text>
               <Button
-                primary={chosen?.versionId === version.versionId}
-                onClick={() => setChosen(version)}
+                primary={resolution.chosen?.versionId === version.versionId}
+                disabled={busy}
+                onClick={() => {
+                  if (lock.current) return;
+                  setResolution((current) =>
+                    current?.conflict === resolution.conflict &&
+                    current.chosen !== version
+                      ? { ...current, chosen: version, requestId: newId() }
+                      : current,
+                  );
+                }}
               >
                 Use this version
               </Button>
             </view>
           ))}
-          {chosen && (
+          {resolution.chosen && (
             <Choices
               label="Resolved repository"
-              value={connectionOf(chosen)!.repositoryId}
+              value={connectionOf(resolution.chosen)!.repositoryId}
               options={options}
-              onChange={(repositoryId) =>
-                setChosen({
-                  ...chosen,
-                  body: {
-                    case: "urlConnection",
-                    value: { ...connectionOf(chosen)!, repositoryId },
-                  },
-                })
-              }
+              disabled={busy}
+              onChange={(repositoryId) => {
+                if (lock.current) return;
+                setResolution((current) =>
+                  current?.conflict === resolution.conflict &&
+                  current.chosen &&
+                  connectionOf(current.chosen)?.repositoryId !== repositoryId
+                    ? {
+                        ...current,
+                        chosen: {
+                          ...current.chosen,
+                          body: {
+                            case: "urlConnection",
+                            value: {
+                              ...connectionOf(current.chosen)!,
+                              repositoryId,
+                            },
+                          },
+                        },
+                        requestId: newId(),
+                      }
+                    : current,
+                );
+              }}
             />
           )}
           {error && <Notice>{error}</Notice>}
           <Button
             primary
-            disabled={busy || !chosen}
+            disabled={busy || !resolution.chosen}
             onClick={() =>
               void run(async () => {
                 if (
-                  !chosen ||
+                  !resolution.chosen ||
                   !options.some(
-                    ([id]) => id === connectionOf(chosen)?.repositoryId,
+                    ([id]) =>
+                      id === connectionOf(resolution.chosen)?.repositoryId,
                   )
                 )
                   throw new Error("Select an available repository.");
                 const reply = await adapter.call(
                   LaneService.method.resolveConflict,
                   {
-                    meta: meta(),
-                    id: chosen.entityId,
-                    expectedHeadIds: heads(conflict)
+                    meta: { requestId: resolution.requestId },
+                    id: resolution.chosen.entityId,
+                    expectedHeadIds: heads(resolution.conflict)
                       .map((v) => v.versionId)
                       .sort(),
-                    resolved: chosen,
+                    resolved: resolution.chosen,
                   },
                 );
                 if (
@@ -392,8 +451,34 @@ export function URLConnections({
                   throw new Error(
                     "The conflict changed. Refresh and compare all alternatives.",
                   );
-                setChosen(undefined);
-                setConflict(undefined);
+                const current = resolutionRef.current;
+                const savedVersion = reply.result.version;
+                const retained = current?.chosen
+                  ? connectionOf(current.chosen)
+                  : undefined;
+                const canRebase =
+                  !!current &&
+                  current !== resolution &&
+                  !!retained &&
+                  !!savedVersion;
+                if (
+                  current &&
+                  current !== resolution &&
+                  retained &&
+                  savedVersion
+                ) {
+                  setEditing({
+                    sessionId: newId(),
+                    id: savedVersion.entityId,
+                    base: savedVersion.versionId,
+                    prefix: retained.prefix,
+                    repositoryId: retained.repositoryId,
+                    requestId: current.requestId,
+                  });
+                }
+                setResolution((active) =>
+                  active === resolution || canRebase ? undefined : active,
+                );
               })
             }
           >
