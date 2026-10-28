@@ -694,6 +694,13 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                       miniApp === MiniApp.Lane && selected === tab.id
                         ? "flex"
                         : "none",
+                    // Lynx can still paint text inside display:none panes.
+                    // Clip inactive panes until the native display bug is fixed;
+                    // active panes must allow menus and focus rings to overflow.
+                    overflow:
+                      miniApp === MiniApp.Lane && selected === tab.id
+                        ? "visible"
+                        : "hidden",
                   }}
                   data-active-tab={
                     miniApp === MiniApp.Lane && selected === tab.id
