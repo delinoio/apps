@@ -134,6 +134,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   }, []);
   const resetTabs = (preserveClosed = false) => {
     const first = initialTab();
+    setTaskDisplay(initialTaskDisplay);
     guardedRouteAction.current = undefined;
     if (!preserveClosed) closedTabs.current = [];
     setTabs([first]);
@@ -309,6 +310,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     const currentTabs = state.current.tabs;
     const position = currentTabs.findIndex((tab) => tab.id === id);
     if (position < 0) return;
+    if (id === tabIdentity(allTasks())) setTaskDisplay(initialTaskDisplay);
     if (record)
       closedTabs.current = recordClosedTab(
         closedTabs.current,

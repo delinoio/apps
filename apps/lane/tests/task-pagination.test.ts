@@ -487,6 +487,34 @@ test("nested Display Options closes inside out and retains selections across tab
   );
 });
 
+for (const keepAnotherTab of [false, true]) {
+  test(`closing All tasks resets display options with another tab: ${keepAnotherTab}`, async () => {
+    const lane = await open(5);
+    await lane.tap(lane.button("Display Options"));
+    await lane.tap(lane.button("Board"));
+    await lane.tap(lane.namedButton("Completed items: None"));
+    await lane.tap(lane.namedButton("Select completed items: All"));
+    if (keepAnotherTab) {
+      await lane.tap(lane.button("Proposals · 0"));
+      await lane.tap(lane.button("All tasks"));
+    }
+    await lane.tap(lane.namedButton("Close All tasks"));
+    if (keepAnotherTab) await lane.tap(lane.button("All tasks"));
+    assert.equal(
+      all(lane.tree(), (node) => node.props.className === "task-board-column")
+        .length,
+      0,
+    );
+    await lane.tap(lane.button("Display Options"));
+    assert.equal(lane.button("List").props["data-pressed"], "true");
+    assert.ok(lane.namedButton("Completed items: None"));
+    assert.equal(
+      lane.queries().at(-1)!.request.completed.selection,
+      CompletedSelection.NONE,
+    );
+  });
+}
+
 test("a completed selection change supersedes a pending continuation", async () => {
   const lane = await open(150, { holds: ["C100"] });
   await lane.tap(lane.more());
