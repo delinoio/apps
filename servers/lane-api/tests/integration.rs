@@ -78,10 +78,9 @@ async fn rejection_migration_preserves_prior_digests_and_legacy_rows() {
     let after: Vec<(String,String)> = sqlx::query_as("SELECT name,digest FROM lane_schema_migrations WHERE name<>'00008_sync_rejections' ORDER BY name")
         .fetch_all(&pool).await.unwrap();
     assert_eq!(after, before);
-    let correlation: (Option<String>,Option<String>,Option<String>,Option<String>,Option<Vec<String>>) =
-        sqlx::query_as("SELECT epoch,device_id,entity_id,version_id,base_heads FROM lane_sync_rejections WHERE account_id=$1 AND request_id=$2")
-            .bind(&legacy_account).bind(&legacy_request).fetch_one(&pool).await.unwrap();
-    assert_eq!(correlation, (None, None, None, None, None));
+    let uncorrelated: bool = sqlx::query_scalar("SELECT epoch IS NULL AND device_id IS NULL AND entity_id IS NULL AND version_id IS NULL AND base_heads IS NULL FROM lane_sync_rejections WHERE account_id=$1 AND request_id=$2")
+        .bind(&legacy_account).bind(&legacy_request).fetch_one(&pool).await.unwrap();
+    assert!(uncorrelated);
     migration::migrate(&pool).await.unwrap();
     assert!(migration::check(&pool).await.is_ok());
     pool.close().await;
