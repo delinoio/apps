@@ -287,6 +287,93 @@ test("relationship header menu preserves action order, eligibility and focused s
   view.unmount();
 });
 
+test("relationship replacement closes mounted selectors and relationship menus", async () => {
+  const cases = [
+    {
+      relationship: "parentTaskId",
+      change: "Change parent",
+      title: "Parent",
+    },
+    {
+      relationship: "duplicateOfTaskId",
+      change: "Change original",
+      title: "Duplicate of",
+    },
+  ] as const;
+  for (const { relationship, change, title } of cases) {
+    for (const openControl of ["priority", "relationship"] as const) {
+      const view = bundle.runtime.mount(bundle.RelationshipsTransitionHost, {
+        initial: {
+          id: "task-self",
+          dirty: false,
+          task: {
+            repositoryId: "repo-a",
+            [relationship]: "existing-task",
+            parentTaskId:
+              relationship === "parentTaskId" ? "existing-task" : undefined,
+            duplicateOfTaskId:
+              relationship === "duplicateOfTaskId"
+                ? "existing-task"
+                : undefined,
+            dependsOnTaskIds: [],
+            relatedTaskIds: [],
+          },
+          relations: { subtasks: [], blocks: [] },
+        },
+        openControl: openControl === "relationship" ? openControl : undefined,
+        disabled: false,
+        options: {
+          tasks: [
+            { id: "task-self", title: "Self" },
+            { id: "existing-task", title: "Existing" },
+            { id: "candidate", title: "Candidate" },
+          ],
+          status: "ready",
+          error: "",
+          retry: () => {},
+        },
+        ownId: "task-self",
+        moved: false,
+        openTask: () => {},
+      });
+      const tree = () => view.tree();
+      if (openControl === "priority") {
+        button(tree(), "Priority: None").props.bindtap();
+        await view.settle();
+        assert.equal(
+          button(tree(), "Priority: None").props["data-expanded"],
+          "true",
+        );
+      } else {
+        assert.equal(
+          button(tree(), "Add relationship").props["data-expanded"],
+          "true",
+        );
+      }
+      button(tree(), change).props.bindtap();
+      await view.settle();
+      assert.equal(
+        button(tree(), "Priority: None").props["data-expanded"],
+        "false",
+      );
+      assert.equal(
+        button(tree(), "Add relationship").props["data-expanded"],
+        "false",
+      );
+      assert.equal(
+        find(
+          tree(),
+          (node) =>
+            node.type === "input" &&
+            node.props["accessibility-label"] === `Search tasks for ${title}`,
+        ).length,
+        1,
+      );
+      view.unmount();
+    }
+  }
+});
+
 test("relationship loading, failure and move keep Add guarded and expose retry", async () => {
   const initial = {
     id: "task-self",

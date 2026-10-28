@@ -361,7 +361,10 @@ export function TaskRelationships({
                 {single && (
                   <Button
                     disabled={disabled || unavailable}
-                    onClick={() => setAdding(kind)}
+                    onClick={() => {
+                      setOpenControl(undefined);
+                      setAdding(kind);
+                    }}
                   >
                     {kind === "parent" ? "Change parent" : "Change original"}
                   </Button>

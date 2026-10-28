@@ -18,6 +18,7 @@ export interface TaskEditorBundle {
   SelectHost: (props: any) => unknown;
   LabelsHost: (props: any) => unknown;
   RelationshipsHost: (props: any) => unknown;
+  RelationshipsTransitionHost: (props: any) => unknown;
   focusCalls: { selector: string; method: string }[];
 }
 
@@ -70,6 +71,23 @@ export function RelationshipsHost(props) {
   const [openControl, setOpenControl] = useState();
   captured.draft = draft;
   return <TaskRelationships {...props} draft={draft} setDraft={setDraft} edit={(patch) => setDraft({ ...draft, task: { ...draft.task, ...patch }, dirty: true })} openControl={openControl} setOpenControl={setOpenControl} />;
+}
+export function RelationshipsTransitionHost(props) {
+  const [draft, setDraft] = useState(props.initial);
+  const [openControl, setOpenControl] = useState(props.openControl);
+  captured.draft = draft;
+  return <>
+    <TaskSelect
+      control="priority"
+      openControl={openControl}
+      setOpenControl={setOpenControl}
+      label="Priority"
+      value={""}
+      options={[["", "None"], ["high", "High"]]}
+      onChange={() => {}}
+    />
+    <TaskRelationships {...props} draft={draft} setDraft={setDraft} edit={(patch) => setDraft({ ...draft, task: { ...draft.task, ...patch }, dirty: true })} openControl={openControl} setOpenControl={setOpenControl} />
+  </>;
 }
 export function Host(props) {
   const [draft, setDraft] = useState(props.initial);
