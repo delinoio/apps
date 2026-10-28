@@ -7,6 +7,7 @@ export function Button({
   id: suppliedId,
   children,
   onClick,
+  onKeyDown,
   disabled = false,
   primary = false,
   pressed,
@@ -14,13 +15,13 @@ export function Button({
   label,
   swatch,
   focusOnShow = false,
-  onKeyDown,
   focusRequest = 0,
 }: {
   id?: string;
   elementId?: string;
   children: ReactNode;
   onClick?: () => void;
+  onKeyDown?: (key: string) => void;
   disabled?: boolean;
   primary?: boolean;
   // Toggle state for chips; exposed to assistive technology, not only by color.
@@ -73,8 +74,9 @@ export function Button({
         if (!disabled) onClick?.();
       }}
       bindkeydown={(e) => {
+        if (disabled) return;
         if (onKeyDown?.(e.key)) return;
-        if (!disabled && (e.key === "Enter" || e.key === " ")) onClick?.();
+        if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
     >
       {swatch && (

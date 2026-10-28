@@ -2,6 +2,7 @@
 import type { UI } from "./serializable";
 import { useEffect, useRef, useState } from "@lynx-js/react";
 import {
+  CompletedSelection,
   LaneService,
   Progress,
   Proposal,
@@ -32,6 +33,12 @@ import {
 } from "./model";
 import { TaskEditor } from "./TaskEditor";
 import { TaskFilters, TaskSortControls } from "./TaskFilters";
+import { DisplayOptions } from "./DisplayOptions";
+import {
+  completedFilter,
+  completedNowMicros,
+  TaskLayout,
+} from "./completedDisplay";
 import { usePlanning } from "./usePlanning";
 
 import {
@@ -41,6 +48,7 @@ import {
   filterErrors,
   hasErrors,
   lookupOf,
+  priorityLabel,
   pruneFilter,
   taskMetadata,
   toTaskFilter,
@@ -96,6 +104,7 @@ export function LaneWorkspace({
   const error = taskError || refreshError || repositoryError;
   const [loading, setLoading] = useState(true);
   const page = target.page ?? LanePage.Tasks;
+  const isAllTasks = target.kind === TabKind.Page && page === LanePage.Tasks;
   const [repository, setRepository] = useState(target.repositoryId ?? "");
   const [repositoryStatus, setRepositoryStatus] = useState(
     "Loading repositories...",
@@ -126,6 +135,11 @@ export function LaneWorkspace({
   const [sortKey, setSortKey] = useState<TaskSortKey>(TaskSortKey.UNSPECIFIED);
   const [sortDirection, setSortDirection] = useState<SortDirection>(
     SortDirection.ASCENDING,
+  );
+  const [layout, setLayout] = useState(TaskLayout.List);
+  const [completed, setCompleted] = useState(CompletedSelection.NONE);
+  const completedQuery = useRef<ReturnType<typeof completedFilter> | undefined>(
+    undefined,
   );
   const [listError, setListError] = useState("");
   // The web host resets a hidden scroll-view. Retain each Lane task pane's last
@@ -254,10 +268,14 @@ export function LaneWorkspace({
       sortKey === TaskSortKey.UNSPECIFIED
         ? SortDirection.UNSPECIFIED
         : sortDirection,
+    completed: completedQuery.current,
   });
   useEffect(() => {
     if (!adapter) return;
     const generation = advanceQueryGeneration();
+    completedQuery.current = isAllTasks
+      ? completedFilter(completed, completedNowMicros())
+      : undefined;
     setListError("");
     if (filterInvalid) {
       // Never send a malformed range; the Filters region explains the problem.
@@ -298,6 +316,8 @@ export function LaneWorkspace({
     JSON.stringify(filter),
     sortKey,
     sortDirection,
+    isAllTasks,
+    completed,
   ]);
   // Repository-owned selections only make sense inside their repository scope.
   useEffect(() => {
@@ -404,6 +424,61 @@ export function LaneWorkspace({
       refresh,
       close: () => onRemoved(tabId),
     });
+  const allTaskRow = (r: EntityResult, board: boolean) => {
+    const task = taskOf(r.version);
+    if (!task) return null;
+    return (
+      <view
+        className={`${board ? "task-card" : "task-row all-task-row"} ${draft?.id === r.version?.entityId ? "selected" : ""}`}
+        key={r.version?.entityId}
+      >
+        <view className="all-task-main">
+          <Button
+            onClick={() =>
+              onOpen({
+                kind: TabKind.Task,
+                taskId: r.version!.entityId,
+                repositoryId: task.repositoryId,
+                label: task.title,
+              })
+            }
+          >
+            {task.title}
+          </Button>
+          <view className="row wrap">
+            {task.proposal === Proposal.PENDING && (
+              <text className="badge">Proposal</text>
+            )}
+            {conflicted(r) && <text className="badge">Conflict</text>}
+          </view>
+          <TaskMetadataLine task={task} lookup={lookup} qualify hidePrimary />
+        </view>
+        <text className="all-task-repository">
+          {board || mobile ? "Repository: " : ""}
+          {repositoryNames.get(task.repositoryId) ?? "Repository unavailable"}
+        </text>
+        {!board && (
+          <text className="all-task-progress">
+            {mobile ? "Progress: " : ""}
+            {progressOptions.find(([value]) => value === task.progress)?.[1] ??
+              "To do"}
+          </text>
+        )}
+        <text className="all-task-priority">
+          {board || mobile ? "Priority: " : ""}
+          {priorityLabel(task.priority)}
+        </text>
+        <text className="all-task-due">
+          {board || mobile ? "Due: " : ""}
+          {task.dueDate || "—"}
+        </text>
+      </view>
+    );
+  };
+  const boardStates =
+    completed === CompletedSelection.NONE
+      ? progressOptions.slice(0, 3)
+      : progressOptions;
   return (
     <view className="app-content lane-tab-content" data-tab-id={tabId}>
       <view className="navigation">
@@ -505,7 +580,7 @@ export function LaneWorkspace({
                 >
                   <view className="task-list-content">
                     <view
-                      className={`row between ${repositoryList ? "repository-list-header" : ""}`}
+                      className={`row between wrap ${repositoryList ? "repository-list-header" : ""}`}
                     >
                       <view className="repository-list-heading">
                         {repositoryList && (
@@ -529,19 +604,29 @@ export function LaneWorkspace({
                           Manage your tasks and prompts.
                         </text>
                       </view>
-                      <Button
-                        primary
-                        onClick={() =>
-                          onOpen({
-                            kind: TabKind.NewTask,
-                            taskId: newId(),
-                            repositoryId: repository,
-                            label: "New task",
-                          })
-                        }
-                      >
-                        + New task
-                      </Button>
+                      <view className="row wrap all-task-header-actions">
+                        {isAllTasks && (
+                          <DisplayOptions
+                            layout={layout}
+                            setLayout={setLayout}
+                            completed={completed}
+                            setCompleted={setCompleted}
+                          />
+                        )}
+                        <Button
+                          primary
+                          onClick={() =>
+                            onOpen({
+                              kind: TabKind.NewTask,
+                              taskId: newId(),
+                              repositoryId: repository,
+                              label: "New task",
+                            })
+                          }
+                        >
+                          + New task
+                        </Button>
+                      </view>
                     </view>
                     <Field
                       label="Search title or description"
@@ -755,7 +840,13 @@ export function LaneWorkspace({
                                 : "No proposals here yet"
                               : activeFilters || search
                                 ? "No tasks match"
-                                : "No tasks here yet"}
+                                : isAllTasks &&
+                                    completed === CompletedSelection.NONE
+                                  ? "No active tasks to show"
+                                  : isAllTasks &&
+                                      completed !== CompletedSelection.ALL
+                                    ? "No tasks in this completed window"
+                                    : "No tasks here yet"}
                           </text>
                           <text>
                             {page === "Proposals"
@@ -764,13 +855,65 @@ export function LaneWorkspace({
                                 : "There are no proposals for this disposition. Change the filters to see other tasks."
                               : activeFilters || search
                                 ? "No task matches the search and filters. Change them or clear the filters."
-                                : "Create a task with a title, or change your filters."}
+                                : isAllTasks &&
+                                    completed !== CompletedSelection.ALL
+                                  ? "Change Completed items to see other tasks, or create a new task."
+                                  : "Create a task with a title, or change your filters."}
                           </text>
                           {activeFilters > 0 && (
                             <Button onClick={() => setFilter(emptyFilter())}>
                               Clear filters
                             </Button>
                           )}
+                        </view>
+                      ) : isAllTasks && layout === TaskLayout.Board ? (
+                        <view
+                          className={`task-board ${mobile ? "stacked" : ""}`}
+                        >
+                          {boardStates.map(([state, label]) => {
+                            const cards = tasks.filter((result) => {
+                              const progress = taskOf(result.version)?.progress;
+                              return (
+                                progress === state ||
+                                (state === Progress.TODO &&
+                                  progress === Progress.UNSPECIFIED)
+                              );
+                            });
+                            return (
+                              <view className="task-board-column" key={state}>
+                                <view className="row between task-board-heading">
+                                  <text className="label">{label}</text>
+                                  <text className="muted">
+                                    {cards.length} loaded
+                                  </text>
+                                </view>
+                                {cards.length ? (
+                                  cards.map((result) =>
+                                    allTaskRow(result, true),
+                                  )
+                                ) : (
+                                  <text className="muted task-board-empty">
+                                    No loaded tasks
+                                  </text>
+                                )}
+                              </view>
+                            );
+                          })}
+                        </view>
+                      ) : isAllTasks ? (
+                        <view
+                          className={`all-task-list ${mobile ? "stacked" : ""}`}
+                        >
+                          <view className="all-task-columns">
+                            <text className="all-task-main">Task</text>
+                            <text className="all-task-repository">
+                              Repository
+                            </text>
+                            <text className="all-task-progress">Progress</text>
+                            <text className="all-task-priority">Priority</text>
+                            <text className="all-task-due">Due date</text>
+                          </view>
+                          {tasks.map((result) => allTaskRow(result, false))}
                         </view>
                       ) : (
                         <>
@@ -1121,13 +1264,22 @@ function TaskMetadataLine({
   task,
   lookup,
   qualify,
+  hidePrimary = false,
 }: {
   task: NonNullable<ReturnType<typeof taskOf>>;
   lookup: ReturnType<typeof lookupOf>;
   qualify: boolean;
+  hidePrimary?: boolean;
 }) {
   const meta = taskMetadata(task, lookup, qualify);
-  const parts = [...meta.summary, ...meta.relationships];
+  const parts = [
+    ...meta.summary.filter(
+      (part) =>
+        !hidePrimary ||
+        (!part.startsWith("Priority ") && !part.startsWith("Due ")),
+    ),
+    ...meta.relationships,
+  ];
   if (!parts.length && !meta.labels.length) return null;
   return (
     <view className="task-meta">
