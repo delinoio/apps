@@ -127,6 +127,35 @@ test("saving a draft replaces its URL without leaving a blank-draft history entr
   assert.equal(f.location.pathname, `/tasks/${ID}`);
 });
 
+test("Back accepts a saved task selected through an earlier draft history entry", () => {
+  const draft = `/tasks/new/${ID}`;
+  const saved = `/tasks/${ID}`;
+  const f = fixture(draft);
+  f.routes.start();
+  f.acknowledge();
+  f.routes.report("/settings");
+  f.routes.report(draft);
+  f.routes.report(saved);
+  f.history.go(-1);
+  f.routes.pop();
+  f.acknowledge();
+  f.history.go(-1);
+  f.routes.pop();
+  assert.equal(f.requests.at(-1)!.path, draft);
+  // The retained pane has already been saved, so its acknowledgement uses
+  // the saved path even though this history entry still names the draft.
+  f.routes.report(saved, f.requests.at(-1)!.requestId);
+  assert.equal(f.location.pathname, saved);
+  assert.deepEqual(
+    f.entries.map((entry) => entry.path),
+    [saved, "/settings", saved],
+  );
+  f.history.go(1);
+  f.routes.pop();
+  f.acknowledge();
+  assert.equal(f.location.pathname, "/settings");
+});
+
 test("refresh keeps history positions and ignores acknowledgements from an older request", () => {
   const f = fixture();
   f.routes.start();

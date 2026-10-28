@@ -59,7 +59,14 @@ export class RouteHistory {
       if (requestId !== this.pending.requestId) return;
       const pending = this.pending;
       this.pending = undefined;
-      if (path !== pending.path && pending.index !== this.index) {
+      const savedDraft =
+        pending.path.startsWith("/tasks/new/") &&
+        path === `/tasks/${pending.path.slice("/tasks/new/".length)}`;
+      if (
+        path !== pending.path &&
+        !savedDraft &&
+        pending.index !== this.index
+      ) {
         this.restoring = true;
         this.browser.history.go(this.index - pending.index);
         return;
