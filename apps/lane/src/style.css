@@ -1534,6 +1534,172 @@ text {
   padding-left: 12px;
   padding-bottom: 6px;
 }
+.default-task-controls,
+.default-task-sort {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.default-task-sort {
+  gap: 4px;
+}
+.repository-list-header {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.repository-list-heading {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.repository-list-heading .heading {
+  white-space: normal;
+}
+.repository-context {
+  color: #68758b;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+.repository-query-band {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 12px;
+  background-color: #f7f9fc;
+  border: 1px solid #e4e8ef;
+  border-radius: 8px;
+}
+.repository-query-selects,
+.compact-sort-band {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
+}
+.compact-select {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 150px;
+  min-width: 0;
+  gap: 6px;
+}
+.compact-select .label {
+  margin-bottom: 0;
+}
+.compact-select > .button {
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+}
+.compact-select-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  background-color: #fff;
+  border: 1px solid #dce2ec;
+  border-radius: 8px;
+}
+.compact-select-options .button {
+  justify-content: flex-start;
+  min-width: 0;
+}
+.compact-filters .filter-actions {
+  gap: 8px;
+}
+.repository-task-columns,
+.repository-task-row {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  gap: 12px;
+}
+.repository-task-columns {
+  padding: 10px 4px;
+  background-color: #f7f9fc;
+  border-bottom: 1px solid #e4e8ef;
+}
+.repository-task-columns text {
+  font-weight: 650;
+  color: #526079;
+}
+.repository-task-heading,
+.repository-task-cell {
+  flex: 36 1 0px;
+  min-width: 0;
+}
+.repository-progress-heading,
+.repository-progress-cell {
+  flex: 17 1 0px;
+  min-width: 0;
+}
+.repository-details-heading,
+.repository-details-cell {
+  flex: 47 1 0px;
+  min-width: 0;
+}
+.repository-task-row {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  min-height: 64px;
+  padding: 10px 4px;
+}
+.repository-task-cell,
+.repository-progress-cell,
+.repository-details-cell {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 1;
+}
+.repository-task-cell .button {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 4px;
+}
+.repository-task-cell .button text,
+.repository-list-heading text,
+.repository-details-cell text {
+  white-space: normal;
+}
+.repository-progress-cell .badge,
+.repository-details-cell .badge {
+  align-self: flex-start;
+  background-color: #fff;
+  border: 1px solid #dce2ec;
+  color: #172033;
+}
+.repository-details-cell {
+  gap: 6px;
+}
+.repository-details-cell .task-meta {
+  padding: 0;
+}
+.repository-cell-label {
+  display: none;
+}
+.mobile .repository-task-columns {
+  display: none;
+}
+.mobile .repository-task-row {
+  flex-direction: column;
+  gap: 4px;
+}
+.mobile .repository-task-cell,
+.mobile .repository-progress-cell,
+.mobile .repository-details-cell {
+  width: 100%;
+  flex: none;
+}
+.mobile .repository-cell-label {
+  display: flex;
+  color: #68758b;
+  font-size: 0.75rem;
+}
 .validation {
   font-size: 0.85rem;
   margin-top: 4px;

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { SortDirection, TaskSortKey } from "@repo/protos/lane/v1/lane_pb";
+import { useEffect, useState } from "@lynx-js/react";
 import {
   Button,
   Choices,
+  CompactSelect,
   Field,
   MenuChoices,
   MultiChoices,
@@ -37,6 +39,8 @@ export function TaskFilters({
   setSortKey,
   sortDirection,
   setSortDirection,
+  compact = false,
+  active = true,
   separateSort = false,
 }: {
   open: boolean;
@@ -52,8 +56,24 @@ export function TaskFilters({
   setSortKey: (key: TaskSortKey) => void;
   sortDirection: SortDirection;
   setSortDirection: (direction: SortDirection) => void;
+  compact?: boolean;
+  active?: boolean;
   separateSort?: boolean;
 }) {
+  const [focusRequest, setFocusRequest] = useState(0);
+  const [filterButtonId] = useState(
+    () => "filters-" + Math.random().toString(36).slice(2),
+  );
+  const [openSortSelect, setOpenSortSelect] = useState<"key" | "direction">();
+  useEffect(() => {
+    "background only";
+    if (focusRequest)
+      lynx
+        .createSelectorQuery()
+        .select(`#${filterButtonId}`)
+        .invoke({ method: "setFocus", params: { focus: true } })
+        .exec();
+  }, [filterButtonId, focusRequest]);
   const count = activeFilterCount(filter);
   const patch = (changes: Partial<FilterState>) =>
     setFilter({ ...filter, ...changes });
@@ -81,9 +101,11 @@ export function TaskFilters({
   const milestones = options(PlanningKind.Milestone);
   const cycles = options(PlanningKind.Cycle);
   return (
-    <view className="filters">
-      <view className="row wrap">
+    <view className={`filters ${compact ? "compact-filters" : ""}`}>
+      <view className="row wrap filter-actions">
         <Button
+          id={filterButtonId}
+          focusRequest={focusRequest}
           expanded={open}
           label={`Filters, ${count} active`}
           onClick={() => setOpen(!open)}
@@ -99,7 +121,16 @@ export function TaskFilters({
         </Button>
       </view>
       {open && (
-        <view className="filter-region" accessibility-label="Filters">
+        <view
+          className="filter-region"
+          accessibility-label="Filters"
+          bindkeydown={(event) => {
+            if (compact && active && event.key === "Escape") {
+              setOpen(false);
+              setFocusRequest((request) => request + 1);
+            }
+          }}
+        >
           <text className="muted">
             Fields combine with AND; selected values in one field combine with
             OR. Unassigned adds tasks that have no value for that field.
@@ -259,12 +290,61 @@ export function TaskFilters({
         </view>
       )}
       {!separateSort && (
-        <TaskSortControls
-          sortKey={sortKey}
-          setSortKey={setSortKey}
-          sortDirection={sortDirection}
-          setSortDirection={setSortDirection}
-        />
+        <view className={compact ? "compact-sort-band" : "default-task-sort"}>
+          {compact ? (
+            <>
+              <CompactSelect
+                label="Sort by"
+                value={sortKey}
+                options={sortKeyOptions}
+                onChange={setSortKey}
+                active={active}
+                open={openSortSelect === "key"}
+                onOpenChange={(nextOpen) =>
+                  setOpenSortSelect(nextOpen ? "key" : undefined)
+                }
+              />
+              <CompactSelect
+                label="Sort direction"
+                value={
+                  sortDirection === SortDirection.UNSPECIFIED
+                    ? SortDirection.ASCENDING
+                    : sortDirection
+                }
+                options={sortDirectionOptions}
+                onChange={setSortDirection}
+                disabled={sortKey === TaskSortKey.UNSPECIFIED}
+                active={active}
+                open={openSortSelect === "direction"}
+                onOpenChange={(nextOpen) =>
+                  setOpenSortSelect(nextOpen ? "direction" : undefined)
+                }
+              />
+            </>
+          ) : (
+            <>
+              <Choices
+                exclusive
+                label="Sort by"
+                value={sortKey}
+                options={sortKeyOptions}
+                onChange={setSortKey}
+              />
+              <Choices
+                exclusive
+                label="Sort direction"
+                value={
+                  sortDirection === SortDirection.UNSPECIFIED
+                    ? SortDirection.ASCENDING
+                    : sortDirection
+                }
+                options={sortDirectionOptions}
+                onChange={setSortDirection}
+                disabled={sortKey === TaskSortKey.UNSPECIFIED}
+              />
+            </>
+          )}
+        </view>
       )}
     </view>
   );

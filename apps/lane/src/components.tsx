@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "@lynx-js/react";
 import { parseMarkdown, type MarkdownSpan } from "./markdown";
 import { hostAction } from "./runtime";
 export function Button({
-  id,
+  id: suppliedId,
   children,
   onClick,
   disabled = false,
@@ -13,6 +13,7 @@ export function Button({
   label,
   swatch,
   focusOnShow = false,
+  focusRequest = 0,
 }: {
   id?: string;
   children: ReactNode;
@@ -27,11 +28,12 @@ export function Button({
   // Decorative color next to the text; the name always stays visible.
   swatch?: string;
   focusOnShow?: boolean;
+  focusRequest?: number;
 }) {
   const [generatedId] = useState(
     () => "button-" + Math.random().toString(36).slice(2),
   );
-  const buttonId = id ?? generatedId;
+  const buttonId = suppliedId ?? generatedId;
   useEffect(() => {
     "background only";
     if (focusOnShow)
@@ -46,6 +48,7 @@ export function Button({
     <view
       id={buttonId}
       data-dialog-default={focusOnShow ? "true" : undefined}
+      data-focus-request={focusRequest || undefined}
       className={`button ${primary || pressed ? "primary" : ""} ${disabled ? "disabled" : ""}`}
       data-pressed={pressed === undefined ? undefined : String(pressed)}
       data-expanded={expanded === undefined ? undefined : String(expanded)}
@@ -77,6 +80,87 @@ export function Button({
         />
       )}
       <text>{children}</text>
+    </view>
+  );
+}
+export function CompactSelect<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+  active = true,
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly (readonly [T, string])[];
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  active?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const [triggerId] = useState(
+    () => "select-" + Math.random().toString(36).slice(2),
+  );
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
+  const selected = options.find(([option]) => option === value)?.[1] ?? "";
+  useEffect(() => {
+    "background only";
+    if (focusRequest)
+      lynx
+        .createSelectorQuery()
+        .select(`#${triggerId}`)
+        .invoke({ method: "setFocus", params: { focus: true } })
+        .exec();
+  }, [focusRequest, triggerId]);
+  const close = () => {
+    setOpen(false);
+    setFocusRequest((request) => request + 1);
+  };
+  return (
+    <view
+      className="compact-select"
+      global-bindkeydown={(event) => {
+        if (active && open && event.key === "Escape") close();
+      }}
+    >
+      <text className="label">{label}</text>
+      <Button
+        id={triggerId}
+        focusRequest={focusRequest}
+        disabled={disabled}
+        expanded={open}
+        label={`${label}: ${selected}`}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        {selected}
+      </Button>
+      {open && (
+        <view className="compact-select-options" accessibility-label={label}>
+          {options.map(([option, title]) => (
+            <Button
+              key={option}
+              pressed={option === value}
+              label={`${label}: ${title}`}
+              onClick={() => {
+                onChange(option);
+                close();
+              }}
+            >
+              {title}
+            </Button>
+          ))}
+        </view>
+      )}
     </view>
   );
 }

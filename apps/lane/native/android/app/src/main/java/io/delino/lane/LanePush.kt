@@ -14,7 +14,10 @@ internal object LanePush {
         GoogleApiAvailabilityLight.getInstance().isGooglePlayServicesAvailable(runtime.application) == ConnectionResult.SUCCESS &&
             (FirebaseApp.getApps(runtime.application).isNotEmpty() || FirebaseApp.initializeApp(runtime.application) != null)
 
-    fun register(runtime: LaneRuntime, space: String, remote: (String, String, String) -> String) {
+    fun register(runtime: LaneRuntime, space: String, remote: (String, String, String) -> String) =
+        runtime.withStoreHandle(space) { registerWithHandle(runtime, space, remote) }
+
+    private fun registerWithHandle(runtime: LaneRuntime, space: String, remote: (String, String, String) -> String) {
         val status = BridgeJson.response(runtime.engine("GetLocalStatus", BridgeJson.request(space)))
         if (!status.optBoolean("syncEnabled")) return
         val preferences = status.getJSONObject("notificationPreferences")
@@ -35,12 +38,14 @@ internal object LanePush {
         }
         messaging.token.addOnSuccessListener { token -> runtime.execute {
             runtime.safe {
-                val latest = BridgeJson.response(runtime.engine("GetLocalStatus", BridgeJson.request(space)))
-                val current = latest.getJSONObject("notificationPreferences")
-                if (latest.optBoolean("syncEnabled") && current.optBoolean("enabled")) remote(space, "RegisterPush",
-                    JSONObject().put("deviceId", latest.getString("deviceId")).put("provider", "PUSH_PROVIDER_FCM")
-                        .put("endpoint", token).put("enabled", true)
-                        .put("content", current.optString("content", "NOTIFICATION_CONTENT_DETAIL")).toString()) else "{}"
+                runtime.withStoreHandle(space) {
+                    val latest = BridgeJson.response(runtime.engine("GetLocalStatus", BridgeJson.request(space)))
+                    val current = latest.getJSONObject("notificationPreferences")
+                    if (latest.optBoolean("syncEnabled") && current.optBoolean("enabled")) remote(space, "RegisterPush",
+                        JSONObject().put("deviceId", latest.getString("deviceId")).put("provider", "PUSH_PROVIDER_FCM")
+                            .put("endpoint", token).put("enabled", true)
+                            .put("content", current.optString("content", "NOTIFICATION_CONTENT_DETAIL")).toString()) else "{}"
+                }
             }
         } }.addOnFailureListener {
             runtime.publishHostError("DEPENDENCY_UNAVAILABLE", "Remote notification registration failed; local notifications remain available")
