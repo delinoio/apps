@@ -192,6 +192,14 @@ impl Fx {
         pool.execute(
             "CREATE TABLE fixture_fail(x int);
              CREATE TABLE fixture_slow(x int);
+             CREATE TABLE fixture_rejection_gate(id int PRIMARY KEY);
+             CREATE FUNCTION fixture_rejection_gate_hook() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN
+               PERFORM 1 FROM fixture_rejection_gate WHERE id=1 FOR UPDATE;
+               RETURN NULL;
+             END $$;
+             CREATE TRIGGER fixture_rejection_gate_hook AFTER INSERT ON lane_sync_rejections
+               FOR EACH ROW EXECUTE FUNCTION fixture_rejection_gate_hook();
              CREATE FUNCTION fixture_commit_hook() RETURNS trigger LANGUAGE plpgsql AS $$
              BEGIN
                IF EXISTS (SELECT 1 FROM fixture_fail) THEN RAISE EXCEPTION 'injected commit failure'; END IF;
@@ -348,6 +356,28 @@ impl Fx {
         sqlx::query_scalar(&format!("SELECT count(*) FROM {table}"))
             .fetch_one(&self.pool)
             .await
+            .unwrap()
+    }
+    async fn pending_failures(&self) -> i64 {
+        let response = lane_api::http::router(self.server.clone())
+            .oneshot(
+                Request::get("/metrics")
+                    .header(
+                        "authorization",
+                        "Bearer synthetic-metrics-token-at-least-32-characters",
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let text = std::str::from_utf8(&body).unwrap();
+        text.lines()
+            .find_map(|line| line.strip_prefix("lane_sync_pending_failures "))
+            .unwrap()
+            .parse()
             .unwrap()
     }
     /// Run an authenticated call and assert D's time was set within the call's database-clock window.
@@ -551,6 +581,7 @@ async fn push_commits_qualify_only_when_a_transaction_succeeds() {
         .unwrap();
     assert!(is_rejection(&out, 0) && is_rejection(&out, 1));
     assert_eq!(fx.time(a, &d).await, Some(prior));
+    assert_eq!(fx.count("lane_sync_rejections").await, 3);
 
     // A mixed batch keeps independent per-item transactions: the accepted item advances time and
     // the later rejection neither erases it nor changes the per-item results.
@@ -567,6 +598,7 @@ async fn push_commits_qualify_only_when_a_transaction_succeeds() {
         mixed["results"][0]["result"]["result"],
         "RESULT_KIND_APPLIED"
     );
+    assert_eq!(fx.count("lane_sync_rejections").await, 4);
 
     // A retained conflict result is a successful transaction.
     let (entity, base) = (id(), id());
@@ -770,7 +802,7 @@ async fn validation_failures_rollbacks_and_non_sync_calls_never_advance_time() {
     fx.close().await;
 }
 
-async fn delete_account_data(fx: &Fx, label: &str, mode: &str) -> Result<Value> {
+async fn deletion_request(fx: &Fx, label: &str, mode: &str) -> Value {
     let session: String =
         sqlx::query_scalar("SELECT session_id FROM lane_credentials WHERE digest=$1")
             .bind(hash(token(label).as_bytes()))
@@ -786,13 +818,284 @@ async fn delete_account_data(fx: &Fx, label: &str, mode: &str) -> Result<Value> 
         .execute(&fx.pool)
         .await
         .unwrap();
-    fx.call(
-        label,
-        "AccountService",
-        "DeleteAccountData",
-        json!({"meta":{"requestId":id()},"mode":mode,"confirmedAccountId":fx.a.id,"reauthProof":"proof"}),
+    json!({"meta":{"requestId":id()},"mode":mode,"confirmedAccountId":fx.a.id,"reauthProof":"proof"})
+}
+
+async fn delete_account_data(fx: &Fx, label: &str, mode: &str) -> Result<Value> {
+    let request = deletion_request(fx, label, mode).await;
+    fx.call(label, "AccountService", "DeleteAccountData", request)
+        .await
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn rejection_commits_before_account_clearing_and_is_removed() {
+    for mode in [
+        "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL",
+        "DATA_DELETION_MODE_DELETE_EVERYWHERE",
+    ] {
+        let fx = Fx::new().await;
+        fx.pool
+            .execute("INSERT INTO fixture_rejection_gate VALUES(1)")
+            .await
+            .unwrap();
+        let mut gate = fx.pool.begin().await.unwrap();
+        sqlx::query("SELECT id FROM fixture_rejection_gate WHERE id=1 FOR UPDATE")
+            .execute(&mut *gate)
+            .await
+            .unwrap();
+        let item = rejected(&fx);
+        let request_id = item["meta"]["requestId"].as_str().unwrap().to_owned();
+        let push = {
+            let server = fx.server.clone();
+            let device = fx.d.clone();
+            let epoch = fx.a.epoch.clone();
+            tokio::spawn(async move {
+                server
+                    .execute(
+                        &bearer(&token(TOKEN_D)),
+                        "SyncService",
+                        "PushChanges",
+                        json!({"formatVersion":3,"epoch":epoch,"deviceId":device,"mutations":[item]}),
+                        false,
+                    )
+                    .await
+            })
+        };
+        fx.waiting("SELECT count(*) FROM pg_stat_activity WHERE wait_event='transactionid' AND query LIKE 'INSERT INTO lane_sync_rejections%'")
+            .await;
+        assert_eq!(fx.pending_failures().await, 0);
+
+        let request = deletion_request(&fx, TOKEN_D, mode).await;
+        let clearing = {
+            let server = fx.server.clone();
+            tokio::spawn(async move {
+                server
+                    .execute(
+                        &bearer(&token(TOKEN_D)),
+                        "AccountService",
+                        "DeleteAccountData",
+                        request,
+                        false,
+                    )
+                    .await
+            })
+        };
+        fx.waiting("SELECT count(*) FROM pg_stat_activity WHERE wait_event='advisory' AND query LIKE '%pg_advisory_xact_lock%'")
+            .await;
+        gate.commit().await.unwrap();
+        let result = push.await.unwrap().unwrap();
+        assert!(is_rejection(&result, 0));
+        let cleared = clearing.await.unwrap().unwrap();
+        assert_ne!(cleared["newEpoch"], fx.a.epoch);
+        assert_eq!(fx.pending_failures().await, 0);
+        assert_eq!(fx.count("lane_sync_rejections").await, 0);
+        for table in [
+            "lane_entities",
+            "lane_versions",
+            "lane_heads",
+            "lane_changes",
+            "lane_entity_receipts",
+            "lane_version_identities",
+            "lane_attachments",
+            "lane_attachment_identities",
+        ] {
+            assert_eq!(fx.count(table).await, 0, "{table}");
+        }
+        assert_eq!(fx.time(&fx.a, &fx.d).await, None);
+        let revoked: bool = sqlx::query_scalar(
+            "SELECT bool_and(revoked_at IS NOT NULL) FROM lane_sessions WHERE account_id=$1",
+        )
+        .bind(&fx.a.id)
+        .fetch_one(&fx.pool)
+        .await
+        .unwrap();
+        assert!(revoked);
+        let disconnected: bool = sqlx::query_scalar(
+            "SELECT bool_and(disconnected_at IS NOT NULL) FROM lane_devices WHERE account_id=$1",
+        )
+        .bind(&fx.a.id)
+        .fetch_one(&fx.pool)
+        .await
+        .unwrap();
+        assert!(disconnected);
+        let rows: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM lane_sync_rejections WHERE account_id=$1 AND request_id=$2",
+        )
+        .bind(&fx.a.id)
+        .bind(&request_id)
+        .fetch_one(&fx.pool)
+        .await
+        .unwrap();
+        assert_eq!(rows, 0);
+        fx.close().await;
+    }
+
+    let fx = Fx::new().await;
+    sqlx::query(
+        "INSERT INTO lane_sync_rejections(account_id,request_id,reason) VALUES($1,$2,8),($3,$4,8)",
     )
+    .bind(&fx.a.id)
+    .bind(id())
+    .bind(&fx.b.id)
+    .bind(id())
+    .execute(&fx.pool)
     .await
+    .unwrap();
+    delete_account_data(&fx, TOKEN_D, "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL")
+        .await
+        .unwrap();
+    let account_b_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM lane_sync_rejections WHERE account_id=$1")
+            .bind(&fx.b.id)
+            .fetch_one(&fx.pool)
+            .await
+            .unwrap();
+    assert_eq!(account_b_rows, 1);
+    assert_eq!(fx.pending_failures().await, 1);
+    fx.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn clearing_or_revocation_first_rejects_waiting_push_without_bookkeeping() {
+    for mode in [
+        "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL",
+        "DATA_DELETION_MODE_DELETE_EVERYWHERE",
+        "session_revocation",
+    ] {
+        let fx = Fx::new().await;
+        let mut operation = fx.pool.begin().await.unwrap();
+        account_lock(&mut operation, &fx.a.id).await.unwrap();
+        let push = {
+            let server = fx.server.clone();
+            let device = fx.d.clone();
+            let epoch = fx.a.epoch.clone();
+            let item = rejected(&fx);
+            tokio::spawn(async move {
+                server
+                    .execute(
+                        &bearer(&token(TOKEN_D)),
+                        "SyncService",
+                        "PushChanges",
+                        json!({"formatVersion":3,"epoch":epoch,"deviceId":device,"mutations":[item]}),
+                        false,
+                    )
+                    .await
+            })
+        };
+        fx.waiting("SELECT count(*) FROM pg_stat_activity WHERE wait_event='advisory' AND query LIKE '%pg_advisory_xact_lock%'")
+            .await;
+        if mode == "session_revocation" {
+            sqlx::query("UPDATE lane_sessions SET revoked_at=clock_timestamp() WHERE account_id=$1 AND device_id=$2")
+                .bind(&fx.a.id).bind(&fx.d).execute(&mut *operation).await.unwrap();
+        } else {
+            let request = deletion_request(&fx, TOKEN_D, mode).await;
+            let principal = fx
+                .server
+                .auth
+                .authenticate(&bearer(&token(TOKEN_D)))
+                .await
+                .unwrap();
+            fx.server
+                .auth
+                .authorize(&mut operation, &principal)
+                .await
+                .unwrap();
+            fx.server
+                .auth
+                .dispatch(&mut operation, &principal, "DeleteAccountData", &request)
+                .await
+                .unwrap();
+        }
+        operation.commit().await.unwrap();
+        assert!(push.await.unwrap().is_err());
+        assert_eq!(fx.count("lane_sync_rejections").await, 0);
+        assert_eq!(fx.pending_failures().await, 0);
+        assert_eq!(fx.time(&fx.a, &fx.d).await, None);
+        fx.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn failed_item_work_rolls_back_and_bookkeeping_failure_has_no_fallback() {
+    let fx = Fx::new().await;
+    let accepted = create_repo(&fx, "example.com/o/accepted-before-failure");
+    let accepted_id = accepted["version"]["entityId"].as_str().unwrap().to_owned();
+    let output = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![accepted])
+        .await
+        .unwrap();
+    assert!(!is_rejection(&output, 0));
+    let contact = fx.time(&fx.a, &fx.d).await;
+    sqlx::query("INSERT INTO lane_sync_rejections(account_id,request_id,reason) VALUES($1,$2,8)")
+        .bind(&fx.b.id)
+        .bind(id())
+        .execute(&fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(fx.pending_failures().await, 1);
+
+    fx.pool
+        .execute(
+            "CREATE FUNCTION fixture_fail_version() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN RAISE EXCEPTION 'injected version failure'; END $$;
+         CREATE TRIGGER fixture_fail_version BEFORE INSERT ON lane_versions
+           FOR EACH ROW EXECUTE FUNCTION fixture_fail_version();",
+        )
+        .await
+        .unwrap();
+    let rejected_item = create_repo(&fx, "example.com/o/rolled-back");
+    let rejected_id = rejected_item["version"]["entityId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let result = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![rejected_item])
+        .await
+        .unwrap();
+    assert!(is_rejection(&result, 0));
+    assert_eq!(fx.time(&fx.a, &fx.d).await, contact);
+    for table in [
+        "lane_entities",
+        "lane_versions",
+        "lane_heads",
+        "lane_changes",
+        "lane_entity_receipts",
+        "lane_version_identities",
+    ] {
+        assert_eq!(fx.count(table).await, 1, "{table}");
+    }
+    let entities: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM lane_entities WHERE account_id=$1")
+            .bind(&fx.a.id)
+            .fetch_all(&fx.pool)
+            .await
+            .unwrap();
+    assert_eq!(entities, vec![accepted_id]);
+    assert!(!entities.contains(&rejected_id));
+    assert_eq!(fx.count("lane_attachments").await, 0);
+    assert_eq!(fx.count("lane_attachment_identities").await, 0);
+    assert_eq!(fx.pending_failures().await, 2);
+
+    fx.pool
+        .execute(
+            "CREATE FUNCTION fixture_fail_rejection() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN RAISE EXCEPTION 'injected bookkeeping failure'; END $$;
+         CREATE TRIGGER fixture_fail_rejection BEFORE INSERT ON lane_sync_rejections
+           FOR EACH ROW EXECUTE FUNCTION fixture_fail_rejection();",
+        )
+        .await
+        .unwrap();
+    let result = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![rejected(&fx)])
+        .await;
+    assert!(result.is_err());
+    assert_eq!(fx.pending_failures().await, 2);
+    assert_eq!(fx.count("lane_entities").await, 1);
+    assert_eq!(fx.time(&fx.a, &fx.d).await, contact);
+    fx.close().await;
 }
 
 #[tokio::test]
