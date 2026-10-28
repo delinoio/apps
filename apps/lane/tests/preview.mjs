@@ -755,7 +755,13 @@ createServer(async (req, res) => {
     }
     const path = resolve(
       root,
-      "." + (url.pathname === "/" ? "/index.html" : url.pathname),
+      "." +
+        (url.pathname === "/" ||
+        /^\/(tasks|proposals|repositories|events|settings|pace|realqa|new-tab)(\/|$)/.test(
+          url.pathname,
+        )
+          ? "/index.html"
+          : url.pathname),
     );
     if (!path.startsWith(root + "/")) {
       res.statusCode = 403;

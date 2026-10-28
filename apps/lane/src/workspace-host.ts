@@ -2,6 +2,16 @@
 import { desktopModules, type DesktopBridge, type HostModule } from "./desktop";
 import { tabCommandRequest, type TabCommandRequest } from "./tabs";
 
+export function reportWorkspaceRoute(path: string, requestId?: number) {
+  "background only";
+  // Browser history belongs to the web host; native hosts keep their own links.
+  if (NativeModules.LaneOnline)
+    (NativeModules.LaneHost as HostModule | undefined)?.workspace?.(
+      JSON.stringify({ route: { path, requestId } }),
+      () => {},
+    );
+}
+
 export function reportWorkspaceState(
   dirty: boolean,
   busy: boolean,

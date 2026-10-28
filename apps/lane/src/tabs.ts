@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { UI } from "./serializable";
 import type { EntityResult } from "@repo/protos/lane/v1/lane_pb";
-import type { MiniApp } from "./AppNavigation";
+import type { MiniApp } from "./navigation";
 import { LanePage } from "./navigation.ts";
 import { TabCommand } from "./tab-commands.ts";
 export { TabCommand } from "./tab-commands.ts";

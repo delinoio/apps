@@ -4,11 +4,8 @@ import realqaIcon from "../assets/realqa-icon.png?inline";
 import laneIcon from "../assets/icon-source.png?inline";
 import paceIcon from "../assets/pace-icon.png?inline";
 
-export enum MiniApp {
-  Lane = "Lane",
-  Pace = "Pace",
-  RealQA = "RealQA",
-}
+import { MiniApp } from "./navigation";
+export { MiniApp } from "./navigation";
 
 export enum SettingsSection {
   Account = "account",

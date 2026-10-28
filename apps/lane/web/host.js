@@ -9,6 +9,9 @@ import {
   OnlineLane,
   createRouteDelivery,
   loginRoute,
+  RouteHistory,
+  routeTarget,
+  targetPath,
 } from "./online.js";
 const api =
   document.querySelector('meta[name="lane-api"]')?.content ||
@@ -24,6 +27,7 @@ window.addEventListener("beforeunload", (event) => {
   }
 });
 const deliverRoute = createRouteDelivery();
+const savedDestinationKey = "lane.sign-in-path";
 const returnTo = new URL("/", location.href).href;
 const callbackChallenge = new URL(location.href).searchParams.get(
   "reauth_challenge",
@@ -37,6 +41,13 @@ if (window.opener && callbackChallenge) {
 }
 await customElements.whenDefined("lynx-view");
 const view = document.createElement("lynx-view");
+const routes = new RouteHistory(window, (target, requestId) => {
+  view.sendGlobalEvent("lane.openRoute", [
+    { kind: "workspace", target, requestId },
+  ]);
+});
+let routesReady = false;
+window.addEventListener("popstate", () => routes.pop());
 const gate = document.getElementById("account-gate");
 const heading = document.getElementById("gate-heading");
 const status = document.getElementById("account-status");
@@ -165,8 +176,11 @@ const online = new OnlineLane({
       previousAccount !== session.account_id;
     if (session) {
       if (!view.hasAttribute("url"))
-        view.setAttribute("url", "./main.web.bundle");
-      else if (!previousAccount || changed) view.reload();
+        view.setAttribute("url", "/main.web.bundle");
+      else if (!previousAccount || changed) {
+        routesReady = false;
+        view.reload();
+      }
     }
     previousAccount = session?.account_id;
     currentAccount = session?.account_id;
@@ -182,14 +196,36 @@ const online = new OnlineLane({
   },
 });
 view.nativeModulesMap = {
-  LaneOnline: new URL("./online-module.js", location.href).href,
-  LaneHost: new URL("./host-module.js", location.href).href,
+  LaneOnline: new URL("/online-module.js", location.href).href,
+  LaneHost: new URL("/host-module.js", location.href).href,
 };
 view.onNativeModulesCall = async (name, data, moduleName) => {
   try {
     if (moduleName === "LaneOnline" && name === "ready") {
       const event = deliverRoute(location.search, currentAccount);
-      if (event) view.sendGlobalEvent(event.name, [event.payload]);
+      if (event?.name === "lane.hostError")
+        view.sendGlobalEvent(event.name, [event.payload]);
+      if (!routesReady && currentAccount) {
+        routesReady = true;
+        let path = location.pathname;
+        try {
+          const saved = sessionStorage.getItem(savedDestinationKey);
+          sessionStorage.removeItem(savedDestinationKey);
+          if (path === "/" && saved && routeTarget(saved)) path = saved;
+        } catch {
+          /* Storage can be disabled; direct paths still work. */
+        }
+        if (event?.name === "lane.openRoute") {
+          path =
+            event.payload.kind === "task"
+              ? `/tasks/${event.payload.id}`
+              : `/repositories/${event.payload.id}`;
+        } else if (event?.name === "lane.hostError") path = "/tasks";
+        if (!routes.start(path))
+          view.sendGlobalEvent("lane.hostError", [
+            { message: "This Lane route does not exist. All tasks is open." },
+          ]);
+      }
       return { ok: true };
     }
     if (moduleName === "LaneOnline")
@@ -203,7 +239,8 @@ view.onNativeModulesCall = async (name, data, moduleName) => {
       };
     if (moduleName === "LaneHost" && name === "workspace") {
       const value = JSON.parse(data.value);
-      workspaceDirty = value.dirty === true || value.busy === true;
+      if (value.route) routes.report(value.route.path, value.route.requestId);
+      else workspaceDirty = value.dirty === true || value.busy === true;
       return { ok: true };
     }
     if (moduleName === "LaneHost" && name === "copyText") {
@@ -286,6 +323,14 @@ const resume = async () => {
 };
 // Preserve the page destination across the full-page sign-in redirect.
 signIn.href = online.loginUrl(loginRoute(location.search));
+signIn.addEventListener("click", () => {
+  const target = routeTarget(location.pathname);
+  try {
+    if (target) sessionStorage.setItem(savedDestinationKey, targetPath(target));
+  } catch {
+    /* Sign-in remains available when storage is disabled. */
+  }
+});
 retry.addEventListener("click", start);
 window.addEventListener("message", (event) => {
   if (

@@ -75,6 +75,29 @@ signing and store registration remain separate.
 
 Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use shared vertical tabs to the left of the contextual sidebar and open Lane, Pace and RealQA from the New tab chooser; Pace shows its own sidebar and `Coming soon` page. RealQA follows the [capture and attachment contract](apps-lane-realqa-contract.md). Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. Task Properties, Relationships, list Filters and sort, and repository Labels, Milestones and Cycles management follow the [task planning UI specification](#task-planning-ui-specification). These product constraints do not change the platform build/toolchain choices.
 
+### Browser routes
+
+Web navigation uses same-origin paths: `/tasks`, `/proposals`, `/repositories`,
+`/events`, `/settings`, `/pace`, `/realqa` and `/new-tab`. Task and repository
+URLs are `/tasks/<task-id>` and `/repositories/<repository-id>`. An unsaved task
+uses `/tasks/new/<draft-id>`; its input remains memory-only and is not recovered
+by refresh. Saving changes the destination to the saved task without remounting
+its editor. `/` opens All tasks and becomes `/tasks`. Unknown paths open All
+tasks with an explicit route error.
+
+Click navigation updates browser history without a document reload or Lynx view
+reload. Back and Forward select or open the destination through the same tab
+identity and unsaved-change guards. Cancelling a guarded history navigation
+restores the previous URL without replacing its destination entry.
+When history moves again while its discard dialog is open, replace the pending
+destination and acknowledgement together. A confirmation owned by another action
+rejects history navigation without replacing that action.
+Existing tab panes retain their state. A fresh load restores the addressed screen, not other
+tabs or unsaved input. Sign-in retains the destination in session storage when
+available while keeping the registered authentication callback at the root.
+Root-relative host assets and the static host's SPA fallback support nested-path
+refreshes. Native deep links keep their host-owned dispatch.
+
 ### Workspace tabs
 
 Lane, Pace and RealQA share one vertical tab system on the left. Remove the

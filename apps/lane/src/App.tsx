@@ -46,9 +46,11 @@ import {
 } from "./tabs";
 import {
   reportWorkspaceState,
+  reportWorkspaceRoute,
   listenWorkspaceExit,
   listenWorkspaceTabCommands,
 } from "./workspace-host";
+import { targetPath } from "./routes";
 import { newId } from "./adapter";
 import "./style.css";
 
@@ -71,6 +73,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const cancelDiscard = useRef<(() => void) | undefined>(undefined);
   const [discard, setDiscard] = useState<() => void>();
   const pendingDiscard = useRef(false);
+  const guardedRouteAction = useRef<(() => void) | undefined>(undefined);
   const [focusedRow, setFocusedRow] = useState<string>();
   const onRowFocus = (id: string, focused: boolean) =>
     setFocusedRow((current) =>
@@ -89,6 +92,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     request: number;
   }>();
   const [pendingRoute, setPendingRoute] = useState<OpenRoute>();
+  const [routeRequest, setRouteRequest] = useState<number>();
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((v) => v + 1), []);
   const [switching, setSwitching] = useState(false);
@@ -112,9 +116,18 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   };
   const onReport = useCallback((report: WorkspaceReport) => {
     setReports((previous) => ({ ...previous, [report.id]: report }));
+    if (report.savedTaskId)
+      setTabs((previous) =>
+        previous.map((tab) =>
+          tab.id === report.id && tab.target.kind === TabKind.NewTask
+            ? { ...tab, target: { ...tab.target, kind: TabKind.Task } }
+            : tab,
+        ),
+      );
   }, []);
   const resetTabs = (preserveClosed = false) => {
     const first = initialTab();
+    guardedRouteAction.current = undefined;
     if (!preserveClosed) closedTabs.current = [];
     setTabs([first]);
     setSelected(first.id);
@@ -171,6 +184,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     });
   const dismissDiscard = () => {
     pendingDiscard.current = false;
+    guardedRouteAction.current = undefined;
     setDiscard(undefined);
     cancelDiscard.current?.();
     cancelDiscard.current = undefined;
@@ -182,7 +196,12 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       setDiscard(() => action);
     } else action();
   };
-  const open = (target: TabTarget, section?: SettingsSection) => {
+  const open = (
+    target: TabTarget,
+    section?: SettingsSection,
+    requestId?: number,
+  ) => {
+    "background only";
     const id = tabIdentity(target);
     const replacing = state.current.selected;
     const existing = state.current.tabs.some((tab) => tab.id === id);
@@ -197,6 +216,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       !!current &&
       !current.target.app;
     const proceed = () => {
+      if (requestId !== undefined) setRouteRequest(requestId);
       setTabs((previous) => {
         const withoutPicker = previous.filter(
           (tab) =>
@@ -223,12 +243,36 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         lastLaneTab.current = id;
       setOpenTabs(false);
     };
-    leaveRealQA(() => {
-      // Leaving Settings cancels its updater on unmount. Only business
-      // mutations must block navigation, as they already block window exit.
-      if (replaceCurrent) guard(proceed, false, replacing, "exitBusy");
-      else proceed();
-    });
+    const confirmNavigation = (action: () => void) =>
+      leaveRealQA(() => {
+        // Leaving Settings cancels its updater on unmount. Only business
+        // mutations must block navigation, as they already block window exit.
+        if (replaceCurrent) guard(action, false, replacing, "exitBusy");
+        else action();
+      });
+    if (requestId === undefined) confirmNavigation(proceed);
+    else {
+      if (pendingDiscard.current && !guardedRouteAction.current) {
+        // A different operation owns this confirmation. Reject navigation now
+        // so it cannot acknowledge that operation's eventual destination.
+        reportWorkspaceRoute(
+          targetPath(current?.target ?? allTasks()),
+          requestId,
+        );
+        return;
+      }
+      // History can move again while either exit guard is visible. Keep the
+      // pending action paired with the latest target and acknowledgement ID.
+      guardedRouteAction.current = proceed;
+      if (pendingDiscard.current) return;
+      confirmNavigation(() => {
+        const action = guardedRouteAction.current;
+        guardedRouteAction.current = undefined;
+        action?.();
+      });
+      // A busy pane rejects navigation without showing a discard dialog.
+      if (!pendingDiscard.current) guardedRouteAction.current = undefined;
+    }
   };
   const selectTab = (id: string) => {
     if (id === state.current.selected) {
@@ -462,8 +506,11 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     if (!pendingRoute || !adapter) return;
     const route = pendingRoute;
     setPendingRoute(undefined);
+    if (route.requestId !== undefined) setRouteRequest(route.requestId);
     const follow = () => {
-      if (route.kind === "task" && route.id)
+      if (route.kind === "workspace" && route.target)
+        open(route.target, undefined, route.requestId);
+      else if (route.kind === "task" && route.id)
         open({ kind: TabKind.Task, taskId: route.id, label: "Task" });
       else if (route.kind === "repository" && route.id)
         open({
@@ -495,6 +542,18 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       }, true);
     else follow();
   }, [pendingRoute, adapter]);
+  useEffect(() => {
+    "background only";
+    if (adapter && activeTab && !pendingRoute && !discard)
+      reportWorkspaceRoute(targetPath(activeTab.target), routeRequest);
+  }, [
+    adapter,
+    activeTab?.target,
+    selected,
+    pendingRoute,
+    discard,
+    routeRequest,
+  ]);
   useEffect(() => {
     "background only";
     if (adapter && adapter.mode !== "web")

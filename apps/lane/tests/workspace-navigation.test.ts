@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadApp, type HostNode } from "./harness/app.ts";
+import { routeTarget } from "../src/routes.ts";
 
 function visibleNodes(tree: HostNode[]): HostNode[] {
   const nodes: HostNode[] = [];
@@ -209,6 +210,164 @@ test("open-only host routes ask before leaving an edited RealQA view", async () 
     view.unmount();
   }
 });
+
+for (const confirm of [true, false]) {
+  test(`repeated guarded history navigation ${confirm ? "accepts the latest target" : "cancels the latest request"}`, async () => {
+    const view = await realqaMain();
+    const reports: { path: string; requestId?: number }[] = [];
+    const modules = (globalThis as any).NativeModules;
+    modules.LaneOnline = {};
+    modules.LaneHost.workspace = (raw: string, callback: () => void) => {
+      const value = JSON.parse(raw);
+      if (value.route) reports.push(value.route);
+      callback();
+    };
+    const navigate = async (path: string, requestId: number) => {
+      view.host.route!({
+        kind: "workspace",
+        target: routeTarget(path),
+        requestId,
+      });
+      await view.settle();
+    };
+    try {
+      await navigate("/events", 101);
+      assert.ok(
+        visibleNodes(view.tree()).some(
+          (node) => node.props["accessibility-label"] === "Keep editing",
+        ),
+      );
+      await navigate("/settings", 102);
+      assert.equal(
+        reports.length,
+        0,
+        "the guard defers route acknowledgements",
+      );
+      tap(view.tree(), confirm ? "Discard changes" : "Keep editing");
+      await view.settle();
+      const selected = visibleNodes(view.tree()).find(
+        (node) => node.props.id === "lane-root",
+      )?.props["data-selected-tab"];
+      assert.equal(selected, confirm ? "page-Settings" : "app-RealQA");
+      assert.deepEqual(reports.at(-1), {
+        path: confirm ? "/settings" : "/realqa",
+        requestId: 102,
+      });
+      if (!confirm) {
+        await navigate("/events", 103);
+        tap(view.tree(), "Discard changes");
+        await view.settle();
+        assert.deepEqual(reports.at(-1), { path: "/events", requestId: 103 });
+      }
+    } finally {
+      view.unmount();
+    }
+  });
+}
+
+test("history navigation cannot replace a confirmation owned by another action", async () => {
+  const view = await realqaMain();
+  const reports: { path: string; requestId?: number }[] = [];
+  const modules = (globalThis as any).NativeModules;
+  modules.LaneOnline = {};
+  modules.LaneHost.workspace = (raw: string, callback: () => void) => {
+    const value = JSON.parse(raw);
+    if (value.route) reports.push(value.route);
+    callback();
+  };
+  try {
+    tap(view.tree(), "App settings");
+    await view.settle();
+    view.host.route!({
+      kind: "workspace",
+      target: routeTarget("/events"),
+      requestId: 201,
+    });
+    await view.settle();
+    assert.deepEqual(reports.at(-1), { path: "/realqa", requestId: 201 });
+    tap(view.tree(), "Discard changes");
+    await view.settle();
+    assert.deepEqual(reports.at(-1), { path: "/settings", requestId: 201 });
+    const target = visibleNodes(view.tree()).find(
+      (node) => node.props["data-settings-target"],
+    );
+    assert.equal(target?.props["data-settings-target"], "notifications:1");
+  } finally {
+    view.unmount();
+  }
+});
+
+for (const confirm of [true, false]) {
+  test(`replacing an edited Lane pane ${confirm ? "uses the latest guarded history target" : "cancels the latest history request"}`, async () => {
+    const { App, runtime, host } = await loadApp();
+    const reports: { path: string; requestId?: number }[] = [];
+    (globalThis as any).NativeModules = {
+      LaneOnline: {},
+      LaneHost: {
+        workspace: (raw: string, callback: () => void) => {
+          const value = JSON.parse(raw);
+          if (value.route) reports.push(value.route);
+          callback();
+        },
+      },
+    };
+    const view = runtime.mount(App, {
+      providedAdapter: {
+        mode: "web",
+        open: async () => {},
+        close() {},
+        subscribe: () => () => {},
+        call: async () => ({ items: [], nextCursor: "" }),
+        local: async () => ({}),
+      },
+    });
+    const selected = () =>
+      visibleNodes(view.tree()).find((node) => node.props.id === "lane-root")
+        ?.props["data-selected-tab"];
+    try {
+      await view.settle();
+      tap(view.tree(), "+ New task");
+      await view.settle();
+      const draft = selected();
+      visibleNodes(view.tree())
+        .find((node) => node.props["accessibility-label"] === "Title")!
+        .props.bindinput({ detail: { value: "Retain unless discarded" } });
+      await view.settle();
+      reports.length = 0;
+      host.route!({
+        kind: "workspace",
+        target: routeTarget("/events"),
+        requestId: 301,
+      });
+      await view.settle();
+      host.route!({
+        kind: "workspace",
+        target: routeTarget("/settings"),
+        requestId: 302,
+      });
+      await view.settle();
+      assert.equal(selected(), draft);
+      assert.equal(reports.length, 0);
+      tap(view.tree(), confirm ? "Discard changes" : "Keep editing");
+      await view.settle();
+      assert.equal(selected(), confirm ? "page-Settings" : draft);
+      assert.equal(reports.at(-1)?.requestId, 302);
+      if (confirm) assert.equal(reports.at(-1)?.path, "/settings");
+      else {
+        assert.match(reports.at(-1)!.path, /^\/tasks\/new\//);
+        assert.ok(
+          visibleNodes(view.tree()).some(
+            (node) =>
+              node.props["accessibility-label"] ===
+              "Retain unless discarded, Unsaved changes",
+          ),
+        );
+      }
+    } finally {
+      view.unmount();
+    }
+  });
+}
 
 test("mobile repository navigation reuses one tab and explicit drafts retain repository scope", async () => {
   const { App, runtime } = await loadApp();
