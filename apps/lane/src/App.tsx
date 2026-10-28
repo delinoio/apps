@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useRef, useState } from "@lynx-js/react";
 import type { LaneAdapter } from "./adapter";
+import { CompletedSelection } from "@repo/protos/lane/v1/lane_pb";
 import { getAdapter, listenHost, type OpenRoute } from "./runtime";
 import {
   NewTabPage,
@@ -24,6 +25,7 @@ import {
 } from "./navigation";
 import { repositoryName } from "./model";
 import { LaneWorkspace } from "./LaneWorkspace";
+import { TaskLayout } from "./completedDisplay";
 import { TabBar } from "./TabBar";
 import {
   adjacentTab,
@@ -58,6 +60,10 @@ const initialTab = (): WorkspaceTab => ({
   id: tabIdentity(allTasks()),
   target: allTasks(),
 });
+const initialTaskDisplay = {
+  layout: TaskLayout.List,
+  completed: CompletedSelection.NONE,
+};
 export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const realqa = useRealQA();
   const [realqaDirty, setRealqaDirty] = useState(false);
@@ -65,6 +71,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [resetAdapter, setResetAdapter] = useState<LaneAdapter>();
   const [error, setError] = useState("");
   const [tabs, setTabs] = useState<WorkspaceTab[]>(() => [initialTab()]);
+  const [taskDisplay, setTaskDisplay] = useState(initialTaskDisplay);
   const closedTabs = useRef<ClosedTab[]>([]);
   const [selected, setSelected] = useState(() => initialTab().id);
   const [reports, setReports] = useState<Record<string, WorkspaceReport>>({});
@@ -127,6 +134,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   }, []);
   const resetTabs = (preserveClosed = false) => {
     const first = initialTab();
+    setTaskDisplay(initialTaskDisplay);
     guardedRouteAction.current = undefined;
     if (!preserveClosed) closedTabs.current = [];
     setTabs([first]);
@@ -302,6 +310,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     const currentTabs = state.current.tabs;
     const position = currentTabs.findIndex((tab) => tab.id === id);
     if (position < 0) return;
+    if (id === tabIdentity(allTasks())) setTaskDisplay(initialTaskDisplay);
     if (record)
       closedTabs.current = recordClosedTab(
         closedTabs.current,
@@ -712,6 +721,16 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                     settingsTarget={
                       tab.target.page === LanePage.Settings
                         ? settingsTarget
+                        : undefined
+                    }
+                    displayOptions={
+                      tab.id === tabIdentity(allTasks())
+                        ? taskDisplay
+                        : undefined
+                    }
+                    onDisplayOptionsChange={
+                      tab.id === tabIdentity(allTasks())
+                        ? setTaskDisplay
                         : undefined
                     }
                   />

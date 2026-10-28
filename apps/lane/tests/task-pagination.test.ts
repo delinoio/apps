@@ -2,7 +2,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { create } from "@bufbuild/protobuf";
-import { Progress, Proposal, TaskSchema } from "@repo/protos/lane/v1/lane_pb";
+import {
+  CompletedSelection,
+  Progress,
+  Proposal,
+  TaskSchema,
+} from "@repo/protos/lane/v1/lane_pb";
 import { toUI } from "../src/serializable.ts";
 import { loadApp, type AppBundle, type HostNode } from "./harness/app.ts";
 
@@ -83,6 +88,7 @@ async function open(total: number, options: { holds?: string[] } = {}) {
       request.search,
       request.progress,
       request.proposal,
+      request.completed?.selection,
     ]);
     if (!variants.includes(key)) variants.push(key);
     const base = 1000 * variants.indexOf(key);
@@ -156,6 +162,14 @@ async function open(total: number, options: { holds?: string[] } = {}) {
     assert.equal(rest.length, 0, `button ${label} is unique`);
     return found;
   };
+  const namedButton = (label: string) => {
+    const [found] = all(
+      view.tree(),
+      (n) => isButton(n) && n.props["accessibility-label"] === label,
+    );
+    assert.ok(found, `button ${label} is rendered`);
+    return found;
+  };
   const notices = () =>
     all(view.tree(), (n) => n.props.className === "notice").map(text);
   const tap = async (node: HostNode) => {
@@ -214,6 +228,7 @@ async function open(total: number, options: { holds?: string[] } = {}) {
     titles,
     more,
     button,
+    namedButton,
     buttons,
     notices,
     tap,
@@ -221,6 +236,7 @@ async function open(total: number, options: { holds?: string[] } = {}) {
     settle,
     type,
     choice,
+    tree: () => view.tree(),
   };
 }
 const expectIds = (titles: string[], from: number, to: number) =>
@@ -353,6 +369,168 @@ const changes: [string, (lane: Lane) => Promise<void>][] = [
   ["Tasks to Proposals", (lane) => lane.tap(lane.button("Proposals · 0"))],
 ];
 type Lane = Awaited<ReturnType<typeof open>>;
+
+test("All tasks starts in List and None and keeps one typed cutoff across Board and continuation", async () => {
+  const lane = await open(150);
+  assert.equal(
+    lane.queries()[0].request.completed.selection,
+    CompletedSelection.NONE,
+  );
+  assert.ok(
+    all(lane.tree(), (n) => n.props.className === "all-task-columns").length,
+  );
+  await lane.tap(lane.button("Display Options"));
+  await lane.tap(lane.namedButton("Completed items: None"));
+  await lane.tap(lane.namedButton("Select completed items: Last 7 days"));
+  const request = lane.queries().at(-1)!.request;
+  assert.equal(request.completed.selection, CompletedSelection.LAST_7_DAYS);
+  assert.ok(request.completed.cutoff);
+  await lane.tap(lane.button("Board"));
+  assert.equal(
+    lane.queries().at(-1)!.request,
+    request,
+    "layout keeps the query",
+  );
+  assert.equal(
+    all(lane.tree(), (n) => n.props.className === "task-board-column").length,
+    5,
+  );
+  assert.deepEqual(
+    all(lane.tree(), (n) =>
+      /(^| )task-board-heading( |$)/.test(n.props.className ?? ""),
+    ).map(text),
+    [
+      "To do100 loaded",
+      "In progress0 loaded",
+      "Blocked0 loaded",
+      "Done0 loaded",
+      "Canceled0 loaded",
+    ],
+  );
+  await lane.tap(lane.more());
+  assert.deepEqual(lane.queries().at(-1)!.request.completed, request.completed);
+  assert.equal(
+    all(lane.tree(), (n) => /(^| )task-card( |$)/.test(n.props.className ?? ""))
+      .length,
+    150,
+  );
+  await lane.tap(lane.namedButton("Completed items: Last 7 days"));
+  await lane.tap(lane.namedButton("Select completed items: None"));
+  assert.equal(
+    all(lane.tree(), (n) => n.props.className === "task-board-column").length,
+    3,
+  );
+});
+
+test("a new data query advances the duration cutoff, while Board and paging do not", async () => {
+  const originalNow = Date.now;
+  try {
+    let now = 1_800_000_000_000;
+    Date.now = () => now;
+    const lane = await open(150);
+    await lane.tap(lane.button("Display Options"));
+    await lane.tap(lane.namedButton("Completed items: None"));
+    await lane.tap(lane.namedButton("Select completed items: Last 24 hours"));
+    const first = lane.queries().at(-1)!.request.completed.cutoff;
+    now += 2 * 24 * 60 * 60 * 1000;
+    await lane.tap(lane.button("Board"));
+    await lane.tap(lane.more());
+    assert.deepEqual(lane.queries().at(-1)!.request.completed.cutoff, first);
+    await lane.type("Search title or description", "next");
+    assert.notDeepEqual(lane.queries().at(-1)!.request.completed.cutoff, first);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("nested Display Options closes inside out and retains selections across tabs", async () => {
+  const lane = await open(5);
+  await lane.press(lane.button("Display Options"), "Enter");
+  await lane.press(lane.button("Board"), "Enter");
+  await lane.press(lane.namedButton("Completed items: None"), "Enter");
+  await lane.press(lane.namedButton("Select completed items: All"), "Enter");
+  await lane.press(lane.namedButton("Completed items: All"), "Enter");
+  const menu = () =>
+    all(lane.tree(), (n) => n.props.className === "display-options")[0];
+  assert.ok(
+    all(lane.tree(), (n) => n.props.className === "display-options-period-menu")
+      .length,
+  );
+  menu().props["global-bindkeydown"]({ key: "Escape" });
+  await lane.settle();
+  assert.equal(
+    all(lane.tree(), (n) => n.props.className === "display-options-period-menu")
+      .length,
+    0,
+  );
+  assert.ok(
+    all(lane.tree(), (n) => n.props.className === "display-options-menu")
+      .length,
+  );
+  menu().props["global-bindkeydown"]({ key: "Escape" });
+  await lane.settle();
+  assert.equal(
+    all(lane.tree(), (n) => n.props.className === "display-options-menu")
+      .length,
+    0,
+  );
+  await lane.tap(lane.button("Proposals · 0"));
+  await lane.tap(lane.button("All tasks"));
+  assert.equal(
+    all(lane.tree(), (n) => n.props.className === "task-board-column").length,
+    5,
+  );
+  await lane.tap(lane.button("Display Options"));
+  assert.equal(
+    lane.namedButton("Completed items: All").props["accessibility-label"],
+    "Completed items: All",
+  );
+});
+
+for (const keepAnotherTab of [false, true]) {
+  test(`closing All tasks resets display options with another tab: ${keepAnotherTab}`, async () => {
+    const lane = await open(5);
+    await lane.tap(lane.button("Display Options"));
+    await lane.tap(lane.button("Board"));
+    await lane.tap(lane.namedButton("Completed items: None"));
+    await lane.tap(lane.namedButton("Select completed items: All"));
+    if (keepAnotherTab) {
+      await lane.tap(lane.button("Proposals · 0"));
+      await lane.tap(lane.button("All tasks"));
+    }
+    await lane.tap(lane.namedButton("Close All tasks"));
+    if (keepAnotherTab) await lane.tap(lane.button("All tasks"));
+    assert.equal(
+      all(lane.tree(), (node) => node.props.className === "task-board-column")
+        .length,
+      0,
+    );
+    await lane.tap(lane.button("Display Options"));
+    assert.equal(lane.button("List").props["data-pressed"], "true");
+    assert.ok(lane.namedButton("Completed items: None"));
+    assert.equal(
+      lane.queries().at(-1)!.request.completed.selection,
+      CompletedSelection.NONE,
+    );
+  });
+}
+
+test("a completed selection change supersedes a pending continuation", async () => {
+  const lane = await open(150, { holds: ["C100"] });
+  await lane.tap(lane.more());
+  const stale = lane.held[0];
+  await lane.tap(lane.button("Display Options"));
+  await lane.tap(lane.namedButton("Completed items: None"));
+  await lane.tap(lane.namedButton("Select completed items: All"));
+  assert.equal(
+    lane.queries().at(-1)!.request.completed.selection,
+    CompletedSelection.ALL,
+  );
+  stale.release();
+  await lane.settle();
+  expectIds(lane.titles(), 1001, 1100);
+  assert.equal(lane.queries().at(-1)!.request.page.cursor, "");
+});
 
 for (const [name, change] of changes) {
   test(`a ${name} change keeps an older continuation from changing the new list, cursor or lock`, async () => {

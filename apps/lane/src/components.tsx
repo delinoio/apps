@@ -7,6 +7,7 @@ export function Button({
   id: suppliedId,
   children,
   onClick,
+  onKeyDown,
   disabled = false,
   primary = false,
   pressed,
@@ -14,7 +15,6 @@ export function Button({
   label,
   swatch,
   focusOnShow = false,
-  onKeyDown,
   focusRequest = 0,
 }: {
   id?: string;
@@ -31,7 +31,7 @@ export function Button({
   // Decorative color next to the text; the name always stays visible.
   swatch?: string;
   focusOnShow?: boolean;
-  onKeyDown?: (key: string) => boolean;
+  onKeyDown?: (key: string) => void | boolean;
   focusRequest?: number;
 }) {
   const [generatedId] = useState(
@@ -73,8 +73,9 @@ export function Button({
         if (!disabled) onClick?.();
       }}
       bindkeydown={(e) => {
-        if (onKeyDown?.(e.key)) return;
-        if (!disabled && (e.key === "Enter" || e.key === " ")) onClick?.();
+        if (onKeyDown?.(e.key) === true) return;
+        if (disabled) return;
+        if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
     >
       {swatch && (
