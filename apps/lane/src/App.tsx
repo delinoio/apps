@@ -133,17 +133,36 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     else action();
   };
   const open = (target: TabTarget, section?: SettingsSection) => {
+    const id = tabIdentity(target);
+    const replacing = state.current.selected;
+    const existing = state.current.tabs.some((tab) => tab.id === id);
+    const current = state.current.tabs.find((tab) => tab.id === replacing);
+    // Explicit creation and mini-app switching retain their own panes. Ordinary
+    // Lane navigation replaces the current pane only after its exit guard.
+    const replaceCurrent =
+      !existing &&
+      target.kind !== TabKind.NewTab &&
+      target.kind !== TabKind.NewTask &&
+      !target.app &&
+      !!current &&
+      !current.target.app;
     const proceed = () => {
-      const id = tabIdentity(target);
-      const replacing = state.current.selected;
       setTabs((previous) => {
         const withoutPicker = previous.filter(
-          (tab) => tab.id !== replacing || tab.target.kind !== TabKind.NewTab,
+          (tab) =>
+            tab.id !== replacing ||
+            (!replaceCurrent && tab.target.kind !== TabKind.NewTab),
         );
         return withoutPicker.some((tab) => tab.id === id)
           ? withoutPicker
           : [...withoutPicker, { id, target }];
       });
+      if (replaceCurrent)
+        setReports((previous) => {
+          const copy = { ...previous };
+          delete copy[replacing];
+          return copy;
+        });
       setSelected(id);
       if (target.page === LanePage.Settings)
         setSettingsTarget(
@@ -154,7 +173,10 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         lastLaneTab.current = id;
       setOpenTabs(false);
     };
-    leaveRealQA(proceed);
+    leaveRealQA(() => {
+      if (replaceCurrent) guard(proceed, false, replacing);
+      else proceed();
+    });
   };
   const selectTab = (id: string) => {
     if (id === state.current.selected) {

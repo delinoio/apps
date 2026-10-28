@@ -86,7 +86,11 @@ contextual sidebar and content. Preserve the English UI, white/gray surfaces,
 
 Open tasks, new-task drafts, pages, repository lists, Pace and RealQA in the same
 tab list. Start with one All tasks tab. Sidebar, command-menu, relationship, event
-and deep-link navigation opens the destination or selects its existing tab. A
+and deep-link navigation replaces the current Lane tab with the destination or
+selects its existing tab. Ordinary navigation must not add a tab. Before replacing
+a pane, apply its unsaved-change confirmation and pending-operation guard; cancel
+keeps the pane and its draft. Remove the replaced pane's state and ignore its late
+reads. Explicit New tab and New task actions still create separate tabs. A
 task has one identity, including after a new draft is saved. Page, repository
 and mini-app destinations have distinct identities. New task opens a separate
 draft. New tab opens or selects a chooser tab with Lane, Pace and RealQA cards
@@ -102,7 +106,7 @@ dialog and shows the count, complete titles, selection and unsaved state, with
 selection and individual close actions. Keep New tab directly reachable beside
 Tabs. Escape dismisses the dialog and restores focus. Stack chooser cards at
 390 pixels without horizontal overflow. A repository tab keeps its repository
-identity: on mobile, choosing another repository opens or selects that tab;
+identity: on mobile, choosing another repository replaces the current tab or selects its existing tab;
 choosing All repositories selects the All tasks page.
 
 Keep each pane mounted while inactive so its sidebar selection and scroll,
@@ -110,7 +114,7 @@ repository, search, filters, sort, list scroll, editor scroll and drafts survive
 tab and mini-app switching. Inactive panels must be hidden from both keyboard
 navigation and assistive technology. A selected task tab retains its associated
 list beside the editor on desktop. `Back to list` selects the corresponding
-list tab without discarding the task tab. The editor's `Cancel` action closes
+list tab if it exists; otherwise it replaces the task tab after the same exit guard. The editor's `Cancel` action closes
 its tab through the same unsaved-change guard and is disabled while saving.
 Save is explicit; tab selection never
 saves or discards input. Each tab owns its reads, mutations, conflict state and
