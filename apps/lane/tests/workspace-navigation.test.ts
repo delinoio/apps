@@ -527,3 +527,82 @@ test("ordinary navigation guards drafts while existing tabs and explicit creatio
     view.unmount();
   }
 });
+
+test("ordinary navigation leaves Settings and cancels an in-progress desktop update", async () => {
+  const { App, runtime } = await loadApp();
+  const actions: string[] = [];
+  (globalThis as any).NativeModules = {
+    bridge: {
+      call: (
+        _channel: string,
+        request: any,
+        callback: (raw: string) => void,
+      ) => {
+        if (request.method !== "update") {
+          callback(
+            JSON.stringify({
+              ok: true,
+              value: { window: "main", shortcuts: {}, draft: null },
+            }),
+          );
+          return;
+        }
+        actions.push(request.args[0]);
+        callback(
+          JSON.stringify({
+            ok: true,
+            response: {
+              phase: "downloading",
+              installedRelease: "lane@v0.3.0",
+              message: "Downloading Lane",
+              progress: 10,
+            },
+          }),
+        );
+      },
+    },
+  };
+  const view = runtime.mount(App, {
+    providedAdapter: {
+      mode: "web",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      local: async () => ({}),
+      call: async () => ({ items: [], nextCursor: "" }),
+    },
+  });
+  const nodes = () => visibleNodes(view.tree());
+  try {
+    await view.settle();
+    tap(view.tree(), "Settings");
+    await view.settle();
+    assert.ok(actions.includes("status"));
+    const close = nodes().find(
+      (n) => n.props["accessibility-label"] === "Close Settings",
+    );
+    assert.ok(
+      close?.props.className.includes("disabled"),
+      "the updater still marks Settings busy",
+    );
+    assert.ok(!actions.includes("cancel"));
+    tap(view.tree(), "All tasks");
+    await view.settle();
+    assert.equal(
+      nodes().find((n) => n.props.id === "lane-root")?.props[
+        "data-selected-tab"
+      ],
+      "page-Tasks",
+    );
+    assert.deepEqual(
+      actions,
+      ["status", "cancel"],
+      "leaving Settings cancels the update exactly once",
+    );
+    assert.ok(
+      !nodes().some((n) => n.props["data-workspace-tab"] === "page-Settings"),
+    );
+  } finally {
+    view.unmount();
+  }
+});

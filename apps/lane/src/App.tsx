@@ -124,11 +124,16 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     setOpenTabs(false);
     setSettingsTarget(undefined);
   };
-  const guard = (action: () => void, all = false, id = selected) => {
+  const guard = (
+    action: () => void,
+    all = false,
+    id = selected,
+    busyField: "busy" | "exitBusy" = "busy",
+  ) => {
     const entries = all
       ? Object.values(state.current.reports)
       : [state.current.reports[id]];
-    if (entries.some((entry) => entry?.busy)) {
+    if (entries.some((entry) => entry?.[busyField])) {
       setError(
         "Wait for the current operation to finish before closing or changing data spaces.",
       );
@@ -219,7 +224,9 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       setOpenTabs(false);
     };
     leaveRealQA(() => {
-      if (replaceCurrent) guard(proceed, false, replacing);
+      // Leaving Settings cancels its updater on unmount. Only business
+      // mutations must block navigation, as they already block window exit.
+      if (replaceCurrent) guard(proceed, false, replacing, "exitBusy");
       else proceed();
     });
   };
