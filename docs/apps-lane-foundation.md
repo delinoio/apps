@@ -356,11 +356,18 @@ Apply the existing RealQA unsaved-edit confirmation when leaving RealQA.
 Cancellation retains its screen and draft. Opening or dismissing the menu alone
 never discards edits.
 
-Keep the existing white/gray surfaces, blue accent, outline icons, 44-pixel
-minimum result targets, and keyboard hints. The panel is at most 560 pixels wide,
-with 16-pixel outer padding on narrow screens, a constrained height and a
-scrollable results area. Keep search and close controls reachable when text is
-enlarged. Native/mobile keyboard and screen-reader acceptance must be recorded
+Use a white panel with a subtle gray border and shadow, 16-pixel corners and
+a 560-pixel maximum width. Center it within the available viewport with
+16-pixel outer margins and a natural height capped at 760 pixels or the visible
+height minus the margins. Keep the 76-pixel search header and a footer of at
+least 48 pixels reachable while only the result list scrolls. The visible Esc
+control has a target of at least 44 pixels. Group headings use 12-pixel
+semibold gray text and 12-pixel group spacing. Keep the category outline icons
+and use result rows of at least 48 pixels that grow for wrapped text. Use a
+pale-blue selected surface with a 3-pixel blue left marker and stronger label;
+show keyboard focus separately. At 360 pixels and enlarged text, wrap long
+labels, supporting context and footer hints without horizontal overflow.
+Native/mobile keyboard and screen-reader acceptance must be recorded
 separately from web fixture checks and shared bundle compilation.
 
 ### Application icon

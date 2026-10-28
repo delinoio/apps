@@ -183,12 +183,14 @@ export function CommandPalette({
                   className="command-icon"
                   content={`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#68758b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icons[item.kind]}</svg>`}
                 />
-                <text className="command-result-label">{item.label}</text>
-                <text className="command-context">
-                  {item.kind === DestinationKind.Repository
-                    ? "Repository"
-                    : item.context}
-                </text>
+                <view className="command-result-copy">
+                  <text className="command-result-label">{item.label}</text>
+                  <text className="command-context">
+                    {item.kind === DestinationKind.Repository
+                      ? "Repository"
+                      : item.context}
+                  </text>
+                </view>
               </view>
             </view>
           ))}
