@@ -164,6 +164,7 @@ export function URLConnections({
         Use the longest matching URL prefix to select a repository for the first
         capture. Conflicting rules are excluded.
       </text>
+      {error && <Notice>{error}</Notice>}
       {loading && !loaded && <text>Loading URL connections…</text>}
       {!loading && !loaded && loadError && (
         <text>Could not load URL connections.</text>

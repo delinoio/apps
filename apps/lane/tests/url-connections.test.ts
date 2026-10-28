@@ -365,6 +365,42 @@ test("discard cancellation, missing repository and URL input validation stay int
   f.view.unmount();
 });
 
+test("deferred mutation failures remain visible after dialogs are dismissed", async () => {
+  const deletion = mount([applied("https://one.example/app", "repo-one")]);
+  await deletion.view.settle();
+  await deletion.tap("Delete");
+  deletion.button("Delete connection").props.bindtap();
+  await deletion.view.settle();
+  assert.equal(deletion.calls.length, 1);
+  deletion.button("Cancel").props.bindtap();
+  await deletion.view.settle();
+  assert.equal(deletion.buttons("Delete connection").length, 0);
+  deletion.calls[0].reject(new Error("delete failed"));
+  await deletion.view.settle();
+  assert.match(deletion.shown(), /delete failed/);
+  deletion.view.unmount();
+
+  const save = mount();
+  await openDraft(save, "create");
+  save.button("Save").props.bindtap();
+  await save.view.settle();
+  assert.equal(save.calls.length, 1);
+  const editor = all(save.view.tree(), (node) =>
+    (node.props.className ?? "").split(" ").includes("dialog"),
+  )[0];
+  assert.ok(editor);
+  const close = all([editor], isButton).find((node) => text(node) === "Close");
+  assert.ok(close);
+  close.props.bindtap();
+  await save.view.settle();
+  await save.tap("Discard changes");
+  assert.equal(save.buttons("Save").length, 0);
+  save.calls[0].reject(new Error("save failed"));
+  await save.view.settle();
+  assert.match(save.shown(), /save failed/);
+  save.view.unmount();
+});
+
 test("conflict resolution locks alternatives and retains failed retries", async () => {
   const f = mount([conflicting()]);
   await f.view.settle();
