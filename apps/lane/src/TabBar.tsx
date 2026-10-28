@@ -34,7 +34,18 @@ export function TabBar({
         .select(`#tab-${selected}`)
         .invoke({ method: "setFocus", params: { focus: true } })
         .exec();
-  }, [selected, tabs]);
+  }, [selected]);
+  useEffect(() => {
+    "background only";
+    if (tabs.some((tab) => tab.id === focused)) return;
+    setFocused(selected);
+    if (!NativeModules.LaneOnline)
+      lynx
+        .createSelectorQuery()
+        .select(`#tab-${selected}`)
+        .invoke({ method: "setFocus", params: { focus: true } })
+        .exec();
+  }, [focused, selected, tabs]);
   const index = tabs.findIndex((tab) => tab.id === selected);
   const moveFocus = (id: string, key: string) => {
     "background only";

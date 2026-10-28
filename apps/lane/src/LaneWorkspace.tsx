@@ -366,6 +366,7 @@ export function LaneWorkspace({
       : openedRepository
         ? repositoryName(openedRepository)
         : target.label);
+  const savedTaskId = current?.version?.entityId;
   useEffect(() => {
     onReport({
       id: tabId,
@@ -375,6 +376,7 @@ export function LaneWorkspace({
       exitBusy,
       repositories,
       repositoryStatus,
+      savedTaskId,
     });
   }, [
     tabId,
@@ -384,6 +386,7 @@ export function LaneWorkspace({
     exitBusy,
     repositories,
     repositoryStatus,
+    savedTaskId,
     onReport,
   ]);
   const saved = (result?: EntityResult) => {

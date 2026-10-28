@@ -132,6 +132,24 @@ and close targets are at least 44 pixels. Up/Down and Home/End move focus;
 Enter/Space activates. Tab proceeds to the remaining controls and content.
 Closing restores focus to the selected adjacent tab: choose the next row,
 then the previous row. Closing the final tab opens a clean `All tasks` tab.
+Workspace order is local to the current window. Moving a tab changes its list
+position without changing its ID, selected pane, draft, filters, scroll position,
+busy state or pending request ownership. Adjacent and numbered selection use
+the displayed order; adjacent selection wraps, and the ninth selection target
+is the final tab. Moving at an edge does nothing.
+
+Keep the latest 20 explicitly closed tabs per window in memory. Each entry
+contains only a destination, its former list position and a safe label. A
+cancelled or busy close and an implicit chooser replacement add no entry.
+Reopening accepts the latest entry, reinserts it at its clamped former position
+and selects it. If its destination is already open, select that pane without
+replacing its state. Reopened saved destinations read current data and use
+default view state; missing or inaccessible data uses the existing error state.
+A discarded new-task draft reopens empty with a new ID. History never restores
+discarded task input or RealQA capture and settings drafts. Clear history on
+account or data-space change, logout, reset, session revocation and window
+disposal. Closing the final tab retains its history while opening clean All
+tasks.
 
 Closing an edited tab requires `Discard unsaved changes?`, with `Keep editing`
 and `Discard changes`. Escape cancels. Focus the safe action and trap focus in
@@ -164,8 +182,7 @@ Android, iOS, macOS or Windows acceptance.
 Tabs and unsaved drafts live only in the current window's memory, without
 server or cross-device synchronization, automatic saves or restart recovery.
 Pace and RealQA remain single mini-app views. Drag reordering, pinned/grouped
-or split tabs, detached windows, reopening closed tabs and new global close
-shortcuts are out of scope.
+or split tabs, detached windows and OS-global tab shortcuts are out of scope.
 
 ### Desktop app updates
 
