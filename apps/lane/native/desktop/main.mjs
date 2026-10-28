@@ -18,6 +18,11 @@ import { connectChrome } from "./realqa-chrome.mjs";
 import { homedir } from "node:os";
 import { WorkspaceExit } from "./workspace-exit.mjs";
 import { realQASmoke } from "./realqa-smoke.mjs";
+import {
+  dispatchReadyTabCommand,
+  tabCommandAvailable,
+  tabShortcutItems,
+} from "./tab-shortcuts.mjs";
 
 const resources = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -28,6 +33,36 @@ let window, windowSession, tray, poller, composer, realqa, updater;
 let captureWindows = [];
 let pendingCommandPalette = false;
 let workspaceExit = new WorkspaceExit();
+let tabState;
+let tabMenuItems = [];
+const updateTabMenu = () => {
+  const active =
+    window &&
+    !window.isDestroyed() &&
+    window.isFocused() &&
+    windowSession?.ready;
+  for (const item of tabMenuItems)
+    if (item.menuItem)
+      item.menuItem.enabled = !!active && tabCommandAvailable(item, tabState);
+};
+const dispatchTabCommand = (request, focusedWindow, event) => {
+  try {
+    if (
+      !dispatchReadyTabCommand(
+        request,
+        focusedWindow,
+        event,
+        window,
+        windowSession,
+        tabState,
+        stopping,
+      )
+    )
+      log("lane_tab_command_rejected");
+  } catch {
+    log("lane_tab_command_failed");
+  }
+};
 const pendingRealQA = [];
 const emitRealQA = (name, value) => {
   if (
@@ -53,6 +88,23 @@ const facade = (kind) => ({
       }
       try {
         const action = workspaceExit.update(raw);
+        const { tabs } = JSON.parse(raw);
+        if (
+          tabs &&
+          Number.isInteger(tabs.count) &&
+          tabs.count >= 1 &&
+          Number.isInteger(tabs.history) &&
+          tabs.history >= 0 &&
+          Number.isInteger(tabs.selectedIndex) &&
+          tabs.selectedIndex >= 0 &&
+          tabs.selectedIndex < tabs.count &&
+          Number.isInteger(tabs.focusedIndex) &&
+          tabs.focusedIndex >= -1 &&
+          tabs.focusedIndex < tabs.count
+        ) {
+          tabState = tabs;
+          updateTabMenu();
+        }
         reply(JSON.stringify({ ok: true }));
         if (action === "quit") app.quit();
         else if (action === "close") window?.close();
@@ -99,7 +151,9 @@ function showComposer() {
   });
   composer = owner;
   owner.setAlwaysOnTop(true, "floating");
-  const session = new WindowSession();
+  const session = new WindowSession((result) =>
+    log("lane_view_handle_release_failed", result, "composer"),
+  );
   owner.on("-lynx-invoke", (event, channel, request) => {
     if (channel !== "lane.native") return;
     const response = stopping
@@ -133,8 +187,15 @@ let quitting = false,
   stopping = false;
 const pendingURLs = [];
 const pendingRoutes = [];
-const log = (event) =>
-  console.info(JSON.stringify({ event, platform: process.platform }));
+const log = (event, result, view) =>
+  console.info(
+    JSON.stringify({
+      event,
+      platform: process.platform,
+      ...(result ? { result } : {}),
+      ...(view ? { view } : {}),
+    }),
+  );
 const failed = () => log("lane_host_operation_failed");
 const runControl = (method, value) =>
   control(native, method, value).catch(failed);
@@ -146,7 +207,9 @@ function showWindow() {
     window.focus();
     return;
   }
-  const session = new WindowSession();
+  const session = new WindowSession((result) =>
+    log("lane_view_handle_release_failed", result, "main"),
+  );
   windowSession = session;
   window = new LynxWindow({
     width: 1280,
@@ -164,7 +227,10 @@ function showWindow() {
       ? Promise.resolve(unavailable)
       : session.invoke(facade("main"), request);
     void response.then(
-      (result) => event.sendReply(result),
+      (result) => {
+        updateTabMenu();
+        event.sendReply(result);
+      },
       () => event.sendReply(unavailable),
     );
   });
@@ -175,12 +241,18 @@ function showWindow() {
       owner.sendGlobalEvent("lane.workspace.exitRequested", {});
     }
   });
-  window.on("focus", () => runControl("resume"));
+  window.on("focus", () => {
+    updateTabMenu();
+    runControl("resume");
+  });
+  window.on("blur", updateTabMenu);
   window.on("closed", () => {
     updater?.cancel();
     session.retire();
     if (window === owner) {
       workspaceExit = new WorkspaceExit();
+      tabState = undefined;
+      updateTabMenu();
       window = undefined;
       windowSession = undefined;
       runControl("viewClosed");
@@ -405,39 +477,54 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
         });
       if (!app.setAsDefaultProtocolClient(scheme))
         log("lane_protocol_registration_unavailable");
-      Menu.setApplicationMenu(
-        Menu.buildFromTemplate([
-          {
-            label: "Lane",
-            submenu: [
-              {
-                label: "Open Lane",
-                accelerator: "CmdOrCtrl+O",
-                click: showWindow,
-              },
-              {
-                label: "Quit Lane",
-                accelerator: "CmdOrCtrl+Q",
-                click: () => app.quit(),
-              },
-            ],
-          },
-          { role: "editMenu" },
-          {
-            label: "Navigate",
-            submenu: [
-              {
-                label: "Go to a page or repository...",
-                accelerator: "CmdOrCtrl+K",
-                click: () => {
-                  showWindow();
-                  pendingCommandPalette = true;
-                },
-              },
-            ],
-          },
-        ]),
+      const tabShortcuts = tabShortcutItems(
+        process.platform,
+        dispatchTabCommand,
       );
+      const applicationMenu = Menu.buildFromTemplate([
+        {
+          label: "Lane",
+          submenu: [
+            {
+              label: "Open Lane",
+              accelerator: "CmdOrCtrl+O",
+              click: showWindow,
+            },
+            {
+              label: "Quit Lane",
+              accelerator: "CmdOrCtrl+Q",
+              click: () => app.quit(),
+            },
+          ],
+        },
+        { role: "editMenu" },
+        {
+          label: "Navigate",
+          submenu: [
+            {
+              label: "Go to a page or repository...",
+              accelerator: "CmdOrCtrl+K",
+              click: () => {
+                showWindow();
+                pendingCommandPalette = true;
+              },
+            },
+            { type: "separator" },
+            ...tabShortcuts.map(({ id, label, accelerator, click }) => ({
+              id,
+              label,
+              accelerator,
+              click,
+              enabled: false,
+            })),
+          ],
+        },
+      ]);
+      tabMenuItems = tabShortcuts.map((item) => ({
+        ...item,
+        menuItem: applicationMenu.getMenuItemById(item.id),
+      }));
+      Menu.setApplicationMenu(applicationMenu);
       if (process.platform === "win32") {
         tray = new Tray(
           nativeImage.createFromPath(join(resources, "Lane.ico")),

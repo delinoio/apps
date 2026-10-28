@@ -192,6 +192,14 @@ impl Fx {
         pool.execute(
             "CREATE TABLE fixture_fail(x int);
              CREATE TABLE fixture_slow(x int);
+             CREATE TABLE fixture_rejection_gate(id int PRIMARY KEY);
+             CREATE FUNCTION fixture_rejection_gate_hook() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN
+               PERFORM 1 FROM fixture_rejection_gate WHERE id=1 FOR UPDATE;
+               RETURN NULL;
+             END $$;
+             CREATE TRIGGER fixture_rejection_gate_hook AFTER INSERT ON lane_sync_rejections
+               FOR EACH ROW EXECUTE FUNCTION fixture_rejection_gate_hook();
              CREATE FUNCTION fixture_commit_hook() RETURNS trigger LANGUAGE plpgsql AS $$
              BEGIN
                IF EXISTS (SELECT 1 FROM fixture_fail) THEN RAISE EXCEPTION 'injected commit failure'; END IF;
@@ -350,6 +358,28 @@ impl Fx {
             .await
             .unwrap()
     }
+    async fn pending_failures(&self) -> i64 {
+        let response = lane_api::http::router(self.server.clone())
+            .oneshot(
+                Request::get("/metrics")
+                    .header(
+                        "authorization",
+                        "Bearer synthetic-metrics-token-at-least-32-characters",
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let text = std::str::from_utf8(&body).unwrap();
+        text.lines()
+            .find_map(|line| line.strip_prefix("lane_sync_pending_failures "))
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
     /// Run an authenticated call and assert D's time was set within the call's database-clock window.
     async fn assert_advances(
         &self,
@@ -426,12 +456,321 @@ fn repository(
 fn create_repo(fx: &Fx, url: &str) -> Value {
     repository(&id(), &id(), &[], url, "n", &fx.d, 3)
 }
+fn task_item(
+    entity: &str,
+    version: &str,
+    parent: Option<&str>,
+    repo: &str,
+    device: &str,
+    missing: bool,
+) -> Value {
+    let parents: Vec<&str> = parent.into_iter().collect();
+    let mut task = json!({"repositoryId":repo,"title":"Task","description":"","progress":"PROGRESS_TODO","proposal":"PROPOSAL_REGULAR"});
+    if missing {
+        task["parentTaskId"] = json!(id());
+    }
+    json!({"meta":{"requestId":id()},"kind":if parents.is_empty() {"MUTATION_KIND_CREATE"} else {"MUTATION_KIND_SAVE"},"version":{"formatVersion":3,"entityId":entity,"kind":"ENTITY_KIND_TASK","versionId":version,"parentVersionIds":parents,"createdAt":"2026-01-01T00:00:00.000000Z","origin":{"kind":"ORIGIN_KIND_CLI","deviceId":device,"deviceName":"fixture","accountId":""},"deleted":false,"task":task},"expectedHeadIds":[]})
+}
+async fn rejection_count(fx: &Fx, request: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM lane_sync_rejections WHERE account_id=$1 AND request_id=$2",
+    )
+    .bind(&fx.a.id)
+    .bind(request)
+    .fetch_one(&fx.pool)
+    .await
+    .unwrap()
+}
 /// An item the production push path rejects before any write (unsupported version format).
 fn rejected(fx: &Fx) -> Value {
     repository(&id(), &id(), &[], "example.com/rejected/x", "n", &fx.d, 9)
 }
 fn is_rejection(out: &Value, index: usize) -> bool {
     out["results"][index].get("error").is_some()
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn corrected_create_and_save_retire_only_covered_failures() {
+    let fx = Fx::new().await;
+    let repo = create_repo(&fx, "example.com/correction/repo");
+    let repo_id = repo["version"]["entityId"].as_str().unwrap();
+    assert!(!is_rejection(
+        &fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![repo.clone()])
+            .await
+            .unwrap(),
+        0
+    ));
+    let entity = id();
+    let first = task_item(&entity, &id(), None, repo_id, &fx.d, true);
+    let first_request = first["meta"]["requestId"].as_str().unwrap().to_owned();
+    let second = task_item(&entity, &id(), None, repo_id, &fx.d, true);
+    let second_request = second["meta"]["requestId"].as_str().unwrap().to_owned();
+    let rejected = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![first, second])
+        .await
+        .unwrap();
+    assert!(is_rejection(&rejected, 0) && is_rejection(&rejected, 1));
+    assert_eq!(fx.pending_failures().await, 2);
+    assert_eq!(fx.count("lane_versions").await, 1);
+
+    let corrected_version = id();
+    let corrected = task_item(&entity, &corrected_version, None, repo_id, &fx.d, false);
+    let accepted = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![corrected])
+        .await
+        .unwrap();
+    assert_eq!(
+        accepted["results"][0]["result"]["result"],
+        "RESULT_KIND_APPLIED"
+    );
+    assert_eq!(rejection_count(&fx, &first_request).await, 0);
+    assert_eq!(rejection_count(&fx, &second_request).await, 0);
+    assert_eq!(fx.pending_failures().await, 0);
+    let heads: Vec<String> = sqlx::query_scalar(
+        "SELECT version_id FROM lane_heads WHERE account_id=$1 AND entity_id=$2",
+    )
+    .bind(&fx.a.id)
+    .bind(&entity)
+    .fetch_all(&fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(heads, vec![corrected_version.clone()]);
+
+    let failed_save = task_item(
+        &entity,
+        &id(),
+        Some(&corrected_version),
+        repo_id,
+        &fx.d,
+        true,
+    );
+    let failed_request = failed_save["meta"]["requestId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(is_rejection(
+        &fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![failed_save])
+            .await
+            .unwrap(),
+        0
+    ));
+    assert_eq!(fx.pending_failures().await, 1);
+    let saved_version = id();
+    let saved = task_item(
+        &entity,
+        &saved_version,
+        Some(&corrected_version),
+        repo_id,
+        &fx.d,
+        false,
+    );
+    assert_eq!(
+        fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![saved])
+            .await
+            .unwrap()["results"][0]["result"]["result"],
+        "RESULT_KIND_APPLIED"
+    );
+    assert_eq!(rejection_count(&fx, &failed_request).await, 0);
+    assert_eq!(fx.pending_failures().await, 0);
+    assert_eq!(fx.count("lane_versions").await, 3);
+    fx.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn correction_keeps_other_accounts_devices_entities_and_old_replay_failures() {
+    let fx = Fx::new().await;
+    let repo = create_repo(&fx, "example.com/correction/isolation");
+    let repo_id = repo["version"]["entityId"].as_str().unwrap();
+    fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![repo.clone()])
+        .await
+        .unwrap();
+    let entity = id();
+    let a = task_item(&entity, &id(), None, repo_id, &fx.d, true);
+    let a_id = a["meta"]["requestId"].as_str().unwrap().to_owned();
+    let other_device = task_item(&entity, &id(), None, repo_id, &fx.d2, true);
+    let other_device_id = other_device["meta"]["requestId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let other_entity = task_item(&id(), &id(), None, repo_id, &fx.d, true);
+    let other_entity_id = other_entity["meta"]["requestId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(is_rejection(
+        &fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![a]).await.unwrap(),
+        0
+    ));
+    assert!(is_rejection(
+        &fx.push(TOKEN_D2, &fx.d2, &fx.a.epoch, vec![other_device])
+            .await
+            .unwrap(),
+        0
+    ));
+    assert!(is_rejection(
+        &fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![other_entity])
+            .await
+            .unwrap(),
+        0
+    ));
+    let other_account = task_item(&entity, &id(), None, repo_id, &fx.d, true);
+    assert!(is_rejection(
+        &fx.push(TOKEN_B, &fx.d, &fx.b.epoch, vec![other_account])
+            .await
+            .unwrap(),
+        0
+    ));
+    let legacy = id();
+    sqlx::query("INSERT INTO lane_sync_rejections(account_id,request_id,reason) VALUES($1,$2,19)")
+        .bind(&fx.a.id)
+        .bind(&legacy)
+        .execute(&fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(fx.pending_failures().await, 5);
+    let old_receipt = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![repo.clone()])
+        .await
+        .unwrap();
+    assert_eq!(
+        old_receipt["results"][0]["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    assert_eq!(fx.pending_failures().await, 5);
+    let corrected = task_item(&entity, &id(), None, repo_id, &fx.d, false);
+    assert_eq!(
+        fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![corrected])
+            .await
+            .unwrap()["results"][0]["result"]["result"],
+        "RESULT_KIND_APPLIED"
+    );
+    assert_eq!(rejection_count(&fx, &a_id).await, 0);
+    assert_eq!(rejection_count(&fx, &other_device_id).await, 1);
+    assert_eq!(rejection_count(&fx, &other_entity_id).await, 1);
+    assert_eq!(rejection_count(&fx, &legacy).await, 1);
+    assert_eq!(fx.pending_failures().await, 4);
+    fx.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn failed_correction_rolls_back_retirement_and_exact_request_retry_still_clears() {
+    let fx = Fx::new().await;
+    let repo = create_repo(&fx, "example.com/correction/rollback");
+    let repo_id = repo["version"]["entityId"].as_str().unwrap();
+    fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![repo.clone()])
+        .await
+        .unwrap();
+    let entity = id();
+    let first = task_item(&entity, &id(), None, repo_id, &fx.d, true);
+    let first_request = first["meta"]["requestId"].as_str().unwrap().to_owned();
+    let dependency = first["version"]["task"]["parentTaskId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(is_rejection(
+        &fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![first.clone()])
+            .await
+            .unwrap(),
+        0
+    ));
+
+    let corrected = task_item(&entity, &id(), None, repo_id, &fx.d, false);
+    fx.pool
+        .execute("INSERT INTO fixture_fail VALUES(1)")
+        .await
+        .unwrap();
+    assert!(
+        fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![corrected.clone()])
+            .await
+            .is_err()
+    );
+    assert_eq!(fx.pending_failures().await, 1);
+    let task_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM lane_entities WHERE account_id=$1 AND id=$2")
+            .bind(&fx.a.id)
+            .bind(&entity)
+            .fetch_one(&fx.pool)
+            .await
+            .unwrap();
+    assert_eq!(task_count, 0);
+    fx.pool.execute("DELETE FROM fixture_fail").await.unwrap();
+
+    let dependency_item = task_item(&dependency, &id(), None, repo_id, &fx.d, false);
+    fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![dependency_item])
+        .await
+        .unwrap();
+    assert_eq!(fx.pending_failures().await, 1);
+    let retried = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![first])
+        .await
+        .unwrap();
+    assert_eq!(
+        retried["results"][0]["result"]["result"],
+        "RESULT_KIND_APPLIED"
+    );
+    assert_eq!(rejection_count(&fx, &first_request).await, 0);
+    assert_eq!(fx.pending_failures().await, 0);
+    fx.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn old_receipts_ancestor_acks_and_changed_bases_keep_newer_failures() {
+    let fx = Fx::new().await;
+    let repo = create_repo(&fx, "example.com/correction/replay");
+    let repo_id = repo["version"]["entityId"].as_str().unwrap();
+    fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![repo.clone()])
+        .await
+        .unwrap();
+    let entity = id();
+    let base = id();
+    let created = task_item(&entity, &base, None, repo_id, &fx.d, false);
+    fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![created.clone()])
+        .await
+        .unwrap();
+    let failed = task_item(&entity, &id(), Some(&base), repo_id, &fx.d, true);
+    let failed_request = failed["meta"]["requestId"].as_str().unwrap().to_owned();
+    assert!(is_rejection(
+        &fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![failed])
+            .await
+            .unwrap(),
+        0
+    ));
+    let receipt = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![created.clone()])
+        .await
+        .unwrap();
+    assert_eq!(
+        receipt["results"][0]["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    let mut ancestor = created;
+    ancestor["meta"]["requestId"] = json!(id());
+    let ack = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![ancestor])
+        .await
+        .unwrap();
+    assert_eq!(
+        ack["results"][0]["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    assert_eq!(rejection_count(&fx, &failed_request).await, 1);
+
+    let next = id();
+    let independent = task_item(&entity, &next, Some(&base), repo_id, &fx.d2, false);
+    fx.push(TOKEN_D2, &fx.d2, &fx.a.epoch, vec![independent])
+        .await
+        .unwrap();
+    assert_eq!(rejection_count(&fx, &failed_request).await, 1);
+    let changed_base = task_item(&entity, &id(), Some(&next), repo_id, &fx.d, false);
+    fx.push(TOKEN_D, &fx.d, &fx.a.epoch, vec![changed_base])
+        .await
+        .unwrap();
+    assert_eq!(rejection_count(&fx, &failed_request).await, 1);
+    fx.close().await;
 }
 
 #[tokio::test]
@@ -551,6 +890,7 @@ async fn push_commits_qualify_only_when_a_transaction_succeeds() {
         .unwrap();
     assert!(is_rejection(&out, 0) && is_rejection(&out, 1));
     assert_eq!(fx.time(a, &d).await, Some(prior));
+    assert_eq!(fx.count("lane_sync_rejections").await, 3);
 
     // A mixed batch keeps independent per-item transactions: the accepted item advances time and
     // the later rejection neither erases it nor changes the per-item results.
@@ -567,6 +907,7 @@ async fn push_commits_qualify_only_when_a_transaction_succeeds() {
         mixed["results"][0]["result"]["result"],
         "RESULT_KIND_APPLIED"
     );
+    assert_eq!(fx.count("lane_sync_rejections").await, 4);
 
     // A retained conflict result is a successful transaction.
     let (entity, base) = (id(), id());
@@ -770,7 +1111,7 @@ async fn validation_failures_rollbacks_and_non_sync_calls_never_advance_time() {
     fx.close().await;
 }
 
-async fn delete_account_data(fx: &Fx, label: &str, mode: &str) -> Result<Value> {
+async fn deletion_request(fx: &Fx, label: &str, mode: &str) -> Value {
     let session: String =
         sqlx::query_scalar("SELECT session_id FROM lane_credentials WHERE digest=$1")
             .bind(hash(token(label).as_bytes()))
@@ -786,13 +1127,284 @@ async fn delete_account_data(fx: &Fx, label: &str, mode: &str) -> Result<Value> 
         .execute(&fx.pool)
         .await
         .unwrap();
-    fx.call(
-        label,
-        "AccountService",
-        "DeleteAccountData",
-        json!({"meta":{"requestId":id()},"mode":mode,"confirmedAccountId":fx.a.id,"reauthProof":"proof"}),
+    json!({"meta":{"requestId":id()},"mode":mode,"confirmedAccountId":fx.a.id,"reauthProof":"proof"})
+}
+
+async fn delete_account_data(fx: &Fx, label: &str, mode: &str) -> Result<Value> {
+    let request = deletion_request(fx, label, mode).await;
+    fx.call(label, "AccountService", "DeleteAccountData", request)
+        .await
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn rejection_commits_before_account_clearing_and_is_removed() {
+    for mode in [
+        "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL",
+        "DATA_DELETION_MODE_DELETE_EVERYWHERE",
+    ] {
+        let fx = Fx::new().await;
+        fx.pool
+            .execute("INSERT INTO fixture_rejection_gate VALUES(1)")
+            .await
+            .unwrap();
+        let mut gate = fx.pool.begin().await.unwrap();
+        sqlx::query("SELECT id FROM fixture_rejection_gate WHERE id=1 FOR UPDATE")
+            .execute(&mut *gate)
+            .await
+            .unwrap();
+        let item = rejected(&fx);
+        let request_id = item["meta"]["requestId"].as_str().unwrap().to_owned();
+        let push = {
+            let server = fx.server.clone();
+            let device = fx.d.clone();
+            let epoch = fx.a.epoch.clone();
+            tokio::spawn(async move {
+                server
+                    .execute(
+                        &bearer(&token(TOKEN_D)),
+                        "SyncService",
+                        "PushChanges",
+                        json!({"formatVersion":3,"epoch":epoch,"deviceId":device,"mutations":[item]}),
+                        false,
+                    )
+                    .await
+            })
+        };
+        fx.waiting("SELECT count(*) FROM pg_stat_activity WHERE wait_event='transactionid' AND query LIKE 'INSERT INTO lane_sync_rejections%'")
+            .await;
+        assert_eq!(fx.pending_failures().await, 0);
+
+        let request = deletion_request(&fx, TOKEN_D, mode).await;
+        let clearing = {
+            let server = fx.server.clone();
+            tokio::spawn(async move {
+                server
+                    .execute(
+                        &bearer(&token(TOKEN_D)),
+                        "AccountService",
+                        "DeleteAccountData",
+                        request,
+                        false,
+                    )
+                    .await
+            })
+        };
+        fx.waiting("SELECT count(*) FROM pg_stat_activity WHERE wait_event='advisory' AND query LIKE '%pg_advisory_xact_lock%'")
+            .await;
+        gate.commit().await.unwrap();
+        let result = push.await.unwrap().unwrap();
+        assert!(is_rejection(&result, 0));
+        let cleared = clearing.await.unwrap().unwrap();
+        assert_ne!(cleared["newEpoch"], fx.a.epoch);
+        assert_eq!(fx.pending_failures().await, 0);
+        assert_eq!(fx.count("lane_sync_rejections").await, 0);
+        for table in [
+            "lane_entities",
+            "lane_versions",
+            "lane_heads",
+            "lane_changes",
+            "lane_entity_receipts",
+            "lane_version_identities",
+            "lane_attachments",
+            "lane_attachment_identities",
+        ] {
+            assert_eq!(fx.count(table).await, 0, "{table}");
+        }
+        assert_eq!(fx.time(&fx.a, &fx.d).await, None);
+        let revoked: bool = sqlx::query_scalar(
+            "SELECT bool_and(revoked_at IS NOT NULL) FROM lane_sessions WHERE account_id=$1",
+        )
+        .bind(&fx.a.id)
+        .fetch_one(&fx.pool)
+        .await
+        .unwrap();
+        assert!(revoked);
+        let disconnected: bool = sqlx::query_scalar(
+            "SELECT bool_and(disconnected_at IS NOT NULL) FROM lane_devices WHERE account_id=$1",
+        )
+        .bind(&fx.a.id)
+        .fetch_one(&fx.pool)
+        .await
+        .unwrap();
+        assert!(disconnected);
+        let rows: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM lane_sync_rejections WHERE account_id=$1 AND request_id=$2",
+        )
+        .bind(&fx.a.id)
+        .bind(&request_id)
+        .fetch_one(&fx.pool)
+        .await
+        .unwrap();
+        assert_eq!(rows, 0);
+        fx.close().await;
+    }
+
+    let fx = Fx::new().await;
+    sqlx::query(
+        "INSERT INTO lane_sync_rejections(account_id,request_id,reason) VALUES($1,$2,8),($3,$4,8)",
     )
+    .bind(&fx.a.id)
+    .bind(id())
+    .bind(&fx.b.id)
+    .bind(id())
+    .execute(&fx.pool)
     .await
+    .unwrap();
+    delete_account_data(&fx, TOKEN_D, "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL")
+        .await
+        .unwrap();
+    let account_b_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM lane_sync_rejections WHERE account_id=$1")
+            .bind(&fx.b.id)
+            .fetch_one(&fx.pool)
+            .await
+            .unwrap();
+    assert_eq!(account_b_rows, 1);
+    assert_eq!(fx.pending_failures().await, 1);
+    fx.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn clearing_or_revocation_first_rejects_waiting_push_without_bookkeeping() {
+    for mode in [
+        "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL",
+        "DATA_DELETION_MODE_DELETE_EVERYWHERE",
+        "session_revocation",
+    ] {
+        let fx = Fx::new().await;
+        let mut operation = fx.pool.begin().await.unwrap();
+        account_lock(&mut operation, &fx.a.id).await.unwrap();
+        let push = {
+            let server = fx.server.clone();
+            let device = fx.d.clone();
+            let epoch = fx.a.epoch.clone();
+            let item = rejected(&fx);
+            tokio::spawn(async move {
+                server
+                    .execute(
+                        &bearer(&token(TOKEN_D)),
+                        "SyncService",
+                        "PushChanges",
+                        json!({"formatVersion":3,"epoch":epoch,"deviceId":device,"mutations":[item]}),
+                        false,
+                    )
+                    .await
+            })
+        };
+        fx.waiting("SELECT count(*) FROM pg_stat_activity WHERE wait_event='advisory' AND query LIKE '%pg_advisory_xact_lock%'")
+            .await;
+        if mode == "session_revocation" {
+            sqlx::query("UPDATE lane_sessions SET revoked_at=clock_timestamp() WHERE account_id=$1 AND device_id=$2")
+                .bind(&fx.a.id).bind(&fx.d).execute(&mut *operation).await.unwrap();
+        } else {
+            let request = deletion_request(&fx, TOKEN_D, mode).await;
+            let principal = fx
+                .server
+                .auth
+                .authenticate(&bearer(&token(TOKEN_D)))
+                .await
+                .unwrap();
+            fx.server
+                .auth
+                .authorize(&mut operation, &principal)
+                .await
+                .unwrap();
+            fx.server
+                .auth
+                .dispatch(&mut operation, &principal, "DeleteAccountData", &request)
+                .await
+                .unwrap();
+        }
+        operation.commit().await.unwrap();
+        assert!(push.await.unwrap().is_err());
+        assert_eq!(fx.count("lane_sync_rejections").await, 0);
+        assert_eq!(fx.pending_failures().await, 0);
+        assert_eq!(fx.time(&fx.a, &fx.d).await, None);
+        fx.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn failed_item_work_rolls_back_and_bookkeeping_failure_has_no_fallback() {
+    let fx = Fx::new().await;
+    let accepted = create_repo(&fx, "example.com/o/accepted-before-failure");
+    let accepted_id = accepted["version"]["entityId"].as_str().unwrap().to_owned();
+    let output = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![accepted])
+        .await
+        .unwrap();
+    assert!(!is_rejection(&output, 0));
+    let contact = fx.time(&fx.a, &fx.d).await;
+    sqlx::query("INSERT INTO lane_sync_rejections(account_id,request_id,reason) VALUES($1,$2,8)")
+        .bind(&fx.b.id)
+        .bind(id())
+        .execute(&fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(fx.pending_failures().await, 1);
+
+    fx.pool
+        .execute(
+            "CREATE FUNCTION fixture_fail_version() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN RAISE EXCEPTION 'injected version failure'; END $$;
+         CREATE TRIGGER fixture_fail_version BEFORE INSERT ON lane_versions
+           FOR EACH ROW EXECUTE FUNCTION fixture_fail_version();",
+        )
+        .await
+        .unwrap();
+    let rejected_item = create_repo(&fx, "example.com/o/rolled-back");
+    let rejected_id = rejected_item["version"]["entityId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let result = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![rejected_item])
+        .await
+        .unwrap();
+    assert!(is_rejection(&result, 0));
+    assert_eq!(fx.time(&fx.a, &fx.d).await, contact);
+    for table in [
+        "lane_entities",
+        "lane_versions",
+        "lane_heads",
+        "lane_changes",
+        "lane_entity_receipts",
+        "lane_version_identities",
+    ] {
+        assert_eq!(fx.count(table).await, 1, "{table}");
+    }
+    let entities: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM lane_entities WHERE account_id=$1")
+            .bind(&fx.a.id)
+            .fetch_all(&fx.pool)
+            .await
+            .unwrap();
+    assert_eq!(entities, vec![accepted_id]);
+    assert!(!entities.contains(&rejected_id));
+    assert_eq!(fx.count("lane_attachments").await, 0);
+    assert_eq!(fx.count("lane_attachment_identities").await, 0);
+    assert_eq!(fx.pending_failures().await, 2);
+
+    fx.pool
+        .execute(
+            "CREATE FUNCTION fixture_fail_rejection() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN RAISE EXCEPTION 'injected bookkeeping failure'; END $$;
+         CREATE TRIGGER fixture_fail_rejection BEFORE INSERT ON lane_sync_rejections
+           FOR EACH ROW EXECUTE FUNCTION fixture_fail_rejection();",
+        )
+        .await
+        .unwrap();
+    let result = fx
+        .push(TOKEN_D, &fx.d, &fx.a.epoch, vec![rejected(&fx)])
+        .await;
+    assert!(result.is_err());
+    assert_eq!(fx.pending_failures().await, 2);
+    assert_eq!(fx.count("lane_entities").await, 1);
+    assert_eq!(fx.time(&fx.a, &fx.d).await, contact);
+    fx.close().await;
 }
 
 #[tokio::test]

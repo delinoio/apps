@@ -15,6 +15,11 @@ const icons = {
     '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   [DestinationKind.Repository]: '<path d="M5 3h14v18H5zM9 3v18M12 7h4"/>',
 };
+let commandPaletteOpen = false;
+export function hasOpenCommandPalette() {
+  "background only";
+  return commandPaletteOpen;
+}
 
 export function CommandPalette({
   items,
@@ -26,6 +31,13 @@ export function CommandPalette({
   onSelect: (destination: Destination) => void;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    "background only";
+    commandPaletteOpen = open;
+    return () => {
+      commandPaletteOpen = false;
+    };
+  }, [open]);
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const results = filterDestinations(items, query);

@@ -86,7 +86,11 @@ contextual sidebar and content. Preserve the English UI, white/gray surfaces,
 
 Open tasks, new-task drafts, pages, repository lists, Pace and RealQA in the same
 tab list. Start with one All tasks tab. Sidebar, command-menu, relationship, event
-and deep-link navigation opens the destination or selects its existing tab. A
+and deep-link navigation replaces the current Lane tab with the destination or
+selects its existing tab. Ordinary navigation must not add a tab. Before replacing
+a pane, apply its unsaved-change confirmation and pending-operation guard; cancel
+keeps the pane and its draft. Remove the replaced pane's state and ignore its late
+reads. Explicit New tab and New task actions still create separate tabs. A
 task has one identity, including after a new draft is saved. Page, repository
 and mini-app destinations have distinct identities. New task opens a separate
 draft. New tab opens or selects a chooser tab with Lane, Pace and RealQA cards
@@ -102,7 +106,7 @@ dialog and shows the count, complete titles, selection and unsaved state, with
 selection and individual close actions. Keep New tab directly reachable beside
 Tabs. Escape dismisses the dialog and restores focus. Stack chooser cards at
 390 pixels without horizontal overflow. A repository tab keeps its repository
-identity: on mobile, choosing another repository opens or selects that tab;
+identity: on mobile, choosing another repository replaces the current tab or selects its existing tab;
 choosing All repositories selects the All tasks page.
 
 Keep each pane mounted while inactive so its sidebar selection and scroll,
@@ -110,7 +114,7 @@ repository, search, filters, sort, list scroll, editor scroll and drafts survive
 tab and mini-app switching. Inactive panels must be hidden from both keyboard
 navigation and assistive technology. A selected task tab retains its associated
 list beside the editor on desktop. `Back to list` selects the corresponding
-list tab without discarding the task tab. The editor's `Cancel` action closes
+list tab if it exists; otherwise it replaces the task tab after the same exit guard. The editor's `Cancel` action closes
 its tab through the same unsaved-change guard and is disabled while saving.
 Save is explicit; tab selection never
 saves or discards input. Each tab owns its reads, mutations, conflict state and
@@ -132,6 +136,24 @@ and close targets are at least 44 pixels. Up/Down and Home/End move focus;
 Enter/Space activates. Tab proceeds to the remaining controls and content.
 Closing restores focus to the selected adjacent tab: choose the next row,
 then the previous row. Closing the final tab opens a clean `All tasks` tab.
+Workspace order is local to the current window. Moving a tab changes its list
+position without changing its ID, selected pane, draft, filters, scroll position,
+busy state or pending request ownership. Adjacent and numbered selection use
+the displayed order; adjacent selection wraps, and the ninth selection target
+is the final tab. Moving at an edge does nothing.
+
+Keep the latest 20 explicitly closed tabs per window in memory. Each entry
+contains only a destination, its former list position and a safe label. A
+cancelled or busy close and an implicit chooser replacement add no entry.
+Reopening accepts the latest entry, reinserts it at its clamped former position
+and selects it. If its destination is already open, select that pane without
+replacing its state. Reopened saved destinations read current data and use
+default view state; missing or inaccessible data uses the existing error state.
+A discarded new-task draft reopens empty with a new ID. History never restores
+discarded task input or RealQA capture and settings drafts. Clear history on
+account or data-space change, logout, reset, session revocation and window
+disposal. Closing the final tab retains its history while opening clean All
+tasks.
 
 Closing an edited tab requires `Discard unsaved changes?`, with `Keep editing`
 and `Discard changes`. Escape cancels. Focus the safe action and trap focus in
@@ -153,9 +175,9 @@ while any tab has an unsaved draft; leaving the Settings tab cancels an update
 before installation as existing Settings navigation does.
 
 At widths below 900 pixels, place existing contextual navigation inside the tab
-panel above its page, retaining mobile list/detail behavior. Only the tab strip
-scrolls horizontally; selected tabs stay reachable, and `New tab` and the
-open-tabs menu stay fixed at its right. Preserve wrapping content and reachable
+panel above its page, retaining mobile list/detail behavior. The `Tabs` button
+opens the vertical list in a dialog, and `New tab` remains beside that button.
+The list scrolls vertically and keeps selected rows reachable. Preserve wrapping content and reachable
 controls at 1440, 900, 899, 390 and 360 pixels and with enlarged text. Validate
 keyboard, focus restoration, screen-reader roles, hidden panels and independent
 scroll/draft retention. Fixtures and shared compilation do not establish actual
@@ -164,8 +186,32 @@ Android, iOS, macOS or Windows acceptance.
 Tabs and unsaved drafts live only in the current window's memory, without
 server or cross-device synchronization, automatic saves or restart recovery.
 Pace and RealQA remain single mini-app views. Drag reordering, pinned/grouped
-or split tabs, detached windows, reopening closed tabs and new global close
-shortcuts are out of scope.
+or split tabs, detached windows and OS-global tab shortcuts are out of scope.
+
+On macOS and Windows, application-local shortcuts operate on the shared
+displayed tab order:
+
+| Action                             | macOS                                                                             | Windows                     |
+| ---------------------------------- | --------------------------------------------------------------------------------- | --------------------------- |
+| New tab                            | Command+T                                                                         | Ctrl+T                      |
+| Close selected tab                 | Command+W                                                                         | Ctrl+W, Ctrl+F4             |
+| Reopen latest closed tab           | Command+Shift+T                                                                   | Ctrl+Shift+T                |
+| Next tab                           | Ctrl+Tab, Ctrl+PageDown, Command+Option+Right, Command+Shift+], Command+PageDown  | Ctrl+Tab, Ctrl+PageDown     |
+| Previous tab                       | Ctrl+Shift+Tab, Ctrl+PageUp, Command+Option+Left, Command+Shift+[, Command+PageUp | Ctrl+Shift+Tab, Ctrl+PageUp |
+| Select tab 1–8 or last             | Command+1–9                                                                       | Ctrl+1–9                    |
+| Move selected tab earlier or later | Ctrl+Shift+PageUp/PageDown                                                        | Ctrl+Shift+PageUp/PageDown  |
+| Move focused row first or last     | Command+Shift+Home/End                                                            | Ctrl+Shift+Home/End         |
+
+New tab opens or selects the existing chooser. Closing uses the existing draft
+and busy guards and keeps the window open. Closed history retains at most 20
+safe descriptors per window and clears on data-space or account changes and
+window disposal. Reopening reads saved destinations again; discarded draft
+input does not return. Adjacent and numbered selection use displayed order;
+9 selects the last tab. Reordering moves the existing mounted pane without
+changing its identity or selection. First/last movement requires focus on a
+tab row, so an editor retains its text-selection keys. A modal or command
+palette blocks these commands. Browser-owned web tab shortcuts remain with
+the browser; desktop shortcuts do not register as OS-global hotkeys.
 
 ### Desktop app updates
 
@@ -223,6 +269,30 @@ Validate release selection, transport and archive rejection, cancellation,
 shutdown permission, successful swap/startup and rollback with disposable
 fixtures. Record real macOS and Windows upgrade/restart acceptance separately
 from these fixtures and native packaging builds.
+
+### Settings presentation
+
+Settings uses one centered scrolling column within the existing pane, at most
+960 logical pixels wide. The header explains device, synchronization, and
+account access and keeps Refresh settings explicit. Native desktop shows seven
+expanded sections in order: App updates, Local data and synchronization,
+Notifications on this device, Devices, Approved remote MCP connections,
+Development data, and Delete Lane data. Web uses Online account in place of
+the native account section and omits App updates, Development data, and local
+device removal. Mobile omits the desktop updater. The application rail, sidebar,
+workspace tabs, and RealQA settings remain separate.
+
+Use divided device and connection rows with textual status and the existing
+direct actions. Keep each data-removal action next to its full scope and
+consequences. Show loading before the first status or list result, an empty
+message only after an acknowledged empty list, and an unavailable message on
+list failure. A failed online list must not block native local notification
+preferences. Show the actual notification permission as text. Keep notification
+choices and Save explicit, preserve dirty drafts and server acknowledgements,
+and retain account, deletion, reset, and updater safeguards above. Use readable
+wrapping content and at least 44-pixel controls in the 900-pixel and 360-pixel
+layouts. Keep section reveal targets, keyboard access, dialog focus handling,
+and text alternatives for status and progress.
 
 ### Navigation command menu
 
@@ -316,6 +386,31 @@ same artwork in tab rows, chooser cards, contextual heading and coming-soon page
 24-pixel navigation footprint, rounded corners, selection marker and accessible
 app names. This artwork does not replace the Lane launcher icon.
 
+### Pace unavailable view
+
+Pace has one static unavailable view. Show only its embedded 72-by-72-pixel
+decorative artwork, `Pace`, the `Coming soon` heading,
+`Pace is not available yet.`, and one `Back to Lane` button. Use no card or
+additional content. Keep the existing app selection callback, content-focus
+transfer, Lane tabs, filters, pane scroll and drafts. Pace makes no request and
+does not add a screen-specific Escape action.
+
+At app widths of at least 900 pixels, center the group within the available
+content pane when its height permits. Limit the group to 360 pixels including
+24-pixel side and 48-pixel vertical padding. Give the artwork 18-pixel corners,
+then use gaps of 24, 10, 12 and 28 pixels between the artwork, label, heading,
+body and button. Use a 14-pixel medium label, 32-pixel semibold heading and
+16-pixel body. The heading is `#172033`; supporting text is `#68758b`.
+Make the button at most 200 pixels wide and at least 48 pixels tall, with a
+white surface, one-pixel `#dce2ec` border, 10-pixel corners and `#075AFF`
+text. Show a separated blue focus ring and pale-blue active feedback.
+
+Below 900 pixels, preserve the existing rail and contextual navigation. Use
+16-pixel side and 32-pixel vertical padding and a 28-pixel heading. Size the
+group and button to the remaining content width, wrap enlarged text, and keep
+the group scrollable from its top when the height is constrained. The Pace
+content must not create horizontal scrolling at 360 pixels or 200% text.
+
 ### Product contract ownership
 
 The following behavior is authoritative for all Lane entry points. The linked domain contracts specify implementation interfaces and conformance, without narrowing these requirements.
@@ -339,6 +434,9 @@ The following behavior is authoritative for all Lane entry points. The linked do
 
 ### Repositories
 
+- Show the repository directory with a heading, the organizational-URL explanation, an Add repository action and bordered rows. Each row shows the display name, normalized URL, and visible actions for tasks, planning, editing, deletion and conflict resolution when needed. Wrap actions and long URLs within the available width, including narrow screens and enlarged text.
+- Open Add and Edit in a centered, scrollable modal no wider than 560px. Focus Repository URL first, show the HTTPS/SSH equivalence helper and URL-change warning, and save only through the explicit Save action. Close and Escape immediately end the editor lifetime, even with unsaved input or a submitted save. A submitted mutation continues; its late result may refresh lists but cannot change a newer editor.
+- Distinguish initial loading, successful empty results and refresh failures. Keep existing rows and the current editor input after a refresh failure, with an explicit retry. A failed save retains the form and its retry identity. Lock both fields and repeat Save while a save is pending. Show unavailable or conflicting entities without claiming success. The delete confirmation focuses Close first and retains its exact destructive scope.
 - Identify repositories by normalized URL host and repository path. Treat HTTPS/SSH URL forms and a terminal `.git` difference as equivalent. The URL is an organizational identifier: do not fetch repository contents or verify Git-host access.
 - When task creation names an unregistered repository URL, register it and create the task.
 - Default the displayed name to URL host/path; allow a separate user-defined display name.
@@ -354,8 +452,13 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Apps, CLI, and MCP provide full management, including task creation/editing, progress changes, proposal acceptance/rejection, deletion, prompt editing/restoration, repository management, and conflict resolution.
 - Keep prompt versions indefinitely until their owning task/repository is deleted. Users can inspect a past version and restore it; restoration creates a new version. A diff-view feature is not required.
 - Preserve user-visible changes to title, description, progress, proposal acceptance/rejection, repository moves, planning metadata and relationships. Show before/after values, time, and change origin: app/CLI/MCP, device name, and account identity when logged in. Do not introduce agent-supplied display identities. Only prompts have a past-version restoration action.
+- Task history and Prompt versions open separate named dialogs without changing the editor draft. Each dialog requests up to 100 versions per page with its own `promptsOnly` value, shows initial loading and empty states, and keeps loaded cards visible during continuation and retry. A pending cursor permits one request at a time. The fixed header contains Close; the continuation action stays below the scrollable cards. Close and Escape return focus to the entry control.
+- Task history cards show the exact available absolute time and origin, followed by friendly field names and selectable Before/After values in the existing change-helper order. Creation uses absent before values. A missing declared parent or multiple parents show their respective explanation and no inferred field delta. Prompt versions cards distinguish an absent prompt, a present empty prompt and safe Markdown content; saved captures remain read-only in saved order. History has no restore action.
+- Prompt restoration stays in Prompt versions and creates a new version with the selected source and current expected version. Disable restoration for a dirty, conflicted, deleted or busy editor. Show restoration progress and failures next to the selected version, retain the draft and loaded cards after failure, and allow an explicit unchanged retry only for a retryable failure, with the same request ID. Permission and stale-write failures remain visible without a retry action. A late completion follows the editor-lifetime rule above.
 - Allow moving a task between repositories while preserving its ID, prompt, and history. A linked webhook event stays in its original repository and continues to reference the moved task ID.
 - Store descriptions and prompts as Markdown source. Render Markdown in the app; allow source editing and copying. Do not execute embedded HTML. Automatically load images only from HTTPS URLs.
+- Android and iOS load HTTPS Markdown images through their registered host image fetchers. Each redirect must stay on HTTPS, and normal TLS validation applies. Network, HTTP and image decode failures complete as image failures. Cancellation and view release prevent a late result from updating the view.
+- Host-authorized inline PNG attachments and bundled artwork continue through the host fetchers without a shared URL or disk cache. Markdown cannot authorize an inline data URL or bypass attachment ownership checks.
 - The task editor Prompt presence control keeps absent, present-empty and nonempty prompts distinct. Selecting Include prompt while a prompt is present, including after unsaved edits, keeps its exact Markdown and does not dirty the draft; selecting it from absence creates a present empty prompt; No prompt intentionally removes presence. Presence changes preserve captures, other fields and the draft base, and the control stays disabled while busy, conflicted or deleted.
 - App edits require explicit Save; saves create versions. If external changes arrive during editing, retain unsaved input, indicate the external change, and check conflicts when saving.
 - Opening a task is owned by its tab and the latest accepted editor action within that tab. A replacement read within the same editor, closing its tab, resetting data, and disposing of the adapter or data space supersede earlier pending reads, including a read of the same task started before. Selecting another tab, page or mini-app preserves each owning tab and does not transfer read ownership. A superseded read neither replaces a draft nor reopens a closed editor, changes the page, or reports an error. Cancelling a discard prompt supersedes nothing; only an accepted transition does.
@@ -366,6 +469,7 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - The repository editor pre-fills the URL of an existing repository so that saving only the display name submits the same normalized identifier: it builds an `ssh://git@` URL for an identifier with an explicit `:443` port, which can only come from a nondefault SSH port, and an `https://` URL for every other identifier. This uses the existing raw-URL API and stores no transport. An explicit URL edit follows the normal transport-aware normalization, rename and uniqueness rules. The native store validates a stored normalized repository identifier (conflict resolution, accepted pull and push results, standalone merge) without assigning a transport, so no explicit port is stripped and malformed or noncanonical identifiers are still rejected.
 - Web reconciles its API session with a credentialed `GET /auth/session` on start, explicit retry, focus and online resume, and before redeeming a deletion reauthentication, because an approval popup can replace the session cookie. Reconciliation precedes stream restarts, query invalidation and new account-bound requests. The newest session response wins and obsolete responses are discarded; a response that arrives after the session has ended (Disconnect, the sign-in gate or data deletion) is also discarded and cannot reinstall the removed session. An account change resets the account-bound view and its drafts. A changed device, session or CSRF token for the same account replaces credentials, notification preferences and the deletion target, retires in-flight results of the previous credentials and keeps the current-screen draft. An unchanged session keeps all state. A rejected session (401) stops account-bound work and shows the sign-in gate. A transient failure retains the view and input, blocks reads and saves, and recovers only through the explicit retry control, whose successful confirmation also invalidates retained queries so a view that kept a failed-loading state reloads; focus and online events do not retry it. Mutations are never queued or replayed, and a mutation that arrives during reconciliation is refused. This includes a notification preference save, which is also refused while the session is unconfirmed and is retired without registering a push device when the identity changes while it waits on the permission prompt or the service worker. Recovery does not use `POST /auth/refresh`, and cookie, Origin and CSRF enforcement is unchanged.
 - Web links open a destination with `task=<id>` or `repository=<id>` (task wins when both are present) and an optional `account=<id>` guard. When the session check returns 401, the gate's sign-in link sends the complete, well-formed destination to `/auth/login` as separate typed fields while `return_to` stays the query-free registered callback; the API returns the validated fields on that callback after login. A malformed or incomplete link signs in plainly. After the session is installed and the app signals ready, the host delivers the destination once per page load; an `account` that differs from the authenticated account produces the explicit account-mismatch error and no navigation or account switch. Account switching (ConnectSync) uses the query-free sign-in link. Automated tests cover this with mocked Logto and Delcore and a disposable database; live Logto, Web Push and browser acceptance are separate and not implied.
+- The standalone web account gate uses one main landmark and a centered white card no wider than 460 pixels. It shows the Lane wordmark, one state heading, supporting text, an atomic polite status, and full-width Sign in with Logto and Retry connection controls in that DOM order. A divider separates the controls from the online-connection and server-storage disclosure. Connecting shows `Connecting to Lane` and `Connecting…` with a non-color busy cue. A rejected session shows `Sign in to Lane` and `Sign in to use Lane on the web.` with sign-in emphasized. A transient failure shows `Unable to connect`, the complete safe error, and retry emphasized; it mentions retained current-screen input only when an authenticated view remains in memory. Offline guidance requires reconnection and an explicit retry. A pending retry cannot start a second attempt and releases its busy state on settlement. When the gate hides a focused app view, focus moves to its heading; successful recovery restores meaningful app focus. Initial reconciliation does not steal browser focus. The gate scrolls at short heights, wraps long status text at narrow widths and text enlargement, and cannot be dismissed with Escape.
 
 ### Task planning metadata
 
@@ -447,11 +551,23 @@ The task editor presents Progress, Repository, Priority, Type, Milestone and Cyc
 
 1. **Task creation and detail.** Add Properties and Relationships sections to the existing editor. Properties contains priority, type, labels, start date, due date, story points, milestone and cycle. Relationships contains Parent, Subtasks, Depends on, Blocks, Related and Duplicate of. Select existing tasks of the same repository by search and display their titles. Show Change parent when a parent exists. Field edits and relationship changes remain in the draft until the existing Save action succeeds. Opening a related task opens or selects its tab and preserves the current draft.
 2. **Task lists.** Add a collapsible Filters region and separate sort-key and direction controls. Keep the existing search, progress and proposal controls. Label every filter, give each filter its own Unassigned choice, and identify repository-owned values with their repository in the all-repository list. Show task metadata compactly. Do not add grouping, bulk selection or saved views.
+   On the Proposals page, use a compact heading and New task action, then the full-width title/description search, separate Proposal disposition and Progress menus, inline planning Filters and Clear filters, and a separate sort row. The page opens with Pending proposals, All progress, collapsed Filters and Default order. Pending proposals and explicit Pending both request PENDING; the other choices are Regular, Accepted and Rejected, with no All disposition choice. Progress is independent, so Pending includes Done and Canceled tasks. Keep the existing 100-item cursor, serialized continuation, query ownership, filter and sort semantics, and regular-task New task behavior. Rows show a title action, complete planning metadata, conflict text when applicable, and separate textual disposition and neutral-symbol progress. Show distinct initial loading, true-empty, no-match, error and continuation-retry states. The menu supports arrows, Enter/Space and Escape with focus returned to its trigger. At desktop widths, rows may align state text beside the title and metadata; below 900 pixels, controls and row content stack without clipping at 390 or 360 pixels. Keep list status announcements concise and preserve tab focus and scroll on return.
 3. **Repository management.** Provide Labels, Milestones and Cycles tabs under the repository detail area, each with an item list and an edit area and with New item, Save, Delete and History actions. Labels expose name, color and description. Milestones expose name, description, optional target date and completion. Cycles expose name, description and required start and end dates. History shows before/after values, time and origin and has no Restore action. An empty list offers creation. Deletion confirmation explains that deleting an item detaches it from tasks while the tasks remain.
+   Keep the repository heading, Back action and planning tabs in their current position and order. At a planning content width of at least 900 pixels, show a white bordered list panel beside a white bordered editor panel with a 24-pixel gap. The list uses about one third of the space, up to about 360 pixels; the editor uses the remainder. Use 32-pixel outer padding at broad widths and 24 pixels near the desktop boundary. Below 900 pixels, stack the list before the editor and use 16-pixel outer padding on mobile. At 360 pixels, wrap names and actions without horizontal scrolling. Panels have light-gray 1-pixel borders and 12-pixel radii, without a heavy shadow.
+   Put the current kind heading and New action above the item rows. Each row selects its item, shows a prominent name and a second line of kind metadata, and keeps the Edit {kind} {name} accessible name. Labels show a decorative color swatch and visible hex value; milestones show Open or Completed and an optional target date; cycles show their start and end dates. Keep the Conflict text badge. Show selection with text semantics, a pale-blue surface and a blue border. Keep item order, count, identity and kind unchanged.
+   The editor keeps Name first, kind-specific fields next and Description last. Focus Name when an editor opens, without stealing focus on a data refresh. Show the Edit/New heading and explain that changes are saved only on Save. Keep 44-pixel inputs and action targets, a multiline description and a divider above Save, History, Delete and Close. New items omit History and Delete. A label color swatch is decorative; there is no color picker. Stack cycle date fields when space is narrow. Keep explicit Save, dirty-draft guards, validation, retry request identity, slow-save routing, retained input and errors, read-only history, conflict comparison and permanent deletion behavior. Dialogs contain focus, block background interaction, close or cancel with Escape, and return focus to their trigger. Main-content Escape keeps the draft. Native saves stay local; web saves require the online account.
 4. **Responsive layout.** At widths of at least 900 pixels keep the existing desktop list/detail navigation and use two-column fields where space permits. Below 900 pixels keep the mobile list/detail navigation and stack fields and filters in one column. At 360 pixels wrap long names and labels and keep every control usable without horizontal scrolling.
 5. **Visual treatment.** English UI, white and gray surfaces, gray borders, dark text and the existing blue accent `#075AFF`. Keep the current design system and approved navigation. Color supplements text and is never the only state indicator.
 6. **States and recovery.** Show loading and empty-result states and an explicit retry for list and option failures. Keep drafts after failed saves. Explain field validation and relationship-conflict causes in text. Disable duplicate submission while saving. Preserve the existing authentication, permission, deletion and whole-task-conflict states. Web offline saves fail with retained input; native, local CLI and local MCP saves remain local.
 7. **Accessibility.** Keyboard operation, visible focus, accessible control names, screen-reader support, non-color state cues and text enlargement apply on every supported GUI platform. Dialogs close with Escape and return focus to their trigger. While any dialog is open, its backdrop covers the whole tab sidebar, including utility controls, so background pointer input cannot navigate or discard retained edits; the browser regression verifies actual hit targets for content-nested and root dialogs at desktop and narrow sizes. Apply the existing automatic-focus rule to forms with one critical input.
+
+### Repository task-list presentation
+
+A repository tab keeps its repository ID and shows its display name, or its normalized URL when no display name exists. The content header identifies the repository, retains the task-list subtitle, and offers New task with that repository preselected. The list has a full-width title-or-description search field, compact progress and proposal selectors, an in-flow Filters disclosure with its active planning-filter count and Clear filters, and separate compact sort-key and direction selectors. The mobile Repository selector opens or selects the chosen repository tab or All tasks without changing the current tab's identity. Search, filters, sort, scroll and results remain local to the tab.
+
+At wide content sizes, results use aligned Task, Progress and Details columns with about 36%, 17% and 47% of the available row width. Rows have subtle separators and a minimum height near 64 pixels that grows with content. The task title remains the opening action. Progress is read-only text. Details keep every existing planning summary, relationship count and label. Show a separate textual Proposal badge only for pending proposals and a neutral outlined Conflict badge for conflicted tasks. An item without metadata has an empty Details cell. At narrow widths, stack each row as task title, progress and status, then details; show accessible field labels. Long names and metadata wrap, including at 360-pixel application width and with enlarged text. The application navigation layout and its 900-pixel breakpoint do not change.
+
+The existing query and recovery rules remain authoritative: planning fields combine with AND, selected values and Unassigned within one field combine with OR, bounds are inclusive, and invalid values send no list query. Repository-owned options show only that repository's items. Clear filters affects planning conditions only. Sorting keeps canonical order, unassigned-last values and ascending task-ID ties. List requests use 100-item pages and opaque cursors with serialized continuation ownership. Keep distinct loading, empty, first-page error, continuation error and option error states with their existing explicit retry actions. Selectors and Filters expose expanded state, close with Escape and restore focus to the trigger. Ordinary list loads do not move focus.
 
 ### Pre-release data reset
 
@@ -460,6 +576,14 @@ Lane has not been deployed, and existing development data may be discarded. This
 - A local store or server schema that does not match the current format is refused with an update/reset instruction. The explicit procedures are `lane data reset` and the native Settings reset in the [local-store contract](apps-lane-local-store-contract.md#development-data-reset), and the disposable development database reset in the [server contract](servers-lane-api-contract.md#development-data-reset).
 - Reset is destructive and explicit: it requires a confirmation control, coordinates with open handles and background workers, respects account boundaries and removes the associated content. Use it only with disposable development data, never production data.
 - Record the reset, validation errors, rejected synchronization and the explicit correction and retry in the user and operator guides.
+
+The native unsupported-format recovery view leads with "Your data has not been changed." It shows a separate safe host diagnostic, then advises a compatible Lane version for data that matters and the existing CLI reset procedure for a specific space. "Reset development data" is an outline action below this guidance. Refusal does not offer an update, retry, migration, backup or export action and does not treat the unsupported store as an empty space. Normal opening and the global startup error boundary remain separate.
+
+Recovery and native Settings use one confirmation dialog. It warns "Permanent local deletion" and lists every repository, task, prompt, label, milestone, cycle, history, attachment and pending change in the selected local space. It states "There is no recovery." It also states that reset does not contact or delete server data or sign the user out, and that an account-linked space needs explicit reconnection before synchronization resumes. Show the exact phrase `reset development data`; only a case-sensitive match after trimming enables the Reset action. Typing the phrase never submits. The visible action order is Cancel, then Reset. Settings keeps its draft guard before the host call.
+
+Focus the phrase input when the dialog opens. While idle, Cancel, Close and Escape dismiss it without a reset and return focus to the trigger. Keep focus and assistive navigation within the active dialog. During a reset, announce "Resetting…", permit only one submission, disable the input and all three dismissal or submission controls, and ignore Escape. On failure, retain the phrase and dialog, announce the error, and require an explicit retry. For `STORAGE_BUSY`, explain that other Lane windows, CLI or MCP handles, or a sync worker must release the space before retrying; the failed attempt changes no data. On success, use the existing selected-space reopen and cached-read invalidation path. A failed reopen must remain visible as failure.
+
+Constrain the recovery content and confirmation to 640 pixels on desktop with 24-pixel padding. Use a white surface, cool-gray border, readable disabled action, visible blue focus, and a scrollable dialog body. At 360 pixels, use 16-pixel side padding, a full-width input and stacked actions in Cancel-then-Reset order. Keep the warning, phrase, title and actions readable with a software keyboard or 200% text. Controls have at least 44-pixel targets. The [local-store reset contract](apps-lane-local-store-contract.md#development-data-reset) owns the selected-space, identity, lease and account safeguards.
 
 ### Local storage, synchronization, and conflicts
 
@@ -471,6 +595,7 @@ Lane has not been deployed, and existing development data may be discarded. This
 - App, CLI, and MCP can compare and resolve conflicts. Preserve both conflicting versions and the resolution as history; the selected/edited resolution is a new version.
 - If multiple devices resolve the same conflict differently, keep the resolution first accepted by the server. Reject a later stale resolution and require reading current state again.
 - The app binds a resolution session to the sorted, unique head IDs that the user reviewed when the session began and submits exactly that set as the expected heads; refreshed task heads never replace it. When a refresh changes the head set (a reordering is not a change), including a collapse to a single head, keep the edited resolution visible but block saving it and require an explicit `Review current versions` action that starts a new session on the current heads. The user may then choose a current version or explicitly reuse the retained edited resolution. The server's exact-head check remains authoritative for changes after the latest read: the client retains its input and shows the rejection.
+- The whole-task conflict dialog shows every current head in source order as a complete, selectable comparison card. Show two cards side by side when space permits, wrap additional heads into later rows, and stack cards below 900 pixels. Each card shows the full version ID, origin, title, description, absent/present-empty/nonempty prompt source, saved captures, progress, proposal, repository, planning values, labels and named relationship targets. Mark the selected card with a check and text as well as a border. Keep the separate **Your resolution** section below the alternatives. Only the existing title, description, prompt presence/source, progress, proposal and repository controls edit its inherited whole-version payload. Typing into an absent Resolved prompt makes it present. One explicit Save resolution creates the new version. Disable resolution edits and duplicate saves while a save is pending; on failure keep the exact resolution and show the error beside the save action. Keep stale and collapsed-head review gates visible. The named modal focuses its heading first, contains focus, returns focus to Compare conflict on Close or Escape, and keeps all controls reachable at 900 and 360 pixels and with 200% text enlargement.
 - Desktop supports background synchronization after the app window closes. Mobile synchronizes while running and at platform-permitted background opportunities. Web uses its active online connection; do not imply an offline data mode.
 - Use server change notifications for live updates. Local process changes must reach the running app without requiring an app restart; verify this during implementation.
 - A delivered change notification also rereads the mounted `Events` page: it reloads receivers and the first event page for the selected repository and state filters, supersedes older loads and continuations, restarts continuation from the refreshed cursor, and keeps unsaved receiver input. A failed reload stays visible and retryable with `Refresh events`.
@@ -478,6 +603,7 @@ Lane has not been deployed, and existing development data may be discarded. This
 - Native/CLI connectivity failure or expired Logto authorization does not block local work. Preserve pending changes; resume synchronization after reconnection/reauthentication.
 - Unsupported synchronization format stops synchronization with an update instruction, while compatible local features and pending changes remain available. An older app must not open/write an unsupported local data format or initialize it as empty; require a supported version. Opening a local store whose format differs from the current one is refused with an instruction that names the explicit development reset described in [pre-release data reset](#pre-release-data-reset); it never resets implicitly.
 - Operators must configure server input-size and request-rate limits before startup. Provide no default limits; missing configuration fails startup. Do not apply these server limits to standalone local input. An oversized upload blocks only that item with an explanation; other items continue synchronizing. Lowering limits must not block reading/downloading/deleting previously accepted data; reject only oversized new or modified uploads.
+- The iOS host uses `GetSyncInfo.maxItemBytes` to bound each `PushChanges` request and processes eligible items in causal order. It applies an identified oversized item's `ITEM_TOO_LARGE` result through the durable outbox, then reloads eligible items so dependent mutations stay held. Independent uploads and `PullChanges` continue in the same opportunity. A multi-item HTTP 413 response is split until the oversized item is identified. HTTP 429, authentication, epoch, network and server failures remain space-level failures; they do not become permanent item errors. A later opportunity continues work left by the per-opportunity request bound.
 
 ### Authentication, connection management, and deletion
 
@@ -500,6 +626,9 @@ Lane has not been deployed, and existing development data may be discarded. This
 - While a receiver save request is pending, the editor disables the receiver name, repository choices and Save so the submitted values cannot diverge from the visible draft. Success closes the editor and reloads. Failure retains the draft, shows the error and re-enables editing for an explicit retry.
 - The server only receives, retains, and synchronizes events. A user's existing agent reads them through MCP and decides whether to create tasks. Lane does not interpret events with AI, execute agents, or add a user-rule automation engine.
 - App, CLI, and MCP manage receiving settings and list/delete events. Retain events until explicitly deleted.
+- The Events screen presents receiving settings and retained events on one vertically scrolling page. Its order is title and actions, guidance, Repository filter, Event state filter, receiving settings, then retained events and available continuation. Repository filters both lists; event state filters events only. Keep receiver rows expanded with name, repository and edit, key rotation and delete actions. Keep event rows in adapter order with full sender event IDs, Pending, Processing or Completed text badges and inspection actions. Do not add totals or internal tabs.
+- Show loading before the first successful list response. A failed first page must show an error and an explicit retry without an empty-result claim. After a successful empty response, use distinct messages for no receivers and no matching events. A refresh of the same query keeps accepted rows and receiver drafts; filter changes clear old rows and continuation. A failed continuation keeps its rows and cursor for explicit retry. Only the current query or detail request may publish a result.
+- Receiver editing keeps an explicit Save, autofocuses the name, locks both fields and Save during mutation, and keeps input and error after a failed save. Close and Escape dismiss the editor immediately. Creation and rotation show a signing key once in a dialog; editing never shows a new key. Event details show selectable inert JSON, processing history, zero-task outcomes and linked-task navigation. Reopen is available only for Completed events. Receiver and event deletion retain separate warnings and explicit confirmation. At desktop and narrow widths, controls, long identifiers and dialogs wrap; status and errors use text and accessible announcements without exposing payloads or keys.
 - Require a secret-key signature over request content and timestamp. Accept timestamps within five minutes in either direction of server time. Retries use the same event ID with a fresh timestamp/signature. A rotated key invalidates the prior key immediately. Show secrets once on creation/rotation; loss requires rotation, not retrieval.
 - Deduplicate by receiving configuration and sender event ID. Same ID/content returns the prior result; changed content is an error. Retain deletion identity records so replay of a deleted event reports already received/deleted and does not store it again.
 - Reading does not mark processing complete. Agents explicitly complete events and link zero or more generated task IDs. Zero tasks is a valid outcome.

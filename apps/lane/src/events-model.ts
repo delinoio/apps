@@ -36,6 +36,10 @@ export interface EventsView {
   loadingMore: boolean;
   // Failure of the current query's most recent load; empty otherwise.
   error: string;
+  // Successful reads for the current query. Empty messages require these
+  // flags so a pending or failed first page cannot appear to be empty.
+  receiversLoaded: boolean;
+  eventsLoaded: boolean;
 }
 
 export const emptyEventsView: EventsView = {
@@ -46,6 +50,8 @@ export const emptyEventsView: EventsView = {
   loading: false,
   loadingMore: false,
   error: "",
+  receiversLoaded: false,
+  eventsLoaded: false,
 };
 
 const PAGE_SIZE = 100;
@@ -222,7 +228,14 @@ export class EventsLoader {
     const generation = ++this.generation;
     this.pending = true;
     this.set({
-      ...(changed ? { receivers: [], events: [] } : {}),
+      ...(changed
+        ? {
+            receivers: [],
+            events: [],
+            receiversLoaded: false,
+            eventsLoaded: false,
+          }
+        : {}),
       // A new first page always invalidates any earlier continuation.
       cursor: "",
       cursorKey: "",
@@ -242,11 +255,12 @@ export class EventsLoader {
         all.push(...r.items);
         receiverCursor = r.nextCursor;
       } while (receiverCursor);
-      this.set({ receivers: all });
+      this.set({ receivers: all, receiversLoaded: true });
       const r = await this.listEvents(query, "");
       if (!this.owns(generation)) return;
       this.set({
         events: r.items,
+        eventsLoaded: true,
         cursor: r.nextCursor,
         cursorKey: r.nextCursor ? key : "",
       });

@@ -1016,7 +1016,7 @@ fn protocol_error(id: Value, code: i32, message: &str) -> Response {
     Json(rpc_error(id, code, message)).into_response()
 }
 fn fault_data(fault: &Fault) -> Value {
-    let mut data = json!({"code":fault.code.as_str(), "reason":fault.reason & 0xff, "message":fault.message,
+    let mut data = json!({"code":fault.code.as_str(), "reason":crate::error::reason(fault) as i32, "message":fault.message,
         "correlationId":crate::id(), "retryable":matches!(fault.code, ErrorCode::Unavailable | ErrorCode::ResourceExhausted)});
     if let Some(violation) = crate::planning::violation_of(fault) {
         data["violation"] = json!(violation.name());
@@ -1231,10 +1231,16 @@ async fn handle<B: Backend>(State(backend): State<Arc<B>>, request: Request) -> 
                 }
                 Err(fault) => {
                     let error = json!({"error":fault_data(&fault)});
-                    rpc_result(
+                    let mut response = rpc_result(
                         id,
                         json!({"content":[{"type":"text","text":error.to_string()}], "structuredContent":error, "isError":true}),
-                    )
+                    );
+                    response
+                        .extensions_mut()
+                        .insert(crate::metrics::BackendOutcome(
+                            crate::metrics::outcome_from_status(fault.code.http_status()),
+                        ));
+                    response
                 }
             }
         }

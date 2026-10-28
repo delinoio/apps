@@ -41,5 +41,6 @@ png = "0.18"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+tokio = { workspace = true, features = ["test-util"] }
 # Validates the advertised MCP tool input schemas against canonical fixtures.
 jsonschema = { version = "0.60", default-features = false }

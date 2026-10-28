@@ -4,6 +4,7 @@ use axum::http::HeaderMap;
 use connectrpc::{RequestContext, Response, ServiceRequest, ServiceResult, ServiceStream};
 use delino_protocol::lane::v1::*;
 use serde_json::{Value, json};
+use sqlx::Acquire;
 
 /// Record a successful synchronization contact for the authenticated device.
 ///
@@ -209,8 +210,11 @@ impl Server {
             let mut tx = self.db.begin().await?;
             account_lock(&mut tx, &p.account_id).await?;
             self.auth.authorize(&mut tx, p).await?;
+            let correlation = crate::sync::rejection_correlation(&mut tx, p, &request).await?;
+            // Keep the account lock while a savepoint isolates this item's writes.
+            let mut item_tx = tx.begin().await?;
             match crate::sync::dispatch(
-                &mut tx,
+                &mut item_tx,
                 p,
                 "PushChanges",
                 &request,
@@ -219,6 +223,21 @@ impl Server {
             .await
             {
                 Ok(out) => {
+                    item_tx.commit().await?;
+                    if let Some(correlation) = &correlation
+                        && crate::sync::correction_was_accepted(&mut tx, p, correlation, &out)
+                            .await?
+                    {
+                        sqlx::query("DELETE FROM lane_sync_rejections WHERE account_id=$1 AND epoch=$2 AND device_id=$3 AND entity_id=$4 AND base_heads=$5 AND version_id<>$6")
+                            .bind(&p.account_id)
+                            .bind(&correlation.epoch)
+                            .bind(&correlation.device_id)
+                            .bind(&correlation.entity_id)
+                            .bind(&correlation.base_heads)
+                            .bind(&correlation.version_id)
+                            .execute(&mut *tx)
+                            .await?;
+                    }
                     sqlx::query(
                         "DELETE FROM lane_sync_rejections WHERE account_id=$1 AND request_id=$2",
                     )
@@ -236,11 +255,22 @@ impl Server {
                     }
                 }
                 Err(error) => {
-                    tx.rollback().await?;
+                    item_tx.rollback().await?;
                     let request_id = string(&item["meta"], "requestId");
                     if crate::canonical_id(request_id) {
-                        sqlx::query("INSERT INTO lane_sync_rejections(account_id,request_id,reason) VALUES($1,$2,$3) ON CONFLICT(account_id,request_id) DO UPDATE SET reason=EXCLUDED.reason").bind(&p.account_id).bind(request_id).bind(error.reason).execute(&self.db).await?;
+                        sqlx::query("INSERT INTO lane_sync_rejections(account_id,request_id,reason,epoch,device_id,entity_id,version_id,base_heads) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(account_id,request_id) DO UPDATE SET reason=EXCLUDED.reason")
+                            .bind(&p.account_id)
+                            .bind(request_id)
+                            .bind(error.reason)
+                            .bind(correlation.as_ref().map(|c| &c.epoch))
+                            .bind(correlation.as_ref().map(|c| &c.device_id))
+                            .bind(correlation.as_ref().map(|c| &c.entity_id))
+                            .bind(correlation.as_ref().map(|c| &c.version_id))
+                            .bind(correlation.as_ref().map(|c| &c.base_heads))
+                            .execute(&mut *tx)
+                            .await?;
                     }
+                    tx.commit().await?;
                     let correlation = crate::id();
                     // Category only: never the rejected item's text, names or relationships.
                     tracing::warn!(correlation_id=%correlation,operation="PushChanges",result=%crate::planning::category(&error),retryable=matches!(error.code, connectrpc::ErrorCode::Unavailable | connectrpc::ErrorCode::ResourceExhausted),"Lane synchronization item rejected");

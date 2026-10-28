@@ -9,6 +9,7 @@ const lane = fileURLToPath(new URL("../..", import.meta.url));
 const harness = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 
 export interface UpdateProps {
+  desktop: boolean;
   settingsDirty: () => boolean;
   settingsBusy: boolean;
   onBusyChange: (busy: boolean) => void;
@@ -18,6 +19,7 @@ export interface SettingsBundle {
   runtime: typeof import("./lynx-react.ts");
   captured: { updates?: UpdateProps };
 }
+export type UpdaterHost = "desktop" | "ios" | "android" | "none";
 
 const stubs: Record<string, string> = {
   // AppUpdates is exercised by its own tests; expose its props so tests can

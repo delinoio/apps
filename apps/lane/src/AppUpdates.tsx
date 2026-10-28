@@ -10,10 +10,12 @@ import {
 } from "./updates";
 
 export function AppUpdates({
+  desktop = true,
   settingsDirty,
   settingsBusy,
   onBusyChange,
 }: {
+  desktop?: boolean;
   settingsDirty: () => boolean;
   settingsBusy: boolean;
   onBusyChange: (busy: boolean) => void;
@@ -25,6 +27,7 @@ export function AppUpdates({
   const startingRef = useRef(false);
   useEffect(() => {
     "background only";
+    if (!desktop) return;
     mounted.current = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -48,17 +51,26 @@ export function AppUpdates({
       clearTimeout(timer);
       void updateAction(UpdateAction.Cancel).catch(() => {});
     };
-  }, []);
-  const busy = starting || (!!status && updateBusy(status.phase));
+  }, [desktop]);
+  const busy = desktop && (starting || (!!status && updateBusy(status.phase)));
   useEffect(() => {
     "background only";
     onBusyChange(busy);
     return () => onBusyChange(false);
   }, [busy, onBusyChange]);
-  if (!status) return null;
+  if (!desktop) return null;
+  if (!status)
+    return (
+      <view className="card app-updates settings-card">
+        <text className="heading settings-section-title" accessibility-heading>
+          App updates
+        </text>
+        <text>Loading update status…</text>
+      </view>
+    );
   const start = async () => {
     "background only";
-    if (startingRef.current || busy || settingsBusy) return;
+    if (!desktop || startingRef.current || busy || settingsBusy) return;
     if (settingsDirty()) {
       setError("Save your notification changes before updating Lane.");
       return;
@@ -78,12 +90,15 @@ export function AppUpdates({
   };
   const message = error || status.message;
   return (
-    <view className="card app-updates">
-      <text className="heading" accessibility-heading>
+    <view className="card app-updates settings-card">
+      <text className="heading settings-section-title" accessibility-heading>
         App updates
       </text>
       <text className="muted">
         Installed release: {status.installedRelease.replace("delino@", "")}
+      </text>
+      <text className="muted">
+        Updating Lane restarts the app. Save your work first.
       </text>
       <text accessibility-element accessibility-label={message}>
         {message}

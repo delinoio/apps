@@ -1213,8 +1213,8 @@ struct Store::Impl {
     J parents;        // parents of the oldest version in the replaced chain
     int64_t position; // upload position of the oldest replaced version
   };
-  // An ordinary edit of an entity whose head chain holds a version the server
-  // rejected for a constraint violation replaces that unsynchronized chain: the
+  // An ordinary edit replaces an unsynchronized chain when a version in it was
+  // rejected for a constraint violation or item size. The
   // correction takes the chain's parents (the last accepted heads, or none for
   // a creation) and its upload position, because PushChanges requires every
   // parent to exist on the server. The rejected immutable versions stay in
@@ -1228,7 +1228,8 @@ struct Store::Impl {
                          {str(head, "entityId")}))
       pending[str(parse(r[1])["version"], "versionId")] = {
           r[0],
-          r[2] == "2" && r[3].rfind("CONSTRAINT_VIOLATION:", 0) == 0,
+          r[2] == "2" && (r[3].rfind("CONSTRAINT_VIOLATION:", 0) == 0 ||
+                          r[3] == "ERROR_REASON_ITEM_TOO_LARGE"),
           std::stoll(r[4])};
     // Walk the single-parent chain of unsynchronized versions from the head.
     std::vector<J> chain;
@@ -1855,12 +1856,20 @@ struct Store::Impl {
     for (auto key : {"parentTaskId", "duplicateOfTaskId"})
       if (body.contains(key))
         links.push_back(str(body, key));
-    for (auto key : {"addSubtaskIds", "addBlockedTaskIds"})
+    for (auto key : {"addSubtaskIds", "removeSubtaskIds", "addBlockedTaskIds",
+                     "removeBlockedTaskIds"})
       for (auto &x : list(edits, key))
         links.push_back(x);
     for (auto &x : links)
       if (x == taskId)
         violation("SELF_LINK", taskId, "A task cannot be linked to itself.");
+    for (auto key : {"removeSubtaskIds", "removeBlockedTaskIds"})
+      for (auto &x : list(edits, key)) {
+        auto h = heads(d, x);
+        if (!h.empty() && h[0].value("deleted", false) &&
+            str(h[0], "kind") == "ENTITY_KIND_TASK")
+          fail("NOT_FOUND", "A removed task does not exist.");
+      }
     for (auto &x : links)
       if (!taskNode(d, nodes, x))
         violation("REFERENCE_NOT_FOUND", x, "A linked task does not exist.");

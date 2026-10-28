@@ -13,6 +13,7 @@ const harness = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 export interface TaskEditorBundle {
   TaskEditor: (props: any) => unknown;
   Host: (props: any) => unknown;
+  LaneError: typeof import("../../src/adapter.ts").LaneError;
   runtime: typeof import("./lynx-react.ts");
   captured: { draft?: any; value?: any; selected?: string[] };
   SelectHost: (props: any) => unknown;
@@ -51,6 +52,7 @@ export async function loadTaskEditor(): Promise<TaskEditorBundle> {
 import { TaskEditor } from "./src/TaskEditor.tsx";
 import { TaskSelect, TaskLabelSelect } from "./src/TaskControls.tsx";
 import { TaskRelationships } from "./src/TaskRelationships.tsx";
+export { LaneError } from "./src/adapter.ts";
 export { TaskEditor };
 export * as runtime from "./tests/harness/lynx-react.ts";
 export const captured = {};
