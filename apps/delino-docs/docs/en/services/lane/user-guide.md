@@ -27,9 +27,25 @@ returns to the list while keeping the task tab. **Cancel** closes the task tab
 through the same unsaved-change confirmation. Tabs and unsaved input are not
 restored after a restart or synchronized to another device.
 
-The app icon rail stays outside the tabs. Each tab includes its sidebar and page.
-On narrow screens, scroll the tab strip or use the open-tabs menu. Left/Right
-and Home/End move keyboard focus between tabs; Enter or Space selects one.
+The tab list includes Lane, Pace and RealQA. Each Lane tab keeps its sidebar
+and page. On narrow screens, open **Tabs** to reach the same list. Up/Down and
+Home/End move keyboard focus between tab rows; Enter or Space selects a row.
+
+On macOS desktop, Command+T opens New tab, Command+W closes the selected tab,
+and Command+Shift+T reopens the last closed tab. On Windows, use Ctrl+T,
+Ctrl+W (or Ctrl+F4), and Ctrl+Shift+T. Closed-tab history holds up to 20 tabs
+in the current window. Reopening a saved task reads its current data; input
+discarded from a new-task draft does not return.
+
+On both desktops, Ctrl+Tab or Ctrl+PageDown selects the next tab; add Shift
+to Ctrl+Tab or use Ctrl+PageUp for the previous tab. On macOS, Command+Option
+Right/Left, Command+Shift+]/[, and Command+PageDown/PageUp also select the
+next/previous tab. Command+1–8 (macOS) or Ctrl+1–8 (Windows) selects a tab by
+its displayed position; 9 selects the last tab. Ctrl+Shift+PageUp/PageDown
+moves the selected tab one place without changing its contents. With a tab row
+focused, Command+Shift+Home/End (macOS) or Ctrl+Shift+Home/End (Windows) moves
+that row to the first/last position. A pending dialog blocks these commands.
+Web browser tab shortcuts remain controlled by the browser.
 
 ## Save, history, and prompts
 

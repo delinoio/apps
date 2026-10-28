@@ -11,6 +11,9 @@ const desktop = fileURLToPath(new URL("../native/desktop/", import.meta.url));
 const json = fileURLToPath(
   new URL("../native/store/vendor/json/json.hpp", import.meta.url),
 );
+const reservations = fileURLToPath(
+  new URL("../native/desktop/shortcut-reservations.h", import.meta.url),
+);
 
 function shortcutMethod(platform) {
   const source = readFileSync(
@@ -34,6 +37,7 @@ const common = `#include <cassert>
 #include <string>
 #include <vector>
 #include "${json}"
+#include "${reservations}"
 using CaptureJSON = nlohmann::json;
 struct CaptureError : std::runtime_error {
   std::string reason;
@@ -71,14 +75,18 @@ ${shortcutMethod("windows")}
 int main() {
   for (const char* mode : {"screen", "window", "region", "dom"}) {
     Win host;
-    for (const char* key : {"Ctrl+K", "Control+K"}) {
-      conflict(host, mode, key);
+    for (const char* prefix : {"Ctrl+", "Control+"}) {
+      for (const char* key : {"K", "Q", "O", "T", "W", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
+        conflict(host, mode, std::string(prefix) + key);
+      conflict(host, mode, std::string(prefix) + "Shift+T");
       assert(host.shortcuts.empty());
     }
     host.Shortcut({{"mode", mode}, {"accelerator", "Ctrl+Shift+8"}});
     const int original = host.shortcuts.at(mode);
-    for (const char* key : {"Ctrl+K", "Control+K", "Ctrl+Q", "Ctrl+O"}) {
-      conflict(host, mode, key);
+    for (const char* prefix : {"Ctrl+", "Control+"}) {
+      for (const char* key : {"K", "Q", "O", "T", "W", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
+        conflict(host, mode, std::string(prefix) + key);
+      conflict(host, mode, std::string(prefix) + "Shift+T");
       assert(host.shortcuts.at(mode) == original);
     }
     allowRegistration = false;
@@ -122,14 +130,18 @@ ${shortcutMethod("macos")}
 int main() { @autoreleasepool {
   for (const char* mode : {"screen", "window", "region", "dom"}) {
     Mac host;
-    for (const char* key : {"Command+K", "Cmd+K", "Meta+K"}) {
-      conflict(host, mode, key);
+    for (const char* prefix : {"Command+", "Cmd+", "Meta+"}) {
+      for (const char* key : {"K", "Q", "O", "T", "W", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
+        conflict(host, mode, std::string(prefix) + key);
+      conflict(host, mode, std::string(prefix) + "Shift+T");
       assert(host.shortcuts.empty());
     }
     host.Shortcut({{"mode", mode}, {"accelerator", "Command+Shift+8"}});
     auto original = host.shortcuts.at(mode);
-    for (const char* key : {"Command+K", "Cmd+K", "Meta+K", "Command+Q", "Command+O"}) {
-      conflict(host, mode, key);
+    for (const char* prefix : {"Command+", "Cmd+", "Meta+"}) {
+      for (const char* key : {"K", "Q", "O", "T", "W", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
+        conflict(host, mode, std::string(prefix) + key);
+      conflict(host, mode, std::string(prefix) + "Shift+T");
       assert(host.shortcuts.at(mode) == original);
     }
     allowRegistration = false;

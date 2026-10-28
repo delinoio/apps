@@ -70,6 +70,12 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [mobile, setMobile] = useState(false);
   const cancelDiscard = useRef<(() => void) | undefined>(undefined);
   const [discard, setDiscard] = useState<() => void>();
+  const pendingDiscard = useRef(false);
+  const [focusedRow, setFocusedRow] = useState<string>();
+  const onRowFocus = (id: string, focused: boolean) =>
+    setFocusedRow((current) =>
+      focused ? id : current === id ? undefined : current,
+    );
   const [openTabs, setOpenTabs] = useState(false);
   const lastLaneTab = useRef(initialTab().id);
   const activeTab = tabs.find((tab) => tab.id === selected);
@@ -131,9 +137,11 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     if (
       entries.some((entry) => entry?.dirty) ||
       (all && state.current.realqaDirty)
-    )
+    ) {
+      if (pendingDiscard.current) return;
+      pendingDiscard.current = true;
       setDiscard(() => action);
-    else action();
+    } else action();
   };
   const beforeDataChange = () =>
     new Promise<boolean>((resolve) => {
@@ -150,20 +158,24 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         return;
       }
       cancelDiscard.current = () => resolve(false);
+      pendingDiscard.current = true;
       setDiscard(() => () => {
         cancelDiscard.current = undefined;
         resolve(true);
       });
     });
   const dismissDiscard = () => {
+    pendingDiscard.current = false;
     setDiscard(undefined);
     cancelDiscard.current?.();
     cancelDiscard.current = undefined;
   };
   const leaveRealQA = (action: () => void) => {
-    if (state.current.miniApp === MiniApp.RealQA && state.current.realqaDirty)
+    if (state.current.miniApp === MiniApp.RealQA && state.current.realqaDirty) {
+      if (pendingDiscard.current) return;
+      pendingDiscard.current = true;
       setDiscard(() => action);
-    else action();
+    } else action();
   };
   const open = (target: TabTarget, section?: SettingsSection) => {
     const proceed = () => {
@@ -281,7 +293,8 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       switching ||
       hasOpenDialog() ||
       hasOpenCommandPalette() ||
-      state.current.discard
+      state.current.discard ||
+      pendingDiscard.current
     )
       return;
     const current = state.current;
@@ -318,13 +331,13 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       );
     } else if (
       (command === TabCommand.MoveFirst || command === TabCommand.MoveLast) &&
-      tabId &&
-      current.tabs.some((tab) => tab.id === tabId)
+      (tabId ?? focusedRow) &&
+      current.tabs.some((tab) => tab.id === (tabId ?? focusedRow))
     ) {
       setTabs(
         moveTab(
           current.tabs,
-          tabId,
+          (tabId ?? focusedRow)!,
           command === TabCommand.MoveFirst ? 0 : current.tabs.length - 1,
         ),
       );
@@ -468,8 +481,13 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const busy = Object.values(reports).some((entry) => entry.exitBusy);
   useEffect(() => {
     "background only";
-    reportWorkspaceState(dirty || realqaDirty, busy);
-  }, [dirty, busy, realqaDirty]);
+    reportWorkspaceState(dirty || realqaDirty, busy, false, {
+      count: tabs.length,
+      history: closedTabs.current.length,
+      selectedIndex: tabs.findIndex((tab) => tab.id === selected),
+      focusedIndex: tabs.findIndex((tab) => tab.id === focusedRow),
+    });
+  }, [dirty, busy, realqaDirty, tabs, selected, focusedRow]);
   useEffect(() => {
     "background only";
     return listenWorkspaceExit(() =>
@@ -480,7 +498,16 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     "background only";
     if (NativeModules.LaneOnline) return;
     return listenWorkspaceTabCommands(runTabCommand);
-  }, [adapter, switching, tabs, selected, reports, realqaDirty, discard]);
+  }, [
+    adapter,
+    switching,
+    tabs,
+    selected,
+    reports,
+    realqaDirty,
+    discard,
+    focusedRow,
+  ]);
   const reset = () => {
     if (!adapter) return;
     resetTabs();
@@ -515,6 +542,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
             close={closeTab}
             create={createTab}
             openSettings={openSettings}
+            onRowFocus={onRowFocus}
           />
         )}
         <view className="tab-shell">
@@ -660,6 +688,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
               createTab();
             }}
             openSettings={openSettings}
+            onRowFocus={onRowFocus}
           />
         </Dialog>
       )}
@@ -669,6 +698,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           <Button
             onClick={() => {
               const action = discard;
+              pendingDiscard.current = false;
               setDiscard(undefined);
               action();
             }}

@@ -18,6 +18,7 @@
 #include <limits>
 #include <type_traits>
 #include "../realqa.h"
+#include "../shortcut-reservations.h"
 #include "logging.h"
 
 namespace lane::desktop {
@@ -262,7 +263,7 @@ struct WinCapture {
     if(value.empty()){if(old!=shortcuts.end()){UnregisterHotKey(window,old->second);modes.erase(old->second);shortcuts.erase(old);}return CaptureJSON::object();}
     UINT modifiers=MOD_NOREPEAT,key=0;std::istringstream stream(value);std::string token;
     while(std::getline(stream,token,'+')) {if(token=="Ctrl"||token=="Control")modifiers|=MOD_CONTROL;else if(token=="Alt"||token=="Option")modifiers|=MOD_ALT;else if(token=="Shift")modifiers|=MOD_SHIFT;else if(token=="Meta"||token=="Win"||token=="Command")modifiers|=MOD_WIN;else if(token.size()==1&&((token[0]>='A'&&token[0]<='Z')||(token[0]>='0'&&token[0]<='9')))key=token[0];else throw CaptureError("Use modifiers and a letter or digit for the shortcut.");}
-    if(modifiers==(MOD_NOREPEAT|MOD_CONTROL)&&(key=='Q'||key=='O'||key=='K'))throw CaptureError("Lane already uses that shortcut.","ERROR_REASON_CONFLICT");
+    if(LaneReservedCaptureShortcut(modifiers & ~MOD_NOREPEAT,key,MOD_CONTROL,MOD_SHIFT))throw CaptureError("Lane already uses that shortcut.","ERROR_REASON_CONFLICT");
     int id=next++;
     if(!key||modifiers==MOD_NOREPEAT||!RegisterHotKey(window,id,modifiers,key))throw CaptureError("That shortcut is unavailable or already used. The previous shortcut is retained.","ERROR_REASON_CONFLICT");
     if(old!=shortcuts.end()){UnregisterHotKey(window,old->second);modes.erase(old->second);}shortcuts[mode]=id;modes[id]=mode;return CaptureJSON::object();
