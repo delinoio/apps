@@ -818,6 +818,9 @@ text {
   flex-shrink: 0;
   gap: 12px;
 }
+.all-task-header {
+  position: relative;
+}
 .task-results {
   flex-shrink: 0;
 }
@@ -870,15 +873,15 @@ text {
   min-width: 0;
 }
 .display-options {
-  position: relative;
   z-index: 2;
 }
 .display-options-menu {
   position: absolute;
   top: 48px;
-  left: 0;
+  left: auto;
+  right: 0;
   width: 320px;
-  max-width: 88vw;
+  max-width: 100%;
   padding: 16px;
   border: 1px solid #dce2ec;
   border-radius: 10px;

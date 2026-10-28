@@ -580,7 +580,7 @@ export function LaneWorkspace({
                 >
                   <view className="task-list-content">
                     <view
-                      className={`row between wrap ${repositoryList ? "repository-list-header" : ""}`}
+                      className={`row between wrap all-task-header ${repositoryList ? "repository-list-header" : ""}`}
                     >
                       <view className="repository-list-heading">
                         {repositoryList && (

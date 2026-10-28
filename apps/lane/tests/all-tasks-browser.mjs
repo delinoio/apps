@@ -22,7 +22,7 @@ const browser = await chromium.launch({
   channel: process.env.LANE_BROWSER_CHANNEL || "chrome",
   headless: true,
 });
-const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
+const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
 page.setDefaultTimeout(15000);
 const surface = page.locator('[data-active-tab="true"]');
 const button = (name) => surface.getByRole("button", { name, exact: true });
@@ -32,12 +32,43 @@ const bounds = (selector) =>
     .first()
     .evaluate((element) => {
       const rect = element.getBoundingClientRect();
-      return { x: rect.x, y: rect.y, right: rect.right };
+      return { x: rect.x, y: rect.y, right: rect.right, width: rect.width };
     });
+const assertWithin = (inner, outer, label) => {
+  assert.ok(inner.x >= outer.x - 1, `${label} starts outside its pane`);
+  assert.ok(
+    inner.right <= outer.right + 1,
+    `${label} ends outside its pane: ${JSON.stringify({ inner, outer })}`,
+  );
+};
 try {
   await page.goto(base);
   await button("Display Options").click();
   await button("Layout: Board").click();
+  const heading = await bounds(".task-list-content .heading");
+  const headerActions = await bounds(".all-task-header-actions");
+  assert.ok(
+    Math.abs(heading.y - headerActions.y) < 4,
+    `Header actions should stay unwrapped at the wide viewport: ${JSON.stringify({ heading, headerActions })}`,
+  );
+  assertWithin(
+    await bounds(".display-options-menu"),
+    await bounds(".task-list-content"),
+    "Display Options at the wide viewport",
+  );
+  await surface.locator(".task-list").evaluate((element) => {
+    element.style.flex = "0 0 300px";
+    element.style.width = "300px";
+  });
+  assertWithin(
+    await bounds(".display-options-menu"),
+    await bounds(".task-list-content"),
+    "Display Options in a constrained pane",
+  );
+  await surface.locator(".task-list").evaluate((element) => {
+    element.style.flex = "";
+    element.style.width = "";
+  });
   for (const width of [900, 899, 360]) {
     await page.setViewportSize({ width, height: 800 });
     await surface
@@ -68,9 +99,10 @@ try {
   ])
     await button(`Select completed items: ${label}`).waitFor();
   const menu = await bounds(".display-options-menu");
-  assert.ok(
-    menu.x >= 0 && menu.right <= 361,
-    `Display Options fits at 360px: ${JSON.stringify(menu)}`,
+  assertWithin(
+    menu,
+    await bounds(".task-list-content"),
+    "Display Options at 360px",
   );
   await page.keyboard.press("Escape");
   await button("Select completed items: All").waitFor({ state: "hidden" });
