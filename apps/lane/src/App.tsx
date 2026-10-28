@@ -34,7 +34,12 @@ import {
   type WorkspaceReport,
   type WorkspaceTab,
 } from "./tabs";
-import { reportWorkspaceState, listenWorkspaceExit } from "./workspace-host";
+import {
+  reportWorkspaceState,
+  reportWorkspaceRoute,
+  listenWorkspaceExit,
+} from "./workspace-host";
+import { targetPath } from "./routes";
 import "./style.css";
 
 const initialTab = (): WorkspaceTab => ({
@@ -67,6 +72,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     request: number;
   }>();
   const [pendingRoute, setPendingRoute] = useState<OpenRoute>();
+  const [routeRequest, setRouteRequest] = useState<number>();
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((v) => v + 1), []);
   const [switching, setSwitching] = useState(false);
@@ -74,6 +80,14 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   state.current = { reports, realqaDirty, tabs, selected, miniApp };
   const onReport = useCallback((report: WorkspaceReport) => {
     setReports((previous) => ({ ...previous, [report.id]: report }));
+    if (report.savedTask)
+      setTabs((previous) =>
+        previous.map((tab) =>
+          tab.id === report.id && tab.target.kind === TabKind.NewTask
+            ? { ...tab, target: { ...tab.target, kind: TabKind.Task } }
+            : tab,
+        ),
+      );
   }, []);
   const resetTabs = () => {
     const first = initialTab();
@@ -297,8 +311,10 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     if (!pendingRoute || !adapter) return;
     const route = pendingRoute;
     setPendingRoute(undefined);
+    if (route.requestId !== undefined) setRouteRequest(route.requestId);
     const follow = () => {
-      if (route.kind === "task" && route.id)
+      if (route.kind === "workspace" && route.target) open(route.target);
+      else if (route.kind === "task" && route.id)
         open({ kind: TabKind.Task, taskId: route.id, label: "Task" });
       else if (route.kind === "repository" && route.id)
         open({
@@ -330,6 +346,18 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       }, true);
     else follow();
   }, [pendingRoute, adapter]);
+  useEffect(() => {
+    "background only";
+    if (adapter && activeTab && !pendingRoute && !discard)
+      reportWorkspaceRoute(targetPath(activeTab.target), routeRequest);
+  }, [
+    adapter,
+    activeTab?.target,
+    selected,
+    pendingRoute,
+    discard,
+    routeRequest,
+  ]);
   useEffect(() => {
     "background only";
     if (adapter && adapter.mode !== "web")

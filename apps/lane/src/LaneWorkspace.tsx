@@ -375,6 +375,7 @@ export function LaneWorkspace({
       exitBusy,
       repositories,
       repositoryStatus,
+      savedTask: !!current?.version,
     });
   }, [
     tabId,
@@ -385,6 +386,7 @@ export function LaneWorkspace({
     repositories,
     repositoryStatus,
     onReport,
+    current?.version,
   ]);
   const saved = (result?: EntityResult) => {
     if (result && taskOf(result.version)) {

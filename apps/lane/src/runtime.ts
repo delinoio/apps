@@ -120,9 +120,11 @@ export function hostAction(
 }
 
 export interface OpenRoute {
-  kind: "open" | "repository" | "task";
+  kind: "open" | "repository" | "task" | "workspace";
   id?: string;
   spaceId?: string;
+  target?: import("./tabs").TabTarget;
+  requestId?: number;
 }
 export function listenHost(
   route: (route: OpenRoute) => void,

@@ -73,6 +73,8 @@ export interface WebRoute {
   id: string;
   account?: string;
 }
+export { RouteHistory } from "./navigation.ts";
+export { routeTarget, targetPath } from "../src/routes.ts";
 export type HostEvent =
   | { name: "lane.hostError"; payload: { message: string } }
   | {
@@ -488,7 +490,7 @@ export class OnlineLane {
             "Notification permission was not granted. In-app indications remain available.",
           );
         const registration =
-          await navigator.serviceWorker.register("./push-worker.js");
+          await navigator.serviceWorker.register("/push-worker.js");
         ensureCurrent();
         let subscription = await registration.pushManager.getSubscription();
         ensureCurrent();
