@@ -1572,6 +1572,167 @@ text {
 .app-updates .heading {
   margin-bottom: 0;
 }
+.settings-page {
+  width: 100%;
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.settings-page text {
+  font-size: 1rem;
+  line-height: 1.5;
+  white-space: normal;
+}
+.settings-header {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.settings-header-copy {
+  flex: 1;
+  min-width: 0;
+}
+.settings-page .settings-title {
+  font-size: 1.75rem;
+  margin-bottom: 4px;
+}
+.settings-description {
+  color: #526079;
+}
+.settings-page .settings-card {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 24px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-page .settings-section-title {
+  font-size: 1.25rem;
+  margin-bottom: 0;
+}
+.settings-page .muted {
+  color: #526079;
+}
+.settings-page .button {
+  min-height: 44px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+.settings-page .button text {
+  text-align: center;
+  white-space: normal;
+}
+.settings-page .field {
+  width: 100%;
+  margin: 0;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  border-top: 1px solid #e4e8ef;
+}
+.settings-page .field .button.primary {
+  background-color: #e8f0fe;
+  border-color: #075aff;
+}
+.settings-page .field .button.primary text {
+  color: #075aff;
+}
+.settings-status {
+  color: #174e9b;
+  font-weight: 550;
+}
+.settings-metadata {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 16px;
+  background-color: #f7f9fc;
+  border-radius: 8px;
+}
+.settings-metadata text {
+  flex: 1;
+  min-width: 180px;
+}
+.settings-actions {
+  align-items: flex-start;
+}
+.settings-list-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px 0;
+  border-top: 1px solid #e4e8ef;
+}
+.settings-list-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.settings-list-details text {
+  width: 100%;
+  word-break: break-word;
+}
+.settings-row-name {
+  font-weight: 600;
+}
+.settings-delete-row .button {
+  max-width: 320px;
+  border-color: #a32a25;
+}
+.settings-delete-row .button text {
+  color: #a32a25;
+}
+.settings-dialog {
+  width: 640px;
+  max-width: 100%;
+}
+.settings-dialog .button {
+  min-height: 44px;
+}
+.settings-dialog text {
+  white-space: normal;
+  line-height: 1.5;
+}
+.mobile .settings-page {
+  padding: 16px;
+  gap: 16px;
+}
+.mobile .settings-page .settings-card {
+  padding: 16px;
+}
+.mobile .settings-page .settings-header,
+.mobile .settings-page .settings-list-row,
+.mobile .settings-page .settings-actions {
+  flex-direction: column;
+  align-items: stretch;
+}
+.mobile .settings-page .settings-list-row .button,
+.mobile .settings-page .settings-actions .button,
+.mobile .settings-page .settings-header .button {
+  width: 100%;
+  max-width: 100%;
+}
+.mobile .settings-page .field .row {
+  align-items: stretch;
+}
+.mobile .settings-page .field .button {
+  flex: 1;
+}
 .update-progress {
   height: 6px;
   margin-top: 8px;
