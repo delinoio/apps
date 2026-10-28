@@ -81,6 +81,8 @@ export function LaneWorkspace({
   onChange,
   beforeDataChange,
   settingsTarget,
+  displayOptions,
+  onDisplayOptionsChange,
 }: {
   adapter: LaneAdapter;
   target: TabTarget;
@@ -96,6 +98,11 @@ export function LaneWorkspace({
   onChange: () => void;
   beforeDataChange: () => Promise<boolean>;
   settingsTarget?: { section: SettingsSection; request: number };
+  displayOptions?: { layout: TaskLayout; completed: CompletedSelection };
+  onDisplayOptionsChange?: (options: {
+    layout: TaskLayout;
+    completed: CompletedSelection;
+  }) => void;
 }) {
   const [planningDirty, setPlanningDirty] = useState(false);
   const [taskError, setTaskError] = useState("");
@@ -136,8 +143,24 @@ export function LaneWorkspace({
   const [sortDirection, setSortDirection] = useState<SortDirection>(
     SortDirection.ASCENDING,
   );
-  const [layout, setLayout] = useState(TaskLayout.List);
-  const [completed, setCompleted] = useState(CompletedSelection.NONE);
+  const [layout, setLayout] = useState(
+    displayOptions?.layout ?? TaskLayout.List,
+  );
+  const [completed, setCompleted] = useState(
+    displayOptions?.completed ?? CompletedSelection.NONE,
+  );
+  const updateDisplayOptions = (next: {
+    layout?: TaskLayout;
+    completed?: CompletedSelection;
+  }) => {
+    const options = {
+      layout: next.layout ?? layout,
+      completed: next.completed ?? completed,
+    };
+    setLayout(options.layout);
+    setCompleted(options.completed);
+    onDisplayOptionsChange?.(options);
+  };
   const completedQuery = useRef<ReturnType<typeof completedFilter> | undefined>(
     undefined,
   );
@@ -608,9 +631,13 @@ export function LaneWorkspace({
                         {isAllTasks && (
                           <DisplayOptions
                             layout={layout}
-                            setLayout={setLayout}
+                            setLayout={(next) =>
+                              updateDisplayOptions({ layout: next })
+                            }
                             completed={completed}
-                            setCompleted={setCompleted}
+                            setCompleted={(next) =>
+                              updateDisplayOptions({ completed: next })
+                            }
                           />
                         )}
                         <Button
