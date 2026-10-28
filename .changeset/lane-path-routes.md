@@ -2,7 +2,7 @@
 "@apps/lane": patch
 ---
 
-Connect browser paths and history to retained workspace tabs, keep host assets rooted, and preserve addressed screens through sign-in.
+Connect browser paths and history to retained workspace tabs, keep host assets rooted, and preserve addressed screens through sign-in. Keep guarded history destinations paired with their latest acknowledgement IDs.
 
 <!-- public-changelog:start -->
 

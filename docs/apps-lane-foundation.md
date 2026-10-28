@@ -88,8 +88,11 @@ tasks with an explicit route error.
 Click navigation updates browser history without a document reload or Lynx view
 reload. Back and Forward select or open the destination through the same tab
 identity and unsaved-change guards. Cancelling a guarded history navigation
-restores the previous URL without replacing its destination entry. Existing tab
-panes retain their state. A fresh load restores the addressed screen, not other
+restores the previous URL without replacing its destination entry.
+When history moves again while its discard dialog is open, replace the pending
+destination and acknowledgement together. A confirmation owned by another action
+rejects history navigation without replacing that action.
+Existing tab panes retain their state. A fresh load restores the addressed screen, not other
 tabs or unsaved input. Sign-in retains the destination in session storage when
 available while keeping the registered authentication callback at the root.
 Root-relative host assets and the static host's SPA fallback support nested-path

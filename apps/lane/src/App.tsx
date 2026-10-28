@@ -73,6 +73,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const cancelDiscard = useRef<(() => void) | undefined>(undefined);
   const [discard, setDiscard] = useState<() => void>();
   const pendingDiscard = useRef(false);
+  const guardedRouteAction = useRef<(() => void) | undefined>(undefined);
   const [focusedRow, setFocusedRow] = useState<string>();
   const onRowFocus = (id: string, focused: boolean) =>
     setFocusedRow((current) =>
@@ -126,6 +127,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   }, []);
   const resetTabs = (preserveClosed = false) => {
     const first = initialTab();
+    guardedRouteAction.current = undefined;
     if (!preserveClosed) closedTabs.current = [];
     setTabs([first]);
     setSelected(first.id);
@@ -177,6 +179,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     });
   const dismissDiscard = () => {
     pendingDiscard.current = false;
+    guardedRouteAction.current = undefined;
     setDiscard(undefined);
     cancelDiscard.current?.();
     cancelDiscard.current = undefined;
@@ -188,8 +191,14 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       setDiscard(() => action);
     } else action();
   };
-  const open = (target: TabTarget, section?: SettingsSection) => {
+  const open = (
+    target: TabTarget,
+    section?: SettingsSection,
+    requestId?: number,
+  ) => {
+    "background only";
     const proceed = () => {
+      if (requestId !== undefined) setRouteRequest(requestId);
       const id = tabIdentity(target);
       const replacing = state.current.selected;
       setTabs((previous) => {
@@ -210,7 +219,29 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         lastLaneTab.current = id;
       setOpenTabs(false);
     };
-    leaveRealQA(proceed);
+    if (requestId === undefined) leaveRealQA(proceed);
+    else {
+      if (pendingDiscard.current && !guardedRouteAction.current) {
+        // A different operation owns this confirmation. Reject navigation now
+        // so it cannot acknowledge that operation's eventual destination.
+        const current = state.current.tabs.find(
+          (tab) => tab.id === state.current.selected,
+        );
+        reportWorkspaceRoute(
+          targetPath(current?.target ?? allTasks()),
+          requestId,
+        );
+        return;
+      }
+      // History can move again while the guard is visible. Its retained action
+      // must follow the latest target, matching the latest acknowledgement ID.
+      guardedRouteAction.current = proceed;
+      leaveRealQA(() => {
+        const action = guardedRouteAction.current;
+        guardedRouteAction.current = undefined;
+        action?.();
+      });
+    }
   };
   const selectTab = (id: string) => {
     if (id === state.current.selected) {
@@ -446,7 +477,8 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     setPendingRoute(undefined);
     if (route.requestId !== undefined) setRouteRequest(route.requestId);
     const follow = () => {
-      if (route.kind === "workspace" && route.target) open(route.target);
+      if (route.kind === "workspace" && route.target)
+        open(route.target, undefined, route.requestId);
       else if (route.kind === "task" && route.id)
         open({ kind: TabKind.Task, taskId: route.id, label: "Task" });
       else if (route.kind === "repository" && route.id)

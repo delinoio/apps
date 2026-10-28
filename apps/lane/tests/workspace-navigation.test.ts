@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadApp, type HostNode } from "./harness/app.ts";
+import { routeTarget } from "../src/routes.ts";
 
 function visibleNodes(tree: HostNode[]): HostNode[] {
   const nodes: HostNode[] = [];
@@ -205,6 +206,92 @@ test("open-only host routes ask before leaving an edited RealQA view", async () 
     tap(view.tree(), "Discard changes");
     await view.settle();
     assert.equal(selectedApp(), "Lane");
+  } finally {
+    view.unmount();
+  }
+});
+
+for (const confirm of [true, false]) {
+  test(`repeated guarded history navigation ${confirm ? "accepts the latest target" : "cancels the latest request"}`, async () => {
+    const view = await realqaMain();
+    const reports: { path: string; requestId?: number }[] = [];
+    const modules = (globalThis as any).NativeModules;
+    modules.LaneOnline = {};
+    modules.LaneHost.workspace = (raw: string, callback: () => void) => {
+      const value = JSON.parse(raw);
+      if (value.route) reports.push(value.route);
+      callback();
+    };
+    const navigate = async (path: string, requestId: number) => {
+      view.host.route!({
+        kind: "workspace",
+        target: routeTarget(path),
+        requestId,
+      });
+      await view.settle();
+    };
+    try {
+      await navigate("/events", 101);
+      assert.ok(
+        visibleNodes(view.tree()).some(
+          (node) => node.props["accessibility-label"] === "Keep editing",
+        ),
+      );
+      await navigate("/settings", 102);
+      assert.equal(
+        reports.length,
+        0,
+        "the guard defers route acknowledgements",
+      );
+      tap(view.tree(), confirm ? "Discard changes" : "Keep editing");
+      await view.settle();
+      const selected = visibleNodes(view.tree()).find(
+        (node) => node.props.id === "lane-root",
+      )?.props["data-selected-tab"];
+      assert.equal(selected, confirm ? "page-Settings" : "app-RealQA");
+      assert.deepEqual(reports.at(-1), {
+        path: confirm ? "/settings" : "/realqa",
+        requestId: 102,
+      });
+      if (!confirm) {
+        await navigate("/events", 103);
+        tap(view.tree(), "Discard changes");
+        await view.settle();
+        assert.deepEqual(reports.at(-1), { path: "/events", requestId: 103 });
+      }
+    } finally {
+      view.unmount();
+    }
+  });
+}
+
+test("history navigation cannot replace a confirmation owned by another action", async () => {
+  const view = await realqaMain();
+  const reports: { path: string; requestId?: number }[] = [];
+  const modules = (globalThis as any).NativeModules;
+  modules.LaneOnline = {};
+  modules.LaneHost.workspace = (raw: string, callback: () => void) => {
+    const value = JSON.parse(raw);
+    if (value.route) reports.push(value.route);
+    callback();
+  };
+  try {
+    tap(view.tree(), "App settings");
+    await view.settle();
+    view.host.route!({
+      kind: "workspace",
+      target: routeTarget("/events"),
+      requestId: 201,
+    });
+    await view.settle();
+    assert.deepEqual(reports.at(-1), { path: "/realqa", requestId: 201 });
+    tap(view.tree(), "Discard changes");
+    await view.settle();
+    assert.deepEqual(reports.at(-1), { path: "/settings", requestId: 201 });
+    const target = visibleNodes(view.tree()).find(
+      (node) => node.props["data-settings-target"],
+    );
+    assert.equal(target?.props["data-settings-target"], "notifications:1");
   } finally {
     view.unmount();
   }
