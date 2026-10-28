@@ -121,6 +121,26 @@ const addRelationship = async (name) => {
   await button("Add relationship").click();
   await button(name).click();
 };
+const setEditorContentWidth = async (width) => {
+  const editor = page.locator(".editor").filter({ visible: true }).first();
+  const content = page
+    .locator(".editor-content")
+    .filter({ visible: true })
+    .first();
+  const [editorBox, contentBox] = await Promise.all([
+    editor.boundingBox(),
+    content.boundingBox(),
+  ]);
+  assert.ok(editorBox && contentBox);
+  await editor.evaluate(
+    (element, pixels) => {
+      element.style.width = `${pixels}px`;
+    },
+    width + editorBox.width - contentBox.width,
+  );
+  await settle(200);
+  assert.ok(Math.abs((await content.boundingBox()).width - width) < 1);
+};
 // Every rendered element must stay inside the viewport width (no horizontal scrolling).
 const overflow = () =>
   page.locator("lynx-view").evaluate((view) => {
@@ -363,24 +383,55 @@ try {
   await box("Search title or description").fill("");
 
   // ---- Task editor: properties, relationships, validation, retained drafts ------
+  await page.setViewportSize({ width: 3200, height: 900 });
   await openTask("Improve empty states");
   await heading("Relationships").waitFor();
+  await setEditorContentWidth(1100);
+  assert.equal(
+    await page
+      .locator(".editor-content-wide")
+      .filter({ visible: true })
+      .count(),
+    1,
+  );
+  assert.equal(await box("Start date (YYYY-MM-DD)").count(), 1);
+  await setEditorContentWidth(1099);
+  assert.equal(
+    await page
+      .locator(".editor-content-wide")
+      .filter({ visible: true })
+      .count(),
+    0,
+  );
+  assert.equal(await box("Start date (YYYY-MM-DD)").count(), 0);
+  await button("Add or edit property").click();
+  await button("Start date").click();
+  await box("Start date (YYYY-MM-DD)").waitFor();
+  await button("Close properties editor").click();
+  await setEditorContentWidth(1440);
   assert.equal(await editorSelected("Priority", "High"), true);
   assert.equal(await button("Remove Backend from Labels").count(), 1);
   const startBox = box("Start date (YYYY-MM-DD)");
   const dueBox = box("Due date (YYYY-MM-DD)");
   assert.equal(await dueBox.inputValue(), "2026-11-20");
-  // The shared vertical tabs leave less editor width at 1440px. Verify two
-  // columns when the editor has room, as required by the responsive contract.
-  await page.setViewportSize({ width: 1800, height: 900 });
+  // The approved inspector stays 320px wide, so its date fields wrap into one
+  // column even when the overall editor content is wide.
   await settle();
-  const [startRect, dueRect] = await Promise.all([
+  const [inspectorRect, startRect, dueRect] = await Promise.all([
+    page
+      .locator(".editor-content-wide .editor-planning")
+      .filter({ visible: true })
+      .boundingBox(),
     startBox.boundingBox(),
     dueBox.boundingBox(),
   ]);
   assert.ok(
-    Math.abs(startRect.y - dueRect.y) < 2 && startRect.x !== dueRect.x,
-    "two-column fields when the editor has sufficient width",
+    inspectorRect && Math.abs(inspectorRect.width - 320) < 1,
+    "the wide inspector keeps its approved fixed width",
+  );
+  assert.ok(
+    Math.abs(startRect.x - dueRect.x) < 2 && dueRect.y > startRect.y + 10,
+    "date fields wrap in the fixed-width inspector",
   );
   await heading("Properties").scrollIntoViewIfNeeded();
   await capture({ path: join(evidence, "desktop-task-editor.png") });
@@ -551,6 +602,8 @@ try {
   // selecting an existing tab intentionally keeps its already loaded options.
   await button("Close Improve empty states").click();
   await openTask("Improve empty states");
+  // Reopening mounts a new editor, so restore the wide fixture for this scenario.
+  await setEditorContentWidth(1440);
   await button("Remove (unavailable task) from Related").click();
   releaseTasks();
   await text("Loading tasks of this repository…").waitFor({
@@ -1166,7 +1219,10 @@ try {
     }),
   );
   // ---- Responsive layout and keyboard operation --------------------------------
-  for (const width of [900, 899, 360]) {
+  await page.locator(".editor").evaluateAll((elements) => {
+    for (const element of elements) element.style.width = "";
+  });
+  for (const width of [900, 899, 720, 390, 360]) {
     await page.setViewportSize({ width, height: 800 });
     await settle(400);
     for (const [label, action] of [
@@ -1201,13 +1257,11 @@ try {
         `${label} has no horizontal scroll at ${width}px`,
       );
     }
-    if (width < 900) {
-      const [a, b] = await Promise.all([
-        box("Start date (YYYY-MM-DD)").boundingBox(),
-        box("Due date (YYYY-MM-DD)").boundingBox(),
-      ]);
-      assert.ok(b.y > a.y + 10, `fields stack in one column at ${width}px`);
-    }
+    assert.equal(await box("Start date (YYYY-MM-DD)").count(), 0);
+    await button("Add or edit property").click();
+    await button("Start date").click();
+    await box("Start date (YYYY-MM-DD)").waitFor();
+    await button("Close properties editor").click();
     await heading("Properties").scrollIntoViewIfNeeded();
     await capture({ path: join(evidence, `editor-${width}.png`) });
   }
