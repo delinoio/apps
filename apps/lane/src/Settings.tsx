@@ -24,6 +24,7 @@ import {
 } from "./reconnect";
 import { hostAction, listenReauthentication } from "./runtime";
 import { AppUpdates } from "./AppUpdates";
+import { hasUpdaterSupport } from "./updates";
 import { ResetDevelopmentDialog } from "./ResetDevelopment";
 import { describeItemError } from "./planning";
 import { SettingsSection } from "./AppNavigation";
@@ -304,7 +305,7 @@ export function Settings({
       </view>
       {visible && (
         <AppUpdates
-          desktop={adapter.mode === "native"}
+          desktop={hasUpdaterSupport()}
           settingsDirty={() => prefsDirty.current}
           settingsBusy={
             operationBusy || resetOpen || confirm !== null || !!deletion

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   loadSettings,
+  type UpdaterHost,
   type HostNode,
   type SettingsBundle,
 } from "./harness/settings.ts";
@@ -48,6 +49,7 @@ async function open(
   },
   remote?: (name: string, request: unknown) => Promise<unknown>,
   mobile = false,
+  updater: UpdaterHost = mode === "native" ? "desktop" : "none",
 ) {
   const calls: Call[] = [];
   const handlers: Record<string, (request: any) => Promise<unknown>> = {
@@ -74,6 +76,12 @@ async function open(
     close: () => {},
     open: async () => {},
   };
+  (globalThis as any).NativeModules =
+    updater === "desktop"
+      ? { bridge: {} }
+      : updater === "ios" || updater === "android"
+        ? { LaneStore: {}, LaneHost: {} }
+        : {};
   const view = bundle.runtime.mount(bundle.Settings, {
     adapter,
     onReset: () => {},
@@ -568,6 +576,17 @@ test("Settings keeps the approved section order and full deletion scope", async 
   const mobile = await open("native", undefined, undefined, true);
   assert.equal(bundle.captured.updates?.desktop, true);
   assert.ok(mobile.button("Reset development data"));
+
+  for (const platform of ["ios", "android"] as const) {
+    const native = await open("native", undefined, undefined, false, platform);
+    assert.equal(
+      bundle.captured.updates?.desktop,
+      false,
+      `${platform} hides the desktop-only updater`,
+    );
+  }
+  const desktop = await open("native", undefined, undefined, false, "desktop");
+  assert.equal(bundle.captured.updates?.desktop, true);
 });
 
 test("online list failures remain distinct from empty results and local preferences stay usable", async () => {

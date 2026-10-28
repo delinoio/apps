@@ -19,6 +19,7 @@ export interface SettingsBundle {
   runtime: typeof import("./lynx-react.ts");
   captured: { updates?: UpdateProps };
 }
+export type UpdaterHost = "desktop" | "ios" | "android" | "none";
 
 const stubs: Record<string, string> = {
   // AppUpdates is exercised by its own tests; expose its props so tests can

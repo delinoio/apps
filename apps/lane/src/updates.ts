@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { desktopModules, type DesktopBridge } from "./desktop";
+import { desktopModules, type DesktopBridge } from "./desktop.ts";
 
 export enum UpdatePhase {
   Idle = "idle",
@@ -22,11 +22,17 @@ export interface UpdateStatus {
   message: string;
   progress?: number;
 }
+export function hasUpdaterSupport(): boolean {
+  "background only";
+  // NativeAdapter also backs iOS and Android through LaneStore/LaneHost. The
+  // desktop bridge is the declared host capability for app updates.
+  return !!NativeModules.bridge;
+}
 export function updateAction(
   action: UpdateAction,
 ): Promise<UpdateStatus | undefined> {
   "background only";
-  if (!NativeModules.bridge) return Promise.resolve(undefined);
+  if (!hasUpdaterSupport()) return Promise.resolve(undefined);
   const host = desktopModules(
     NativeModules.bridge as unknown as DesktopBridge,
   ).host;

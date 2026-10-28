@@ -29,6 +29,11 @@ import {
   writeResult,
 } from "../native/desktop/update-files.mjs";
 import { desktopModules } from "../src/desktop.ts";
+import {
+  hasUpdaterSupport,
+  updateAction,
+  UpdateAction,
+} from "../src/updates.ts";
 import { invokeNative } from "../native/desktop/bridge.mjs";
 import { packArchive } from "../../../scripts/archive.mjs";
 
@@ -145,6 +150,20 @@ test("the updater bridge exposes only listed actions through the main host facad
   );
   assert.equal(JSON.parse(raw).response.phase, "checking");
   assert.deepEqual(calls, ["start"]);
+});
+
+test("updater support follows the desktop bridge instead of native storage", async () => {
+  const previous = (globalThis as any).NativeModules;
+  try {
+    (globalThis as any).NativeModules = { LaneStore: {}, LaneHost: {} };
+    assert.equal(hasUpdaterSupport(), false);
+    assert.equal(await updateAction(UpdateAction.Status), undefined);
+
+    (globalThis as any).NativeModules = { bridge: {} };
+    assert.equal(hasUpdaterSupport(), true);
+  } finally {
+    (globalThis as any).NativeModules = previous;
+  }
 });
 
 test(
