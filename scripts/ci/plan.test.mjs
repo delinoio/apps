@@ -457,6 +457,48 @@ test("instruction files are excluded before project and shared selection", () =>
   ]);
 });
 
+test("changeset Markdown alone selects no affected validators", () => {
+  for (const path of [
+    ".changeset/lane-navigation.md",
+    ".changeset/README.md",
+  ]) {
+    assert.deepEqual(selectedJobs([path]), []);
+    assert.ok(Object.values(selectChecks([path])).every((value) => !value));
+  }
+});
+
+test("Lane navigation changes with a release record select only the frontend", () => {
+  const paths = [
+    ".changeset/lane-reuse-navigation-tab.md",
+    "apps/lane/src/App.tsx",
+    "apps/lane/tests/tabs-browser.mjs",
+    "apps/lane/tests/tabs.test.ts",
+    "apps/lane/tests/workspace-navigation.test.ts",
+    "docs/apps-lane-foundation.md",
+  ];
+  assert.deepEqual(selectedJobs(paths), ["lane"]);
+  assert.deepEqual(selectRustServers(select(paths)), []);
+  assert.deepEqual(selectChecks(paths), {
+    tooling: false,
+    shared_ui: false,
+    workflows: false,
+  });
+});
+
+test("release records preserve selection from other changed inputs", () => {
+  for (const path of [
+    "crates/perfine-core/src/lib.rs",
+    "servers/perfine-api/src/lib.rs",
+    "servers/crates/server-common/src/lib.rs",
+    "scripts/ci/plan.mjs",
+    "pnpm-lock.yaml",
+  ]) {
+    const paths = [".changeset/component-update.md", path];
+    assert.deepEqual(select(paths), select([path]), path);
+    assert.deepEqual(selectChecks(paths), selectChecks([path]), path);
+  }
+});
+
 test("unclassified shared paths retain global validation", () => {
   for (const path of [
     "package.json",
@@ -467,6 +509,7 @@ test("unclassified shared paths retain global validation", () => {
     ".github/workflows/CI.yml",
     "packages/unknown/package.json",
     "unknown.lock",
+    ".changeset/config.json",
   ]) {
     assert.ok(Object.values(select([path])).every(Boolean), path);
   }

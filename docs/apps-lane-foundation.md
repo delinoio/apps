@@ -136,6 +136,24 @@ and close targets are at least 44 pixels. Up/Down and Home/End move focus;
 Enter/Space activates. Tab proceeds to the remaining controls and content.
 Closing restores focus to the selected adjacent tab: choose the next row,
 then the previous row. Closing the final tab opens a clean `All tasks` tab.
+Workspace order is local to the current window. Moving a tab changes its list
+position without changing its ID, selected pane, draft, filters, scroll position,
+busy state or pending request ownership. Adjacent and numbered selection use
+the displayed order; adjacent selection wraps, and the ninth selection target
+is the final tab. Moving at an edge does nothing.
+
+Keep the latest 20 explicitly closed tabs per window in memory. Each entry
+contains only a destination, its former list position and a safe label. A
+cancelled or busy close and an implicit chooser replacement add no entry.
+Reopening accepts the latest entry, reinserts it at its clamped former position
+and selects it. If its destination is already open, select that pane without
+replacing its state. Reopened saved destinations read current data and use
+default view state; missing or inaccessible data uses the existing error state.
+A discarded new-task draft reopens empty with a new ID. History never restores
+discarded task input or RealQA capture and settings drafts. Clear history on
+account or data-space change, logout, reset, session revocation and window
+disposal. Closing the final tab retains its history while opening clean All
+tasks.
 
 Closing an edited tab requires `Discard unsaved changes?`, with `Keep editing`
 and `Discard changes`. Escape cancels. Focus the safe action and trap focus in
@@ -157,9 +175,9 @@ while any tab has an unsaved draft; leaving the Settings tab cancels an update
 before installation as existing Settings navigation does.
 
 At widths below 900 pixels, place existing contextual navigation inside the tab
-panel above its page, retaining mobile list/detail behavior. Only the tab strip
-scrolls horizontally; selected tabs stay reachable, and `New tab` and the
-open-tabs menu stay fixed at its right. Preserve wrapping content and reachable
+panel above its page, retaining mobile list/detail behavior. The `Tabs` button
+opens the vertical list in a dialog, and `New tab` remains beside that button.
+The list scrolls vertically and keeps selected rows reachable. Preserve wrapping content and reachable
 controls at 1440, 900, 899, 390 and 360 pixels and with enlarged text. Validate
 keyboard, focus restoration, screen-reader roles, hidden panels and independent
 scroll/draft retention. Fixtures and shared compilation do not establish actual
@@ -168,8 +186,32 @@ Android, iOS, macOS or Windows acceptance.
 Tabs and unsaved drafts live only in the current window's memory, without
 server or cross-device synchronization, automatic saves or restart recovery.
 Pace and RealQA remain single mini-app views. Drag reordering, pinned/grouped
-or split tabs, detached windows, reopening closed tabs and new global close
-shortcuts are out of scope.
+or split tabs, detached windows and OS-global tab shortcuts are out of scope.
+
+On macOS and Windows, application-local shortcuts operate on the shared
+displayed tab order:
+
+| Action                             | macOS                                                                             | Windows                     |
+| ---------------------------------- | --------------------------------------------------------------------------------- | --------------------------- |
+| New tab                            | Command+T                                                                         | Ctrl+T                      |
+| Close selected tab                 | Command+W                                                                         | Ctrl+W, Ctrl+F4             |
+| Reopen latest closed tab           | Command+Shift+T                                                                   | Ctrl+Shift+T                |
+| Next tab                           | Ctrl+Tab, Ctrl+PageDown, Command+Option+Right, Command+Shift+], Command+PageDown  | Ctrl+Tab, Ctrl+PageDown     |
+| Previous tab                       | Ctrl+Shift+Tab, Ctrl+PageUp, Command+Option+Left, Command+Shift+[, Command+PageUp | Ctrl+Shift+Tab, Ctrl+PageUp |
+| Select tab 1–8 or last             | Command+1–9                                                                       | Ctrl+1–9                    |
+| Move selected tab earlier or later | Ctrl+Shift+PageUp/PageDown                                                        | Ctrl+Shift+PageUp/PageDown  |
+| Move focused row first or last     | Command+Shift+Home/End                                                            | Ctrl+Shift+Home/End         |
+
+New tab opens or selects the existing chooser. Closing uses the existing draft
+and busy guards and keeps the window open. Closed history retains at most 20
+safe descriptors per window and clears on data-space or account changes and
+window disposal. Reopening reads saved destinations again; discarded draft
+input does not return. Adjacent and numbered selection use displayed order;
+9 selects the last tab. Reordering moves the existing mounted pane without
+changing its identity or selection. First/last movement requires focus on a
+tab row, so an editor retains its text-selection keys. A modal or command
+palette blocks these commands. Browser-owned web tab shortcuts remain with
+the browser; desktop shortcuts do not register as OS-global hotkeys.
 
 ### Desktop app updates
 
