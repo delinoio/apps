@@ -61,6 +61,61 @@ impl Harness {
 }
 
 #[test]
+fn completed_flags_filter_before_paging_and_keep_omission_compatible() {
+    let mut h = Harness::new();
+    let repo = h.repository("https://example.com/completed-cli");
+    let created = h.ok(&[
+        "task",
+        "create",
+        "--repository-id",
+        &repo,
+        "--title",
+        "Finished task",
+        "--progress",
+        "done",
+    ]);
+    let id = strv(&created["result"]["version"], "entityId");
+    let omitted = h.ok(&["task", "list"]);
+    assert_eq!(omitted["items"].as_array().unwrap().len(), 1);
+    let none = h.ok(&["task", "list", "--completed", "none"]);
+    assert_eq!(none["items"].as_array().unwrap().len(), 0);
+    let done_and_none = h.ok(&["task", "list", "--progress", "done", "--completed", "none"]);
+    assert_eq!(done_and_none["items"].as_array().unwrap().len(), 0);
+    let recent = h.ok(&[
+        "task",
+        "list",
+        "--completed",
+        "last-24-hours",
+        "--completed-cutoff",
+        "2000-01-01T00:00:00Z",
+    ]);
+    assert_eq!(strv(&recent["items"][0]["version"], "entityId"), id);
+    let expired = h.ok(&[
+        "task",
+        "list",
+        "--completed",
+        "last-24-hours",
+        "--completed-cutoff",
+        "2099-01-01T00:00:00Z",
+    ]);
+    assert_eq!(expired["items"].as_array().unwrap().len(), 0);
+    let missing = h.fail(&["task", "list", "--completed", "last-24-hours"], 2);
+    assert_eq!(missing["reason"], "ERROR_REASON_INVALID_INPUT");
+    let extra = h.fail(
+        &[
+            "task",
+            "list",
+            "--completed",
+            "all",
+            "--completed-cutoff",
+            "2000-01-01T00:00:00Z",
+        ],
+        2,
+    );
+    assert_eq!(extra["reason"], "ERROR_REASON_INVALID_INPUT");
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "One scenario walks the complete command lifecycle."
@@ -710,9 +765,11 @@ fn mcp_exposes_typed_planning_tools_and_extended_task_schemas() {
     let save = by_name("SaveTask")["inputSchema"]["properties"].clone();
     assert!(save["relationshipEdits"]["properties"]["addSubtaskIds"].is_object());
     let list = by_name("ListTasks")["inputSchema"]["properties"].clone();
-    for field in ["filter", "sortKey", "sortDirection"] {
+    for field in ["filter", "sortKey", "sortDirection", "completed"] {
         assert!(list[field].is_object(), "{field}");
     }
+    assert!(list["completed"]["properties"]["selection"].is_object());
+    assert!(list["completed"]["properties"]["cutoff"].is_object());
     assert!(
         list["filter"]["properties"]["storyPoints"]["properties"]["includeUnassigned"].is_object()
     );

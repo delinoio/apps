@@ -277,6 +277,42 @@ impl TaskPlanning {
 
 /// Filter and sort options of `task list`, merged into the request.
 pub fn take_list(flags: &mut Flags, q: &mut Value) -> Result<()> {
+    let selection = last(flags, "completed");
+    let cutoff = last(flags, "completed-cutoff");
+    if let Some(selection) = selection {
+        let name = match selection.as_str() {
+            "none" => "COMPLETED_SELECTION_NONE",
+            "last-24-hours" => "COMPLETED_SELECTION_LAST_24_HOURS",
+            "last-7-days" => "COMPLETED_SELECTION_LAST_7_DAYS",
+            "last-30-days" => "COMPLETED_SELECTION_LAST_30_DAYS",
+            "all" => "COMPLETED_SELECTION_ALL",
+            _ => {
+                return Err(invalid(
+                    "--completed must be none, last-24-hours, last-7-days, last-30-days or all",
+                ));
+            }
+        };
+        let duration = selection.starts_with("last-");
+        if duration != cutoff.is_some() {
+            return Err(invalid(
+                "--completed-cutoff is required only with a duration selection",
+            ));
+        }
+        let mut completed = json!({"selection": name});
+        if let Some(cutoff) = cutoff {
+            let time = chrono::DateTime::parse_from_rfc3339(&cutoff)
+                .map_err(|_| invalid("--completed-cutoff must be an RFC 3339 UTC timestamp"))?;
+            if time.offset().local_minus_utc() != 0 || time.timestamp_subsec_nanos() % 1_000 != 0 {
+                return Err(invalid(
+                    "--completed-cutoff must be UTC with microsecond precision",
+                ));
+            }
+            completed["cutoff"] = cutoff.into();
+        }
+        q["completed"] = completed;
+    } else if cutoff.is_some() {
+        return Err(invalid("--completed-cutoff requires --completed"));
+    }
     let mut filter = json!({});
     let mut present = false;
     let mut set = |filter: &mut Value, key: &str, value: Value| {

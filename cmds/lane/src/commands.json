@@ -21,7 +21,7 @@
   },
   "task list": {
     "method": "ListTasks",
-    "help": "[--repository-id UUID] [--progress STATE] [--proposal STATE] [--search TEXT] [--priority V]... [--priority-unassigned] [--type V]... [--type-unassigned] [--label-id UUID]... [--unlabeled] [--start-from D] [--start-to D] [--start-unassigned] [--due-from D] [--due-to D] [--due-unassigned] [--points-min N] [--points-max N] [--points-unassigned] [--milestone-id UUID]... [--no-milestone] [--cycle-id UUID]... [--no-cycle] [--relationship KIND]... [--no-relationships] [--sort KEY] [--direction asc|desc] [--page-size N] [--cursor TOKEN]"
+    "help": "[--repository-id UUID] [--progress STATE] [--proposal STATE] [--search TEXT] [--completed none|last-24-hours|last-7-days|last-30-days|all] [--completed-cutoff UTC] [--priority V]... [--priority-unassigned] [--type V]... [--type-unassigned] [--label-id UUID]... [--unlabeled] [--start-from D] [--start-to D] [--start-unassigned] [--due-from D] [--due-to D] [--due-unassigned] [--points-min N] [--points-max N] [--points-unassigned] [--milestone-id UUID]... [--no-milestone] [--cycle-id UUID]... [--no-cycle] [--relationship KIND]... [--no-relationships] [--sort KEY] [--direction asc|desc] [--page-size N] [--cursor TOKEN]"
   },
   "task get": {
     "method": "GetTask",
