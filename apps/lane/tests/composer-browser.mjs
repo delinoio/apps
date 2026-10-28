@@ -75,9 +75,6 @@ try {
   await button("New tab").click();
   await button("RealQA").click();
   await button("Full screen").waitFor();
-  await page.screenshot({
-    path: `evidence/home.png`.replace("evidence", evidence),
-  });
   await button("Full screen").click();
   await button("Test monitor · 480 × 240").click();
   await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
@@ -99,6 +96,32 @@ try {
     };
   });
   assert.ok(initialLayout.titleFocused, "Title must retain initial autofocus");
+  assert.equal(
+    await button("Pixel coordinates").getAttribute("data-expanded"),
+    "false",
+  );
+  assert.equal(
+    await page.getByRole("textbox", { name: "Annotation color" }).count(),
+    0,
+  );
+  await button("Add capture").click();
+  const captureMenu = page.getByRole("dialog", { name: "Add capture" });
+  await captureMenu.waitFor();
+  assert.deepEqual(await captureMenu.getByRole("button").allTextContents(), [
+    "Close",
+    "Full screen",
+    "Window",
+    "Region",
+    "Chrome element",
+  ]);
+  await page.keyboard.press("Escape");
+  await captureMenu.waitFor({ state: "hidden" });
+  assert.equal(
+    await page
+      .getByRole("dialog", { name: "Discard unsaved captures?" })
+      .count(),
+    0,
+  );
   assert.ok(
     initialLayout.repository.top >= initialLayout.header.bottom,
     JSON.stringify(initialLayout),
@@ -118,7 +141,6 @@ try {
     (await page.evaluate(() => window.fixtureState())).attempts.length,
     0,
   );
-  await page.screenshot({ path: `${evidence}/desktop-composer-initial.png` });
   await page
     .getByRole("textbox", { name: "Title", exact: true })
     .fill("Synthetic capture task");
@@ -127,11 +149,67 @@ try {
     .fill("Synthetic problem description");
   await button("github.com/delinoio/apps").click();
   await button("Remove CSS selector").click();
+  await button("Pixel coordinates").click();
+  await page.getByRole("textbox", { name: "x", exact: true }).waitFor();
+  assert.equal(
+    await button("Pixel coordinates").getAttribute("data-expanded"),
+    "true",
+  );
+  await page.getByRole("textbox", { name: "x", exact: true }).fill("31");
+  await button("Pixel coordinates").click();
+  await page
+    .getByRole("textbox", { name: "x", exact: true })
+    .waitFor({ state: "hidden" });
+  await button("Pixel coordinates").click();
+  await page.getByRole("textbox", { name: "x", exact: true }).waitFor();
+  assert.equal(
+    await page.getByRole("textbox", { name: "x", exact: true }).inputValue(),
+    "31",
+  );
+  await button("Text").click();
+  await page.getByRole("textbox", { name: "Annotation text" }).waitFor();
+  await button("Arrow").click();
+  await page
+    .getByRole("textbox", { name: "Points (x,y pairs separated by spaces)" })
+    .fill("1,2,3");
+  await button("Apply tool").click();
+  await page
+    .getByText("Enter points as x,y pairs separated by spaces.")
+    .waitFor();
+  assert.equal(
+    (await page.evaluate(() => window.fixtureState())).draft.images[0].layers
+      .length,
+    0,
+  );
+  await page
+    .getByRole("textbox", { name: "Points (x,y pairs separated by spaces)" })
+    .fill("0,0 100,100");
+  await button("Opaque cover").click();
+  await page.getByRole("textbox", { name: "Annotation color" }).fill("#bad");
+  await button("Apply tool").click();
+  await page
+    .getByText("Enter a six-digit hex color, such as #075AFF.")
+    .waitFor();
+  assert.equal(
+    (await page.evaluate(() => window.fixtureState())).draft.images[0].layers
+      .length,
+    0,
+  );
+  await page.getByRole("textbox", { name: "Annotation color" }).fill("#075AFF");
   await button("Opaque cover").click();
   await button("Apply tool").click();
   await page.waitForFunction(
     () => window.fixtureState().draft.images[0].layers.length === 1,
   );
+  assert.equal(
+    await button("Move layer 1 up").getAttribute("aria-disabled"),
+    "true",
+  );
+  assert.equal(
+    await button("Move layer 1 down").getAttribute("aria-disabled"),
+    "true",
+  );
+  await page.getByText("Selected capture ID:", { exact: false }).waitFor();
   await page.locator(".editor-tools").scrollIntoViewIfNeeded();
   const repositoryLabel = await page
     .locator(".composer-form .label")
@@ -142,13 +220,20 @@ try {
     repositoryLabel.y >= header.y + header.height - 1,
     JSON.stringify({ repositoryLabel, header }),
   );
-  await page.screenshot({ path: `${evidence}/desktop-composer.png` });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 900, height: 840 });
+  const editorAt900 = await page.locator(".composer-editor").boundingBox();
+  const formAt900 = await page.locator(".composer-form").boundingBox();
+  assert.ok(
+    formAt900.x > editorAt900.x + editorAt900.width,
+    JSON.stringify({ editorAt900, formAt900 }),
+  );
+  await page.setViewportSize({ width: 360, height: 844 });
   await page.locator(".composer-form").scrollIntoViewIfNeeded();
   await page.waitForTimeout(150);
   const form = await page.locator(".composer-form").boundingBox();
-  assert.ok(form.x + form.width <= 390.5, JSON.stringify(form));
-  await page.screenshot({ path: `${evidence}/mobile-390-composer.png` });
+  assert.ok(form.x + form.width <= 360.5, JSON.stringify(form));
+  const columns = await page.locator(".composer-columns").boundingBox();
+  assert.ok(columns.x + columns.width <= 360.5, JSON.stringify(columns));
   await page.setViewportSize({ width: 1200, height: 840 });
   await button("Save to Lane").click();
   await page.getByText("Synthetic storage failure", { exact: false }).waitFor();

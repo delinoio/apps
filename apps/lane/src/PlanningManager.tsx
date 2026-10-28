@@ -10,7 +10,7 @@ import {
 } from "@repo/protos/lane/v1/lane_pb";
 import { meta, newId, type LaneAdapter } from "./adapter";
 import { Button, Choices, Dialog, Field, Notice } from "./components";
-import { heads, repositoryName } from "./model";
+import { heads, historyBaseline, repositoryName } from "./model";
 import {
   PlanningKind,
   blankPlanningInput,
@@ -490,29 +490,38 @@ export function PlanningManager({
             Before and after values, time and origin. History is read-only and
             has no restore action.
           </text>
-          {history.map((version, index) => (
-            <view className="card" key={version.versionId}>
-              <text className="label">
-                {version.createdAt
-                  ? new Date(
-                      Number(version.createdAt.seconds) * 1000,
-                    ).toLocaleString()
-                  : ""}
-              </text>
-              <text className="muted">
-                {["Unknown", "App", "CLI", "MCP"][version.origin?.kind || 0]} ·{" "}
-                {version.origin?.deviceName} ·{" "}
-                {version.origin?.accountId || "Local account"}
-              </text>
-              {planningItemChanges(history[index - 1], version).map((c) => (
-                <view className="history-change" key={c.field}>
-                  <text className="label">{c.field}</text>
-                  <text text-selection>Before: {c.before}</text>
-                  <text text-selection>After: {c.after}</text>
-                </view>
-              ))}
-            </view>
-          ))}
+          {history.map((version) => {
+            const baseline = historyBaseline(history, version);
+            const changes =
+              baseline.kind === "creation"
+                ? planningItemChanges(undefined, version)
+                : baseline.kind === "parent"
+                  ? planningItemChanges(baseline.version, version)
+                  : [];
+            return (
+              <view className="card" key={version.versionId}>
+                <text className="label">
+                  {version.createdAt
+                    ? new Date(
+                        Number(version.createdAt.seconds) * 1000,
+                      ).toLocaleString()
+                    : ""}
+                </text>
+                <text className="muted">
+                  {["Unknown", "App", "CLI", "MCP"][version.origin?.kind || 0]}{" "}
+                  · {version.origin?.deviceName} ·{" "}
+                  {version.origin?.accountId || "Local account"}
+                </text>
+                {changes.map((c) => (
+                  <view className="history-change" key={c.field}>
+                    <text className="label">{c.field}</text>
+                    <text text-selection>Before: {c.before}</text>
+                    <text text-selection>After: {c.after}</text>
+                  </view>
+                ))}
+              </view>
+            );
+          })}
           {historyCursor && (
             <Button onClick={() => void run(() => loadHistory(true))}>
               Load more history

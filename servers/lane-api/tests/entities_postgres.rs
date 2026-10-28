@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //! Real domain tests; set TEST_DATABASE_URL to a disposable database and run --ignored.
+use delino_protocol::lane::v1::ResolveConflictRequest;
 use lane_api::{Principal, Result, account_lock, entities, id, string, sync};
 use serde_json::{Value, json};
 use sqlx::{Connection, PgConnection};
@@ -164,6 +165,10 @@ fn mutation(v: Value) -> Value {
         "SAVE"
     };
     json!({"meta":{"requestId":id()},"kind":format!("MUTATION_KIND_{kind}"),"version":v,"expectedHeadIds":[]})
+}
+fn typed_resolution(q: &Value) -> Value {
+    serde_json::to_value(serde_json::from_value::<ResolveConflictRequest>(q.clone()).unwrap())
+        .unwrap()
 }
 const REPO: &str = "019a0000-0000-7000-8000-000000000002";
 const TASK: &str = "019a0000-0000-7000-8000-000000000003";
@@ -368,6 +373,161 @@ async fn stale_interactive_save_preserves_alternative_resolution_and_receipts() 
         5
     );
     assert_eq!(f.heads(TASK).await.len(), 1);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn resolved_task_planning_sets_replay_before_head_validation() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let labels = [id(), id()];
+    for label in &labels {
+        f.call(
+            "CreatePlanningItem",
+            json!({"meta":{"requestId":id()},"id":label,
+            "item":{"label":{"repositoryId":REPO,"name":label,"color":"#abcdef"}}}),
+        )
+        .await
+        .unwrap();
+    }
+    let endpoints = [id(), id()];
+    for endpoint in &endpoints {
+        f.task(endpoint, REPO).await;
+    }
+    let base = f.task(TASK, REPO).await;
+    let first = f
+        .call(
+            "SetProgress",
+            json!({"meta":{"requestId":id()},"id":TASK,
+        "expectedVersionId":base["versionId"],"progress":"PROGRESS_DONE"}),
+        )
+        .await
+        .unwrap();
+    f.call(
+        "SetProgress",
+        json!({"meta":{"requestId":id()},"id":TASK,
+        "expectedVersionId":base["versionId"],"progress":"PROGRESS_BLOCKED"}),
+    )
+    .await
+    .unwrap();
+    let heads = f.heads(TASK).await;
+    assert_eq!(heads.len(), 2);
+    let mut resolved = first["result"]["version"].clone();
+    resolved["task"]["labelIds"] = json!([labels[1], labels[0]]);
+    resolved["task"]["dependsOnTaskIds"] = json!([endpoints[1], endpoints[0]]);
+    resolved["task"]["relatedTaskIds"] = json!([endpoints[1], endpoints[0]]);
+    let q = typed_resolution(&json!({"meta":{"requestId":id()},"id":TASK,
+        "expectedHeadIds":heads,"resolved":resolved}));
+    let before_failed = (
+        f.count("lane_versions").await,
+        f.count("lane_entity_receipts").await,
+    );
+    let mut invalid = q.clone();
+    invalid["meta"]["requestId"] = json!(id());
+    invalid["resolved"]["task"]["labelIds"] = json!([id()]);
+    assert_eq!(
+        lane_api::planning::violation_of(&f.call("ResolveConflict", invalid).await.unwrap_err())
+            .map(|v| v.name()),
+        Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")
+    );
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entity_receipts").await
+        ),
+        before_failed
+    );
+
+    let applied = f
+        .call("ResolveConflict", typed_resolution(&q))
+        .await
+        .unwrap();
+    let version = applied["result"]["version"]["versionId"].clone();
+    let stable = (
+        f.count("lane_versions").await,
+        f.count("lane_entity_receipts").await,
+        f.count("lane_changes").await,
+    );
+    let mut equivalent = q.clone();
+    for (key, values) in [
+        ("labelIds", &labels),
+        ("dependsOnTaskIds", &endpoints),
+        ("relatedTaskIds", &endpoints),
+    ] {
+        equivalent["resolved"]["task"][key] = json!([values[0], values[1], values[0]]);
+        let replay = f
+            .call("ResolveConflict", typed_resolution(&equivalent))
+            .await
+            .unwrap();
+        assert_eq!(replay["result"]["result"], "RESULT_KIND_REPLAYED");
+        assert_eq!(replay["result"]["version"]["versionId"], version);
+        assert_eq!(
+            (
+                f.count("lane_versions").await,
+                f.count("lane_entity_receipts").await,
+                f.count("lane_changes").await
+            ),
+            stable
+        );
+    }
+    for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+        let mut changed = q.clone();
+        changed["resolved"]["task"][key] = json!([]);
+        assert_eq!(
+            f.call("ResolveConflict", changed).await.unwrap_err().reason,
+            6
+        );
+    }
+    for field in ["title", "prompt"] {
+        let mut changed = q.clone();
+        changed["resolved"]["task"][field] = json!("");
+        assert_eq!(
+            f.call("ResolveConflict", changed).await.unwrap_err().reason,
+            6
+        );
+    }
+    let mut changed = q.clone();
+    changed["resolved"]["versionId"] = json!(id());
+    assert_eq!(
+        f.call("ResolveConflict", changed).await.unwrap_err().reason,
+        6
+    );
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entity_receipts").await,
+            f.count("lane_changes").await
+        ),
+        stable
+    );
+    let mut stale = q.clone();
+    stale["meta"]["requestId"] = json!(id());
+    assert_eq!(
+        f.call("ResolveConflict", stale).await.unwrap_err().reason,
+        5
+    );
+    let edited = f
+        .call(
+            "SetProgress",
+            json!({"meta":{"requestId":id()},"id":TASK,
+        "expectedVersionId":version,"progress":"PROGRESS_IN_PROGRESS"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(edited["result"]["result"], "RESULT_KIND_APPLIED");
+    let replay = f.call("ResolveConflict", equivalent.clone()).await.unwrap();
+    assert_eq!(
+        replay["result"]["version"]["versionId"],
+        applied["result"]["version"]["versionId"]
+    );
+    f.call("DeleteTask", json!({"meta":{"requestId":id()},"id":TASK}))
+        .await
+        .unwrap();
+    let redacted = f.call("ResolveConflict", equivalent).await.unwrap();
+    assert_eq!(redacted["result"]["result"], "RESULT_KIND_DELETED");
+    assert_eq!(redacted["result"]["version"]["deleted"], true);
+    assert!(redacted["result"]["version"].get("task").is_none());
     f.close().await;
 }
 
@@ -1586,6 +1746,7 @@ fn violation_name(f: &lane_api::Fault) -> Option<&'static str> {
 fn expect_rejection(expected: &Value, got: &lane_api::Fault, case: &str) {
     let reason = match string(expected, "reason") {
         "ERROR_REASON_INVALID_INPUT" => 1,
+        "ERROR_REASON_NOT_FOUND" => 2,
         "ERROR_REASON_CONSTRAINT_VIOLATION" => 19,
         other => panic!("unexpected reason {other}"),
     };
@@ -1654,6 +1815,177 @@ async fn shared_planning_validation_and_graph_vectors_execute_database_domain() 
             f.close().await;
         }
     }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn explicit_removal_targets_are_account_scoped_and_atomic() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let other_repo = "019a0000-0000-7000-8000-0000000000b1";
+    let deleted = "019a0000-0000-7000-8000-0000000000b2";
+    let missing = "019a0000-0000-7000-8000-0000000000b3";
+    let foreign_account_task = "019a0000-0000-7000-8000-0000000000b4";
+    let new_task = "019a0000-0000-7000-8000-0000000000b5";
+    f.repo(other_repo, "https://example.com/other").await;
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    f.task(TASK_C, other_repo).await;
+    f.task(deleted, REPO).await;
+    f.call(
+        "DeleteTask",
+        json!({"meta":{"requestId":id()},"id":deleted}),
+    )
+    .await
+    .unwrap();
+    f.label(LABEL, REPO, "Label").await;
+
+    let mut foreign = f.p.clone();
+    foreign.account_id = id();
+    foreign.tenant_id = id();
+    sqlx::query("INSERT INTO lane_accounts(account_id,tenant_id,epoch) VALUES($1,$2,$3)")
+        .bind(&foreign.account_id)
+        .bind(&foreign.tenant_id)
+        .bind(id())
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &foreign.account_id).await.unwrap();
+    entities::dispatch(
+        &mut tx,
+        &foreign,
+        "CreateRepository",
+        &json!({"meta":{"requestId":id()},"id":REPO,"url":"https://example.com/foreign"}),
+        usize::MAX,
+    )
+    .await
+    .unwrap();
+    entities::dispatch(&mut tx, &foreign, "CreateTask", &json!({"meta":{"requestId":id()},"id":foreign_account_task,"repository":{"id":REPO},"title":"Foreign"}), usize::MAX).await.unwrap();
+    tx.commit().await.unwrap();
+
+    for method in ["CreateTask", "SaveTask"] {
+        for field in ["removeSubtaskIds", "removeBlockedTaskIds"] {
+            for (target, reason, violation) in [
+                (
+                    missing,
+                    19,
+                    Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"),
+                ),
+                (deleted, 2, None),
+                (LABEL, 19, Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")),
+                (TASK_C, 19, Some("CONSTRAINT_VIOLATION_CROSS_REPOSITORY")),
+                (
+                    foreign_account_task,
+                    19,
+                    Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"),
+                ),
+            ] {
+                let edits = json!({field:[target],"addSubtaskIds":[TASK_B]});
+                let request = if method == "CreateTask" {
+                    json!({"meta":{"requestId":id()},"id":new_task,"repository":{"id":REPO},"title":"New","relationshipEdits":edits})
+                } else {
+                    json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":f.accepted(TASK).await,"task":task_fields("Title", REPO, json!({})),"relationshipEdits":edits})
+                };
+                let before = f.footprint().await;
+                let bodies = f.task_bodies().await;
+                let heads = f.heads(TASK).await;
+                let peer_heads = f.heads(TASK_B).await;
+                let error = f.call(method, request).await.unwrap_err();
+                assert_eq!(error.reason & 0xff, reason, "{method}/{field}/{target}");
+                assert_eq!(
+                    violation_name(&error),
+                    violation,
+                    "{method}/{field}/{target}"
+                );
+                assert_eq!(f.footprint().await, before, "{method}/{field}/{target}");
+                assert_eq!(f.task_bodies().await, bodies);
+                assert_eq!(f.heads(TASK).await, heads);
+                assert_eq!(f.heads(TASK_B).await, peer_heads);
+                assert!(!f.task_bodies().await.contains_key(new_task));
+            }
+        }
+    }
+
+    let request = json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":f.accepted(TASK).await,"task":task_fields("Title", REPO, json!({})),"relationshipEdits":{"removeSubtaskIds":[missing]}});
+    let before = f.footprint().await;
+    assert_eq!(
+        violation_name(&f.call("SaveTask", request.clone()).await.unwrap_err()),
+        Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")
+    );
+    assert_eq!(f.footprint().await, before);
+    f.task(missing, REPO).await;
+    assert!(f.call("SaveTask", request).await.is_ok());
+
+    for (add, remove, peer_key) in [
+        ("addSubtaskIds", "removeSubtaskIds", "parentTaskId"),
+        (
+            "addBlockedTaskIds",
+            "removeBlockedTaskIds",
+            "dependsOnTaskIds",
+        ),
+    ] {
+        f.save_task(
+            TASK,
+            task_fields("Title", REPO, json!({})),
+            Some(json!({add:[TASK_B]})),
+        )
+        .await
+        .unwrap();
+        let before_peer = f.accepted(TASK_B).await;
+        let removed = f
+            .save_task(
+                TASK,
+                task_fields("Title", REPO, json!({})),
+                Some(json!({remove:[TASK_B]})),
+            )
+            .await
+            .unwrap();
+        assert_eq!(removed["affected"].as_array().unwrap().len(), 1);
+        assert_eq!(removed["affected"][0]["version"]["entityId"], TASK_B);
+        assert_ne!(f.accepted(TASK_B).await, before_peer);
+        assert!(f.task_bodies().await[TASK_B].get(peer_key).is_none());
+        let absent_peer = f.accepted(TASK_B).await;
+        let no_op = f
+            .save_task(
+                TASK,
+                task_fields("Title", REPO, json!({})),
+                Some(json!({remove:[TASK_B]})),
+            )
+            .await
+            .unwrap();
+        assert!(no_op["affected"].as_array().is_none_or(Vec::is_empty));
+        assert_eq!(f.accepted(TASK_B).await, absent_peer);
+    }
+    f.save_task(
+        TASK,
+        task_fields("Title", REPO, json!({})),
+        Some(json!({"addSubtaskIds":[TASK_B]})),
+    )
+    .await
+    .unwrap();
+    let peer_version = f.accepted(TASK_B).await;
+    for title in ["First", "Alternative"] {
+        f.call(
+            "SaveTask",
+            json!({"meta":{"requestId":id()},"id":TASK_B,"expectedVersionId":peer_version,"task":task_fields(title, REPO, json!({"parentTaskId":TASK}))}),
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(f.heads(TASK_B).await.len(), 2);
+    let before = f.footprint().await;
+    let error = f
+        .save_task(
+            TASK,
+            task_fields("Title", REPO, json!({})),
+            Some(json!({"removeSubtaskIds":[TASK_B]})),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.reason, 4);
+    assert_eq!(f.footprint().await, before);
+    f.close().await;
 }
 
 #[tokio::test]
@@ -3079,6 +3411,136 @@ async fn stale_specialized_edits_use_the_submitted_base_for_membership() {
         .await
         .unwrap();
     assert!(!f.flag(&version_id(&fresh)).await);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn sync_capture_only_initial_task_is_not_prompt_history() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+
+    let task = id();
+    let first_capture = image()["capture"].clone();
+    let mut initial = pushed_task(
+        &task,
+        &id(),
+        &[],
+        task_fields(
+            "Capture only",
+            REPO,
+            json!({"captures":[first_capture.clone()]}),
+        ),
+        3,
+    );
+    initial["promptRestoration"] = json!(false);
+    let create = mutation(initial.clone());
+    let applied = f.push(create.clone()).await.unwrap();
+    assert_eq!(
+        applied["results"][0]["result"]["result"],
+        "RESULT_KIND_APPLIED"
+    );
+    let first_version = string(&initial, "versionId").to_owned();
+    assert!(
+        f.envelope(&first_version).await["task"]
+            .get("prompt")
+            .is_none()
+    );
+    assert!(!f.flag(&first_version).await);
+    assert_eq!(f.history(&task, false).await, vec![first_version.clone()]);
+    assert!(f.history(&task, true).await.is_empty());
+    assert_eq!(f.count("lane_attachments").await, 1);
+    assert_eq!(f.count("lane_attachment_identities").await, 1);
+
+    let versions = f.count("lane_versions").await;
+    let replay = f.push(create).await.unwrap();
+    assert_eq!(
+        replay["results"][0]["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    assert_eq!(f.count("lane_versions").await, versions);
+    assert_eq!(f.count("lane_attachments").await, 1);
+    assert_eq!(f.count("lane_attachment_identities").await, 1);
+
+    let second_capture = image()["capture"].clone();
+    let added = version_id(
+        &f.edit(&task, &first_version, |body| {
+            body["captures"] = json!([first_capture.clone(), second_capture.clone()]);
+        })
+        .await,
+    );
+    assert!(f.flag(&added).await);
+    let reordered = version_id(
+        &f.edit(&task, &added, |body| {
+            body["captures"] = json!([second_capture, first_capture]);
+        })
+        .await,
+    );
+    assert!(f.flag(&reordered).await);
+    let removed = version_id(
+        &f.edit(&task, &reordered, |body| {
+            body["captures"] = json!([]);
+        })
+        .await,
+    );
+    assert!(f.flag(&removed).await);
+    let title_only = version_id(
+        &f.edit(&task, &removed, |body| body["title"] = json!("Renamed"))
+            .await,
+    );
+    assert!(!f.flag(&title_only).await);
+    assert_eq!(f.history(&task, false).await.len(), 5);
+    let mut prompt_versions = vec![added, removed, reordered];
+    prompt_versions.sort();
+    assert_eq!(f.history(&task, true).await, prompt_versions);
+
+    for (prompt, captures, expected_member) in [
+        (Some(""), Some(json!([image()["capture"].clone()])), true),
+        (Some("text"), None, true),
+        (None, None, false),
+        (None, Some(json!([])), false),
+    ] {
+        let entity = id();
+        let mut body = task_fields("Prompt presence", REPO, json!({}));
+        if let Some(prompt) = prompt {
+            body["prompt"] = json!(prompt);
+        }
+        if let Some(captures) = captures {
+            body["captures"] = captures;
+        }
+        let initial = pushed_task(&entity, &id(), &[], body, 3);
+        assert_eq!(
+            f.push(mutation(initial.clone())).await.unwrap()["results"][0]["result"]["result"],
+            "RESULT_KIND_APPLIED"
+        );
+        let version = string(&initial, "versionId").to_owned();
+        assert_eq!(f.flag(&version).await, expected_member);
+        assert_eq!(f.history(&entity, false).await, vec![version.clone()]);
+        assert_eq!(
+            f.history(&entity, true).await,
+            if expected_member {
+                vec![version]
+            } else {
+                vec![]
+            }
+        );
+    }
+
+    let captured_task = id();
+    let captured = f
+        .capture(
+            "CreateCaptureTask",
+            json!({"id":captured_task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Empty description","description":"","images":[image()]}),
+        )
+        .await
+        .unwrap();
+    let captured_version = version_id(&captured);
+    assert_eq!(captured["result"]["version"]["task"]["prompt"], "");
+    assert!(f.flag(&captured_version).await);
+    assert_eq!(
+        f.history(&captured_task, true).await,
+        vec![captured_version]
+    );
     f.close().await;
 }
 

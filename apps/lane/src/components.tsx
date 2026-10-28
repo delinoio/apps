@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "@lynx-js/react";
 import { parseMarkdown, type MarkdownSpan } from "./markdown";
 import { hostAction } from "./runtime";
 export function Button({
+  id: suppliedId,
   children,
   onClick,
   disabled = false,
@@ -12,7 +13,9 @@ export function Button({
   label,
   swatch,
   focusOnShow = false,
+  focusRequest = 0,
 }: {
+  id?: string;
   children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
@@ -25,22 +28,27 @@ export function Button({
   // Decorative color next to the text; the name always stays visible.
   swatch?: string;
   focusOnShow?: boolean;
+  focusRequest?: number;
 }) {
-  const [id] = useState(() => "button-" + Math.random().toString(36).slice(2));
+  const [generatedId] = useState(
+    () => "button-" + Math.random().toString(36).slice(2),
+  );
+  const buttonId = suppliedId ?? generatedId;
   useEffect(() => {
     "background only";
     if (focusOnShow)
       lynx
         .createSelectorQuery()
-        .select(`#${id}`)
+        .select(`#${buttonId}`)
         .invoke({ method: "setFocus", params: { focus: true } })
         .exec();
-  }, [focusOnShow, id]);
+  }, [focusOnShow, buttonId]);
   const selected = pressed ?? primary;
   return (
     <view
-      id={id}
+      id={buttonId}
       data-dialog-default={focusOnShow ? "true" : undefined}
+      data-focus-request={focusRequest || undefined}
       className={`button ${primary || pressed ? "primary" : ""} ${disabled ? "disabled" : ""}`}
       data-pressed={pressed === undefined ? undefined : String(pressed)}
       data-expanded={expanded === undefined ? undefined : String(expanded)}
@@ -75,6 +83,87 @@ export function Button({
     </view>
   );
 }
+export function CompactSelect<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+  active = true,
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly (readonly [T, string])[];
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  active?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const [triggerId] = useState(
+    () => "select-" + Math.random().toString(36).slice(2),
+  );
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
+  const selected = options.find(([option]) => option === value)?.[1] ?? "";
+  useEffect(() => {
+    "background only";
+    if (focusRequest)
+      lynx
+        .createSelectorQuery()
+        .select(`#${triggerId}`)
+        .invoke({ method: "setFocus", params: { focus: true } })
+        .exec();
+  }, [focusRequest, triggerId]);
+  const close = () => {
+    setOpen(false);
+    setFocusRequest((request) => request + 1);
+  };
+  return (
+    <view
+      className="compact-select"
+      global-bindkeydown={(event) => {
+        if (active && open && event.key === "Escape") close();
+      }}
+    >
+      <text className="label">{label}</text>
+      <Button
+        id={triggerId}
+        focusRequest={focusRequest}
+        disabled={disabled}
+        expanded={open}
+        label={`${label}: ${selected}`}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        {selected}
+      </Button>
+      {open && (
+        <view className="compact-select-options" accessibility-label={label}>
+          {options.map(([option, title]) => (
+            <Button
+              key={option}
+              pressed={option === value}
+              label={`${label}: ${title}`}
+              onClick={() => {
+                onChange(option);
+                close();
+              }}
+            >
+              {title}
+            </Button>
+          ))}
+        </view>
+      )}
+    </view>
+  );
+}
 export function Field({
   label,
   value,
@@ -85,6 +174,8 @@ export function Field({
   error,
   help,
   prefix,
+  focusOnShow = false,
+  accessibleHelp = false,
 }: {
   label: string;
   value: string;
@@ -96,6 +187,8 @@ export function Field({
   error?: string;
   help?: string;
   prefix?: ReactNode;
+  focusOnShow?: boolean;
+  accessibleHelp?: boolean;
 }) {
   const [id] = useState(() => "field-" + Math.random().toString(36).slice(2));
   useEffect(() => {
@@ -117,9 +210,11 @@ export function Field({
   }, [id, focus]);
   const props = {
     id,
+    "data-dialog-default": focus || focusOnShow ? "true" : undefined,
     className: `input ${multiline ? "multiline" : ""}`,
-    "data-dialog-default": focus ? "true" : undefined,
-    "accessibility-label": error ? `${label}. ${error}` : label,
+    "accessibility-label": [label, accessibleHelp ? help : undefined, error]
+      .filter(Boolean)
+      .join(". "),
     disabled,
     maxlength: 2147483647,
     bindinput: (e: { detail: { value: string } }) => onChange(e.detail.value),
@@ -129,7 +224,7 @@ export function Field({
       <text className="label">{label}</text>
       {prefix}
       {multiline ? <textarea {...props} /> : <input {...props} />}
-      {help && !error && <text className="muted">{help}</text>}
+      {help && <text className="muted">{help}</text>}
       {error && <text className="validation">{error}</text>}
     </view>
   );
@@ -167,6 +262,112 @@ export function Choices<T extends string | number>({
           </Button>
         ))}
       </view>
+    </view>
+  );
+}
+export function MenuChoices<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: T;
+  options: readonly (readonly [T, string])[];
+  onChange: (value: T) => void;
+  disabled?: boolean;
+}) {
+  const [id] = useState(() => "menu-" + Math.random().toString(36).slice(2));
+  const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(0);
+  const current = options.findIndex(([option]) => option === value);
+  const focus = (index: number) => {
+    "background only";
+    lynx
+      .createSelectorQuery()
+      .select(`#${id}-option-${index}`)
+      .invoke({ method: "setFocus", params: { focus: true } })
+      .exec();
+  };
+  const restore = () => {
+    "background only";
+    setOpen(false);
+    lynx
+      .createSelectorQuery()
+      .select(`#${id}-trigger`)
+      .invoke({ method: "setFocus", params: { focus: true } })
+      .exec();
+  };
+  const show = () => {
+    "background only";
+    if (disabled) return;
+    const index = Math.max(0, current);
+    setFocused(index);
+    setOpen(true);
+  };
+  useEffect(() => {
+    "background only";
+    if (open) focus(focused);
+  }, [open, focused]);
+  const select = (option: T) => {
+    onChange(option);
+    restore();
+  };
+  return (
+    <view className="field menu-field">
+      <text className="label">{label}</text>
+      <view
+        id={`${id}-trigger`}
+        className={`button menu-trigger ${disabled ? "disabled" : ""}`}
+        data-expanded={String(open)}
+        accessibility-element
+        accessibility-traits="button"
+        accessibility-label={`${label}: ${options[current]?.[1] ?? ""}`}
+        accessibility-value={
+          disabled ? "Disabled" : open ? "Expanded" : "Collapsed"
+        }
+        focusable={!disabled}
+        bindtap={() => (open ? restore() : show())}
+        bindkeydown={(event) => {
+          if (event.key === "Enter" || event.key === " ")
+            open ? restore() : show();
+        }}
+      >
+        <text>{options[current]?.[1] ?? ""}</text>
+        <text accessibility-elements-hidden>⌄</text>
+      </view>
+      {open && (
+        <view className="menu-options" accessibility-label={label}>
+          {options.map(([option, title], index) => (
+            <view
+              id={`${id}-option-${index}`}
+              className={`button menu-option ${option === value ? "menu-selected" : ""}`}
+              key={option}
+              accessibility-element
+              accessibility-traits="button"
+              accessibility-label={`${label}: ${title}`}
+              accessibility-value={option === value ? "Selected" : undefined}
+              focusable
+              bindtap={() => select(option)}
+              bindkeydown={(event) => {
+                if (event.key === "Escape") restore();
+                else if (event.key === "Enter" || event.key === " ")
+                  select(option);
+                else if (event.key === "ArrowDown" || event.key === "ArrowUp")
+                  setFocused(
+                    (index +
+                      (event.key === "ArrowDown" ? 1 : -1) +
+                      options.length) %
+                      options.length,
+                  );
+              }}
+            >
+              <text>{title}</text>
+            </view>
+          ))}
+        </view>
+      )}
     </view>
   );
 }
@@ -235,20 +436,43 @@ export function Dialog({
   onClose,
   closeDisabled = false,
   className = "",
+  closeFocus = false,
+  focusHeading = false,
+  footer,
+  returnFocusId,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   closeDisabled?: boolean;
   className?: string;
+  closeFocus?: boolean;
+  focusHeading?: boolean;
+  footer?: ReactNode;
+  returnFocusId?: string;
 }) {
+  const [headingId] = useState(
+    () => "dialog-heading-" + Math.random().toString(36).slice(2),
+  );
   useEffect(() => {
     "background only";
     openDialogs++;
+    if (focusHeading)
+      lynx
+        .createSelectorQuery()
+        .select(`#${headingId}`)
+        .invoke({ method: "setFocus", params: { focus: true } })
+        .exec();
     return () => {
       openDialogs--;
+      if (returnFocusId)
+        lynx
+          .createSelectorQuery()
+          .select(`#${returnFocusId}`)
+          .invoke({ method: "setFocus", params: { focus: true } })
+          .exec();
     };
-  }, []);
+  }, [focusHeading, headingId, returnFocusId]);
   return (
     <view
       className="overlay"
@@ -258,18 +482,35 @@ export function Dialog({
     >
       <view
         className={`dialog ${className}`}
-        accessibility-element
+        accessibility-element={false}
         accessibility-label={title}
       >
         <view className="row between dialog-header">
-          <text className="heading">{title}</text>
-          <Button disabled={closeDisabled} onClick={onClose}>
+          {focusHeading ? (
+            <text
+              id={headingId}
+              className="heading"
+              accessibility-heading
+              focusable
+              data-dialog-default="true"
+            >
+              {title}
+            </text>
+          ) : (
+            <text className="heading">{title}</text>
+          )}
+          <Button
+            disabled={closeDisabled}
+            focusOnShow={closeFocus || (!focusHeading && !!returnFocusId)}
+            onClick={onClose}
+          >
             Close
           </Button>
         </view>
         <scroll-view className="dialog-scroll" scroll-orientation="vertical">
           {children}
         </scroll-view>
+        {footer}
       </view>
     </view>
   );

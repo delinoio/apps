@@ -12,7 +12,7 @@ use connectrpc::ErrorCode;
 use serde_json::{Map, Value, json};
 use sqlx::{PgConnection, Row};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use unicode_casefold::UnicodeCaseFold;
 
 pub(crate) const MAX_NAME_SCALARS: usize = 100;
@@ -424,7 +424,12 @@ pub(crate) fn referenced_ids(body: &Value, edits: &Edits) -> Vec<String> {
     ] {
         ids.extend(opt_str(body, key).map(str::to_owned));
     }
-    for set in [&edits.add_subtasks, &edits.add_blocked] {
+    for set in [
+        &edits.add_subtasks,
+        &edits.remove_subtasks,
+        &edits.add_blocked,
+        &edits.remove_blocked,
+    ] {
         ids.extend(set.iter().cloned());
     }
     sorted_unique(ids)
@@ -551,6 +556,8 @@ pub(crate) struct Snapshot {
     pub items: BTreeMap<String, ItemState>,
     /// Live entities outside the loaded repositories: kind and repository.
     pub foreign: BTreeMap<String, (i16, String)>,
+    /// Deleted tasks in this account that were named as explicit references.
+    pub deleted_tasks: BTreeSet<String>,
 }
 struct Work {
     main: Value,
@@ -721,11 +728,16 @@ impl Snapshot {
         links.extend(opt_str(&body, "duplicateOfTaskId").map(str::to_owned));
         links.extend(edits.add_subtasks.iter().cloned());
         links.extend(edits.add_blocked.iter().cloned());
+        let mut removals = edits.remove_subtasks.iter().chain(&edits.remove_blocked);
+        links.extend(removals.clone().cloned());
         if links.iter().any(|l| l == id) {
             return Err(violation(
                 Violation::SelfLink,
                 "a task cannot link to itself",
             ));
+        }
+        if removals.any(|target| self.deleted_tasks.contains(target)) {
+            return Err(fault(2, "a removed task does not exist"));
         }
         if links
             .iter()
@@ -957,17 +969,25 @@ pub(crate) async fn load(
             .extend(name);
     }
     if !refs.is_empty() {
-        let rows = sqlx::query("SELECT id,kind,repository_id FROM lane_entities WHERE account_id=$1 AND id=ANY($2) AND NOT deleted AND kind IN (2,4,5,6)")
+        let rows = sqlx::query("SELECT id,kind,repository_id,deleted FROM lane_entities WHERE account_id=$1 AND id=ANY($2) AND kind IN (2,4,5,6)")
             .bind(account).bind(refs).fetch_all(&mut *db).await?;
         for row in rows {
-            snapshot.foreign.insert(
-                row.get("id"),
-                (
-                    row.get("kind"),
-                    row.get::<Option<String>, _>("repository_id")
-                        .unwrap_or_default(),
-                ),
-            );
+            let id: String = row.get("id");
+            let kind: i16 = row.get("kind");
+            if row.get::<bool, _>("deleted") {
+                if kind == TASK {
+                    snapshot.deleted_tasks.insert(id);
+                }
+            } else {
+                snapshot.foreign.insert(
+                    id,
+                    (
+                        kind,
+                        row.get::<Option<String>, _>("repository_id")
+                            .unwrap_or_default(),
+                    ),
+                );
+            }
         }
     }
     Ok(snapshot)
@@ -1816,6 +1836,11 @@ mod tests {
         let mut snapshot = Snapshot::default();
         for entity in state["entities"].as_array().unwrap() {
             if entity["deleted"] == true {
+                if entity["kind"] == "ENTITY_KIND_TASK" {
+                    snapshot
+                        .deleted_tasks
+                        .insert(string(entity, "entityId").to_owned());
+                }
                 continue;
             }
             let id = string(entity, "entityId").to_owned();
@@ -1852,6 +1877,7 @@ mod tests {
     fn expect_error(expected: &Value, got: &Fault, id: &str) {
         let want_reason = match string(expected, "reason") {
             "ERROR_REASON_INVALID_INPUT" => 1,
+            "ERROR_REASON_NOT_FOUND" => 2,
             "ERROR_REASON_CONSTRAINT_VIOLATION" => CONSTRAINT_REASON,
             other => panic!("unexpected reason {other}"),
         };

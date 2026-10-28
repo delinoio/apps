@@ -206,12 +206,21 @@ fn admission(
     }
 }
 async fn policy(State(s): State<Arc<Server>>, req: Request, next: Next) -> Response {
+    policy_with(&s.config, &s.metrics, req, next).await
+}
+
+async fn policy_with(
+    config: &crate::config::Config,
+    metrics: &crate::metrics::Metrics,
+    req: Request,
+    next: Next,
+) -> Response {
     let trace = crate::id();
     let start = Instant::now();
     let path = req.uri().path().to_owned();
     let subscription = path.ends_with("/WatchChanges");
     let api = path.starts_with("/lane.v1.") || path == "/mcp";
-    let admission = admission(&s.config, req.method(), &path, req.headers());
+    let admission = admission(config, req.method(), &path, req.headers());
     let allowed = admission != Admission::Rejected;
     if !allowed {
         tracing::warn!(request_id=%trace,method=%req.method(),path=%path,"Lane request rejected by Origin policy");
@@ -229,17 +238,14 @@ async fn policy(State(s): State<Arc<Server>>, req: Request, next: Next) -> Respo
     };
     if api && !preflight {
         let status = response.status();
-        let outcome = if status == StatusCode::GATEWAY_TIMEOUT {
-            crate::metrics::Outcome::Timeout
-        } else if status.is_server_error() {
-            crate::metrics::Outcome::ServerError
-        } else if status.is_client_error() {
-            crate::metrics::Outcome::ClientError
-        } else {
-            crate::metrics::Outcome::Success
-        };
-        s.metrics
-            .observe(outcome, start.elapsed().as_secs_f64(), subscription);
+        let outcome = response
+            .extensions()
+            .get::<crate::metrics::BackendOutcome>()
+            .map_or_else(
+                || crate::metrics::outcome_from_status(status),
+                |typed| typed.0,
+            );
+        metrics.observe(outcome, start.elapsed().as_secs_f64(), subscription);
         tracing::info!(request_id=%trace,status=status.as_u16(),duration_ms=start.elapsed().as_millis() as u64,"Lane request completed");
     }
     let h = response.headers_mut();
@@ -249,7 +255,7 @@ async fn policy(State(s): State<Arc<Server>>, req: Request, next: Next) -> Respo
     if admission == Admission::Frontend {
         h.insert(
             "access-control-allow-origin",
-            s.config.web_origin.parse().unwrap(),
+            config.web_origin.parse().unwrap(),
         );
         h.insert(
             "access-control-allow-credentials",
@@ -273,6 +279,210 @@ async fn policy(State(s): State<Arc<Server>>, req: Request, next: Next) -> Respo
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::mcp::{Backend, router_with_backend};
+    use axum::body::{Body, to_bytes};
+    use connectrpc::ErrorCode;
+    use serde_json::{Value, json};
+    use tower::ServiceExt;
+
+    struct MetricBackend {
+        auth_fault: Option<ErrorCode>,
+        tool_fault: Option<ErrorCode>,
+        pending: bool,
+    }
+
+    impl Backend for MetricBackend {
+        fn max_request_bytes(&self) -> usize {
+            1 << 20
+        }
+        async fn authenticate(&self, _: &HeaderMap) -> crate::Result<()> {
+            self.auth_fault
+                .map_or(Ok(()), |code| Err(Fault::new(code, 0, "fixture")))
+        }
+        async fn execute(
+            &self,
+            _: &HeaderMap,
+            _: &'static str,
+            _: &'static str,
+            _: Value,
+        ) -> crate::Result<Value> {
+            if self.pending {
+                std::future::pending::<()>().await;
+            }
+            match self.tool_fault {
+                Some(code) => Err(Fault::new(code, 0, "fixture")),
+                None => Ok(json!({"items":[], "nextCursor":""})),
+            }
+        }
+        fn resource_metadata_url(&self) -> String {
+            "https://lane.example/.well-known/oauth-protected-resource/mcp".into()
+        }
+    }
+
+    fn metered(app: Router) -> (Router, Arc<crate::metrics::Metrics>) {
+        let config = Arc::new(config(
+            "https://lane.api.example.test",
+            "https://lane.example.test",
+        ));
+        let metrics = Arc::new(crate::metrics::Metrics::default());
+        let policy_metrics = metrics.clone();
+        let app = app.layer(middleware::from_fn(move |req: Request, next: Next| {
+            let config = config.clone();
+            let metrics = policy_metrics.clone();
+            async move { policy_with(&config, &metrics, req, next).await }
+        }));
+        (app, metrics)
+    }
+
+    fn tool_request() -> Request {
+        Request::builder()
+            .method(Method::POST)
+            .uri("/mcp")
+            .header("authorization", "Bearer test")
+            .header("content-type", "application/json")
+            .header("accept", "application/json, text/event-stream")
+            .header("mcp-protocol-version", "2025-06-18")
+            .body(Body::from(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lane_list_repositories","arguments":{}}}).to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn mcp_backend_failures_keep_wire_status_and_count_once() {
+        for (auth_fault, tool_fault, expected_status, expected_bucket, is_error) in [
+            (
+                None,
+                Some(ErrorCode::Unavailable),
+                StatusCode::OK,
+                "server_error",
+                true,
+            ),
+            (
+                None,
+                Some(ErrorCode::Internal),
+                StatusCode::OK,
+                "server_error",
+                true,
+            ),
+            (
+                None,
+                Some(ErrorCode::InvalidArgument),
+                StatusCode::OK,
+                "client_error",
+                true,
+            ),
+            (
+                None,
+                Some(ErrorCode::Aborted),
+                StatusCode::OK,
+                "client_error",
+                true,
+            ),
+            (None, None, StatusCode::OK, "success", false),
+            (
+                Some(ErrorCode::Unavailable),
+                None,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                false,
+            ),
+            (
+                Some(ErrorCode::Unauthenticated),
+                None,
+                StatusCode::UNAUTHORIZED,
+                "client_error",
+                false,
+            ),
+            (
+                None,
+                Some(ErrorCode::Unauthenticated),
+                StatusCode::UNAUTHORIZED,
+                "client_error",
+                false,
+            ),
+        ] {
+            let backend = Arc::new(MetricBackend {
+                auth_fault,
+                tool_fault,
+                pending: false,
+            });
+            let (app, metrics) = metered(router_with_backend(backend));
+            let response = app.oneshot(tool_request()).await.unwrap();
+            assert_eq!(response.status(), expected_status);
+            assert_eq!(
+                response.headers().contains_key("www-authenticate"),
+                expected_status == StatusCode::UNAUTHORIZED
+            );
+            let body = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+            let body: Value = serde_json::from_slice(&body).unwrap();
+            if expected_status == StatusCode::OK {
+                assert_eq!(body["result"]["isError"], is_error);
+                if let Some(code) = tool_fault {
+                    assert_eq!(
+                        body["result"]["structuredContent"]["error"]["code"],
+                        code.as_str()
+                    );
+                }
+            }
+            let encoded = metrics.encode();
+            assert!(
+                encoded.contains(&format!("outcome=\"{expected_bucket}\"}} 1\n")),
+                "{encoded}"
+            );
+            assert!(encoded.contains("_count 1\n"), "{encoded}");
+            assert_eq!(
+                encoded
+                    .lines()
+                    .filter(
+                        |line| line.starts_with("lane_api_requests_total") && line.ends_with(" 1")
+                    )
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn policy_uses_http_status_without_backend_outcome() {
+        let app = Router::new().route(
+            "/lane.v1.Test/Fallback",
+            get(|| async { StatusCode::SERVICE_UNAVAILABLE }),
+        );
+        let (app, metrics) = metered(app);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/lane.v1.Test/Fallback")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(metrics.encode().contains("outcome=\"server_error\"} 1\n"));
+        assert!(metrics.encode().contains("_count 1\n"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn outer_timeout_records_once_and_cancels_mcp_dispatch() {
+        let backend = Arc::new(MetricBackend {
+            auth_fault: None,
+            tool_fault: None,
+            pending: true,
+        });
+        let (app, metrics) = metered(router_with_backend(backend));
+        let response = app.oneshot(tool_request()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        let encoded = metrics.encode();
+        assert!(encoded.contains("outcome=\"timeout\"} 1\n"), "{encoded}");
+        assert!(encoded.contains("_count 1\n"), "{encoded}");
+        assert_eq!(
+            encoded
+                .lines()
+                .filter(|line| line.starts_with("lane_api_requests_total") && line.ends_with(" 1"))
+                .count(),
+            1
+        );
+    }
 
     fn config(public_url: &str, web_origin: &str) -> Config {
         Config {

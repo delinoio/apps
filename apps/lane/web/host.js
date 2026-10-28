@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./runtime/static/js/client.js";
-import { installAccessibility } from "./accessibility.js";
-import { OnlineLane, createRouteDelivery, loginRoute } from "./online.js";
+import {
+  focusAccessibleTarget,
+  installAccessibility,
+} from "./accessibility.js";
+import {
+  AuthRequestError,
+  OnlineLane,
+  createRouteDelivery,
+  loginRoute,
+} from "./online.js";
 const api =
   document.querySelector('meta[name="lane-api"]')?.content ||
   "https://lane.api.delino.io";
@@ -30,9 +38,122 @@ if (window.opener && callbackChallenge) {
 await customElements.whenDefined("lynx-view");
 const view = document.createElement("lynx-view");
 const gate = document.getElementById("account-gate");
+const heading = document.getElementById("gate-heading");
 const status = document.getElementById("account-status");
+const guidance = document.getElementById("account-guidance");
 const signIn = document.getElementById("sign-in");
 const retry = document.getElementById("retry");
+let lastViewFocus;
+let startPending = false;
+let presentationSeq = 0;
+let signedOutTransitions = 0;
+const GateState = Object.freeze({
+  Connecting: "connecting",
+  SignedOut: "signed-out",
+  Error: "error",
+});
+const connectionGuidance = (offline, retained) =>
+  offline
+    ? retained
+      ? "Your current-screen input is retained. Reconnect, then select Retry connection."
+      : "Reconnect, then select Retry connection."
+    : retained
+      ? "Your current-screen input is retained. Retry connection explicitly."
+      : "Retry connection explicitly.";
+const activeViewElement = () => {
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement)
+    active = active.shadowRoot.activeElement;
+  return active;
+};
+const isVisible = (node) => {
+  for (
+    let current = node;
+    current && current !== view;
+    current = current.parentElement
+  ) {
+    if (
+      current.hidden ||
+      current.getAttribute("aria-hidden") === "true" ||
+      getComputedStyle(current).display === "none" ||
+      getComputedStyle(current).visibility === "hidden"
+    )
+      return false;
+  }
+  return !!node;
+};
+const activeViewHeading = () => {
+  const panel = view.shadowRoot?.querySelector(
+    '.tab-panel[data-active-tab="true"]',
+  );
+  const heading = panel?.querySelector('[role="heading"]');
+  return isVisible(heading) ? heading : undefined;
+};
+const setGateState = (state, message, detail = "") => {
+  gate.dataset.state = state;
+  gate.setAttribute("aria-busy", String(state === GateState.Connecting));
+  heading.textContent =
+    state === GateState.Connecting
+      ? "Connecting to Lane"
+      : state === GateState.Error
+        ? "Unable to connect"
+        : "Sign in to Lane";
+  status.textContent = message;
+  guidance.textContent = detail;
+  guidance.hidden = !detail;
+  if (state === GateState.Connecting)
+    retry.setAttribute("aria-disabled", "true");
+  else retry.removeAttribute("aria-disabled");
+};
+const revealGate = () => {
+  const viewWasFocused =
+    document.activeElement === view || view.contains(document.activeElement);
+  if (viewWasFocused) lastViewFocus = activeViewElement();
+  gate.hidden = false;
+  view.hidden = true;
+  if (viewWasFocused) heading.focus();
+};
+const showSignedOut = () => {
+  ++signedOutTransitions;
+  ++presentationSeq;
+  setGateState(GateState.SignedOut, "Sign in to use Lane on the web.");
+  revealGate();
+  lastViewFocus = undefined;
+};
+const showError = (error) => {
+  const retained = !!currentAccount;
+  const offline = !navigator.onLine;
+  setGateState(
+    GateState.Error,
+    error instanceof Error
+      ? error.message
+      : "Connection failed. Retry explicitly.",
+    retained || offline ? connectionGuidance(offline, retained) : "",
+  );
+  revealGate();
+};
+const restoreViewFocus = () => {
+  const gateWasFocused = gate.contains(document.activeElement);
+  gate.hidden = true;
+  view.hidden = false;
+  if (!gateWasFocused) {
+    lastViewFocus = undefined;
+    return;
+  }
+  const target =
+    (lastViewFocus?.isConnected && lastViewFocus) ||
+    activeViewHeading() ||
+    view;
+  if (target === view) view.tabIndex = -1;
+  const normalizedTarget =
+    target?.shadowRoot?.querySelector("input,textarea,#inner-box") || target;
+  focusAccessibleTarget(target);
+  if (target !== view && activeViewElement() !== normalizedTarget) {
+    view.tabIndex = -1;
+    focusAccessibleTarget(view);
+  }
+  lastViewFocus = undefined;
+};
 const online = new OnlineLane({
   baseUrl: api,
   returnTo,
@@ -49,12 +170,14 @@ const online = new OnlineLane({
     }
     previousAccount = session?.account_id;
     currentAccount = session?.account_id;
-    gate.hidden = !!session;
-    view.hidden = !session;
-    if (!session) {
+    if (session) {
+      if (changed) lastViewFocus = undefined;
+      ++presentationSeq;
+      restoreViewFocus();
+    } else {
       workspaceDirty = false;
       view.sendGlobalEvent("lane.sessionEnded", [{}]);
-      status.textContent = "Sign in to use Lane on the web.";
+      showSignedOut();
     }
   },
 });
@@ -126,31 +249,39 @@ document.body.append(view);
 installAccessibility(view);
 
 view.hidden = true;
-// A failed reconciliation never discards the view: after a transient failure the
-// view is only hidden, so current-screen input survives until an explicit retry
-// confirms the session. A rejected session already reset the view through
-// sessionChanged(undefined).
-const showGate = (e) => {
-  gate.hidden = false;
-  view.hidden = true;
-  status.textContent =
-    e instanceof Error ? e.message : "Connection failed. Retry explicitly.";
-};
+// A transient failure hides the existing view. Only a rejected session resets it.
 const start = async () => {
-  status.textContent = "Connecting…";
+  if (startPending) return;
+  startPending = true;
+  const attempt = ++presentationSeq;
+  setGateState(GateState.Connecting, "Connecting…");
   try {
     await online.start();
   } catch (e) {
-    showGate(e);
+    if (
+      attempt === presentationSeq &&
+      !(e instanceof AuthRequestError && e.status === 401)
+    )
+      showError(e);
+  } finally {
+    startPending = false;
+    gate.setAttribute("aria-busy", "false");
+    retry.removeAttribute("aria-disabled");
   }
 };
 // Focus and online resume reconcile the API session before business requests
 // continue, because an approval popup may have replaced the session cookie.
 const resume = async () => {
+  if (startPending || !gate.hidden || !navigator.onLine) return;
+  const attempt = ++presentationSeq;
   try {
     await online.resume();
   } catch (e) {
-    showGate(e);
+    if (
+      attempt === presentationSeq &&
+      !(e instanceof AuthRequestError && e.status === 401)
+    )
+      showError(e);
   }
 };
 // Preserve the page destination across the full-page sign-in redirect.
@@ -163,15 +294,33 @@ window.addEventListener("message", (event) => {
     event.data?.type !== "lane.reauthenticated"
   )
     return;
+  const signedOutBefore = signedOutTransitions;
   void online.completeDeletion(event.data.challengeId).catch((e) => {
-    status.textContent = e.message;
-    gate.hidden = false;
+    // Deletion proof expiry can return 401 while /auth/session remains valid.
+    // Suppress 401 only when this reconciliation actually showed the signed-out gate.
+    const reconciledToSignedOut = signedOutTransitions !== signedOutBefore;
+    if (!(
+      e instanceof AuthRequestError &&
+      e.status === 401 &&
+      reconciledToSignedOut
+    ))
+      showError(e);
   });
 });
-window.addEventListener("online", () => void resume());
-window.addEventListener("offline", () =>
-  view.sendGlobalEvent("lane.onlineChanged", [{}]),
-);
+window.addEventListener("online", () => {
+  if (!gate.hidden && gate.dataset.state !== GateState.Connecting) {
+    guidance.textContent = connectionGuidance(false, !!currentAccount);
+    guidance.hidden = false;
+  }
+  void resume();
+});
+window.addEventListener("offline", () => {
+  view.sendGlobalEvent("lane.onlineChanged", [{}]);
+  if (!gate.hidden && gate.dataset.state !== GateState.Connecting) {
+    guidance.textContent = connectionGuidance(true, !!currentAccount);
+    guidance.hidden = false;
+  }
+});
 window.addEventListener("focus", () => void resume());
 window.addEventListener("pagehide", () => online.stop());
 await start();

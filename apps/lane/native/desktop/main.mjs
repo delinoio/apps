@@ -99,7 +99,9 @@ function showComposer() {
   });
   composer = owner;
   owner.setAlwaysOnTop(true, "floating");
-  const session = new WindowSession();
+  const session = new WindowSession((result) =>
+    log("lane_view_handle_release_failed", result, "composer"),
+  );
   owner.on("-lynx-invoke", (event, channel, request) => {
     if (channel !== "lane.native") return;
     const response = stopping
@@ -133,8 +135,15 @@ let quitting = false,
   stopping = false;
 const pendingURLs = [];
 const pendingRoutes = [];
-const log = (event) =>
-  console.info(JSON.stringify({ event, platform: process.platform }));
+const log = (event, result, view) =>
+  console.info(
+    JSON.stringify({
+      event,
+      platform: process.platform,
+      ...(result ? { result } : {}),
+      ...(view ? { view } : {}),
+    }),
+  );
 const failed = () => log("lane_host_operation_failed");
 const runControl = (method, value) =>
   control(native, method, value).catch(failed);
@@ -146,7 +155,9 @@ function showWindow() {
     window.focus();
     return;
   }
-  const session = new WindowSession();
+  const session = new WindowSession((result) =>
+    log("lane_view_handle_release_failed", result, "main"),
+  );
   windowSession = session;
   window = new LynxWindow({
     width: 1280,
