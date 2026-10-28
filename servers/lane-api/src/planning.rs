@@ -8,6 +8,7 @@
 //! name, reference and graph constraints are serialized per account.
 use crate::entities::{self as e, CYCLE, LABEL, MILESTONE, TASK, fault, uuid};
 use crate::{Fault, Principal, Result, string};
+use chrono::{DateTime, Utc};
 use connectrpc::ErrorCode;
 use serde_json::{Map, Value, json};
 use sqlx::{PgConnection, Row};
@@ -1262,6 +1263,250 @@ pub(crate) struct ListQuery {
     filter: Filter,
     key: Option<String>,
     descending: bool,
+    completed: Option<CompletedFilter>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompletedSelection {
+    None,
+    Last24Hours,
+    Last7Days,
+    Last30Days,
+    All,
+}
+
+#[derive(Clone, Debug)]
+struct CompletedFilter {
+    selection: CompletedSelection,
+    cutoff: Option<DateTime<Utc>>,
+}
+
+fn timestamp(value: &Value) -> Result<DateTime<Utc>> {
+    let raw = value
+        .as_str()
+        .ok_or_else(|| invalid("invalid completed cutoff"))?;
+    let parsed =
+        DateTime::parse_from_rfc3339(raw).map_err(|_| invalid("invalid completed cutoff"))?;
+    if parsed.timestamp_subsec_nanos() % 1000 != 0 {
+        return Err(invalid("completed cutoff must have microsecond precision"));
+    }
+    Ok(parsed.with_timezone(&Utc))
+}
+
+impl CompletedFilter {
+    fn parse(value: &Value) -> Result<Option<Self>> {
+        if value.is_null() {
+            return Ok(None);
+        }
+        let selection = match e::enum_value(
+            &value["selection"],
+            &[
+                "COMPLETED_SELECTION_NONE",
+                "COMPLETED_SELECTION_LAST_24_HOURS",
+                "COMPLETED_SELECTION_LAST_7_DAYS",
+                "COMPLETED_SELECTION_LAST_30_DAYS",
+                "COMPLETED_SELECTION_ALL",
+            ],
+            None,
+        )?
+        .as_str()
+        {
+            "COMPLETED_SELECTION_NONE" => CompletedSelection::None,
+            "COMPLETED_SELECTION_LAST_24_HOURS" => CompletedSelection::Last24Hours,
+            "COMPLETED_SELECTION_LAST_7_DAYS" => CompletedSelection::Last7Days,
+            "COMPLETED_SELECTION_LAST_30_DAYS" => CompletedSelection::Last30Days,
+            "COMPLETED_SELECTION_ALL" => CompletedSelection::All,
+            _ => return Err(invalid("invalid completed selection")),
+        };
+        let duration = matches!(
+            selection,
+            CompletedSelection::Last24Hours
+                | CompletedSelection::Last7Days
+                | CompletedSelection::Last30Days
+        );
+        let cutoff = if duration {
+            Some(timestamp(&value["cutoff"])?)
+        } else {
+            if !value["cutoff"].is_null() {
+                return Err(invalid("completed cutoff is only valid for a duration"));
+            }
+            None
+        };
+        Ok(Some(Self { selection, cutoff }))
+    }
+
+    fn matches(&self, progress: &str, entry: &TerminalEntry) -> bool {
+        if !terminal(progress) {
+            return true;
+        }
+        match self.selection {
+            CompletedSelection::None => false,
+            CompletedSelection::All => true,
+            _ => match entry {
+                TerminalEntry::Unknown => true,
+                TerminalEntry::Known { entered_at, .. } => {
+                    self.cutoff.is_some_and(|cutoff| *entered_at >= cutoff)
+                }
+            },
+        }
+    }
+}
+
+fn terminal(progress: &str) -> bool {
+    matches!(progress, "PROGRESS_DONE" | "PROGRESS_CANCELED")
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum TerminalEntry {
+    Known {
+        version_id: String,
+        entered_at: DateTime<Utc>,
+    },
+    Unknown,
+}
+
+#[derive(Clone)]
+struct VersionNode {
+    entity_id: String,
+    progress: String,
+    parents: Vec<String>,
+    created_at: DateTime<Utc>,
+}
+
+fn entry_from_version(
+    version_id: &str,
+    progress: &str,
+    entity_id: &str,
+    versions: &HashMap<String, VersionNode>,
+    memo: &mut HashMap<String, TerminalEntry>,
+) -> TerminalEntry {
+    enum Work {
+        Enter(String),
+        Resolve {
+            version_id: String,
+            parent_count: usize,
+        },
+    }
+
+    // Keep traversal state on the heap. History depth is user-controlled, so recursive ancestry
+    // evaluation could exhaust a Tokio worker stack before the request returns UNKNOWN or a
+    // valid terminal entry. `visiting` remains an active-path set: a cycle edge contributes
+    // UNKNOWN, while each completed node is memoized for later paths and unresolved heads.
+    let mut work = vec![Work::Enter(version_id.to_owned())];
+    let mut results = Vec::new();
+    let mut visiting = HashSet::new();
+
+    while let Some(item) = work.pop() {
+        match item {
+            Work::Enter(current_id) => {
+                if let Some(entry) = memo.get(&current_id) {
+                    results.push(entry.clone());
+                    continue;
+                }
+                let Some(node) = versions
+                    .get(&current_id)
+                    .filter(|n| n.entity_id == entity_id && n.progress == progress)
+                else {
+                    results.push(TerminalEntry::Unknown);
+                    continue;
+                };
+                if !visiting.insert(current_id.clone()) {
+                    results.push(TerminalEntry::Unknown);
+                    continue;
+                }
+                if node.parents.is_empty() {
+                    let entry = TerminalEntry::Known {
+                        version_id: current_id.clone(),
+                        entered_at: node.created_at,
+                    };
+                    visiting.remove(&current_id);
+                    memo.insert(current_id, entry.clone());
+                    results.push(entry);
+                    continue;
+                }
+
+                // Validate every parent before scheduling same-state ancestry. A missing parent
+                // is not a root and must make this entire candidate UNKNOWN.
+                if node.parents.iter().any(|parent_id| {
+                    versions
+                        .get(parent_id)
+                        .is_none_or(|p| p.entity_id != entity_id)
+                }) {
+                    visiting.remove(&current_id);
+                    let entry = TerminalEntry::Unknown;
+                    memo.insert(current_id, entry.clone());
+                    results.push(entry);
+                    continue;
+                }
+
+                let parent_count = node.parents.len();
+                work.push(Work::Resolve {
+                    version_id: current_id.clone(),
+                    parent_count,
+                });
+                for parent_id in node.parents.iter().rev() {
+                    if versions[parent_id].progress == progress {
+                        work.push(Work::Enter(parent_id.clone()));
+                    } else {
+                        // A state-changing parent establishes this version as the transition;
+                        // no ancestry below that parent can alter the identity.
+                        results.push(TerminalEntry::Known {
+                            version_id: current_id.clone(),
+                            entered_at: node.created_at,
+                        });
+                    }
+                }
+            }
+            Work::Resolve {
+                version_id: current_id,
+                parent_count,
+            } => {
+                let first = results.len() - parent_count;
+                let candidates = &results[first..];
+                let entry = if candidates
+                    .first()
+                    .is_some_and(|candidate| candidates.iter().all(|item| item == candidate))
+                {
+                    candidates[0].clone()
+                } else {
+                    TerminalEntry::Unknown
+                };
+                results.truncate(first);
+                visiting.remove(&current_id);
+                memo.insert(current_id, entry.clone());
+                results.push(entry);
+            }
+        }
+    }
+
+    results.pop().unwrap_or(TerminalEntry::Unknown)
+}
+
+fn terminal_entry(
+    selected: &str,
+    heads: &[String],
+    versions: &HashMap<String, VersionNode>,
+) -> TerminalEntry {
+    let Some(node) = versions.get(selected) else {
+        return TerminalEntry::Unknown;
+    };
+    if !terminal(&node.progress) || heads.is_empty() {
+        return TerminalEntry::Unknown;
+    }
+    let mut memo = HashMap::new();
+    let candidate = entry_from_version(
+        selected,
+        &node.progress,
+        &node.entity_id,
+        versions,
+        &mut memo,
+    );
+    if heads.iter().all(|head| {
+        entry_from_version(head, &node.progress, &node.entity_id, versions, &mut memo) == candidate
+    }) {
+        candidate
+    } else {
+        TerminalEntry::Unknown
+    }
 }
 impl ListQuery {
     pub fn parse(q: &Value, repository: Option<String>) -> Result<Self> {
@@ -1287,6 +1532,7 @@ impl ListQuery {
             filter: Filter::parse(&q["filter"])?,
             key: (key != "TASK_SORT_KEY_UNSPECIFIED").then_some(key),
             descending: direction == "SORT_DIRECTION_DESCENDING",
+            completed: CompletedFilter::parse(&q["completed"])?,
         })
     }
 }
@@ -1295,6 +1541,7 @@ pub(crate) struct ListTask {
     pub id: String,
     pub repo: String,
     pub body: Value,
+    entry: TerminalEntry,
 }
 /// Live labels, milestones and cycles of the account: kind and repository by ID.
 pub(crate) type LiveItems = BTreeMap<String, (i16, String)>;
@@ -1433,6 +1680,13 @@ impl ListQuery {
             return false;
         }
         let b = &t.body;
+        if self
+            .completed
+            .as_ref()
+            .is_some_and(|completed| !completed.matches(string(b, "progress"), &t.entry))
+        {
+            return false;
+        }
         if !self.progress.is_empty() && !self.progress.iter().any(|p| p == string(b, "progress")) {
             return false;
         }
@@ -1691,7 +1945,7 @@ pub(crate) async fn list_tasks(db: &mut PgConnection, p: &Principal, q: &Value) 
     };
     let query = ListQuery::parse(q, repository)?;
     // Prompt and capture content is not needed to filter or sort.
-    let rows = sqlx::query("SELECT e.id,e.repository_id,(v.envelope->'task')-'prompt'-'captures' AS body FROM lane_entities e JOIN lane_versions v ON v.account_id=e.account_id AND v.entity_id=e.id AND v.version_id=e.accepted_version_id WHERE e.account_id=$1 AND e.kind=2 AND NOT e.deleted ORDER BY e.id")
+    let rows = sqlx::query("SELECT e.id,e.repository_id,e.accepted_version_id,(v.envelope->'task')-'prompt'-'captures' AS body FROM lane_entities e JOIN lane_versions v ON v.account_id=e.account_id AND v.entity_id=e.id AND v.version_id=e.accepted_version_id WHERE e.account_id=$1 AND e.kind=2 AND NOT e.deleted ORDER BY e.id")
         .bind(&p.account_id).fetch_all(&mut *db).await?;
     let mut tasks: Vec<ListTask> = rows
         .iter()
@@ -1701,8 +1955,70 @@ pub(crate) async fn list_tasks(db: &mut PgConnection, p: &Principal, q: &Value) 
                 .get::<Option<String>, _>("repository_id")
                 .unwrap_or_default(),
             body: r.get("body"),
+            entry: TerminalEntry::Unknown,
         })
         .collect();
+    if query
+        .completed
+        .as_ref()
+        .is_some_and(|filter| filter.cutoff.is_some())
+    {
+        let ids: Vec<String> = tasks
+            .iter()
+            .filter(|task| terminal(string(&task.body, "progress")))
+            .map(|task| task.id.clone())
+            .collect();
+        if !ids.is_empty() {
+            // Load only ancestry metadata; prompt and capture content stay in PostgreSQL.
+            let version_rows = sqlx::query("SELECT entity_id,version_id,envelope->>'createdAt' AS created_at,envelope->'parentVersionIds' AS parents,envelope->'task'->>'progress' AS progress FROM lane_versions WHERE account_id=$1 AND entity_id=ANY($2)")
+                .bind(&p.account_id).bind(&ids).fetch_all(&mut *db).await?;
+            let mut versions = HashMap::new();
+            for row in version_rows {
+                let created_at: String = row.get("created_at");
+                let parents: Value = row
+                    .get::<Option<Value>, _>("parents")
+                    .unwrap_or_else(|| json!([]));
+                let parent_ids = parents
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect();
+                versions.insert(
+                    row.get("version_id"),
+                    VersionNode {
+                        entity_id: row.get("entity_id"),
+                        progress: row.get::<Option<String>, _>("progress").unwrap_or_default(),
+                        parents: parent_ids,
+                        created_at: timestamp(&json!(created_at))?,
+                    },
+                );
+            }
+            let head_rows = sqlx::query("SELECT entity_id,version_id FROM lane_heads WHERE account_id=$1 AND entity_id=ANY($2)")
+                .bind(&p.account_id).bind(&ids).fetch_all(&mut *db).await?;
+            let mut heads: HashMap<String, Vec<String>> = HashMap::new();
+            for row in head_rows {
+                heads
+                    .entry(row.get("entity_id"))
+                    .or_default()
+                    .push(row.get("version_id"));
+            }
+            let selected: HashMap<String, String> = rows
+                .iter()
+                .map(|row| (row.get("id"), row.get("accepted_version_id")))
+                .collect();
+            for task in &mut tasks {
+                if terminal(string(&task.body, "progress")) {
+                    task.entry = terminal_entry(
+                        &selected[&task.id],
+                        heads.get(&task.id).map(Vec::as_slice).unwrap_or(&[]),
+                        &versions,
+                    );
+                }
+            }
+        }
+    }
     let live: LiveItems = sqlx::query("SELECT id,kind,repository_id FROM lane_entities WHERE account_id=$1 AND kind IN (4,5,6) AND NOT deleted")
         .bind(&p.account_id).fetch_all(&mut *db).await?
         .iter()
@@ -1821,6 +2137,164 @@ mod tests {
     fn through<T: serde::Serialize + serde::de::DeserializeOwned>(v: &Value) -> Value {
         serde_json::to_value(serde_json::from_value::<T>(v.clone()).unwrap()).unwrap()
     }
+    fn completed_versions(dataset: &Value) -> HashMap<String, VersionNode> {
+        dataset["versions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|version| {
+                (
+                    string(version, "versionId").to_owned(),
+                    VersionNode {
+                        entity_id: string(version, "entityId").to_owned(),
+                        progress: string(&version["task"], "progress").to_owned(),
+                        parents: version["parentVersionIds"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect(),
+                        created_at: timestamp(&version["createdAt"]).unwrap(),
+                    },
+                )
+            })
+            .collect()
+    }
+    #[test]
+    fn completed_list_vectors_match_entry_filter_and_pages() {
+        let suite = fixture("completed-list");
+        let dataset = &suite["dataset"];
+        let versions = completed_versions(dataset);
+        for case in suite["entryCases"].as_array().unwrap() {
+            let selected = string(&case["input"], "selectedVersionId");
+            let heads: Vec<String> = case["input"]["headVersionIds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_owned())
+                .collect();
+            let actual = terminal_entry(selected, &heads, &versions);
+            match string(&case["expected"], "kind") {
+                "TERMINAL_ENTRY_KIND_KNOWN" => assert_eq!(
+                    actual,
+                    TerminalEntry::Known {
+                        version_id: match &actual {
+                            TerminalEntry::Known { version_id, .. } => version_id.clone(),
+                            _ => unreachable!(),
+                        },
+                        entered_at: timestamp(&case["expected"]["enteredAt"]).unwrap()
+                    },
+                    "{}",
+                    case["id"]
+                ),
+                "TERMINAL_ENTRY_KIND_UNKNOWN" => {
+                    assert_eq!(actual, TerminalEntry::Unknown, "{}", case["id"])
+                }
+                other => panic!("unexpected entry kind {other}"),
+            }
+        }
+        let tasks: Vec<ListTask> = dataset["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                let selected = string(row, "selectedVersionId");
+                let version = dataset["versions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|v| string(v, "versionId") == selected)
+                    .unwrap();
+                let heads: Vec<String> = row["headVersionIds"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap().to_owned())
+                    .collect();
+                ListTask {
+                    id: string(version, "entityId").to_owned(),
+                    repo: string(&version["task"], "repositoryId").to_owned(),
+                    body: version["task"].clone(),
+                    entry: terminal_entry(selected, &heads, &versions),
+                }
+            })
+            .collect();
+        for case in suite["listCases"].as_array().unwrap() {
+            let id = string(case, "id");
+            let request = &case["input"]["request"];
+            let query =
+                ListQuery::parse(request, request["repositoryId"].as_str().map(str::to_owned))
+                    .unwrap();
+            let expected: Vec<String> = case["expected"]["taskIds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_owned())
+                .collect();
+            assert_eq!(
+                evaluate(&query, &tasks, &SortLookups::default(), None, usize::MAX).0,
+                expected,
+                "{id}"
+            );
+            let mut actual_pages = Vec::new();
+            let mut after = None;
+            loop {
+                let (page, next) = evaluate(
+                    &query,
+                    &tasks,
+                    &SortLookups::default(),
+                    after.as_ref(),
+                    request["page"]["size"].as_u64().unwrap() as usize,
+                );
+                actual_pages.push(page);
+                if next.is_none() {
+                    break;
+                }
+                after = next;
+            }
+            let expected_pages: Vec<Vec<String>> =
+                serde_json::from_value(case["expected"]["pages"].clone()).unwrap();
+            assert_eq!(actual_pages, expected_pages, "{id}: pages");
+        }
+        for case in suite["invalidCases"].as_array().unwrap() {
+            assert!(
+                ListQuery::parse(&case["request"], None).is_err(),
+                "{}",
+                case["id"]
+            );
+        }
+    }
+
+    #[test]
+    fn completed_list_conformance_handles_deep_linear_history() {
+        const DEPTH: usize = 20_000;
+        let root_time = timestamp(&json!("2026-10-28T12:00:00.000000Z")).unwrap();
+        let mut versions = HashMap::with_capacity(DEPTH);
+        for index in 0..DEPTH {
+            let version_id = format!("v{index:05}");
+            let parents = (index > 0).then(|| format!("v{:05}", index - 1));
+            versions.insert(
+                version_id,
+                VersionNode {
+                    entity_id: "task".to_owned(),
+                    progress: "PROGRESS_DONE".to_owned(),
+                    parents: parents.into_iter().collect(),
+                    created_at: root_time,
+                },
+            );
+        }
+
+        let selected = format!("v{:05}", DEPTH - 1);
+        assert_eq!(
+            terminal_entry(&selected, std::slice::from_ref(&selected), &versions),
+            TerminalEntry::Known {
+                version_id: "v00000".to_owned(),
+                entered_at: root_time,
+            }
+        );
+    }
+
     fn kind_of(name: &str) -> i16 {
         match name {
             "ENTITY_KIND_REPOSITORY" => e::REPOSITORY,
@@ -2040,6 +2514,7 @@ mod tests {
                 id: id.clone(),
                 repo: t.repo.clone(),
                 body: t.bodies[0].clone(),
+                entry: TerminalEntry::Unknown,
             })
             .collect();
         let live: LiveItems = snapshot
@@ -2131,6 +2606,7 @@ mod tests {
                 id: id.into(),
                 repo: repo.into(),
                 body,
+                entry: TerminalEntry::Unknown,
             }
         };
         let mut tasks = vec![

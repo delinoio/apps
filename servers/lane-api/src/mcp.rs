@@ -618,6 +618,10 @@ fn fields(message: &str) -> &'static [Field] {
             field!("relationships", "RelationshipKind", true),
             field!("includeNoRelationships", "bool", false),
         ],
+        "CompletedFilter" => &[
+            field!("selection", "CompletedSelection", false),
+            field!("cutoff", "google.protobuf.Timestamp", false),
+        ],
         "ListConnectionsRequest" => &[field!("page", "Page", false)],
         "ListDevicesRequest" => &[field!("page", "Page", false)],
         "ListEventsRequest" => &[
@@ -644,6 +648,7 @@ fn fields(message: &str) -> &'static [Field] {
             field!("filter", "TaskFilter", false),
             field!("sortKey", "TaskSortKey", false),
             field!("sortDirection", "SortDirection", false),
+            field!("completed", "CompletedFilter", false),
         ],
         "MutationMeta" => &[field!("requestId", "string", false)],
         "Page" => &[
@@ -819,6 +824,14 @@ fn enum_values(kind: &str) -> Option<&'static [&'static str]> {
             "PROGRESS_BLOCKED",
             "PROGRESS_DONE",
             "PROGRESS_CANCELED",
+        ]),
+        "CompletedSelection" => Some(&[
+            "COMPLETED_SELECTION_UNSPECIFIED",
+            "COMPLETED_SELECTION_NONE",
+            "COMPLETED_SELECTION_LAST_24_HOURS",
+            "COMPLETED_SELECTION_LAST_7_DAYS",
+            "COMPLETED_SELECTION_LAST_30_DAYS",
+            "COMPLETED_SELECTION_ALL",
         ]),
         "Proposal" => Some(&[
             "PROPOSAL_UNSPECIFIED",

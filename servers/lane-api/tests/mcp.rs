@@ -339,6 +339,10 @@ async fn strict_nested_schema_and_generated_decoder_reject_invalid_inputs() {
         ("lane_list_tasks", json!({"page":{"size":4294967296_u64}})),
         ("lane_list_tasks", json!({"page":{"unknown":1}})),
         ("lane_list_tasks", json!({"progress":"PROGRESS_TODO"})),
+        (
+            "lane_list_tasks",
+            json!({"completed":{"selection":"COMPLETED_SELECTION_TYPO"}}),
+        ),
         ("lane_register_push", json!({"publicKey":"%%%"})),
         (
             "lane_reopen_event",
@@ -611,7 +615,7 @@ async fn planning_tools_accept_typed_fields_filters_and_edits_and_reject_the_res
         ),
         (
             "lane_list_tasks",
-            json!({"filter":{"priorities":["TASK_PRIORITY_HIGH"],"includeUnassignedPriority":true,"types":["TASK_TYPE_BUG"],"labelIds":["l"],"includeUnlabeled":true,"startDate":{"from":"2026-01-01","includeUnassigned":true},"dueDate":{"to":"2026-12-31"},"storyPoints":{"min":0,"max":8},"milestoneIds":["m"],"includeNoMilestone":true,"cycleIds":["c"],"includeNoCycle":true,"relationships":["RELATIONSHIP_KIND_BLOCKS","RELATIONSHIP_KIND_SUBTASKS"],"includeNoRelationships":true},"sortKey":"TASK_SORT_KEY_MILESTONE_NAME","sortDirection":"SORT_DIRECTION_DESCENDING"}),
+            json!({"filter":{"priorities":["TASK_PRIORITY_HIGH"],"includeUnassignedPriority":true,"types":["TASK_TYPE_BUG"],"labelIds":["l"],"includeUnlabeled":true,"startDate":{"from":"2026-01-01","includeUnassigned":true},"dueDate":{"to":"2026-12-31"},"storyPoints":{"min":0,"max":8},"milestoneIds":["m"],"includeNoMilestone":true,"cycleIds":["c"],"includeNoCycle":true,"relationships":["RELATIONSHIP_KIND_BLOCKS","RELATIONSHIP_KIND_SUBTASKS"],"includeNoRelationships":true},"sortKey":"TASK_SORT_KEY_MILESTONE_NAME","sortDirection":"SORT_DIRECTION_DESCENDING","completed":{"selection":"COMPLETED_SELECTION_LAST_24_HOURS","cutoff":"2026-10-27T12:00:00Z"}}),
         ),
         (
             "lane_create_planning_item",
@@ -652,6 +656,11 @@ async fn planning_tools_accept_typed_fields_filters_and_edits_and_reject_the_res
         let filter = &list.iter().find(|c| c.1 == "ListTasks").unwrap().2;
         assert_eq!(filter["sortKey"], "TASK_SORT_KEY_MILESTONE_NAME");
         assert_eq!(filter["filter"]["storyPoints"]["min"], 0);
+        assert_eq!(
+            filter["completed"]["selection"],
+            "COMPLETED_SELECTION_LAST_24_HOURS"
+        );
+        assert_eq!(filter["completed"]["cutoff"], "2026-10-27T12:00:00Z");
     }
     for (name, args) in [
         ("lane_list_tasks", json!({"sortKey":"TASK_SORT_KEY_TYPO"})),
@@ -734,6 +743,16 @@ async fn planning_tools_accept_typed_fields_filters_and_edits_and_reject_the_res
     assert!(
         schema("lane_list_tasks")["properties"]
             .get("sortKey")
+            .is_some()
+    );
+    assert!(
+        schema("lane_list_tasks")["properties"]["completed"]["properties"]
+            .get("selection")
+            .is_some()
+    );
+    assert!(
+        schema("lane_list_tasks")["properties"]["completed"]["properties"]
+            .get("cutoff")
             .is_some()
     );
     assert!(
