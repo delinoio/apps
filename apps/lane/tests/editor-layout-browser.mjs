@@ -68,6 +68,23 @@ try {
   );
   await button("Edit Priority: High").waitFor();
   await button("Add or edit property").click();
+  const propertyMenu = active.locator(".task-select-options");
+  const propertyMenuMetrics = await propertyMenu.evaluate((element) => ({
+    tagName: element.tagName.toLowerCase(),
+    buttonCount: element.querySelectorAll(".button").length,
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  assert.match(
+    propertyMenuMetrics.tagName,
+    /scroll-view$/,
+    "the compact property menu uses a vertical scroll container",
+  );
+  assert.equal(propertyMenuMetrics.buttonCount, 8);
+  assert.ok(
+    propertyMenuMetrics.scrollHeight > propertyMenuMetrics.clientHeight,
+    "all compact property options remain reachable through menu scrolling",
+  );
   await button("Start date").click();
   const start = active.getByRole("textbox", {
     name: "Start date (YYYY-MM-DD)",

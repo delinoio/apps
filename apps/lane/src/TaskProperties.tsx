@@ -219,7 +219,10 @@ export function TaskProperties({
           </Button>
         </view>
         {menuOpen && (
-          <view className="task-select-options">
+          <scroll-view
+            className="task-select-options"
+            scroll-orientation="vertical"
+          >
             {propertyFields.map(([field, label], index) => (
               <Button
                 key={field}
@@ -230,7 +233,7 @@ export function TaskProperties({
                 {label}
               </Button>
             ))}
-          </view>
+          </scroll-view>
         )}
         {selected.length ? (
           <view className="row wrap property-chips">
