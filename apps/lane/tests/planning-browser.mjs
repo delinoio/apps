@@ -414,15 +414,24 @@ try {
   const startBox = box("Start date (YYYY-MM-DD)");
   const dueBox = box("Due date (YYYY-MM-DD)");
   assert.equal(await dueBox.inputValue(), "2026-11-20");
-  // Verify two-column fields when the editor content itself has room.
+  // The approved inspector stays 320px wide, so its date fields wrap into one
+  // column even when the overall editor content is wide.
   await settle();
-  const [startRect, dueRect] = await Promise.all([
+  const [inspectorRect, startRect, dueRect] = await Promise.all([
+    page
+      .locator(".editor-content-wide .editor-planning")
+      .filter({ visible: true })
+      .boundingBox(),
     startBox.boundingBox(),
     dueBox.boundingBox(),
   ]);
   assert.ok(
-    Math.abs(startRect.y - dueRect.y) < 2 && startRect.x !== dueRect.x,
-    "two-column fields when the editor has sufficient width",
+    inspectorRect && Math.abs(inspectorRect.width - 320) < 1,
+    "the wide inspector keeps its approved fixed width",
+  );
+  assert.ok(
+    Math.abs(startRect.x - dueRect.x) < 2 && dueRect.y > startRect.y + 10,
+    "date fields wrap in the fixed-width inspector",
   );
   await heading("Properties").scrollIntoViewIfNeeded();
   await capture({ path: join(evidence, "desktop-task-editor.png") });
