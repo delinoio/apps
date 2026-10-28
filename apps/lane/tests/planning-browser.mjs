@@ -602,6 +602,8 @@ try {
   // selecting an existing tab intentionally keeps its already loaded options.
   await button("Close Improve empty states").click();
   await openTask("Improve empty states");
+  // Reopening mounts a new editor, so restore the wide fixture for this scenario.
+  await setEditorContentWidth(1440);
   await button("Remove (unavailable task) from Related").click();
   releaseTasks();
   await text("Loading tasks of this repository…").waitFor({
