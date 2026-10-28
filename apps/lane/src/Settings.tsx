@@ -304,7 +304,7 @@ export function Settings({
       </view>
       {visible && (
         <AppUpdates
-          desktop={adapter.mode === "native" && !mobile}
+          desktop={adapter.mode === "native"}
           settingsDirty={() => prefsDirty.current}
           settingsBusy={
             operationBusy || resetOpen || confirm !== null || !!deletion

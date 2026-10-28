@@ -566,7 +566,7 @@ test("Settings keeps the approved section order and full deletion scope", async 
     0,
   );
   const mobile = await open("native", undefined, undefined, true);
-  assert.equal(bundle.captured.updates?.desktop, false);
+  assert.equal(bundle.captured.updates?.desktop, true);
   assert.ok(mobile.button("Reset development data"));
 });
 
