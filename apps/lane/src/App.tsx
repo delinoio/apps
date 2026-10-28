@@ -89,12 +89,21 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const state = useRef({
     reports,
     realqaDirty,
+    realqaBusy: realqa.busy,
     tabs,
     selected,
     miniApp,
     discard,
   });
-  state.current = { reports, realqaDirty, tabs, selected, miniApp, discard };
+  state.current = {
+    reports,
+    realqaDirty,
+    realqaBusy: realqa.busy,
+    tabs,
+    selected,
+    miniApp,
+    discard,
+  };
   const onReport = useCallback((report: WorkspaceReport) => {
     setReports((previous) => ({ ...previous, [report.id]: report }));
   }, []);
@@ -237,7 +246,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     setOpenTabs(false);
   };
   const closeTab = (id: string) => {
-    if (id === "app-RealQA" && realqa.busy) return;
+    if (id === "app-RealQA" && state.current.realqaBusy) return;
     const action = () => guard(() => removeTab(id, true), false, id);
     if (id === state.current.selected) leaveRealQA(action);
     else action();

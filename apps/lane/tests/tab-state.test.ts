@@ -181,3 +181,77 @@ test("a discarded new-task draft reopens empty with a new identity", async () =>
     view.unmount();
   }
 });
+
+test("tab commands keep a busy RealQA tab from being closed through a stale listener", async () => {
+  const { App, runtime, host } = await loadApp();
+  let releaseCapture!: () => void;
+  const capture = new Promise<void>((resolve) => {
+    releaseCapture = resolve;
+  });
+  (globalThis as any).NativeModules = {
+    bridge: {},
+    LaneHost: {
+      realqa: (raw: string, callback: (value: string) => void) => {
+        const input = JSON.parse(raw);
+        if (input.op === "state") {
+          callback(
+            JSON.stringify({
+              ok: true,
+              value: { window: "main", draft: null, shortcuts: {} },
+            }),
+          );
+          return;
+        }
+        if (input.op === "capture") {
+          void capture.then(() =>
+            callback(JSON.stringify({ ok: true, value: undefined })),
+          );
+          return;
+        }
+        callback(JSON.stringify({ ok: true, value: undefined }));
+      },
+    },
+  };
+  const view = runtime.mount(App, {
+    providedAdapter: {
+      mode: "web",
+      spaceId: "space-a",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      local: async () => ({}),
+      call: async () => ({ items: [], nextCursor: "" }),
+    },
+  });
+  const find = (predicate: (node: HostNode) => boolean) =>
+    nodes(view.tree()).find(predicate);
+  const command = async (value: TabCommand) => {
+    host.emit("lane.workspace.tabCommand", { command: value });
+    await view.settle();
+  };
+  try {
+    await view.settle();
+    await command(TabCommand.New);
+    find(
+      (node) => node.props["accessibility-label"] === "RealQA",
+    )?.props.bindtap();
+    await view.settle();
+    host.emit("lane.realqa.select", { mode: "region" });
+    await view.settle();
+    await command(TabCommand.Close);
+    const before = nodes(view.tree()).filter(
+      (node) => node.props["accessibility-label"] === "Close RealQA",
+    );
+    assert.equal(before.length, 1, "the busy RealQA tab is present");
+    assert.equal(
+      nodes(view.tree()).some(
+        (node) => node.props["accessibility-label"] === "Close RealQA",
+      ),
+      true,
+      "a busy RealQA tab remains open",
+    );
+  } finally {
+    releaseCapture();
+    view.unmount();
+  }
+});
