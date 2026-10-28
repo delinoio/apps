@@ -96,6 +96,14 @@ try {
     await dialog.getAttribute("aria-label"),
     "Reset development data?",
   );
+  // The native Dialog is a container so its title, field and actions remain
+  // separate accessibility descendants. ReactLynx omits false boolean props
+  // from the web DOM; native screen-reader acceptance is separate.
+  assert.equal(
+    await dialog.getByRole("button", { name: "Close", exact: true }).count(),
+    1,
+  );
+  assert.equal(await dialog.getByRole("textbox").count(), 1);
   await page.waitForFunction(() =>
     document
       .querySelector("lynx-view")
