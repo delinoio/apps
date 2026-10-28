@@ -24,6 +24,9 @@ func TestWireContract(t *testing.T) {
 	for name, fields := range map[string][]string{
 		"Origin":               {"kind", "device_id", "device_name", "account_id"},
 		"Task":                 {"repository_id", "title", "description", "prompt", "progress", "proposal"},
+		"CompletedFilter":      {"selection", "cutoff"},
+		"TerminalEntry":        {"kind", "entered_at"},
+		"ListTasksRequest":     {"page", "repository_id", "progress", "proposal", "search", "filter", "sort_key", "sort_direction", "completed"},
 		"MutationMeta":         {"request_id", "origin"},
 		"SyncMutation":         {"meta", "version", "expected_head_ids", "kind"},
 		"ErrorDetail":          {"reason", "correlation_id", "entity_id", "current_head_ids", "retryable"},
@@ -60,7 +63,7 @@ func TestWireContract(t *testing.T) {
 			}
 		}
 	}
-	if lanev1.ErrorReason_ERROR_REASON_LEASE_INVALID != 18 || lanev1.Progress_PROGRESS_CANCELED != 5 || lanev1.Proposal_PROPOSAL_REJECTED != 4 {
+	if lanev1.ErrorReason_ERROR_REASON_LEASE_INVALID != 18 || lanev1.Progress_PROGRESS_CANCELED != 5 || lanev1.Proposal_PROPOSAL_REJECTED != 4 || lanev1.CompletedSelection_COMPLETED_SELECTION_ALL != 5 || lanev1.TerminalEntryKind_TERMINAL_ENTRY_KIND_UNKNOWN != 2 {
 		t.Fatal("enum identities changed")
 	}
 }
@@ -106,6 +109,10 @@ func TestFixtureWireInputs(t *testing.T) {
 		t.Fatal("missing conformance fixture families")
 	}
 	for _, path := range paths {
+		// The completed-list suite has entry, list and cursor cases with a dedicated evaluator.
+		if filepath.Base(path) == "completed-list.json" {
+			continue
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)

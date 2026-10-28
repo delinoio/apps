@@ -1191,6 +1191,116 @@ func (SortDirection) EnumDescriptor() ([]byte, []int) {
 	return file_lane_v1_lane_proto_rawDescGZIP(), []int{19}
 }
 
+// A missing CompletedFilter preserves the existing unfiltered ListTasks behavior.
+type CompletedSelection int32
+
+const (
+	CompletedSelection_COMPLETED_SELECTION_UNSPECIFIED   CompletedSelection = 0
+	CompletedSelection_COMPLETED_SELECTION_NONE          CompletedSelection = 1
+	CompletedSelection_COMPLETED_SELECTION_LAST_24_HOURS CompletedSelection = 2
+	CompletedSelection_COMPLETED_SELECTION_LAST_7_DAYS   CompletedSelection = 3
+	CompletedSelection_COMPLETED_SELECTION_LAST_30_DAYS  CompletedSelection = 4
+	CompletedSelection_COMPLETED_SELECTION_ALL           CompletedSelection = 5
+)
+
+// Enum value maps for CompletedSelection.
+var (
+	CompletedSelection_name = map[int32]string{
+		0: "COMPLETED_SELECTION_UNSPECIFIED",
+		1: "COMPLETED_SELECTION_NONE",
+		2: "COMPLETED_SELECTION_LAST_24_HOURS",
+		3: "COMPLETED_SELECTION_LAST_7_DAYS",
+		4: "COMPLETED_SELECTION_LAST_30_DAYS",
+		5: "COMPLETED_SELECTION_ALL",
+	}
+	CompletedSelection_value = map[string]int32{
+		"COMPLETED_SELECTION_UNSPECIFIED":   0,
+		"COMPLETED_SELECTION_NONE":          1,
+		"COMPLETED_SELECTION_LAST_24_HOURS": 2,
+		"COMPLETED_SELECTION_LAST_7_DAYS":   3,
+		"COMPLETED_SELECTION_LAST_30_DAYS":  4,
+		"COMPLETED_SELECTION_ALL":           5,
+	}
+)
+
+func (x CompletedSelection) Enum() *CompletedSelection {
+	p := new(CompletedSelection)
+	*p = x
+	return p
+}
+
+func (x CompletedSelection) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CompletedSelection) Descriptor() protoreflect.EnumDescriptor {
+	return file_lane_v1_lane_proto_enumTypes[20].Descriptor()
+}
+
+func (CompletedSelection) Type() protoreflect.EnumType {
+	return &file_lane_v1_lane_proto_enumTypes[20]
+}
+
+func (x CompletedSelection) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CompletedSelection.Descriptor instead.
+func (CompletedSelection) EnumDescriptor() ([]byte, []int) {
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{20}
+}
+
+// TerminalEntry is an evaluation result derived from immutable task versions.
+// It is never stored in a Task or EntityVersion.
+type TerminalEntryKind int32
+
+const (
+	TerminalEntryKind_TERMINAL_ENTRY_KIND_UNSPECIFIED TerminalEntryKind = 0
+	TerminalEntryKind_TERMINAL_ENTRY_KIND_KNOWN       TerminalEntryKind = 1
+	TerminalEntryKind_TERMINAL_ENTRY_KIND_UNKNOWN     TerminalEntryKind = 2
+)
+
+// Enum value maps for TerminalEntryKind.
+var (
+	TerminalEntryKind_name = map[int32]string{
+		0: "TERMINAL_ENTRY_KIND_UNSPECIFIED",
+		1: "TERMINAL_ENTRY_KIND_KNOWN",
+		2: "TERMINAL_ENTRY_KIND_UNKNOWN",
+	}
+	TerminalEntryKind_value = map[string]int32{
+		"TERMINAL_ENTRY_KIND_UNSPECIFIED": 0,
+		"TERMINAL_ENTRY_KIND_KNOWN":       1,
+		"TERMINAL_ENTRY_KIND_UNKNOWN":     2,
+	}
+)
+
+func (x TerminalEntryKind) Enum() *TerminalEntryKind {
+	p := new(TerminalEntryKind)
+	*p = x
+	return p
+}
+
+func (x TerminalEntryKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TerminalEntryKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_lane_v1_lane_proto_enumTypes[21].Descriptor()
+}
+
+func (TerminalEntryKind) Type() protoreflect.EnumType {
+	return &file_lane_v1_lane_proto_enumTypes[21]
+}
+
+func (x TerminalEntryKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TerminalEntryKind.Descriptor instead.
+func (TerminalEntryKind) EnumDescriptor() ([]byte, []int) {
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{21}
+}
+
 type AttachmentState int32
 
 const (
@@ -1227,11 +1337,11 @@ func (x AttachmentState) String() string {
 }
 
 func (AttachmentState) Descriptor() protoreflect.EnumDescriptor {
-	return file_lane_v1_lane_proto_enumTypes[20].Descriptor()
+	return file_lane_v1_lane_proto_enumTypes[22].Descriptor()
 }
 
 func (AttachmentState) Type() protoreflect.EnumType {
-	return &file_lane_v1_lane_proto_enumTypes[20]
+	return &file_lane_v1_lane_proto_enumTypes[22]
 }
 
 func (x AttachmentState) Number() protoreflect.EnumNumber {
@@ -1240,7 +1350,111 @@ func (x AttachmentState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AttachmentState.Descriptor instead.
 func (AttachmentState) EnumDescriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{20}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{22}
+}
+
+type TerminalEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          TerminalEntryKind      `protobuf:"varint,1,opt,name=kind,proto3,enum=lane.v1.TerminalEntryKind" json:"kind,omitempty"`
+	EnteredAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=entered_at,json=enteredAt,proto3" json:"entered_at,omitempty"` // present only for KNOWN
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalEntry) Reset() {
+	*x = TerminalEntry{}
+	mi := &file_lane_v1_lane_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalEntry) ProtoMessage() {}
+
+func (x *TerminalEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_lane_v1_lane_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalEntry.ProtoReflect.Descriptor instead.
+func (*TerminalEntry) Descriptor() ([]byte, []int) {
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *TerminalEntry) GetKind() TerminalEntryKind {
+	if x != nil {
+		return x.Kind
+	}
+	return TerminalEntryKind_TERMINAL_ENTRY_KIND_UNSPECIFIED
+}
+
+func (x *TerminalEntry) GetEnteredAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EnteredAt
+	}
+	return nil
+}
+
+type CompletedFilter struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Selection     CompletedSelection     `protobuf:"varint,1,opt,name=selection,proto3,enum=lane.v1.CompletedSelection" json:"selection,omitempty"`
+	Cutoff        *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=cutoff,proto3" json:"cutoff,omitempty"` // required only for duration selections
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompletedFilter) Reset() {
+	*x = CompletedFilter{}
+	mi := &file_lane_v1_lane_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompletedFilter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompletedFilter) ProtoMessage() {}
+
+func (x *CompletedFilter) ProtoReflect() protoreflect.Message {
+	mi := &file_lane_v1_lane_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompletedFilter.ProtoReflect.Descriptor instead.
+func (*CompletedFilter) Descriptor() ([]byte, []int) {
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *CompletedFilter) GetSelection() CompletedSelection {
+	if x != nil {
+		return x.Selection
+	}
+	return CompletedSelection_COMPLETED_SELECTION_UNSPECIFIED
+}
+
+func (x *CompletedFilter) GetCutoff() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Cutoff
+	}
+	return nil
 }
 
 type Origin struct {
@@ -1255,7 +1469,7 @@ type Origin struct {
 
 func (x *Origin) Reset() {
 	*x = Origin{}
-	mi := &file_lane_v1_lane_proto_msgTypes[0]
+	mi := &file_lane_v1_lane_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1267,7 +1481,7 @@ func (x *Origin) String() string {
 func (*Origin) ProtoMessage() {}
 
 func (x *Origin) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[0]
+	mi := &file_lane_v1_lane_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1280,7 +1494,7 @@ func (x *Origin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Origin.ProtoReflect.Descriptor instead.
 func (*Origin) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{0}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Origin) GetKind() OriginKind {
@@ -1321,7 +1535,7 @@ type Repository struct {
 
 func (x *Repository) Reset() {
 	*x = Repository{}
-	mi := &file_lane_v1_lane_proto_msgTypes[1]
+	mi := &file_lane_v1_lane_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1333,7 +1547,7 @@ func (x *Repository) String() string {
 func (*Repository) ProtoMessage() {}
 
 func (x *Repository) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[1]
+	mi := &file_lane_v1_lane_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1346,7 +1560,7 @@ func (x *Repository) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Repository.ProtoReflect.Descriptor instead.
 func (*Repository) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{1}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Repository) GetNormalizedUrl() string {
@@ -1390,7 +1604,7 @@ type Task struct {
 
 func (x *Task) Reset() {
 	*x = Task{}
-	mi := &file_lane_v1_lane_proto_msgTypes[2]
+	mi := &file_lane_v1_lane_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1402,7 +1616,7 @@ func (x *Task) String() string {
 func (*Task) ProtoMessage() {}
 
 func (x *Task) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[2]
+	mi := &file_lane_v1_lane_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1415,7 +1629,7 @@ func (x *Task) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Task.ProtoReflect.Descriptor instead.
 func (*Task) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{2}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Task) GetRepositoryId() string {
@@ -1563,7 +1777,7 @@ type Label struct {
 
 func (x *Label) Reset() {
 	*x = Label{}
-	mi := &file_lane_v1_lane_proto_msgTypes[3]
+	mi := &file_lane_v1_lane_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1575,7 +1789,7 @@ func (x *Label) String() string {
 func (*Label) ProtoMessage() {}
 
 func (x *Label) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[3]
+	mi := &file_lane_v1_lane_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1588,7 +1802,7 @@ func (x *Label) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Label.ProtoReflect.Descriptor instead.
 func (*Label) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{3}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Label) GetRepositoryId() string {
@@ -1632,7 +1846,7 @@ type Milestone struct {
 
 func (x *Milestone) Reset() {
 	*x = Milestone{}
-	mi := &file_lane_v1_lane_proto_msgTypes[4]
+	mi := &file_lane_v1_lane_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1644,7 +1858,7 @@ func (x *Milestone) String() string {
 func (*Milestone) ProtoMessage() {}
 
 func (x *Milestone) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[4]
+	mi := &file_lane_v1_lane_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1657,7 +1871,7 @@ func (x *Milestone) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Milestone.ProtoReflect.Descriptor instead.
 func (*Milestone) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{4}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Milestone) GetRepositoryId() string {
@@ -1708,7 +1922,7 @@ type Cycle struct {
 
 func (x *Cycle) Reset() {
 	*x = Cycle{}
-	mi := &file_lane_v1_lane_proto_msgTypes[5]
+	mi := &file_lane_v1_lane_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1720,7 +1934,7 @@ func (x *Cycle) String() string {
 func (*Cycle) ProtoMessage() {}
 
 func (x *Cycle) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[5]
+	mi := &file_lane_v1_lane_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1733,7 +1947,7 @@ func (x *Cycle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cycle.ProtoReflect.Descriptor instead.
 func (*Cycle) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{5}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Cycle) GetRepositoryId() string {
@@ -1797,7 +2011,7 @@ type EntityVersion struct {
 
 func (x *EntityVersion) Reset() {
 	*x = EntityVersion{}
-	mi := &file_lane_v1_lane_proto_msgTypes[6]
+	mi := &file_lane_v1_lane_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1809,7 +2023,7 @@ func (x *EntityVersion) String() string {
 func (*EntityVersion) ProtoMessage() {}
 
 func (x *EntityVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[6]
+	mi := &file_lane_v1_lane_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1822,7 +2036,7 @@ func (x *EntityVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EntityVersion.ProtoReflect.Descriptor instead.
 func (*EntityVersion) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{6}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *EntityVersion) GetFormatVersion() uint32 {
@@ -1999,7 +2213,7 @@ type MutationMeta struct {
 
 func (x *MutationMeta) Reset() {
 	*x = MutationMeta{}
-	mi := &file_lane_v1_lane_proto_msgTypes[7]
+	mi := &file_lane_v1_lane_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2011,7 +2225,7 @@ func (x *MutationMeta) String() string {
 func (*MutationMeta) ProtoMessage() {}
 
 func (x *MutationMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[7]
+	mi := &file_lane_v1_lane_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2024,7 +2238,7 @@ func (x *MutationMeta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MutationMeta.ProtoReflect.Descriptor instead.
 func (*MutationMeta) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{7}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *MutationMeta) GetRequestId() string {
@@ -2053,7 +2267,7 @@ type EntityResult struct {
 
 func (x *EntityResult) Reset() {
 	*x = EntityResult{}
-	mi := &file_lane_v1_lane_proto_msgTypes[8]
+	mi := &file_lane_v1_lane_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2065,7 +2279,7 @@ func (x *EntityResult) String() string {
 func (*EntityResult) ProtoMessage() {}
 
 func (x *EntityResult) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[8]
+	mi := &file_lane_v1_lane_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2078,7 +2292,7 @@ func (x *EntityResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EntityResult.ProtoReflect.Descriptor instead.
 func (*EntityResult) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{8}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *EntityResult) GetResult() ResultKind {
@@ -2119,7 +2333,7 @@ type Page struct {
 
 func (x *Page) Reset() {
 	*x = Page{}
-	mi := &file_lane_v1_lane_proto_msgTypes[9]
+	mi := &file_lane_v1_lane_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2131,7 +2345,7 @@ func (x *Page) String() string {
 func (*Page) ProtoMessage() {}
 
 func (x *Page) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[9]
+	mi := &file_lane_v1_lane_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2144,7 +2358,7 @@ func (x *Page) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Page.ProtoReflect.Descriptor instead.
 func (*Page) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{9}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Page) GetSize() uint32 {
@@ -2174,7 +2388,7 @@ type RepositoryTarget struct {
 
 func (x *RepositoryTarget) Reset() {
 	*x = RepositoryTarget{}
-	mi := &file_lane_v1_lane_proto_msgTypes[10]
+	mi := &file_lane_v1_lane_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2186,7 +2400,7 @@ func (x *RepositoryTarget) String() string {
 func (*RepositoryTarget) ProtoMessage() {}
 
 func (x *RepositoryTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[10]
+	mi := &file_lane_v1_lane_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2199,7 +2413,7 @@ func (x *RepositoryTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepositoryTarget.ProtoReflect.Descriptor instead.
 func (*RepositoryTarget) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{10}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RepositoryTarget) GetTarget() isRepositoryTarget_Target {
@@ -2255,7 +2469,7 @@ type SyncMutation struct {
 
 func (x *SyncMutation) Reset() {
 	*x = SyncMutation{}
-	mi := &file_lane_v1_lane_proto_msgTypes[11]
+	mi := &file_lane_v1_lane_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2267,7 +2481,7 @@ func (x *SyncMutation) String() string {
 func (*SyncMutation) ProtoMessage() {}
 
 func (x *SyncMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[11]
+	mi := &file_lane_v1_lane_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2280,7 +2494,7 @@ func (x *SyncMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncMutation.ProtoReflect.Descriptor instead.
 func (*SyncMutation) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{11}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SyncMutation) GetMeta() *MutationMeta {
@@ -2322,7 +2536,7 @@ type SyncResult struct {
 
 func (x *SyncResult) Reset() {
 	*x = SyncResult{}
-	mi := &file_lane_v1_lane_proto_msgTypes[12]
+	mi := &file_lane_v1_lane_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2334,7 +2548,7 @@ func (x *SyncResult) String() string {
 func (*SyncResult) ProtoMessage() {}
 
 func (x *SyncResult) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[12]
+	mi := &file_lane_v1_lane_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2347,7 +2561,7 @@ func (x *SyncResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncResult.ProtoReflect.Descriptor instead.
 func (*SyncResult) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{12}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SyncResult) GetRequestId() string {
@@ -2381,7 +2595,7 @@ type RepositoryMapping struct {
 
 func (x *RepositoryMapping) Reset() {
 	*x = RepositoryMapping{}
-	mi := &file_lane_v1_lane_proto_msgTypes[13]
+	mi := &file_lane_v1_lane_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2393,7 +2607,7 @@ func (x *RepositoryMapping) String() string {
 func (*RepositoryMapping) ProtoMessage() {}
 
 func (x *RepositoryMapping) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[13]
+	mi := &file_lane_v1_lane_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2406,7 +2620,7 @@ func (x *RepositoryMapping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepositoryMapping.ProtoReflect.Descriptor instead.
 func (*RepositoryMapping) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{13}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RepositoryMapping) GetLocalId() string {
@@ -2437,7 +2651,7 @@ type ErrorDetail struct {
 
 func (x *ErrorDetail) Reset() {
 	*x = ErrorDetail{}
-	mi := &file_lane_v1_lane_proto_msgTypes[14]
+	mi := &file_lane_v1_lane_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2449,7 +2663,7 @@ func (x *ErrorDetail) String() string {
 func (*ErrorDetail) ProtoMessage() {}
 
 func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[14]
+	mi := &file_lane_v1_lane_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2462,7 +2676,7 @@ func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorDetail.ProtoReflect.Descriptor instead.
 func (*ErrorDetail) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{14}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ErrorDetail) GetReason() ErrorReason {
@@ -2519,7 +2733,7 @@ type Device struct {
 
 func (x *Device) Reset() {
 	*x = Device{}
-	mi := &file_lane_v1_lane_proto_msgTypes[15]
+	mi := &file_lane_v1_lane_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2531,7 +2745,7 @@ func (x *Device) String() string {
 func (*Device) ProtoMessage() {}
 
 func (x *Device) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[15]
+	mi := &file_lane_v1_lane_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2544,7 +2758,7 @@ func (x *Device) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Device.ProtoReflect.Descriptor instead.
 func (*Device) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{15}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Device) GetId() string {
@@ -2587,7 +2801,7 @@ type Connection struct {
 
 func (x *Connection) Reset() {
 	*x = Connection{}
-	mi := &file_lane_v1_lane_proto_msgTypes[16]
+	mi := &file_lane_v1_lane_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2599,7 +2813,7 @@ func (x *Connection) String() string {
 func (*Connection) ProtoMessage() {}
 
 func (x *Connection) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[16]
+	mi := &file_lane_v1_lane_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2612,7 +2826,7 @@ func (x *Connection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Connection.ProtoReflect.Descriptor instead.
 func (*Connection) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{16}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Connection) GetId() string {
@@ -2656,7 +2870,7 @@ type WebhookReceiver struct {
 
 func (x *WebhookReceiver) Reset() {
 	*x = WebhookReceiver{}
-	mi := &file_lane_v1_lane_proto_msgTypes[17]
+	mi := &file_lane_v1_lane_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2668,7 +2882,7 @@ func (x *WebhookReceiver) String() string {
 func (*WebhookReceiver) ProtoMessage() {}
 
 func (x *WebhookReceiver) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[17]
+	mi := &file_lane_v1_lane_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2681,7 +2895,7 @@ func (x *WebhookReceiver) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebhookReceiver.ProtoReflect.Descriptor instead.
 func (*WebhookReceiver) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{17}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *WebhookReceiver) GetId() string {
@@ -2736,7 +2950,7 @@ type WebhookEvent struct {
 
 func (x *WebhookEvent) Reset() {
 	*x = WebhookEvent{}
-	mi := &file_lane_v1_lane_proto_msgTypes[18]
+	mi := &file_lane_v1_lane_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2748,7 +2962,7 @@ func (x *WebhookEvent) String() string {
 func (*WebhookEvent) ProtoMessage() {}
 
 func (x *WebhookEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[18]
+	mi := &file_lane_v1_lane_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2761,7 +2975,7 @@ func (x *WebhookEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebhookEvent.ProtoReflect.Descriptor instead.
 func (*WebhookEvent) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{18}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *WebhookEvent) GetId() string {
@@ -2840,7 +3054,7 @@ type ProcessingRecord struct {
 
 func (x *ProcessingRecord) Reset() {
 	*x = ProcessingRecord{}
-	mi := &file_lane_v1_lane_proto_msgTypes[19]
+	mi := &file_lane_v1_lane_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2852,7 +3066,7 @@ func (x *ProcessingRecord) String() string {
 func (*ProcessingRecord) ProtoMessage() {}
 
 func (x *ProcessingRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[19]
+	mi := &file_lane_v1_lane_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2865,7 +3079,7 @@ func (x *ProcessingRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProcessingRecord.ProtoReflect.Descriptor instead.
 func (*ProcessingRecord) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{19}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ProcessingRecord) GetId() string {
@@ -2914,7 +3128,7 @@ type DeletionRecord struct {
 
 func (x *DeletionRecord) Reset() {
 	*x = DeletionRecord{}
-	mi := &file_lane_v1_lane_proto_msgTypes[20]
+	mi := &file_lane_v1_lane_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2926,7 +3140,7 @@ func (x *DeletionRecord) String() string {
 func (*DeletionRecord) ProtoMessage() {}
 
 func (x *DeletionRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[20]
+	mi := &file_lane_v1_lane_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2939,7 +3153,7 @@ func (x *DeletionRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletionRecord.ProtoReflect.Descriptor instead.
 func (*DeletionRecord) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{20}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DeletionRecord) GetKind() EntityKindOrRemoteKind {
@@ -2980,7 +3194,7 @@ type Change struct {
 
 func (x *Change) Reset() {
 	*x = Change{}
-	mi := &file_lane_v1_lane_proto_msgTypes[21]
+	mi := &file_lane_v1_lane_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2992,7 +3206,7 @@ func (x *Change) String() string {
 func (*Change) ProtoMessage() {}
 
 func (x *Change) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[21]
+	mi := &file_lane_v1_lane_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3005,7 +3219,7 @@ func (x *Change) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Change.ProtoReflect.Descriptor instead.
 func (*Change) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{21}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *Change) GetSequence() uint64 {
@@ -3110,7 +3324,7 @@ type GetRepositoryRequest struct {
 
 func (x *GetRepositoryRequest) Reset() {
 	*x = GetRepositoryRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[22]
+	mi := &file_lane_v1_lane_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3122,7 +3336,7 @@ func (x *GetRepositoryRequest) String() string {
 func (*GetRepositoryRequest) ProtoMessage() {}
 
 func (x *GetRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[22]
+	mi := &file_lane_v1_lane_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3135,7 +3349,7 @@ func (x *GetRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*GetRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{22}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetRepositoryRequest) GetId() string {
@@ -3154,7 +3368,7 @@ type GetRepositoryResponse struct {
 
 func (x *GetRepositoryResponse) Reset() {
 	*x = GetRepositoryResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[23]
+	mi := &file_lane_v1_lane_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3166,7 +3380,7 @@ func (x *GetRepositoryResponse) String() string {
 func (*GetRepositoryResponse) ProtoMessage() {}
 
 func (x *GetRepositoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[23]
+	mi := &file_lane_v1_lane_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3179,7 +3393,7 @@ func (x *GetRepositoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRepositoryResponse.ProtoReflect.Descriptor instead.
 func (*GetRepositoryResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{23}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetRepositoryResponse) GetResult() *EntityResult {
@@ -3198,7 +3412,7 @@ type ListRepositoriesRequest struct {
 
 func (x *ListRepositoriesRequest) Reset() {
 	*x = ListRepositoriesRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[24]
+	mi := &file_lane_v1_lane_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3210,7 +3424,7 @@ func (x *ListRepositoriesRequest) String() string {
 func (*ListRepositoriesRequest) ProtoMessage() {}
 
 func (x *ListRepositoriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[24]
+	mi := &file_lane_v1_lane_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3223,7 +3437,7 @@ func (x *ListRepositoriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRepositoriesRequest.ProtoReflect.Descriptor instead.
 func (*ListRepositoriesRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{24}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListRepositoriesRequest) GetPage() *Page {
@@ -3243,7 +3457,7 @@ type ListRepositoriesResponse struct {
 
 func (x *ListRepositoriesResponse) Reset() {
 	*x = ListRepositoriesResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[25]
+	mi := &file_lane_v1_lane_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3255,7 +3469,7 @@ func (x *ListRepositoriesResponse) String() string {
 func (*ListRepositoriesResponse) ProtoMessage() {}
 
 func (x *ListRepositoriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[25]
+	mi := &file_lane_v1_lane_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3268,7 +3482,7 @@ func (x *ListRepositoriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRepositoriesResponse.ProtoReflect.Descriptor instead.
 func (*ListRepositoriesResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{25}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ListRepositoriesResponse) GetItems() []*EntityResult {
@@ -3297,7 +3511,7 @@ type CreateRepositoryRequest struct {
 
 func (x *CreateRepositoryRequest) Reset() {
 	*x = CreateRepositoryRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[26]
+	mi := &file_lane_v1_lane_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3309,7 +3523,7 @@ func (x *CreateRepositoryRequest) String() string {
 func (*CreateRepositoryRequest) ProtoMessage() {}
 
 func (x *CreateRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[26]
+	mi := &file_lane_v1_lane_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3322,7 +3536,7 @@ func (x *CreateRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*CreateRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{26}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CreateRepositoryRequest) GetMeta() *MutationMeta {
@@ -3362,7 +3576,7 @@ type CreateRepositoryResponse struct {
 
 func (x *CreateRepositoryResponse) Reset() {
 	*x = CreateRepositoryResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[27]
+	mi := &file_lane_v1_lane_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3374,7 +3588,7 @@ func (x *CreateRepositoryResponse) String() string {
 func (*CreateRepositoryResponse) ProtoMessage() {}
 
 func (x *CreateRepositoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[27]
+	mi := &file_lane_v1_lane_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3387,7 +3601,7 @@ func (x *CreateRepositoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRepositoryResponse.ProtoReflect.Descriptor instead.
 func (*CreateRepositoryResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{27}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CreateRepositoryResponse) GetResult() *EntityResult {
@@ -3410,7 +3624,7 @@ type SaveRepositoryRequest struct {
 
 func (x *SaveRepositoryRequest) Reset() {
 	*x = SaveRepositoryRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[28]
+	mi := &file_lane_v1_lane_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3422,7 +3636,7 @@ func (x *SaveRepositoryRequest) String() string {
 func (*SaveRepositoryRequest) ProtoMessage() {}
 
 func (x *SaveRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[28]
+	mi := &file_lane_v1_lane_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3435,7 +3649,7 @@ func (x *SaveRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*SaveRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{28}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SaveRepositoryRequest) GetMeta() *MutationMeta {
@@ -3482,7 +3696,7 @@ type SaveRepositoryResponse struct {
 
 func (x *SaveRepositoryResponse) Reset() {
 	*x = SaveRepositoryResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[29]
+	mi := &file_lane_v1_lane_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3494,7 +3708,7 @@ func (x *SaveRepositoryResponse) String() string {
 func (*SaveRepositoryResponse) ProtoMessage() {}
 
 func (x *SaveRepositoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[29]
+	mi := &file_lane_v1_lane_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3507,7 +3721,7 @@ func (x *SaveRepositoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveRepositoryResponse.ProtoReflect.Descriptor instead.
 func (*SaveRepositoryResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{29}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SaveRepositoryResponse) GetResult() *EntityResult {
@@ -3527,7 +3741,7 @@ type DeleteRepositoryRequest struct {
 
 func (x *DeleteRepositoryRequest) Reset() {
 	*x = DeleteRepositoryRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[30]
+	mi := &file_lane_v1_lane_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3539,7 +3753,7 @@ func (x *DeleteRepositoryRequest) String() string {
 func (*DeleteRepositoryRequest) ProtoMessage() {}
 
 func (x *DeleteRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[30]
+	mi := &file_lane_v1_lane_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3552,7 +3766,7 @@ func (x *DeleteRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{30}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DeleteRepositoryRequest) GetMeta() *MutationMeta {
@@ -3578,7 +3792,7 @@ type DeleteRepositoryResponse struct {
 
 func (x *DeleteRepositoryResponse) Reset() {
 	*x = DeleteRepositoryResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[31]
+	mi := &file_lane_v1_lane_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3590,7 +3804,7 @@ func (x *DeleteRepositoryResponse) String() string {
 func (*DeleteRepositoryResponse) ProtoMessage() {}
 
 func (x *DeleteRepositoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[31]
+	mi := &file_lane_v1_lane_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3603,7 +3817,7 @@ func (x *DeleteRepositoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRepositoryResponse.ProtoReflect.Descriptor instead.
 func (*DeleteRepositoryResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{31}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *DeleteRepositoryResponse) GetResult() *EntityResult {
@@ -3622,7 +3836,7 @@ type GetTaskRequest struct {
 
 func (x *GetTaskRequest) Reset() {
 	*x = GetTaskRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[32]
+	mi := &file_lane_v1_lane_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3634,7 +3848,7 @@ func (x *GetTaskRequest) String() string {
 func (*GetTaskRequest) ProtoMessage() {}
 
 func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[32]
+	mi := &file_lane_v1_lane_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3647,7 +3861,7 @@ func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskRequest.ProtoReflect.Descriptor instead.
 func (*GetTaskRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{32}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetTaskRequest) GetId() string {
@@ -3666,7 +3880,7 @@ type GetTaskResponse struct {
 
 func (x *GetTaskResponse) Reset() {
 	*x = GetTaskResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[33]
+	mi := &file_lane_v1_lane_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3678,7 +3892,7 @@ func (x *GetTaskResponse) String() string {
 func (*GetTaskResponse) ProtoMessage() {}
 
 func (x *GetTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[33]
+	mi := &file_lane_v1_lane_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3691,7 +3905,7 @@ func (x *GetTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskResponse.ProtoReflect.Descriptor instead.
 func (*GetTaskResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{33}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *GetTaskResponse) GetResult() *EntityResult {
@@ -3713,7 +3927,7 @@ type DateRange struct {
 
 func (x *DateRange) Reset() {
 	*x = DateRange{}
-	mi := &file_lane_v1_lane_proto_msgTypes[34]
+	mi := &file_lane_v1_lane_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3725,7 +3939,7 @@ func (x *DateRange) String() string {
 func (*DateRange) ProtoMessage() {}
 
 func (x *DateRange) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[34]
+	mi := &file_lane_v1_lane_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3738,7 +3952,7 @@ func (x *DateRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DateRange.ProtoReflect.Descriptor instead.
 func (*DateRange) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{34}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *DateRange) GetFrom() string {
@@ -3773,7 +3987,7 @@ type PointRange struct {
 
 func (x *PointRange) Reset() {
 	*x = PointRange{}
-	mi := &file_lane_v1_lane_proto_msgTypes[35]
+	mi := &file_lane_v1_lane_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3785,7 +3999,7 @@ func (x *PointRange) String() string {
 func (*PointRange) ProtoMessage() {}
 
 func (x *PointRange) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[35]
+	mi := &file_lane_v1_lane_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3798,7 +4012,7 @@ func (x *PointRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PointRange.ProtoReflect.Descriptor instead.
 func (*PointRange) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{35}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *PointRange) GetMin() uint32 {
@@ -3847,7 +4061,7 @@ type TaskFilter struct {
 
 func (x *TaskFilter) Reset() {
 	*x = TaskFilter{}
-	mi := &file_lane_v1_lane_proto_msgTypes[36]
+	mi := &file_lane_v1_lane_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3859,7 +4073,7 @@ func (x *TaskFilter) String() string {
 func (*TaskFilter) ProtoMessage() {}
 
 func (x *TaskFilter) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[36]
+	mi := &file_lane_v1_lane_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3872,7 +4086,7 @@ func (x *TaskFilter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskFilter.ProtoReflect.Descriptor instead.
 func (*TaskFilter) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{36}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *TaskFilter) GetPriorities() []TaskPriority {
@@ -3990,13 +4204,14 @@ type ListTasksRequest struct {
 	Filter        *TaskFilter            `protobuf:"bytes,6,opt,name=filter,proto3" json:"filter,omitempty"`
 	SortKey       TaskSortKey            `protobuf:"varint,7,opt,name=sort_key,json=sortKey,proto3,enum=lane.v1.TaskSortKey" json:"sort_key,omitempty"`
 	SortDirection SortDirection          `protobuf:"varint,8,opt,name=sort_direction,json=sortDirection,proto3,enum=lane.v1.SortDirection" json:"sort_direction,omitempty"`
+	Completed     *CompletedFilter       `protobuf:"bytes,9,opt,name=completed,proto3" json:"completed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListTasksRequest) Reset() {
 	*x = ListTasksRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[37]
+	mi := &file_lane_v1_lane_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4008,7 +4223,7 @@ func (x *ListTasksRequest) String() string {
 func (*ListTasksRequest) ProtoMessage() {}
 
 func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[37]
+	mi := &file_lane_v1_lane_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4021,7 +4236,7 @@ func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksRequest.ProtoReflect.Descriptor instead.
 func (*ListTasksRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{37}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ListTasksRequest) GetPage() *Page {
@@ -4080,6 +4295,13 @@ func (x *ListTasksRequest) GetSortDirection() SortDirection {
 	return SortDirection_SORT_DIRECTION_UNSPECIFIED
 }
 
+func (x *ListTasksRequest) GetCompleted() *CompletedFilter {
+	if x != nil {
+		return x.Completed
+	}
+	return nil
+}
+
 type ListTasksResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*EntityResult        `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
@@ -4090,7 +4312,7 @@ type ListTasksResponse struct {
 
 func (x *ListTasksResponse) Reset() {
 	*x = ListTasksResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[38]
+	mi := &file_lane_v1_lane_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4102,7 +4324,7 @@ func (x *ListTasksResponse) String() string {
 func (*ListTasksResponse) ProtoMessage() {}
 
 func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[38]
+	mi := &file_lane_v1_lane_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4115,7 +4337,7 @@ func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksResponse.ProtoReflect.Descriptor instead.
 func (*ListTasksResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{38}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ListTasksResponse) GetItems() []*EntityResult {
@@ -4161,7 +4383,7 @@ type CreateTaskRequest struct {
 
 func (x *CreateTaskRequest) Reset() {
 	*x = CreateTaskRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[39]
+	mi := &file_lane_v1_lane_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4173,7 +4395,7 @@ func (x *CreateTaskRequest) String() string {
 func (*CreateTaskRequest) ProtoMessage() {}
 
 func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[39]
+	mi := &file_lane_v1_lane_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4186,7 +4408,7 @@ func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTaskRequest.ProtoReflect.Descriptor instead.
 func (*CreateTaskRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{39}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *CreateTaskRequest) GetMeta() *MutationMeta {
@@ -4349,7 +4571,7 @@ type RelationshipEdits struct {
 
 func (x *RelationshipEdits) Reset() {
 	*x = RelationshipEdits{}
-	mi := &file_lane_v1_lane_proto_msgTypes[40]
+	mi := &file_lane_v1_lane_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4361,7 +4583,7 @@ func (x *RelationshipEdits) String() string {
 func (*RelationshipEdits) ProtoMessage() {}
 
 func (x *RelationshipEdits) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[40]
+	mi := &file_lane_v1_lane_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4374,7 +4596,7 @@ func (x *RelationshipEdits) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelationshipEdits.ProtoReflect.Descriptor instead.
 func (*RelationshipEdits) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{40}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *RelationshipEdits) GetAddSubtaskIds() []string {
@@ -4416,7 +4638,7 @@ type CreateTaskResponse struct {
 
 func (x *CreateTaskResponse) Reset() {
 	*x = CreateTaskResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[41]
+	mi := &file_lane_v1_lane_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4428,7 +4650,7 @@ func (x *CreateTaskResponse) String() string {
 func (*CreateTaskResponse) ProtoMessage() {}
 
 func (x *CreateTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[41]
+	mi := &file_lane_v1_lane_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4441,7 +4663,7 @@ func (x *CreateTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTaskResponse.ProtoReflect.Descriptor instead.
 func (*CreateTaskResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{41}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *CreateTaskResponse) GetResult() *EntityResult {
@@ -4478,7 +4700,7 @@ type SaveTaskRequest struct {
 
 func (x *SaveTaskRequest) Reset() {
 	*x = SaveTaskRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[42]
+	mi := &file_lane_v1_lane_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4490,7 +4712,7 @@ func (x *SaveTaskRequest) String() string {
 func (*SaveTaskRequest) ProtoMessage() {}
 
 func (x *SaveTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[42]
+	mi := &file_lane_v1_lane_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4503,7 +4725,7 @@ func (x *SaveTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveTaskRequest.ProtoReflect.Descriptor instead.
 func (*SaveTaskRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{42}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *SaveTaskRequest) GetMeta() *MutationMeta {
@@ -4551,7 +4773,7 @@ type SaveTaskResponse struct {
 
 func (x *SaveTaskResponse) Reset() {
 	*x = SaveTaskResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[43]
+	mi := &file_lane_v1_lane_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4563,7 +4785,7 @@ func (x *SaveTaskResponse) String() string {
 func (*SaveTaskResponse) ProtoMessage() {}
 
 func (x *SaveTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[43]
+	mi := &file_lane_v1_lane_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4576,7 +4798,7 @@ func (x *SaveTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveTaskResponse.ProtoReflect.Descriptor instead.
 func (*SaveTaskResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{43}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *SaveTaskResponse) GetResult() *EntityResult {
@@ -4605,7 +4827,7 @@ type SetProgressRequest struct {
 
 func (x *SetProgressRequest) Reset() {
 	*x = SetProgressRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[44]
+	mi := &file_lane_v1_lane_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4617,7 +4839,7 @@ func (x *SetProgressRequest) String() string {
 func (*SetProgressRequest) ProtoMessage() {}
 
 func (x *SetProgressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[44]
+	mi := &file_lane_v1_lane_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4630,7 +4852,7 @@ func (x *SetProgressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetProgressRequest.ProtoReflect.Descriptor instead.
 func (*SetProgressRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{44}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *SetProgressRequest) GetMeta() *MutationMeta {
@@ -4670,7 +4892,7 @@ type SetProgressResponse struct {
 
 func (x *SetProgressResponse) Reset() {
 	*x = SetProgressResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[45]
+	mi := &file_lane_v1_lane_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4682,7 +4904,7 @@ func (x *SetProgressResponse) String() string {
 func (*SetProgressResponse) ProtoMessage() {}
 
 func (x *SetProgressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[45]
+	mi := &file_lane_v1_lane_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4695,7 +4917,7 @@ func (x *SetProgressResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetProgressResponse.ProtoReflect.Descriptor instead.
 func (*SetProgressResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{45}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SetProgressResponse) GetResult() *EntityResult {
@@ -4717,7 +4939,7 @@ type SetProposalRequest struct {
 
 func (x *SetProposalRequest) Reset() {
 	*x = SetProposalRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[46]
+	mi := &file_lane_v1_lane_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4729,7 +4951,7 @@ func (x *SetProposalRequest) String() string {
 func (*SetProposalRequest) ProtoMessage() {}
 
 func (x *SetProposalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[46]
+	mi := &file_lane_v1_lane_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4742,7 +4964,7 @@ func (x *SetProposalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetProposalRequest.ProtoReflect.Descriptor instead.
 func (*SetProposalRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{46}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *SetProposalRequest) GetMeta() *MutationMeta {
@@ -4782,7 +5004,7 @@ type SetProposalResponse struct {
 
 func (x *SetProposalResponse) Reset() {
 	*x = SetProposalResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[47]
+	mi := &file_lane_v1_lane_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4794,7 +5016,7 @@ func (x *SetProposalResponse) String() string {
 func (*SetProposalResponse) ProtoMessage() {}
 
 func (x *SetProposalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[47]
+	mi := &file_lane_v1_lane_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4807,7 +5029,7 @@ func (x *SetProposalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetProposalResponse.ProtoReflect.Descriptor instead.
 func (*SetProposalResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{47}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *SetProposalResponse) GetResult() *EntityResult {
@@ -4829,7 +5051,7 @@ type RestorePromptRequest struct {
 
 func (x *RestorePromptRequest) Reset() {
 	*x = RestorePromptRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[48]
+	mi := &file_lane_v1_lane_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4841,7 +5063,7 @@ func (x *RestorePromptRequest) String() string {
 func (*RestorePromptRequest) ProtoMessage() {}
 
 func (x *RestorePromptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[48]
+	mi := &file_lane_v1_lane_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4854,7 +5076,7 @@ func (x *RestorePromptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestorePromptRequest.ProtoReflect.Descriptor instead.
 func (*RestorePromptRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{48}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *RestorePromptRequest) GetMeta() *MutationMeta {
@@ -4894,7 +5116,7 @@ type RestorePromptResponse struct {
 
 func (x *RestorePromptResponse) Reset() {
 	*x = RestorePromptResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[49]
+	mi := &file_lane_v1_lane_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4906,7 +5128,7 @@ func (x *RestorePromptResponse) String() string {
 func (*RestorePromptResponse) ProtoMessage() {}
 
 func (x *RestorePromptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[49]
+	mi := &file_lane_v1_lane_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4919,7 +5141,7 @@ func (x *RestorePromptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestorePromptResponse.ProtoReflect.Descriptor instead.
 func (*RestorePromptResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{49}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *RestorePromptResponse) GetResult() *EntityResult {
@@ -4939,7 +5161,7 @@ type DeleteTaskRequest struct {
 
 func (x *DeleteTaskRequest) Reset() {
 	*x = DeleteTaskRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[50]
+	mi := &file_lane_v1_lane_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4951,7 +5173,7 @@ func (x *DeleteTaskRequest) String() string {
 func (*DeleteTaskRequest) ProtoMessage() {}
 
 func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[50]
+	mi := &file_lane_v1_lane_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4964,7 +5186,7 @@ func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTaskRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTaskRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{50}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *DeleteTaskRequest) GetMeta() *MutationMeta {
@@ -4990,7 +5212,7 @@ type DeleteTaskResponse struct {
 
 func (x *DeleteTaskResponse) Reset() {
 	*x = DeleteTaskResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[51]
+	mi := &file_lane_v1_lane_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5002,7 +5224,7 @@ func (x *DeleteTaskResponse) String() string {
 func (*DeleteTaskResponse) ProtoMessage() {}
 
 func (x *DeleteTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[51]
+	mi := &file_lane_v1_lane_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5015,7 +5237,7 @@ func (x *DeleteTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTaskResponse.ProtoReflect.Descriptor instead.
 func (*DeleteTaskResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{51}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *DeleteTaskResponse) GetResult() *EntityResult {
@@ -5036,7 +5258,7 @@ type ListHistoryRequest struct {
 
 func (x *ListHistoryRequest) Reset() {
 	*x = ListHistoryRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[52]
+	mi := &file_lane_v1_lane_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5048,7 +5270,7 @@ func (x *ListHistoryRequest) String() string {
 func (*ListHistoryRequest) ProtoMessage() {}
 
 func (x *ListHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[52]
+	mi := &file_lane_v1_lane_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5061,7 +5283,7 @@ func (x *ListHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ListHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{52}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListHistoryRequest) GetId() string {
@@ -5095,7 +5317,7 @@ type ListHistoryResponse struct {
 
 func (x *ListHistoryResponse) Reset() {
 	*x = ListHistoryResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[53]
+	mi := &file_lane_v1_lane_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5107,7 +5329,7 @@ func (x *ListHistoryResponse) String() string {
 func (*ListHistoryResponse) ProtoMessage() {}
 
 func (x *ListHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[53]
+	mi := &file_lane_v1_lane_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5120,7 +5342,7 @@ func (x *ListHistoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListHistoryResponse.ProtoReflect.Descriptor instead.
 func (*ListHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{53}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ListHistoryResponse) GetVersions() []*EntityVersion {
@@ -5149,7 +5371,7 @@ type ResolveConflictRequest struct {
 
 func (x *ResolveConflictRequest) Reset() {
 	*x = ResolveConflictRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[54]
+	mi := &file_lane_v1_lane_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5161,7 +5383,7 @@ func (x *ResolveConflictRequest) String() string {
 func (*ResolveConflictRequest) ProtoMessage() {}
 
 func (x *ResolveConflictRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[54]
+	mi := &file_lane_v1_lane_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5174,7 +5396,7 @@ func (x *ResolveConflictRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveConflictRequest.ProtoReflect.Descriptor instead.
 func (*ResolveConflictRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{54}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ResolveConflictRequest) GetMeta() *MutationMeta {
@@ -5214,7 +5436,7 @@ type ResolveConflictResponse struct {
 
 func (x *ResolveConflictResponse) Reset() {
 	*x = ResolveConflictResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[55]
+	mi := &file_lane_v1_lane_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5226,7 +5448,7 @@ func (x *ResolveConflictResponse) String() string {
 func (*ResolveConflictResponse) ProtoMessage() {}
 
 func (x *ResolveConflictResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[55]
+	mi := &file_lane_v1_lane_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5239,7 +5461,7 @@ func (x *ResolveConflictResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveConflictResponse.ProtoReflect.Descriptor instead.
 func (*ResolveConflictResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{55}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ResolveConflictResponse) GetResult() *EntityResult {
@@ -5258,7 +5480,7 @@ type ListDevicesRequest struct {
 
 func (x *ListDevicesRequest) Reset() {
 	*x = ListDevicesRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[56]
+	mi := &file_lane_v1_lane_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5270,7 +5492,7 @@ func (x *ListDevicesRequest) String() string {
 func (*ListDevicesRequest) ProtoMessage() {}
 
 func (x *ListDevicesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[56]
+	mi := &file_lane_v1_lane_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5283,7 +5505,7 @@ func (x *ListDevicesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDevicesRequest.ProtoReflect.Descriptor instead.
 func (*ListDevicesRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{56}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ListDevicesRequest) GetPage() *Page {
@@ -5303,7 +5525,7 @@ type ListDevicesResponse struct {
 
 func (x *ListDevicesResponse) Reset() {
 	*x = ListDevicesResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[57]
+	mi := &file_lane_v1_lane_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5315,7 +5537,7 @@ func (x *ListDevicesResponse) String() string {
 func (*ListDevicesResponse) ProtoMessage() {}
 
 func (x *ListDevicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[57]
+	mi := &file_lane_v1_lane_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5328,7 +5550,7 @@ func (x *ListDevicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDevicesResponse.ProtoReflect.Descriptor instead.
 func (*ListDevicesResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{57}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ListDevicesResponse) GetItems() []*Device {
@@ -5355,7 +5577,7 @@ type DisconnectDeviceRequest struct {
 
 func (x *DisconnectDeviceRequest) Reset() {
 	*x = DisconnectDeviceRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[58]
+	mi := &file_lane_v1_lane_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5367,7 +5589,7 @@ func (x *DisconnectDeviceRequest) String() string {
 func (*DisconnectDeviceRequest) ProtoMessage() {}
 
 func (x *DisconnectDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[58]
+	mi := &file_lane_v1_lane_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5380,7 +5602,7 @@ func (x *DisconnectDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectDeviceRequest.ProtoReflect.Descriptor instead.
 func (*DisconnectDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{58}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *DisconnectDeviceRequest) GetMeta() *MutationMeta {
@@ -5406,7 +5628,7 @@ type DisconnectDeviceResponse struct {
 
 func (x *DisconnectDeviceResponse) Reset() {
 	*x = DisconnectDeviceResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[59]
+	mi := &file_lane_v1_lane_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5418,7 +5640,7 @@ func (x *DisconnectDeviceResponse) String() string {
 func (*DisconnectDeviceResponse) ProtoMessage() {}
 
 func (x *DisconnectDeviceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[59]
+	mi := &file_lane_v1_lane_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5431,7 +5653,7 @@ func (x *DisconnectDeviceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectDeviceResponse.ProtoReflect.Descriptor instead.
 func (*DisconnectDeviceResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{59}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *DisconnectDeviceResponse) GetDevice() *Device {
@@ -5450,7 +5672,7 @@ type ListConnectionsRequest struct {
 
 func (x *ListConnectionsRequest) Reset() {
 	*x = ListConnectionsRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[60]
+	mi := &file_lane_v1_lane_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5462,7 +5684,7 @@ func (x *ListConnectionsRequest) String() string {
 func (*ListConnectionsRequest) ProtoMessage() {}
 
 func (x *ListConnectionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[60]
+	mi := &file_lane_v1_lane_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5475,7 +5697,7 @@ func (x *ListConnectionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConnectionsRequest.ProtoReflect.Descriptor instead.
 func (*ListConnectionsRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{60}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *ListConnectionsRequest) GetPage() *Page {
@@ -5495,7 +5717,7 @@ type ListConnectionsResponse struct {
 
 func (x *ListConnectionsResponse) Reset() {
 	*x = ListConnectionsResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[61]
+	mi := &file_lane_v1_lane_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5507,7 +5729,7 @@ func (x *ListConnectionsResponse) String() string {
 func (*ListConnectionsResponse) ProtoMessage() {}
 
 func (x *ListConnectionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[61]
+	mi := &file_lane_v1_lane_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5520,7 +5742,7 @@ func (x *ListConnectionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConnectionsResponse.ProtoReflect.Descriptor instead.
 func (*ListConnectionsResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{61}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *ListConnectionsResponse) GetItems() []*Connection {
@@ -5547,7 +5769,7 @@ type RevokeConnectionRequest struct {
 
 func (x *RevokeConnectionRequest) Reset() {
 	*x = RevokeConnectionRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[62]
+	mi := &file_lane_v1_lane_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5559,7 +5781,7 @@ func (x *RevokeConnectionRequest) String() string {
 func (*RevokeConnectionRequest) ProtoMessage() {}
 
 func (x *RevokeConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[62]
+	mi := &file_lane_v1_lane_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5572,7 +5794,7 @@ func (x *RevokeConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeConnectionRequest.ProtoReflect.Descriptor instead.
 func (*RevokeConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{62}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *RevokeConnectionRequest) GetMeta() *MutationMeta {
@@ -5598,7 +5820,7 @@ type RevokeConnectionResponse struct {
 
 func (x *RevokeConnectionResponse) Reset() {
 	*x = RevokeConnectionResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[63]
+	mi := &file_lane_v1_lane_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5610,7 +5832,7 @@ func (x *RevokeConnectionResponse) String() string {
 func (*RevokeConnectionResponse) ProtoMessage() {}
 
 func (x *RevokeConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[63]
+	mi := &file_lane_v1_lane_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5623,7 +5845,7 @@ func (x *RevokeConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeConnectionResponse.ProtoReflect.Descriptor instead.
 func (*RevokeConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{63}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *RevokeConnectionResponse) GetConnection() *Connection {
@@ -5649,7 +5871,7 @@ type RegisterPushRequest struct {
 
 func (x *RegisterPushRequest) Reset() {
 	*x = RegisterPushRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[64]
+	mi := &file_lane_v1_lane_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5661,7 +5883,7 @@ func (x *RegisterPushRequest) String() string {
 func (*RegisterPushRequest) ProtoMessage() {}
 
 func (x *RegisterPushRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[64]
+	mi := &file_lane_v1_lane_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5674,7 +5896,7 @@ func (x *RegisterPushRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterPushRequest.ProtoReflect.Descriptor instead.
 func (*RegisterPushRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{64}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *RegisterPushRequest) GetMeta() *MutationMeta {
@@ -5742,7 +5964,7 @@ type RegisterPushResponse struct {
 
 func (x *RegisterPushResponse) Reset() {
 	*x = RegisterPushResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[65]
+	mi := &file_lane_v1_lane_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5754,7 +5976,7 @@ func (x *RegisterPushResponse) String() string {
 func (*RegisterPushResponse) ProtoMessage() {}
 
 func (x *RegisterPushResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[65]
+	mi := &file_lane_v1_lane_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5767,7 +5989,7 @@ func (x *RegisterPushResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterPushResponse.ProtoReflect.Descriptor instead.
 func (*RegisterPushResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{65}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *RegisterPushResponse) GetDevice() *Device {
@@ -5788,7 +6010,7 @@ type BeginDataDeletionRequest struct {
 
 func (x *BeginDataDeletionRequest) Reset() {
 	*x = BeginDataDeletionRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[66]
+	mi := &file_lane_v1_lane_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5800,7 +6022,7 @@ func (x *BeginDataDeletionRequest) String() string {
 func (*BeginDataDeletionRequest) ProtoMessage() {}
 
 func (x *BeginDataDeletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[66]
+	mi := &file_lane_v1_lane_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5813,7 +6035,7 @@ func (x *BeginDataDeletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginDataDeletionRequest.ProtoReflect.Descriptor instead.
 func (*BeginDataDeletionRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{66}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *BeginDataDeletionRequest) GetMeta() *MutationMeta {
@@ -5847,7 +6069,7 @@ type BeginDataDeletionResponse struct {
 
 func (x *BeginDataDeletionResponse) Reset() {
 	*x = BeginDataDeletionResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[67]
+	mi := &file_lane_v1_lane_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5859,7 +6081,7 @@ func (x *BeginDataDeletionResponse) String() string {
 func (*BeginDataDeletionResponse) ProtoMessage() {}
 
 func (x *BeginDataDeletionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[67]
+	mi := &file_lane_v1_lane_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5872,7 +6094,7 @@ func (x *BeginDataDeletionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginDataDeletionResponse.ProtoReflect.Descriptor instead.
 func (*BeginDataDeletionResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{67}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *BeginDataDeletionResponse) GetChallengeId() string {
@@ -5901,7 +6123,7 @@ type DeleteAccountDataRequest struct {
 
 func (x *DeleteAccountDataRequest) Reset() {
 	*x = DeleteAccountDataRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[68]
+	mi := &file_lane_v1_lane_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5913,7 +6135,7 @@ func (x *DeleteAccountDataRequest) String() string {
 func (*DeleteAccountDataRequest) ProtoMessage() {}
 
 func (x *DeleteAccountDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[68]
+	mi := &file_lane_v1_lane_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5926,7 +6148,7 @@ func (x *DeleteAccountDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAccountDataRequest.ProtoReflect.Descriptor instead.
 func (*DeleteAccountDataRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{68}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *DeleteAccountDataRequest) GetMeta() *MutationMeta {
@@ -5967,7 +6189,7 @@ type DeleteAccountDataResponse struct {
 
 func (x *DeleteAccountDataResponse) Reset() {
 	*x = DeleteAccountDataResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[69]
+	mi := &file_lane_v1_lane_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5979,7 +6201,7 @@ func (x *DeleteAccountDataResponse) String() string {
 func (*DeleteAccountDataResponse) ProtoMessage() {}
 
 func (x *DeleteAccountDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[69]
+	mi := &file_lane_v1_lane_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5992,7 +6214,7 @@ func (x *DeleteAccountDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAccountDataResponse.ProtoReflect.Descriptor instead.
 func (*DeleteAccountDataResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{69}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *DeleteAccountDataResponse) GetNewEpoch() string {
@@ -6019,7 +6241,7 @@ type ListReceiversRequest struct {
 
 func (x *ListReceiversRequest) Reset() {
 	*x = ListReceiversRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[70]
+	mi := &file_lane_v1_lane_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6031,7 +6253,7 @@ func (x *ListReceiversRequest) String() string {
 func (*ListReceiversRequest) ProtoMessage() {}
 
 func (x *ListReceiversRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[70]
+	mi := &file_lane_v1_lane_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6044,7 +6266,7 @@ func (x *ListReceiversRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReceiversRequest.ProtoReflect.Descriptor instead.
 func (*ListReceiversRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{70}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *ListReceiversRequest) GetPage() *Page {
@@ -6071,7 +6293,7 @@ type ListReceiversResponse struct {
 
 func (x *ListReceiversResponse) Reset() {
 	*x = ListReceiversResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[71]
+	mi := &file_lane_v1_lane_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6083,7 +6305,7 @@ func (x *ListReceiversResponse) String() string {
 func (*ListReceiversResponse) ProtoMessage() {}
 
 func (x *ListReceiversResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[71]
+	mi := &file_lane_v1_lane_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6096,7 +6318,7 @@ func (x *ListReceiversResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReceiversResponse.ProtoReflect.Descriptor instead.
 func (*ListReceiversResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{71}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *ListReceiversResponse) GetItems() []*WebhookReceiver {
@@ -6125,7 +6347,7 @@ type CreateReceiverRequest struct {
 
 func (x *CreateReceiverRequest) Reset() {
 	*x = CreateReceiverRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[72]
+	mi := &file_lane_v1_lane_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6137,7 +6359,7 @@ func (x *CreateReceiverRequest) String() string {
 func (*CreateReceiverRequest) ProtoMessage() {}
 
 func (x *CreateReceiverRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[72]
+	mi := &file_lane_v1_lane_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6150,7 +6372,7 @@ func (x *CreateReceiverRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateReceiverRequest.ProtoReflect.Descriptor instead.
 func (*CreateReceiverRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{72}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *CreateReceiverRequest) GetMeta() *MutationMeta {
@@ -6192,7 +6414,7 @@ type CreateReceiverResponse struct {
 
 func (x *CreateReceiverResponse) Reset() {
 	*x = CreateReceiverResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[73]
+	mi := &file_lane_v1_lane_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6204,7 +6426,7 @@ func (x *CreateReceiverResponse) String() string {
 func (*CreateReceiverResponse) ProtoMessage() {}
 
 func (x *CreateReceiverResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[73]
+	mi := &file_lane_v1_lane_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6217,7 +6439,7 @@ func (x *CreateReceiverResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateReceiverResponse.ProtoReflect.Descriptor instead.
 func (*CreateReceiverResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{73}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *CreateReceiverResponse) GetReceiver() *WebhookReceiver {
@@ -6254,7 +6476,7 @@ type SaveReceiverRequest struct {
 
 func (x *SaveReceiverRequest) Reset() {
 	*x = SaveReceiverRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[74]
+	mi := &file_lane_v1_lane_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6266,7 +6488,7 @@ func (x *SaveReceiverRequest) String() string {
 func (*SaveReceiverRequest) ProtoMessage() {}
 
 func (x *SaveReceiverRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[74]
+	mi := &file_lane_v1_lane_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6279,7 +6501,7 @@ func (x *SaveReceiverRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveReceiverRequest.ProtoReflect.Descriptor instead.
 func (*SaveReceiverRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{74}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *SaveReceiverRequest) GetMeta() *MutationMeta {
@@ -6326,7 +6548,7 @@ type SaveReceiverResponse struct {
 
 func (x *SaveReceiverResponse) Reset() {
 	*x = SaveReceiverResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[75]
+	mi := &file_lane_v1_lane_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6338,7 +6560,7 @@ func (x *SaveReceiverResponse) String() string {
 func (*SaveReceiverResponse) ProtoMessage() {}
 
 func (x *SaveReceiverResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[75]
+	mi := &file_lane_v1_lane_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6351,7 +6573,7 @@ func (x *SaveReceiverResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveReceiverResponse.ProtoReflect.Descriptor instead.
 func (*SaveReceiverResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{75}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *SaveReceiverResponse) GetReceiver() *WebhookReceiver {
@@ -6372,7 +6594,7 @@ type RotateReceiverKeyRequest struct {
 
 func (x *RotateReceiverKeyRequest) Reset() {
 	*x = RotateReceiverKeyRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[76]
+	mi := &file_lane_v1_lane_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6384,7 +6606,7 @@ func (x *RotateReceiverKeyRequest) String() string {
 func (*RotateReceiverKeyRequest) ProtoMessage() {}
 
 func (x *RotateReceiverKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[76]
+	mi := &file_lane_v1_lane_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6397,7 +6619,7 @@ func (x *RotateReceiverKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateReceiverKeyRequest.ProtoReflect.Descriptor instead.
 func (*RotateReceiverKeyRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{76}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *RotateReceiverKeyRequest) GetMeta() *MutationMeta {
@@ -6431,7 +6653,7 @@ type RotateReceiverKeyResponse struct {
 
 func (x *RotateReceiverKeyResponse) Reset() {
 	*x = RotateReceiverKeyResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[77]
+	mi := &file_lane_v1_lane_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6443,7 +6665,7 @@ func (x *RotateReceiverKeyResponse) String() string {
 func (*RotateReceiverKeyResponse) ProtoMessage() {}
 
 func (x *RotateReceiverKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[77]
+	mi := &file_lane_v1_lane_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6456,7 +6678,7 @@ func (x *RotateReceiverKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateReceiverKeyResponse.ProtoReflect.Descriptor instead.
 func (*RotateReceiverKeyResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{77}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *RotateReceiverKeyResponse) GetReceiver() *WebhookReceiver {
@@ -6483,7 +6705,7 @@ type DeleteReceiverRequest struct {
 
 func (x *DeleteReceiverRequest) Reset() {
 	*x = DeleteReceiverRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[78]
+	mi := &file_lane_v1_lane_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6495,7 +6717,7 @@ func (x *DeleteReceiverRequest) String() string {
 func (*DeleteReceiverRequest) ProtoMessage() {}
 
 func (x *DeleteReceiverRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[78]
+	mi := &file_lane_v1_lane_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6508,7 +6730,7 @@ func (x *DeleteReceiverRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteReceiverRequest.ProtoReflect.Descriptor instead.
 func (*DeleteReceiverRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{78}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *DeleteReceiverRequest) GetMeta() *MutationMeta {
@@ -6534,7 +6756,7 @@ type DeleteReceiverResponse struct {
 
 func (x *DeleteReceiverResponse) Reset() {
 	*x = DeleteReceiverResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[79]
+	mi := &file_lane_v1_lane_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6546,7 +6768,7 @@ func (x *DeleteReceiverResponse) String() string {
 func (*DeleteReceiverResponse) ProtoMessage() {}
 
 func (x *DeleteReceiverResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[79]
+	mi := &file_lane_v1_lane_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6559,7 +6781,7 @@ func (x *DeleteReceiverResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteReceiverResponse.ProtoReflect.Descriptor instead.
 func (*DeleteReceiverResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{79}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *DeleteReceiverResponse) GetDeletion() *DeletionRecord {
@@ -6580,7 +6802,7 @@ type ListEventsRequest struct {
 
 func (x *ListEventsRequest) Reset() {
 	*x = ListEventsRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[80]
+	mi := &file_lane_v1_lane_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6592,7 +6814,7 @@ func (x *ListEventsRequest) String() string {
 func (*ListEventsRequest) ProtoMessage() {}
 
 func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[80]
+	mi := &file_lane_v1_lane_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6605,7 +6827,7 @@ func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsRequest.ProtoReflect.Descriptor instead.
 func (*ListEventsRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{80}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ListEventsRequest) GetPage() *Page {
@@ -6639,7 +6861,7 @@ type ListEventsResponse struct {
 
 func (x *ListEventsResponse) Reset() {
 	*x = ListEventsResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[81]
+	mi := &file_lane_v1_lane_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6651,7 +6873,7 @@ func (x *ListEventsResponse) String() string {
 func (*ListEventsResponse) ProtoMessage() {}
 
 func (x *ListEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[81]
+	mi := &file_lane_v1_lane_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6664,7 +6886,7 @@ func (x *ListEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsResponse.ProtoReflect.Descriptor instead.
 func (*ListEventsResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{81}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ListEventsResponse) GetItems() []*WebhookEvent {
@@ -6690,7 +6912,7 @@ type GetEventRequest struct {
 
 func (x *GetEventRequest) Reset() {
 	*x = GetEventRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[82]
+	mi := &file_lane_v1_lane_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6702,7 +6924,7 @@ func (x *GetEventRequest) String() string {
 func (*GetEventRequest) ProtoMessage() {}
 
 func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[82]
+	mi := &file_lane_v1_lane_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6715,7 +6937,7 @@ func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventRequest.ProtoReflect.Descriptor instead.
 func (*GetEventRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{82}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *GetEventRequest) GetId() string {
@@ -6735,7 +6957,7 @@ type GetEventResponse struct {
 
 func (x *GetEventResponse) Reset() {
 	*x = GetEventResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[83]
+	mi := &file_lane_v1_lane_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6747,7 +6969,7 @@ func (x *GetEventResponse) String() string {
 func (*GetEventResponse) ProtoMessage() {}
 
 func (x *GetEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[83]
+	mi := &file_lane_v1_lane_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6760,7 +6982,7 @@ func (x *GetEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventResponse.ProtoReflect.Descriptor instead.
 func (*GetEventResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{83}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *GetEventResponse) GetEvent() *WebhookEvent {
@@ -6787,7 +7009,7 @@ type DeleteEventRequest struct {
 
 func (x *DeleteEventRequest) Reset() {
 	*x = DeleteEventRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[84]
+	mi := &file_lane_v1_lane_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6799,7 +7021,7 @@ func (x *DeleteEventRequest) String() string {
 func (*DeleteEventRequest) ProtoMessage() {}
 
 func (x *DeleteEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[84]
+	mi := &file_lane_v1_lane_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6812,7 +7034,7 @@ func (x *DeleteEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteEventRequest.ProtoReflect.Descriptor instead.
 func (*DeleteEventRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{84}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *DeleteEventRequest) GetMeta() *MutationMeta {
@@ -6838,7 +7060,7 @@ type DeleteEventResponse struct {
 
 func (x *DeleteEventResponse) Reset() {
 	*x = DeleteEventResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[85]
+	mi := &file_lane_v1_lane_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6850,7 +7072,7 @@ func (x *DeleteEventResponse) String() string {
 func (*DeleteEventResponse) ProtoMessage() {}
 
 func (x *DeleteEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[85]
+	mi := &file_lane_v1_lane_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6863,7 +7085,7 @@ func (x *DeleteEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteEventResponse.ProtoReflect.Descriptor instead.
 func (*DeleteEventResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{85}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *DeleteEventResponse) GetDeletion() *DeletionRecord {
@@ -6883,7 +7105,7 @@ type ClaimEventRequest struct {
 
 func (x *ClaimEventRequest) Reset() {
 	*x = ClaimEventRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[86]
+	mi := &file_lane_v1_lane_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6895,7 +7117,7 @@ func (x *ClaimEventRequest) String() string {
 func (*ClaimEventRequest) ProtoMessage() {}
 
 func (x *ClaimEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[86]
+	mi := &file_lane_v1_lane_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6908,7 +7130,7 @@ func (x *ClaimEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimEventRequest.ProtoReflect.Descriptor instead.
 func (*ClaimEventRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{86}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *ClaimEventRequest) GetMeta() *MutationMeta {
@@ -6936,7 +7158,7 @@ type ClaimEventResponse struct {
 
 func (x *ClaimEventResponse) Reset() {
 	*x = ClaimEventResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[87]
+	mi := &file_lane_v1_lane_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6948,7 +7170,7 @@ func (x *ClaimEventResponse) String() string {
 func (*ClaimEventResponse) ProtoMessage() {}
 
 func (x *ClaimEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[87]
+	mi := &file_lane_v1_lane_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6961,7 +7183,7 @@ func (x *ClaimEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimEventResponse.ProtoReflect.Descriptor instead.
 func (*ClaimEventResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{87}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *ClaimEventResponse) GetEvent() *WebhookEvent {
@@ -6996,7 +7218,7 @@ type RenewEventLeaseRequest struct {
 
 func (x *RenewEventLeaseRequest) Reset() {
 	*x = RenewEventLeaseRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[88]
+	mi := &file_lane_v1_lane_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7008,7 +7230,7 @@ func (x *RenewEventLeaseRequest) String() string {
 func (*RenewEventLeaseRequest) ProtoMessage() {}
 
 func (x *RenewEventLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[88]
+	mi := &file_lane_v1_lane_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7021,7 +7243,7 @@ func (x *RenewEventLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewEventLeaseRequest.ProtoReflect.Descriptor instead.
 func (*RenewEventLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{88}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *RenewEventLeaseRequest) GetMeta() *MutationMeta {
@@ -7054,7 +7276,7 @@ type RenewEventLeaseResponse struct {
 
 func (x *RenewEventLeaseResponse) Reset() {
 	*x = RenewEventLeaseResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[89]
+	mi := &file_lane_v1_lane_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7066,7 +7288,7 @@ func (x *RenewEventLeaseResponse) String() string {
 func (*RenewEventLeaseResponse) ProtoMessage() {}
 
 func (x *RenewEventLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[89]
+	mi := &file_lane_v1_lane_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7079,7 +7301,7 @@ func (x *RenewEventLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewEventLeaseResponse.ProtoReflect.Descriptor instead.
 func (*RenewEventLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{89}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *RenewEventLeaseResponse) GetExpiresAt() *timestamppb.Timestamp {
@@ -7101,7 +7323,7 @@ type ReleaseEventLeaseRequest struct {
 
 func (x *ReleaseEventLeaseRequest) Reset() {
 	*x = ReleaseEventLeaseRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[90]
+	mi := &file_lane_v1_lane_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7113,7 +7335,7 @@ func (x *ReleaseEventLeaseRequest) String() string {
 func (*ReleaseEventLeaseRequest) ProtoMessage() {}
 
 func (x *ReleaseEventLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[90]
+	mi := &file_lane_v1_lane_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7126,7 +7348,7 @@ func (x *ReleaseEventLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseEventLeaseRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseEventLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{90}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *ReleaseEventLeaseRequest) GetMeta() *MutationMeta {
@@ -7166,7 +7388,7 @@ type ReleaseEventLeaseResponse struct {
 
 func (x *ReleaseEventLeaseResponse) Reset() {
 	*x = ReleaseEventLeaseResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[91]
+	mi := &file_lane_v1_lane_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7178,7 +7400,7 @@ func (x *ReleaseEventLeaseResponse) String() string {
 func (*ReleaseEventLeaseResponse) ProtoMessage() {}
 
 func (x *ReleaseEventLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[91]
+	mi := &file_lane_v1_lane_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7191,7 +7413,7 @@ func (x *ReleaseEventLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseEventLeaseResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseEventLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{91}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *ReleaseEventLeaseResponse) GetEvent() *WebhookEvent {
@@ -7213,7 +7435,7 @@ type CompleteEventRequest struct {
 
 func (x *CompleteEventRequest) Reset() {
 	*x = CompleteEventRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[92]
+	mi := &file_lane_v1_lane_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7225,7 +7447,7 @@ func (x *CompleteEventRequest) String() string {
 func (*CompleteEventRequest) ProtoMessage() {}
 
 func (x *CompleteEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[92]
+	mi := &file_lane_v1_lane_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7238,7 +7460,7 @@ func (x *CompleteEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteEventRequest.ProtoReflect.Descriptor instead.
 func (*CompleteEventRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{92}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *CompleteEventRequest) GetMeta() *MutationMeta {
@@ -7280,7 +7502,7 @@ type CompleteEventResponse struct {
 
 func (x *CompleteEventResponse) Reset() {
 	*x = CompleteEventResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[93]
+	mi := &file_lane_v1_lane_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7292,7 +7514,7 @@ func (x *CompleteEventResponse) String() string {
 func (*CompleteEventResponse) ProtoMessage() {}
 
 func (x *CompleteEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[93]
+	mi := &file_lane_v1_lane_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7305,7 +7527,7 @@ func (x *CompleteEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteEventResponse.ProtoReflect.Descriptor instead.
 func (*CompleteEventResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{93}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *CompleteEventResponse) GetEvent() *WebhookEvent {
@@ -7340,7 +7562,7 @@ type ReopenEventRequest struct {
 
 func (x *ReopenEventRequest) Reset() {
 	*x = ReopenEventRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[94]
+	mi := &file_lane_v1_lane_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7352,7 +7574,7 @@ func (x *ReopenEventRequest) String() string {
 func (*ReopenEventRequest) ProtoMessage() {}
 
 func (x *ReopenEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[94]
+	mi := &file_lane_v1_lane_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7365,7 +7587,7 @@ func (x *ReopenEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReopenEventRequest.ProtoReflect.Descriptor instead.
 func (*ReopenEventRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{94}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *ReopenEventRequest) GetMeta() *MutationMeta {
@@ -7398,7 +7620,7 @@ type ReopenEventResponse struct {
 
 func (x *ReopenEventResponse) Reset() {
 	*x = ReopenEventResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[95]
+	mi := &file_lane_v1_lane_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7410,7 +7632,7 @@ func (x *ReopenEventResponse) String() string {
 func (*ReopenEventResponse) ProtoMessage() {}
 
 func (x *ReopenEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[95]
+	mi := &file_lane_v1_lane_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7423,7 +7645,7 @@ func (x *ReopenEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReopenEventResponse.ProtoReflect.Descriptor instead.
 func (*ReopenEventResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{95}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *ReopenEventResponse) GetEvent() *WebhookEvent {
@@ -7441,7 +7663,7 @@ type GetSyncInfoRequest struct {
 
 func (x *GetSyncInfoRequest) Reset() {
 	*x = GetSyncInfoRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[96]
+	mi := &file_lane_v1_lane_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7453,7 +7675,7 @@ func (x *GetSyncInfoRequest) String() string {
 func (*GetSyncInfoRequest) ProtoMessage() {}
 
 func (x *GetSyncInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[96]
+	mi := &file_lane_v1_lane_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7466,7 +7688,7 @@ func (x *GetSyncInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSyncInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetSyncInfoRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{96}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{98}
 }
 
 type GetSyncInfoResponse struct {
@@ -7482,7 +7704,7 @@ type GetSyncInfoResponse struct {
 
 func (x *GetSyncInfoResponse) Reset() {
 	*x = GetSyncInfoResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[97]
+	mi := &file_lane_v1_lane_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7494,7 +7716,7 @@ func (x *GetSyncInfoResponse) String() string {
 func (*GetSyncInfoResponse) ProtoMessage() {}
 
 func (x *GetSyncInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[97]
+	mi := &file_lane_v1_lane_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7507,7 +7729,7 @@ func (x *GetSyncInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSyncInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetSyncInfoResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{97}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *GetSyncInfoResponse) GetFormatVersion() uint32 {
@@ -7557,7 +7779,7 @@ type PushChangesRequest struct {
 
 func (x *PushChangesRequest) Reset() {
 	*x = PushChangesRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[98]
+	mi := &file_lane_v1_lane_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7569,7 +7791,7 @@ func (x *PushChangesRequest) String() string {
 func (*PushChangesRequest) ProtoMessage() {}
 
 func (x *PushChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[98]
+	mi := &file_lane_v1_lane_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7582,7 +7804,7 @@ func (x *PushChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushChangesRequest.ProtoReflect.Descriptor instead.
 func (*PushChangesRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{98}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *PushChangesRequest) GetFormatVersion() uint32 {
@@ -7623,7 +7845,7 @@ type PushChangesResponse struct {
 
 func (x *PushChangesResponse) Reset() {
 	*x = PushChangesResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[99]
+	mi := &file_lane_v1_lane_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7635,7 +7857,7 @@ func (x *PushChangesResponse) String() string {
 func (*PushChangesResponse) ProtoMessage() {}
 
 func (x *PushChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[99]
+	mi := &file_lane_v1_lane_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7648,7 +7870,7 @@ func (x *PushChangesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushChangesResponse.ProtoReflect.Descriptor instead.
 func (*PushChangesResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{99}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *PushChangesResponse) GetResults() []*SyncResult {
@@ -7677,7 +7899,7 @@ type PullChangesRequest struct {
 
 func (x *PullChangesRequest) Reset() {
 	*x = PullChangesRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[100]
+	mi := &file_lane_v1_lane_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7689,7 +7911,7 @@ func (x *PullChangesRequest) String() string {
 func (*PullChangesRequest) ProtoMessage() {}
 
 func (x *PullChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[100]
+	mi := &file_lane_v1_lane_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7702,7 +7924,7 @@ func (x *PullChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullChangesRequest.ProtoReflect.Descriptor instead.
 func (*PullChangesRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{100}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *PullChangesRequest) GetFormatVersion() uint32 {
@@ -7744,7 +7966,7 @@ type PullChangesResponse struct {
 
 func (x *PullChangesResponse) Reset() {
 	*x = PullChangesResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[101]
+	mi := &file_lane_v1_lane_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7756,7 +7978,7 @@ func (x *PullChangesResponse) String() string {
 func (*PullChangesResponse) ProtoMessage() {}
 
 func (x *PullChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[101]
+	mi := &file_lane_v1_lane_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7769,7 +7991,7 @@ func (x *PullChangesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullChangesResponse.ProtoReflect.Descriptor instead.
 func (*PullChangesResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{101}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *PullChangesResponse) GetChanges() []*Change {
@@ -7803,7 +8025,7 @@ type WatchChangesRequest struct {
 
 func (x *WatchChangesRequest) Reset() {
 	*x = WatchChangesRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[102]
+	mi := &file_lane_v1_lane_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7815,7 +8037,7 @@ func (x *WatchChangesRequest) String() string {
 func (*WatchChangesRequest) ProtoMessage() {}
 
 func (x *WatchChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[102]
+	mi := &file_lane_v1_lane_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7828,7 +8050,7 @@ func (x *WatchChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchChangesRequest.ProtoReflect.Descriptor instead.
 func (*WatchChangesRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{102}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *WatchChangesRequest) GetEpoch() string {
@@ -7854,7 +8076,7 @@ type WatchChangesResponse struct {
 
 func (x *WatchChangesResponse) Reset() {
 	*x = WatchChangesResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[103]
+	mi := &file_lane_v1_lane_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7866,7 +8088,7 @@ func (x *WatchChangesResponse) String() string {
 func (*WatchChangesResponse) ProtoMessage() {}
 
 func (x *WatchChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[103]
+	mi := &file_lane_v1_lane_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7879,7 +8101,7 @@ func (x *WatchChangesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchChangesResponse.ProtoReflect.Descriptor instead.
 func (*WatchChangesResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{103}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *WatchChangesResponse) GetCursor() string {
@@ -7906,7 +8128,7 @@ type CaptureReference struct {
 
 func (x *CaptureReference) Reset() {
 	*x = CaptureReference{}
-	mi := &file_lane_v1_lane_proto_msgTypes[104]
+	mi := &file_lane_v1_lane_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7918,7 +8140,7 @@ func (x *CaptureReference) String() string {
 func (*CaptureReference) ProtoMessage() {}
 
 func (x *CaptureReference) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[104]
+	mi := &file_lane_v1_lane_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7931,7 +8153,7 @@ func (x *CaptureReference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CaptureReference.ProtoReflect.Descriptor instead.
 func (*CaptureReference) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{104}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *CaptureReference) GetAttachmentId() string {
@@ -8000,7 +8222,7 @@ type CapturedImage struct {
 
 func (x *CapturedImage) Reset() {
 	*x = CapturedImage{}
-	mi := &file_lane_v1_lane_proto_msgTypes[105]
+	mi := &file_lane_v1_lane_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8012,7 +8234,7 @@ func (x *CapturedImage) String() string {
 func (*CapturedImage) ProtoMessage() {}
 
 func (x *CapturedImage) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[105]
+	mi := &file_lane_v1_lane_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8025,7 +8247,7 @@ func (x *CapturedImage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapturedImage.ProtoReflect.Descriptor instead.
 func (*CapturedImage) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{105}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *CapturedImage) GetCapture() *CaptureReference {
@@ -8056,7 +8278,7 @@ type CreateCaptureTaskRequest struct {
 
 func (x *CreateCaptureTaskRequest) Reset() {
 	*x = CreateCaptureTaskRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[106]
+	mi := &file_lane_v1_lane_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8068,7 +8290,7 @@ func (x *CreateCaptureTaskRequest) String() string {
 func (*CreateCaptureTaskRequest) ProtoMessage() {}
 
 func (x *CreateCaptureTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[106]
+	mi := &file_lane_v1_lane_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8081,7 +8303,7 @@ func (x *CreateCaptureTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCaptureTaskRequest.ProtoReflect.Descriptor instead.
 func (*CreateCaptureTaskRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{106}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *CreateCaptureTaskRequest) GetMeta() *MutationMeta {
@@ -8135,7 +8357,7 @@ type CreateCaptureTaskResponse struct {
 
 func (x *CreateCaptureTaskResponse) Reset() {
 	*x = CreateCaptureTaskResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[107]
+	mi := &file_lane_v1_lane_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8147,7 +8369,7 @@ func (x *CreateCaptureTaskResponse) String() string {
 func (*CreateCaptureTaskResponse) ProtoMessage() {}
 
 func (x *CreateCaptureTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[107]
+	mi := &file_lane_v1_lane_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8160,7 +8382,7 @@ func (x *CreateCaptureTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCaptureTaskResponse.ProtoReflect.Descriptor instead.
 func (*CreateCaptureTaskResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{107}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *CreateCaptureTaskResponse) GetResult() *EntityResult {
@@ -8180,7 +8402,7 @@ type GetAttachmentRequest struct {
 
 func (x *GetAttachmentRequest) Reset() {
 	*x = GetAttachmentRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[108]
+	mi := &file_lane_v1_lane_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8192,7 +8414,7 @@ func (x *GetAttachmentRequest) String() string {
 func (*GetAttachmentRequest) ProtoMessage() {}
 
 func (x *GetAttachmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[108]
+	mi := &file_lane_v1_lane_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8205,7 +8427,7 @@ func (x *GetAttachmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAttachmentRequest.ProtoReflect.Descriptor instead.
 func (*GetAttachmentRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{108}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *GetAttachmentRequest) GetTaskId() string {
@@ -8234,7 +8456,7 @@ type GetAttachmentResponse struct {
 
 func (x *GetAttachmentResponse) Reset() {
 	*x = GetAttachmentResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[109]
+	mi := &file_lane_v1_lane_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8246,7 +8468,7 @@ func (x *GetAttachmentResponse) String() string {
 func (*GetAttachmentResponse) ProtoMessage() {}
 
 func (x *GetAttachmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[109]
+	mi := &file_lane_v1_lane_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8259,7 +8481,7 @@ func (x *GetAttachmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAttachmentResponse.ProtoReflect.Descriptor instead.
 func (*GetAttachmentResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{109}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *GetAttachmentResponse) GetState() AttachmentState {
@@ -8302,7 +8524,7 @@ type BeginAttachmentUploadRequest struct {
 
 func (x *BeginAttachmentUploadRequest) Reset() {
 	*x = BeginAttachmentUploadRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[110]
+	mi := &file_lane_v1_lane_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8314,7 +8536,7 @@ func (x *BeginAttachmentUploadRequest) String() string {
 func (*BeginAttachmentUploadRequest) ProtoMessage() {}
 
 func (x *BeginAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[110]
+	mi := &file_lane_v1_lane_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8327,7 +8549,7 @@ func (x *BeginAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginAttachmentUploadRequest.ProtoReflect.Descriptor instead.
 func (*BeginAttachmentUploadRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{110}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *BeginAttachmentUploadRequest) GetTaskId() string {
@@ -8364,7 +8586,7 @@ type BeginAttachmentUploadResponse struct {
 
 func (x *BeginAttachmentUploadResponse) Reset() {
 	*x = BeginAttachmentUploadResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[111]
+	mi := &file_lane_v1_lane_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8376,7 +8598,7 @@ func (x *BeginAttachmentUploadResponse) String() string {
 func (*BeginAttachmentUploadResponse) ProtoMessage() {}
 
 func (x *BeginAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[111]
+	mi := &file_lane_v1_lane_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8389,7 +8611,7 @@ func (x *BeginAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginAttachmentUploadResponse.ProtoReflect.Descriptor instead.
 func (*BeginAttachmentUploadResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{111}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *BeginAttachmentUploadResponse) GetUploadId() string {
@@ -8439,7 +8661,7 @@ type CompleteAttachmentUploadRequest struct {
 
 func (x *CompleteAttachmentUploadRequest) Reset() {
 	*x = CompleteAttachmentUploadRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[112]
+	mi := &file_lane_v1_lane_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8451,7 +8673,7 @@ func (x *CompleteAttachmentUploadRequest) String() string {
 func (*CompleteAttachmentUploadRequest) ProtoMessage() {}
 
 func (x *CompleteAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[112]
+	mi := &file_lane_v1_lane_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8464,7 +8686,7 @@ func (x *CompleteAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteAttachmentUploadRequest.ProtoReflect.Descriptor instead.
 func (*CompleteAttachmentUploadRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{112}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *CompleteAttachmentUploadRequest) GetTaskId() string {
@@ -8504,7 +8726,7 @@ type CompleteAttachmentUploadResponse struct {
 
 func (x *CompleteAttachmentUploadResponse) Reset() {
 	*x = CompleteAttachmentUploadResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[113]
+	mi := &file_lane_v1_lane_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8516,7 +8738,7 @@ func (x *CompleteAttachmentUploadResponse) String() string {
 func (*CompleteAttachmentUploadResponse) ProtoMessage() {}
 
 func (x *CompleteAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[113]
+	mi := &file_lane_v1_lane_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8529,7 +8751,7 @@ func (x *CompleteAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteAttachmentUploadResponse.ProtoReflect.Descriptor instead.
 func (*CompleteAttachmentUploadResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{113}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *CompleteAttachmentUploadResponse) GetState() AttachmentState {
@@ -8549,7 +8771,7 @@ type URLConnection struct {
 
 func (x *URLConnection) Reset() {
 	*x = URLConnection{}
-	mi := &file_lane_v1_lane_proto_msgTypes[114]
+	mi := &file_lane_v1_lane_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8561,7 +8783,7 @@ func (x *URLConnection) String() string {
 func (*URLConnection) ProtoMessage() {}
 
 func (x *URLConnection) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[114]
+	mi := &file_lane_v1_lane_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8574,7 +8796,7 @@ func (x *URLConnection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use URLConnection.ProtoReflect.Descriptor instead.
 func (*URLConnection) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{114}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *URLConnection) GetPrefix() string {
@@ -8600,7 +8822,7 @@ type ListURLConnectionsRequest struct {
 
 func (x *ListURLConnectionsRequest) Reset() {
 	*x = ListURLConnectionsRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[115]
+	mi := &file_lane_v1_lane_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8612,7 +8834,7 @@ func (x *ListURLConnectionsRequest) String() string {
 func (*ListURLConnectionsRequest) ProtoMessage() {}
 
 func (x *ListURLConnectionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[115]
+	mi := &file_lane_v1_lane_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8625,7 +8847,7 @@ func (x *ListURLConnectionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListURLConnectionsRequest.ProtoReflect.Descriptor instead.
 func (*ListURLConnectionsRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{115}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *ListURLConnectionsRequest) GetPage() *Page {
@@ -8645,7 +8867,7 @@ type ListURLConnectionsResponse struct {
 
 func (x *ListURLConnectionsResponse) Reset() {
 	*x = ListURLConnectionsResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[116]
+	mi := &file_lane_v1_lane_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8657,7 +8879,7 @@ func (x *ListURLConnectionsResponse) String() string {
 func (*ListURLConnectionsResponse) ProtoMessage() {}
 
 func (x *ListURLConnectionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[116]
+	mi := &file_lane_v1_lane_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8670,7 +8892,7 @@ func (x *ListURLConnectionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListURLConnectionsResponse.ProtoReflect.Descriptor instead.
 func (*ListURLConnectionsResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{116}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *ListURLConnectionsResponse) GetItems() []*EntityResult {
@@ -8698,7 +8920,7 @@ type CreateURLConnectionRequest struct {
 
 func (x *CreateURLConnectionRequest) Reset() {
 	*x = CreateURLConnectionRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[117]
+	mi := &file_lane_v1_lane_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8710,7 +8932,7 @@ func (x *CreateURLConnectionRequest) String() string {
 func (*CreateURLConnectionRequest) ProtoMessage() {}
 
 func (x *CreateURLConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[117]
+	mi := &file_lane_v1_lane_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8723,7 +8945,7 @@ func (x *CreateURLConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateURLConnectionRequest.ProtoReflect.Descriptor instead.
 func (*CreateURLConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{117}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{119}
 }
 
 func (x *CreateURLConnectionRequest) GetMeta() *MutationMeta {
@@ -8756,7 +8978,7 @@ type CreateURLConnectionResponse struct {
 
 func (x *CreateURLConnectionResponse) Reset() {
 	*x = CreateURLConnectionResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[118]
+	mi := &file_lane_v1_lane_proto_msgTypes[120]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8768,7 +8990,7 @@ func (x *CreateURLConnectionResponse) String() string {
 func (*CreateURLConnectionResponse) ProtoMessage() {}
 
 func (x *CreateURLConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[118]
+	mi := &file_lane_v1_lane_proto_msgTypes[120]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8781,7 +9003,7 @@ func (x *CreateURLConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateURLConnectionResponse.ProtoReflect.Descriptor instead.
 func (*CreateURLConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{118}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{120}
 }
 
 func (x *CreateURLConnectionResponse) GetResult() *EntityResult {
@@ -8803,7 +9025,7 @@ type SaveURLConnectionRequest struct {
 
 func (x *SaveURLConnectionRequest) Reset() {
 	*x = SaveURLConnectionRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[119]
+	mi := &file_lane_v1_lane_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8815,7 +9037,7 @@ func (x *SaveURLConnectionRequest) String() string {
 func (*SaveURLConnectionRequest) ProtoMessage() {}
 
 func (x *SaveURLConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[119]
+	mi := &file_lane_v1_lane_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8828,7 +9050,7 @@ func (x *SaveURLConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveURLConnectionRequest.ProtoReflect.Descriptor instead.
 func (*SaveURLConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{119}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *SaveURLConnectionRequest) GetMeta() *MutationMeta {
@@ -8868,7 +9090,7 @@ type SaveURLConnectionResponse struct {
 
 func (x *SaveURLConnectionResponse) Reset() {
 	*x = SaveURLConnectionResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[120]
+	mi := &file_lane_v1_lane_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8880,7 +9102,7 @@ func (x *SaveURLConnectionResponse) String() string {
 func (*SaveURLConnectionResponse) ProtoMessage() {}
 
 func (x *SaveURLConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[120]
+	mi := &file_lane_v1_lane_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8893,7 +9115,7 @@ func (x *SaveURLConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveURLConnectionResponse.ProtoReflect.Descriptor instead.
 func (*SaveURLConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{120}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *SaveURLConnectionResponse) GetResult() *EntityResult {
@@ -8913,7 +9135,7 @@ type DeleteURLConnectionRequest struct {
 
 func (x *DeleteURLConnectionRequest) Reset() {
 	*x = DeleteURLConnectionRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[121]
+	mi := &file_lane_v1_lane_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8925,7 +9147,7 @@ func (x *DeleteURLConnectionRequest) String() string {
 func (*DeleteURLConnectionRequest) ProtoMessage() {}
 
 func (x *DeleteURLConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[121]
+	mi := &file_lane_v1_lane_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8938,7 +9160,7 @@ func (x *DeleteURLConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteURLConnectionRequest.ProtoReflect.Descriptor instead.
 func (*DeleteURLConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{121}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *DeleteURLConnectionRequest) GetMeta() *MutationMeta {
@@ -8964,7 +9186,7 @@ type DeleteURLConnectionResponse struct {
 
 func (x *DeleteURLConnectionResponse) Reset() {
 	*x = DeleteURLConnectionResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[122]
+	mi := &file_lane_v1_lane_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8976,7 +9198,7 @@ func (x *DeleteURLConnectionResponse) String() string {
 func (*DeleteURLConnectionResponse) ProtoMessage() {}
 
 func (x *DeleteURLConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[122]
+	mi := &file_lane_v1_lane_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8989,7 +9211,7 @@ func (x *DeleteURLConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteURLConnectionResponse.ProtoReflect.Descriptor instead.
 func (*DeleteURLConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{122}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *DeleteURLConnectionResponse) GetResult() *EntityResult {
@@ -9014,7 +9236,7 @@ type PlanningBody struct {
 
 func (x *PlanningBody) Reset() {
 	*x = PlanningBody{}
-	mi := &file_lane_v1_lane_proto_msgTypes[123]
+	mi := &file_lane_v1_lane_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9026,7 +9248,7 @@ func (x *PlanningBody) String() string {
 func (*PlanningBody) ProtoMessage() {}
 
 func (x *PlanningBody) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[123]
+	mi := &file_lane_v1_lane_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9039,7 +9261,7 @@ func (x *PlanningBody) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningBody.ProtoReflect.Descriptor instead.
 func (*PlanningBody) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{123}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *PlanningBody) GetBody() isPlanningBody_Body {
@@ -9107,7 +9329,7 @@ type GetPlanningItemRequest struct {
 
 func (x *GetPlanningItemRequest) Reset() {
 	*x = GetPlanningItemRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[124]
+	mi := &file_lane_v1_lane_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9119,7 +9341,7 @@ func (x *GetPlanningItemRequest) String() string {
 func (*GetPlanningItemRequest) ProtoMessage() {}
 
 func (x *GetPlanningItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[124]
+	mi := &file_lane_v1_lane_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9132,7 +9354,7 @@ func (x *GetPlanningItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanningItemRequest.ProtoReflect.Descriptor instead.
 func (*GetPlanningItemRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{124}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *GetPlanningItemRequest) GetId() string {
@@ -9151,7 +9373,7 @@ type GetPlanningItemResponse struct {
 
 func (x *GetPlanningItemResponse) Reset() {
 	*x = GetPlanningItemResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[125]
+	mi := &file_lane_v1_lane_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9163,7 +9385,7 @@ func (x *GetPlanningItemResponse) String() string {
 func (*GetPlanningItemResponse) ProtoMessage() {}
 
 func (x *GetPlanningItemResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[125]
+	mi := &file_lane_v1_lane_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9176,7 +9398,7 @@ func (x *GetPlanningItemResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanningItemResponse.ProtoReflect.Descriptor instead.
 func (*GetPlanningItemResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{125}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *GetPlanningItemResponse) GetResult() *EntityResult {
@@ -9197,7 +9419,7 @@ type ListPlanningItemsRequest struct {
 
 func (x *ListPlanningItemsRequest) Reset() {
 	*x = ListPlanningItemsRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[126]
+	mi := &file_lane_v1_lane_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9209,7 +9431,7 @@ func (x *ListPlanningItemsRequest) String() string {
 func (*ListPlanningItemsRequest) ProtoMessage() {}
 
 func (x *ListPlanningItemsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[126]
+	mi := &file_lane_v1_lane_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9222,7 +9444,7 @@ func (x *ListPlanningItemsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlanningItemsRequest.ProtoReflect.Descriptor instead.
 func (*ListPlanningItemsRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{126}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *ListPlanningItemsRequest) GetPage() *Page {
@@ -9256,7 +9478,7 @@ type ListPlanningItemsResponse struct {
 
 func (x *ListPlanningItemsResponse) Reset() {
 	*x = ListPlanningItemsResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[127]
+	mi := &file_lane_v1_lane_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9268,7 +9490,7 @@ func (x *ListPlanningItemsResponse) String() string {
 func (*ListPlanningItemsResponse) ProtoMessage() {}
 
 func (x *ListPlanningItemsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[127]
+	mi := &file_lane_v1_lane_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9281,7 +9503,7 @@ func (x *ListPlanningItemsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlanningItemsResponse.ProtoReflect.Descriptor instead.
 func (*ListPlanningItemsResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{127}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *ListPlanningItemsResponse) GetItems() []*EntityResult {
@@ -9309,7 +9531,7 @@ type CreatePlanningItemRequest struct {
 
 func (x *CreatePlanningItemRequest) Reset() {
 	*x = CreatePlanningItemRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[128]
+	mi := &file_lane_v1_lane_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9321,7 +9543,7 @@ func (x *CreatePlanningItemRequest) String() string {
 func (*CreatePlanningItemRequest) ProtoMessage() {}
 
 func (x *CreatePlanningItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[128]
+	mi := &file_lane_v1_lane_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9334,7 +9556,7 @@ func (x *CreatePlanningItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePlanningItemRequest.ProtoReflect.Descriptor instead.
 func (*CreatePlanningItemRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{128}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *CreatePlanningItemRequest) GetMeta() *MutationMeta {
@@ -9367,7 +9589,7 @@ type CreatePlanningItemResponse struct {
 
 func (x *CreatePlanningItemResponse) Reset() {
 	*x = CreatePlanningItemResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[129]
+	mi := &file_lane_v1_lane_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9379,7 +9601,7 @@ func (x *CreatePlanningItemResponse) String() string {
 func (*CreatePlanningItemResponse) ProtoMessage() {}
 
 func (x *CreatePlanningItemResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[129]
+	mi := &file_lane_v1_lane_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9392,7 +9614,7 @@ func (x *CreatePlanningItemResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePlanningItemResponse.ProtoReflect.Descriptor instead.
 func (*CreatePlanningItemResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{129}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *CreatePlanningItemResponse) GetResult() *EntityResult {
@@ -9414,7 +9636,7 @@ type SavePlanningItemRequest struct {
 
 func (x *SavePlanningItemRequest) Reset() {
 	*x = SavePlanningItemRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[130]
+	mi := &file_lane_v1_lane_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9426,7 +9648,7 @@ func (x *SavePlanningItemRequest) String() string {
 func (*SavePlanningItemRequest) ProtoMessage() {}
 
 func (x *SavePlanningItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[130]
+	mi := &file_lane_v1_lane_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9439,7 +9661,7 @@ func (x *SavePlanningItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SavePlanningItemRequest.ProtoReflect.Descriptor instead.
 func (*SavePlanningItemRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{130}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *SavePlanningItemRequest) GetMeta() *MutationMeta {
@@ -9479,7 +9701,7 @@ type SavePlanningItemResponse struct {
 
 func (x *SavePlanningItemResponse) Reset() {
 	*x = SavePlanningItemResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[131]
+	mi := &file_lane_v1_lane_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9491,7 +9713,7 @@ func (x *SavePlanningItemResponse) String() string {
 func (*SavePlanningItemResponse) ProtoMessage() {}
 
 func (x *SavePlanningItemResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[131]
+	mi := &file_lane_v1_lane_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9504,7 +9726,7 @@ func (x *SavePlanningItemResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SavePlanningItemResponse.ProtoReflect.Descriptor instead.
 func (*SavePlanningItemResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{131}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *SavePlanningItemResponse) GetResult() *EntityResult {
@@ -9524,7 +9746,7 @@ type DeletePlanningItemRequest struct {
 
 func (x *DeletePlanningItemRequest) Reset() {
 	*x = DeletePlanningItemRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[132]
+	mi := &file_lane_v1_lane_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9536,7 +9758,7 @@ func (x *DeletePlanningItemRequest) String() string {
 func (*DeletePlanningItemRequest) ProtoMessage() {}
 
 func (x *DeletePlanningItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[132]
+	mi := &file_lane_v1_lane_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9549,7 +9771,7 @@ func (x *DeletePlanningItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePlanningItemRequest.ProtoReflect.Descriptor instead.
 func (*DeletePlanningItemRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{132}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *DeletePlanningItemRequest) GetMeta() *MutationMeta {
@@ -9575,7 +9797,7 @@ type DeletePlanningItemResponse struct {
 
 func (x *DeletePlanningItemResponse) Reset() {
 	*x = DeletePlanningItemResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[133]
+	mi := &file_lane_v1_lane_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9587,7 +9809,7 @@ func (x *DeletePlanningItemResponse) String() string {
 func (*DeletePlanningItemResponse) ProtoMessage() {}
 
 func (x *DeletePlanningItemResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[133]
+	mi := &file_lane_v1_lane_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9600,7 +9822,7 @@ func (x *DeletePlanningItemResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePlanningItemResponse.ProtoReflect.Descriptor instead.
 func (*DeletePlanningItemResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{133}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *DeletePlanningItemResponse) GetResult() *EntityResult {
@@ -9614,7 +9836,14 @@ var File_lane_v1_lane_proto protoreflect.FileDescriptor
 
 const file_lane_v1_lane_proto_rawDesc = "" +
 	"\n" +
-	"\x12lane/v1/lane.proto\x12\alane.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x01\n" +
+	"\x12lane/v1/lane.proto\x12\alane.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"z\n" +
+	"\rTerminalEntry\x12.\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x1a.lane.v1.TerminalEntryKindR\x04kind\x129\n" +
+	"\n" +
+	"entered_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\tenteredAt\"\x80\x01\n" +
+	"\x0fCompletedFilter\x129\n" +
+	"\tselection\x18\x01 \x01(\x0e2\x1b.lane.v1.CompletedSelectionR\tselection\x122\n" +
+	"\x06cutoff\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x06cutoff\"\x8e\x01\n" +
 	"\x06Origin\x12'\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x13.lane.v1.OriginKindR\x04kind\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1f\n" +
@@ -9858,7 +10087,7 @@ const file_lane_v1_lane_proto_rawDesc = "" +
 	"\tcycle_ids\x18\f \x03(\tR\bcycleIds\x12(\n" +
 	"\x10include_no_cycle\x18\r \x01(\bR\x0eincludeNoCycle\x12?\n" +
 	"\rrelationships\x18\x0e \x03(\x0e2\x19.lane.v1.RelationshipKindR\rrelationships\x128\n" +
-	"\x18include_no_relationships\x18\x0f \x01(\bR\x16includeNoRelationships\"\x84\x03\n" +
+	"\x18include_no_relationships\x18\x0f \x01(\bR\x16includeNoRelationships\"\xbc\x03\n" +
 	"\x10ListTasksRequest\x12!\n" +
 	"\x04page\x18\x01 \x01(\v2\r.lane.v1.PageR\x04page\x12(\n" +
 	"\rrepository_id\x18\x02 \x01(\tH\x00R\frepositoryId\x88\x01\x01\x12-\n" +
@@ -9867,7 +10096,8 @@ const file_lane_v1_lane_proto_rawDesc = "" +
 	"\x06search\x18\x05 \x01(\tR\x06search\x12+\n" +
 	"\x06filter\x18\x06 \x01(\v2\x13.lane.v1.TaskFilterR\x06filter\x12/\n" +
 	"\bsort_key\x18\a \x01(\x0e2\x14.lane.v1.TaskSortKeyR\asortKey\x12=\n" +
-	"\x0esort_direction\x18\b \x01(\x0e2\x16.lane.v1.SortDirectionR\rsortDirectionB\x10\n" +
+	"\x0esort_direction\x18\b \x01(\x0e2\x16.lane.v1.SortDirectionR\rsortDirection\x126\n" +
+	"\tcompleted\x18\t \x01(\v2\x18.lane.v1.CompletedFilterR\tcompletedB\x10\n" +
 	"\x0e_repository_id\"a\n" +
 	"\x11ListTasksResponse\x12+\n" +
 	"\x05items\x18\x01 \x03(\v2\x15.lane.v1.EntityResultR\x05items\x12\x1f\n" +
@@ -10421,7 +10651,18 @@ const file_lane_v1_lane_proto_rawDesc = "" +
 	"\rSortDirection\x12\x1e\n" +
 	"\x1aSORT_DIRECTION_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18SORT_DIRECTION_ASCENDING\x10\x01\x12\x1d\n" +
-	"\x19SORT_DIRECTION_DESCENDING\x10\x02*\x98\x01\n" +
+	"\x19SORT_DIRECTION_DESCENDING\x10\x02*\xe6\x01\n" +
+	"\x12CompletedSelection\x12#\n" +
+	"\x1fCOMPLETED_SELECTION_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18COMPLETED_SELECTION_NONE\x10\x01\x12%\n" +
+	"!COMPLETED_SELECTION_LAST_24_HOURS\x10\x02\x12#\n" +
+	"\x1fCOMPLETED_SELECTION_LAST_7_DAYS\x10\x03\x12$\n" +
+	" COMPLETED_SELECTION_LAST_30_DAYS\x10\x04\x12\x1b\n" +
+	"\x17COMPLETED_SELECTION_ALL\x10\x05*x\n" +
+	"\x11TerminalEntryKind\x12#\n" +
+	"\x1fTERMINAL_ENTRY_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19TERMINAL_ENTRY_KIND_KNOWN\x10\x01\x12\x1f\n" +
+	"\x1bTERMINAL_ENTRY_KIND_UNKNOWN\x10\x02*\x98\x01\n" +
 	"\x0fAttachmentState\x12 \n" +
 	"\x1cATTACHMENT_STATE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aATTACHMENT_STATE_AVAILABLE\x10\x01\x12%\n" +
@@ -10502,8 +10743,8 @@ func file_lane_v1_lane_proto_rawDescGZIP() []byte {
 	return file_lane_v1_lane_proto_rawDescData
 }
 
-var file_lane_v1_lane_proto_enumTypes = make([]protoimpl.EnumInfo, 21)
-var file_lane_v1_lane_proto_msgTypes = make([]protoimpl.MessageInfo, 135)
+var file_lane_v1_lane_proto_enumTypes = make([]protoimpl.EnumInfo, 23)
+var file_lane_v1_lane_proto_msgTypes = make([]protoimpl.MessageInfo, 137)
 var file_lane_v1_lane_proto_goTypes = []any{
 	(OriginKind)(0),                          // 0: lane.v1.OriginKind
 	(EntityKind)(0),                          // 1: lane.v1.EntityKind
@@ -10525,435 +10766,444 @@ var file_lane_v1_lane_proto_goTypes = []any{
 	(RelationshipKind)(0),                    // 17: lane.v1.RelationshipKind
 	(TaskSortKey)(0),                         // 18: lane.v1.TaskSortKey
 	(SortDirection)(0),                       // 19: lane.v1.SortDirection
-	(AttachmentState)(0),                     // 20: lane.v1.AttachmentState
-	(*Origin)(nil),                           // 21: lane.v1.Origin
-	(*Repository)(nil),                       // 22: lane.v1.Repository
-	(*Task)(nil),                             // 23: lane.v1.Task
-	(*Label)(nil),                            // 24: lane.v1.Label
-	(*Milestone)(nil),                        // 25: lane.v1.Milestone
-	(*Cycle)(nil),                            // 26: lane.v1.Cycle
-	(*EntityVersion)(nil),                    // 27: lane.v1.EntityVersion
-	(*MutationMeta)(nil),                     // 28: lane.v1.MutationMeta
-	(*EntityResult)(nil),                     // 29: lane.v1.EntityResult
-	(*Page)(nil),                             // 30: lane.v1.Page
-	(*RepositoryTarget)(nil),                 // 31: lane.v1.RepositoryTarget
-	(*SyncMutation)(nil),                     // 32: lane.v1.SyncMutation
-	(*SyncResult)(nil),                       // 33: lane.v1.SyncResult
-	(*RepositoryMapping)(nil),                // 34: lane.v1.RepositoryMapping
-	(*ErrorDetail)(nil),                      // 35: lane.v1.ErrorDetail
-	(*Device)(nil),                           // 36: lane.v1.Device
-	(*Connection)(nil),                       // 37: lane.v1.Connection
-	(*WebhookReceiver)(nil),                  // 38: lane.v1.WebhookReceiver
-	(*WebhookEvent)(nil),                     // 39: lane.v1.WebhookEvent
-	(*ProcessingRecord)(nil),                 // 40: lane.v1.ProcessingRecord
-	(*DeletionRecord)(nil),                   // 41: lane.v1.DeletionRecord
-	(*Change)(nil),                           // 42: lane.v1.Change
-	(*GetRepositoryRequest)(nil),             // 43: lane.v1.GetRepositoryRequest
-	(*GetRepositoryResponse)(nil),            // 44: lane.v1.GetRepositoryResponse
-	(*ListRepositoriesRequest)(nil),          // 45: lane.v1.ListRepositoriesRequest
-	(*ListRepositoriesResponse)(nil),         // 46: lane.v1.ListRepositoriesResponse
-	(*CreateRepositoryRequest)(nil),          // 47: lane.v1.CreateRepositoryRequest
-	(*CreateRepositoryResponse)(nil),         // 48: lane.v1.CreateRepositoryResponse
-	(*SaveRepositoryRequest)(nil),            // 49: lane.v1.SaveRepositoryRequest
-	(*SaveRepositoryResponse)(nil),           // 50: lane.v1.SaveRepositoryResponse
-	(*DeleteRepositoryRequest)(nil),          // 51: lane.v1.DeleteRepositoryRequest
-	(*DeleteRepositoryResponse)(nil),         // 52: lane.v1.DeleteRepositoryResponse
-	(*GetTaskRequest)(nil),                   // 53: lane.v1.GetTaskRequest
-	(*GetTaskResponse)(nil),                  // 54: lane.v1.GetTaskResponse
-	(*DateRange)(nil),                        // 55: lane.v1.DateRange
-	(*PointRange)(nil),                       // 56: lane.v1.PointRange
-	(*TaskFilter)(nil),                       // 57: lane.v1.TaskFilter
-	(*ListTasksRequest)(nil),                 // 58: lane.v1.ListTasksRequest
-	(*ListTasksResponse)(nil),                // 59: lane.v1.ListTasksResponse
-	(*CreateTaskRequest)(nil),                // 60: lane.v1.CreateTaskRequest
-	(*RelationshipEdits)(nil),                // 61: lane.v1.RelationshipEdits
-	(*CreateTaskResponse)(nil),               // 62: lane.v1.CreateTaskResponse
-	(*SaveTaskRequest)(nil),                  // 63: lane.v1.SaveTaskRequest
-	(*SaveTaskResponse)(nil),                 // 64: lane.v1.SaveTaskResponse
-	(*SetProgressRequest)(nil),               // 65: lane.v1.SetProgressRequest
-	(*SetProgressResponse)(nil),              // 66: lane.v1.SetProgressResponse
-	(*SetProposalRequest)(nil),               // 67: lane.v1.SetProposalRequest
-	(*SetProposalResponse)(nil),              // 68: lane.v1.SetProposalResponse
-	(*RestorePromptRequest)(nil),             // 69: lane.v1.RestorePromptRequest
-	(*RestorePromptResponse)(nil),            // 70: lane.v1.RestorePromptResponse
-	(*DeleteTaskRequest)(nil),                // 71: lane.v1.DeleteTaskRequest
-	(*DeleteTaskResponse)(nil),               // 72: lane.v1.DeleteTaskResponse
-	(*ListHistoryRequest)(nil),               // 73: lane.v1.ListHistoryRequest
-	(*ListHistoryResponse)(nil),              // 74: lane.v1.ListHistoryResponse
-	(*ResolveConflictRequest)(nil),           // 75: lane.v1.ResolveConflictRequest
-	(*ResolveConflictResponse)(nil),          // 76: lane.v1.ResolveConflictResponse
-	(*ListDevicesRequest)(nil),               // 77: lane.v1.ListDevicesRequest
-	(*ListDevicesResponse)(nil),              // 78: lane.v1.ListDevicesResponse
-	(*DisconnectDeviceRequest)(nil),          // 79: lane.v1.DisconnectDeviceRequest
-	(*DisconnectDeviceResponse)(nil),         // 80: lane.v1.DisconnectDeviceResponse
-	(*ListConnectionsRequest)(nil),           // 81: lane.v1.ListConnectionsRequest
-	(*ListConnectionsResponse)(nil),          // 82: lane.v1.ListConnectionsResponse
-	(*RevokeConnectionRequest)(nil),          // 83: lane.v1.RevokeConnectionRequest
-	(*RevokeConnectionResponse)(nil),         // 84: lane.v1.RevokeConnectionResponse
-	(*RegisterPushRequest)(nil),              // 85: lane.v1.RegisterPushRequest
-	(*RegisterPushResponse)(nil),             // 86: lane.v1.RegisterPushResponse
-	(*BeginDataDeletionRequest)(nil),         // 87: lane.v1.BeginDataDeletionRequest
-	(*BeginDataDeletionResponse)(nil),        // 88: lane.v1.BeginDataDeletionResponse
-	(*DeleteAccountDataRequest)(nil),         // 89: lane.v1.DeleteAccountDataRequest
-	(*DeleteAccountDataResponse)(nil),        // 90: lane.v1.DeleteAccountDataResponse
-	(*ListReceiversRequest)(nil),             // 91: lane.v1.ListReceiversRequest
-	(*ListReceiversResponse)(nil),            // 92: lane.v1.ListReceiversResponse
-	(*CreateReceiverRequest)(nil),            // 93: lane.v1.CreateReceiverRequest
-	(*CreateReceiverResponse)(nil),           // 94: lane.v1.CreateReceiverResponse
-	(*SaveReceiverRequest)(nil),              // 95: lane.v1.SaveReceiverRequest
-	(*SaveReceiverResponse)(nil),             // 96: lane.v1.SaveReceiverResponse
-	(*RotateReceiverKeyRequest)(nil),         // 97: lane.v1.RotateReceiverKeyRequest
-	(*RotateReceiverKeyResponse)(nil),        // 98: lane.v1.RotateReceiverKeyResponse
-	(*DeleteReceiverRequest)(nil),            // 99: lane.v1.DeleteReceiverRequest
-	(*DeleteReceiverResponse)(nil),           // 100: lane.v1.DeleteReceiverResponse
-	(*ListEventsRequest)(nil),                // 101: lane.v1.ListEventsRequest
-	(*ListEventsResponse)(nil),               // 102: lane.v1.ListEventsResponse
-	(*GetEventRequest)(nil),                  // 103: lane.v1.GetEventRequest
-	(*GetEventResponse)(nil),                 // 104: lane.v1.GetEventResponse
-	(*DeleteEventRequest)(nil),               // 105: lane.v1.DeleteEventRequest
-	(*DeleteEventResponse)(nil),              // 106: lane.v1.DeleteEventResponse
-	(*ClaimEventRequest)(nil),                // 107: lane.v1.ClaimEventRequest
-	(*ClaimEventResponse)(nil),               // 108: lane.v1.ClaimEventResponse
-	(*RenewEventLeaseRequest)(nil),           // 109: lane.v1.RenewEventLeaseRequest
-	(*RenewEventLeaseResponse)(nil),          // 110: lane.v1.RenewEventLeaseResponse
-	(*ReleaseEventLeaseRequest)(nil),         // 111: lane.v1.ReleaseEventLeaseRequest
-	(*ReleaseEventLeaseResponse)(nil),        // 112: lane.v1.ReleaseEventLeaseResponse
-	(*CompleteEventRequest)(nil),             // 113: lane.v1.CompleteEventRequest
-	(*CompleteEventResponse)(nil),            // 114: lane.v1.CompleteEventResponse
-	(*ReopenEventRequest)(nil),               // 115: lane.v1.ReopenEventRequest
-	(*ReopenEventResponse)(nil),              // 116: lane.v1.ReopenEventResponse
-	(*GetSyncInfoRequest)(nil),               // 117: lane.v1.GetSyncInfoRequest
-	(*GetSyncInfoResponse)(nil),              // 118: lane.v1.GetSyncInfoResponse
-	(*PushChangesRequest)(nil),               // 119: lane.v1.PushChangesRequest
-	(*PushChangesResponse)(nil),              // 120: lane.v1.PushChangesResponse
-	(*PullChangesRequest)(nil),               // 121: lane.v1.PullChangesRequest
-	(*PullChangesResponse)(nil),              // 122: lane.v1.PullChangesResponse
-	(*WatchChangesRequest)(nil),              // 123: lane.v1.WatchChangesRequest
-	(*WatchChangesResponse)(nil),             // 124: lane.v1.WatchChangesResponse
-	(*CaptureReference)(nil),                 // 125: lane.v1.CaptureReference
-	(*CapturedImage)(nil),                    // 126: lane.v1.CapturedImage
-	(*CreateCaptureTaskRequest)(nil),         // 127: lane.v1.CreateCaptureTaskRequest
-	(*CreateCaptureTaskResponse)(nil),        // 128: lane.v1.CreateCaptureTaskResponse
-	(*GetAttachmentRequest)(nil),             // 129: lane.v1.GetAttachmentRequest
-	(*GetAttachmentResponse)(nil),            // 130: lane.v1.GetAttachmentResponse
-	(*BeginAttachmentUploadRequest)(nil),     // 131: lane.v1.BeginAttachmentUploadRequest
-	(*BeginAttachmentUploadResponse)(nil),    // 132: lane.v1.BeginAttachmentUploadResponse
-	(*CompleteAttachmentUploadRequest)(nil),  // 133: lane.v1.CompleteAttachmentUploadRequest
-	(*CompleteAttachmentUploadResponse)(nil), // 134: lane.v1.CompleteAttachmentUploadResponse
-	(*URLConnection)(nil),                    // 135: lane.v1.URLConnection
-	(*ListURLConnectionsRequest)(nil),        // 136: lane.v1.ListURLConnectionsRequest
-	(*ListURLConnectionsResponse)(nil),       // 137: lane.v1.ListURLConnectionsResponse
-	(*CreateURLConnectionRequest)(nil),       // 138: lane.v1.CreateURLConnectionRequest
-	(*CreateURLConnectionResponse)(nil),      // 139: lane.v1.CreateURLConnectionResponse
-	(*SaveURLConnectionRequest)(nil),         // 140: lane.v1.SaveURLConnectionRequest
-	(*SaveURLConnectionResponse)(nil),        // 141: lane.v1.SaveURLConnectionResponse
-	(*DeleteURLConnectionRequest)(nil),       // 142: lane.v1.DeleteURLConnectionRequest
-	(*DeleteURLConnectionResponse)(nil),      // 143: lane.v1.DeleteURLConnectionResponse
-	(*PlanningBody)(nil),                     // 144: lane.v1.PlanningBody
-	(*GetPlanningItemRequest)(nil),           // 145: lane.v1.GetPlanningItemRequest
-	(*GetPlanningItemResponse)(nil),          // 146: lane.v1.GetPlanningItemResponse
-	(*ListPlanningItemsRequest)(nil),         // 147: lane.v1.ListPlanningItemsRequest
-	(*ListPlanningItemsResponse)(nil),        // 148: lane.v1.ListPlanningItemsResponse
-	(*CreatePlanningItemRequest)(nil),        // 149: lane.v1.CreatePlanningItemRequest
-	(*CreatePlanningItemResponse)(nil),       // 150: lane.v1.CreatePlanningItemResponse
-	(*SavePlanningItemRequest)(nil),          // 151: lane.v1.SavePlanningItemRequest
-	(*SavePlanningItemResponse)(nil),         // 152: lane.v1.SavePlanningItemResponse
-	(*DeletePlanningItemRequest)(nil),        // 153: lane.v1.DeletePlanningItemRequest
-	(*DeletePlanningItemResponse)(nil),       // 154: lane.v1.DeletePlanningItemResponse
-	nil,                                      // 155: lane.v1.BeginAttachmentUploadResponse.HeadersEntry
-	(*timestamppb.Timestamp)(nil),            // 156: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),                  // 157: google.protobuf.Struct
+	(CompletedSelection)(0),                  // 20: lane.v1.CompletedSelection
+	(TerminalEntryKind)(0),                   // 21: lane.v1.TerminalEntryKind
+	(AttachmentState)(0),                     // 22: lane.v1.AttachmentState
+	(*TerminalEntry)(nil),                    // 23: lane.v1.TerminalEntry
+	(*CompletedFilter)(nil),                  // 24: lane.v1.CompletedFilter
+	(*Origin)(nil),                           // 25: lane.v1.Origin
+	(*Repository)(nil),                       // 26: lane.v1.Repository
+	(*Task)(nil),                             // 27: lane.v1.Task
+	(*Label)(nil),                            // 28: lane.v1.Label
+	(*Milestone)(nil),                        // 29: lane.v1.Milestone
+	(*Cycle)(nil),                            // 30: lane.v1.Cycle
+	(*EntityVersion)(nil),                    // 31: lane.v1.EntityVersion
+	(*MutationMeta)(nil),                     // 32: lane.v1.MutationMeta
+	(*EntityResult)(nil),                     // 33: lane.v1.EntityResult
+	(*Page)(nil),                             // 34: lane.v1.Page
+	(*RepositoryTarget)(nil),                 // 35: lane.v1.RepositoryTarget
+	(*SyncMutation)(nil),                     // 36: lane.v1.SyncMutation
+	(*SyncResult)(nil),                       // 37: lane.v1.SyncResult
+	(*RepositoryMapping)(nil),                // 38: lane.v1.RepositoryMapping
+	(*ErrorDetail)(nil),                      // 39: lane.v1.ErrorDetail
+	(*Device)(nil),                           // 40: lane.v1.Device
+	(*Connection)(nil),                       // 41: lane.v1.Connection
+	(*WebhookReceiver)(nil),                  // 42: lane.v1.WebhookReceiver
+	(*WebhookEvent)(nil),                     // 43: lane.v1.WebhookEvent
+	(*ProcessingRecord)(nil),                 // 44: lane.v1.ProcessingRecord
+	(*DeletionRecord)(nil),                   // 45: lane.v1.DeletionRecord
+	(*Change)(nil),                           // 46: lane.v1.Change
+	(*GetRepositoryRequest)(nil),             // 47: lane.v1.GetRepositoryRequest
+	(*GetRepositoryResponse)(nil),            // 48: lane.v1.GetRepositoryResponse
+	(*ListRepositoriesRequest)(nil),          // 49: lane.v1.ListRepositoriesRequest
+	(*ListRepositoriesResponse)(nil),         // 50: lane.v1.ListRepositoriesResponse
+	(*CreateRepositoryRequest)(nil),          // 51: lane.v1.CreateRepositoryRequest
+	(*CreateRepositoryResponse)(nil),         // 52: lane.v1.CreateRepositoryResponse
+	(*SaveRepositoryRequest)(nil),            // 53: lane.v1.SaveRepositoryRequest
+	(*SaveRepositoryResponse)(nil),           // 54: lane.v1.SaveRepositoryResponse
+	(*DeleteRepositoryRequest)(nil),          // 55: lane.v1.DeleteRepositoryRequest
+	(*DeleteRepositoryResponse)(nil),         // 56: lane.v1.DeleteRepositoryResponse
+	(*GetTaskRequest)(nil),                   // 57: lane.v1.GetTaskRequest
+	(*GetTaskResponse)(nil),                  // 58: lane.v1.GetTaskResponse
+	(*DateRange)(nil),                        // 59: lane.v1.DateRange
+	(*PointRange)(nil),                       // 60: lane.v1.PointRange
+	(*TaskFilter)(nil),                       // 61: lane.v1.TaskFilter
+	(*ListTasksRequest)(nil),                 // 62: lane.v1.ListTasksRequest
+	(*ListTasksResponse)(nil),                // 63: lane.v1.ListTasksResponse
+	(*CreateTaskRequest)(nil),                // 64: lane.v1.CreateTaskRequest
+	(*RelationshipEdits)(nil),                // 65: lane.v1.RelationshipEdits
+	(*CreateTaskResponse)(nil),               // 66: lane.v1.CreateTaskResponse
+	(*SaveTaskRequest)(nil),                  // 67: lane.v1.SaveTaskRequest
+	(*SaveTaskResponse)(nil),                 // 68: lane.v1.SaveTaskResponse
+	(*SetProgressRequest)(nil),               // 69: lane.v1.SetProgressRequest
+	(*SetProgressResponse)(nil),              // 70: lane.v1.SetProgressResponse
+	(*SetProposalRequest)(nil),               // 71: lane.v1.SetProposalRequest
+	(*SetProposalResponse)(nil),              // 72: lane.v1.SetProposalResponse
+	(*RestorePromptRequest)(nil),             // 73: lane.v1.RestorePromptRequest
+	(*RestorePromptResponse)(nil),            // 74: lane.v1.RestorePromptResponse
+	(*DeleteTaskRequest)(nil),                // 75: lane.v1.DeleteTaskRequest
+	(*DeleteTaskResponse)(nil),               // 76: lane.v1.DeleteTaskResponse
+	(*ListHistoryRequest)(nil),               // 77: lane.v1.ListHistoryRequest
+	(*ListHistoryResponse)(nil),              // 78: lane.v1.ListHistoryResponse
+	(*ResolveConflictRequest)(nil),           // 79: lane.v1.ResolveConflictRequest
+	(*ResolveConflictResponse)(nil),          // 80: lane.v1.ResolveConflictResponse
+	(*ListDevicesRequest)(nil),               // 81: lane.v1.ListDevicesRequest
+	(*ListDevicesResponse)(nil),              // 82: lane.v1.ListDevicesResponse
+	(*DisconnectDeviceRequest)(nil),          // 83: lane.v1.DisconnectDeviceRequest
+	(*DisconnectDeviceResponse)(nil),         // 84: lane.v1.DisconnectDeviceResponse
+	(*ListConnectionsRequest)(nil),           // 85: lane.v1.ListConnectionsRequest
+	(*ListConnectionsResponse)(nil),          // 86: lane.v1.ListConnectionsResponse
+	(*RevokeConnectionRequest)(nil),          // 87: lane.v1.RevokeConnectionRequest
+	(*RevokeConnectionResponse)(nil),         // 88: lane.v1.RevokeConnectionResponse
+	(*RegisterPushRequest)(nil),              // 89: lane.v1.RegisterPushRequest
+	(*RegisterPushResponse)(nil),             // 90: lane.v1.RegisterPushResponse
+	(*BeginDataDeletionRequest)(nil),         // 91: lane.v1.BeginDataDeletionRequest
+	(*BeginDataDeletionResponse)(nil),        // 92: lane.v1.BeginDataDeletionResponse
+	(*DeleteAccountDataRequest)(nil),         // 93: lane.v1.DeleteAccountDataRequest
+	(*DeleteAccountDataResponse)(nil),        // 94: lane.v1.DeleteAccountDataResponse
+	(*ListReceiversRequest)(nil),             // 95: lane.v1.ListReceiversRequest
+	(*ListReceiversResponse)(nil),            // 96: lane.v1.ListReceiversResponse
+	(*CreateReceiverRequest)(nil),            // 97: lane.v1.CreateReceiverRequest
+	(*CreateReceiverResponse)(nil),           // 98: lane.v1.CreateReceiverResponse
+	(*SaveReceiverRequest)(nil),              // 99: lane.v1.SaveReceiverRequest
+	(*SaveReceiverResponse)(nil),             // 100: lane.v1.SaveReceiverResponse
+	(*RotateReceiverKeyRequest)(nil),         // 101: lane.v1.RotateReceiverKeyRequest
+	(*RotateReceiverKeyResponse)(nil),        // 102: lane.v1.RotateReceiverKeyResponse
+	(*DeleteReceiverRequest)(nil),            // 103: lane.v1.DeleteReceiverRequest
+	(*DeleteReceiverResponse)(nil),           // 104: lane.v1.DeleteReceiverResponse
+	(*ListEventsRequest)(nil),                // 105: lane.v1.ListEventsRequest
+	(*ListEventsResponse)(nil),               // 106: lane.v1.ListEventsResponse
+	(*GetEventRequest)(nil),                  // 107: lane.v1.GetEventRequest
+	(*GetEventResponse)(nil),                 // 108: lane.v1.GetEventResponse
+	(*DeleteEventRequest)(nil),               // 109: lane.v1.DeleteEventRequest
+	(*DeleteEventResponse)(nil),              // 110: lane.v1.DeleteEventResponse
+	(*ClaimEventRequest)(nil),                // 111: lane.v1.ClaimEventRequest
+	(*ClaimEventResponse)(nil),               // 112: lane.v1.ClaimEventResponse
+	(*RenewEventLeaseRequest)(nil),           // 113: lane.v1.RenewEventLeaseRequest
+	(*RenewEventLeaseResponse)(nil),          // 114: lane.v1.RenewEventLeaseResponse
+	(*ReleaseEventLeaseRequest)(nil),         // 115: lane.v1.ReleaseEventLeaseRequest
+	(*ReleaseEventLeaseResponse)(nil),        // 116: lane.v1.ReleaseEventLeaseResponse
+	(*CompleteEventRequest)(nil),             // 117: lane.v1.CompleteEventRequest
+	(*CompleteEventResponse)(nil),            // 118: lane.v1.CompleteEventResponse
+	(*ReopenEventRequest)(nil),               // 119: lane.v1.ReopenEventRequest
+	(*ReopenEventResponse)(nil),              // 120: lane.v1.ReopenEventResponse
+	(*GetSyncInfoRequest)(nil),               // 121: lane.v1.GetSyncInfoRequest
+	(*GetSyncInfoResponse)(nil),              // 122: lane.v1.GetSyncInfoResponse
+	(*PushChangesRequest)(nil),               // 123: lane.v1.PushChangesRequest
+	(*PushChangesResponse)(nil),              // 124: lane.v1.PushChangesResponse
+	(*PullChangesRequest)(nil),               // 125: lane.v1.PullChangesRequest
+	(*PullChangesResponse)(nil),              // 126: lane.v1.PullChangesResponse
+	(*WatchChangesRequest)(nil),              // 127: lane.v1.WatchChangesRequest
+	(*WatchChangesResponse)(nil),             // 128: lane.v1.WatchChangesResponse
+	(*CaptureReference)(nil),                 // 129: lane.v1.CaptureReference
+	(*CapturedImage)(nil),                    // 130: lane.v1.CapturedImage
+	(*CreateCaptureTaskRequest)(nil),         // 131: lane.v1.CreateCaptureTaskRequest
+	(*CreateCaptureTaskResponse)(nil),        // 132: lane.v1.CreateCaptureTaskResponse
+	(*GetAttachmentRequest)(nil),             // 133: lane.v1.GetAttachmentRequest
+	(*GetAttachmentResponse)(nil),            // 134: lane.v1.GetAttachmentResponse
+	(*BeginAttachmentUploadRequest)(nil),     // 135: lane.v1.BeginAttachmentUploadRequest
+	(*BeginAttachmentUploadResponse)(nil),    // 136: lane.v1.BeginAttachmentUploadResponse
+	(*CompleteAttachmentUploadRequest)(nil),  // 137: lane.v1.CompleteAttachmentUploadRequest
+	(*CompleteAttachmentUploadResponse)(nil), // 138: lane.v1.CompleteAttachmentUploadResponse
+	(*URLConnection)(nil),                    // 139: lane.v1.URLConnection
+	(*ListURLConnectionsRequest)(nil),        // 140: lane.v1.ListURLConnectionsRequest
+	(*ListURLConnectionsResponse)(nil),       // 141: lane.v1.ListURLConnectionsResponse
+	(*CreateURLConnectionRequest)(nil),       // 142: lane.v1.CreateURLConnectionRequest
+	(*CreateURLConnectionResponse)(nil),      // 143: lane.v1.CreateURLConnectionResponse
+	(*SaveURLConnectionRequest)(nil),         // 144: lane.v1.SaveURLConnectionRequest
+	(*SaveURLConnectionResponse)(nil),        // 145: lane.v1.SaveURLConnectionResponse
+	(*DeleteURLConnectionRequest)(nil),       // 146: lane.v1.DeleteURLConnectionRequest
+	(*DeleteURLConnectionResponse)(nil),      // 147: lane.v1.DeleteURLConnectionResponse
+	(*PlanningBody)(nil),                     // 148: lane.v1.PlanningBody
+	(*GetPlanningItemRequest)(nil),           // 149: lane.v1.GetPlanningItemRequest
+	(*GetPlanningItemResponse)(nil),          // 150: lane.v1.GetPlanningItemResponse
+	(*ListPlanningItemsRequest)(nil),         // 151: lane.v1.ListPlanningItemsRequest
+	(*ListPlanningItemsResponse)(nil),        // 152: lane.v1.ListPlanningItemsResponse
+	(*CreatePlanningItemRequest)(nil),        // 153: lane.v1.CreatePlanningItemRequest
+	(*CreatePlanningItemResponse)(nil),       // 154: lane.v1.CreatePlanningItemResponse
+	(*SavePlanningItemRequest)(nil),          // 155: lane.v1.SavePlanningItemRequest
+	(*SavePlanningItemResponse)(nil),         // 156: lane.v1.SavePlanningItemResponse
+	(*DeletePlanningItemRequest)(nil),        // 157: lane.v1.DeletePlanningItemRequest
+	(*DeletePlanningItemResponse)(nil),       // 158: lane.v1.DeletePlanningItemResponse
+	nil,                                      // 159: lane.v1.BeginAttachmentUploadResponse.HeadersEntry
+	(*timestamppb.Timestamp)(nil),            // 160: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),                  // 161: google.protobuf.Struct
 }
 var file_lane_v1_lane_proto_depIdxs = []int32{
-	0,   // 0: lane.v1.Origin.kind:type_name -> lane.v1.OriginKind
-	2,   // 1: lane.v1.Task.progress:type_name -> lane.v1.Progress
-	3,   // 2: lane.v1.Task.proposal:type_name -> lane.v1.Proposal
-	125, // 3: lane.v1.Task.captures:type_name -> lane.v1.CaptureReference
-	14,  // 4: lane.v1.Task.priority:type_name -> lane.v1.TaskPriority
-	15,  // 5: lane.v1.Task.type:type_name -> lane.v1.TaskType
-	1,   // 6: lane.v1.EntityVersion.kind:type_name -> lane.v1.EntityKind
-	156, // 7: lane.v1.EntityVersion.created_at:type_name -> google.protobuf.Timestamp
-	21,  // 8: lane.v1.EntityVersion.origin:type_name -> lane.v1.Origin
-	22,  // 9: lane.v1.EntityVersion.repository:type_name -> lane.v1.Repository
-	23,  // 10: lane.v1.EntityVersion.task:type_name -> lane.v1.Task
-	135, // 11: lane.v1.EntityVersion.url_connection:type_name -> lane.v1.URLConnection
-	24,  // 12: lane.v1.EntityVersion.label:type_name -> lane.v1.Label
-	25,  // 13: lane.v1.EntityVersion.milestone:type_name -> lane.v1.Milestone
-	26,  // 14: lane.v1.EntityVersion.cycle:type_name -> lane.v1.Cycle
-	21,  // 15: lane.v1.MutationMeta.origin:type_name -> lane.v1.Origin
-	4,   // 16: lane.v1.EntityResult.result:type_name -> lane.v1.ResultKind
-	27,  // 17: lane.v1.EntityResult.version:type_name -> lane.v1.EntityVersion
-	27,  // 18: lane.v1.EntityResult.alternatives:type_name -> lane.v1.EntityVersion
-	28,  // 19: lane.v1.SyncMutation.meta:type_name -> lane.v1.MutationMeta
-	27,  // 20: lane.v1.SyncMutation.version:type_name -> lane.v1.EntityVersion
-	5,   // 21: lane.v1.SyncMutation.kind:type_name -> lane.v1.MutationKind
-	29,  // 22: lane.v1.SyncResult.result:type_name -> lane.v1.EntityResult
-	35,  // 23: lane.v1.SyncResult.error:type_name -> lane.v1.ErrorDetail
-	6,   // 24: lane.v1.ErrorDetail.reason:type_name -> lane.v1.ErrorReason
-	16,  // 25: lane.v1.ErrorDetail.violation:type_name -> lane.v1.ConstraintViolation
-	156, // 26: lane.v1.Device.last_sync_at:type_name -> google.protobuf.Timestamp
-	156, // 27: lane.v1.Device.disconnected_at:type_name -> google.protobuf.Timestamp
-	156, // 28: lane.v1.Connection.approved_at:type_name -> google.protobuf.Timestamp
-	156, // 29: lane.v1.Connection.revoked_at:type_name -> google.protobuf.Timestamp
-	156, // 30: lane.v1.WebhookEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	157, // 31: lane.v1.WebhookEvent.payload:type_name -> google.protobuf.Struct
-	10,  // 32: lane.v1.WebhookEvent.state:type_name -> lane.v1.EventState
-	156, // 33: lane.v1.ProcessingRecord.completed_at:type_name -> google.protobuf.Timestamp
-	21,  // 34: lane.v1.ProcessingRecord.origin:type_name -> lane.v1.Origin
-	13,  // 35: lane.v1.DeletionRecord.kind:type_name -> lane.v1.EntityKindOrRemoteKind
-	29,  // 36: lane.v1.Change.entity:type_name -> lane.v1.EntityResult
-	38,  // 37: lane.v1.Change.receiver:type_name -> lane.v1.WebhookReceiver
-	39,  // 38: lane.v1.Change.event:type_name -> lane.v1.WebhookEvent
-	40,  // 39: lane.v1.Change.processing:type_name -> lane.v1.ProcessingRecord
-	41,  // 40: lane.v1.Change.deletion:type_name -> lane.v1.DeletionRecord
-	29,  // 41: lane.v1.GetRepositoryResponse.result:type_name -> lane.v1.EntityResult
-	30,  // 42: lane.v1.ListRepositoriesRequest.page:type_name -> lane.v1.Page
-	29,  // 43: lane.v1.ListRepositoriesResponse.items:type_name -> lane.v1.EntityResult
-	28,  // 44: lane.v1.CreateRepositoryRequest.meta:type_name -> lane.v1.MutationMeta
-	29,  // 45: lane.v1.CreateRepositoryResponse.result:type_name -> lane.v1.EntityResult
-	28,  // 46: lane.v1.SaveRepositoryRequest.meta:type_name -> lane.v1.MutationMeta
-	29,  // 47: lane.v1.SaveRepositoryResponse.result:type_name -> lane.v1.EntityResult
-	28,  // 48: lane.v1.DeleteRepositoryRequest.meta:type_name -> lane.v1.MutationMeta
-	29,  // 49: lane.v1.DeleteRepositoryResponse.result:type_name -> lane.v1.EntityResult
-	29,  // 50: lane.v1.GetTaskResponse.result:type_name -> lane.v1.EntityResult
-	14,  // 51: lane.v1.TaskFilter.priorities:type_name -> lane.v1.TaskPriority
-	15,  // 52: lane.v1.TaskFilter.types:type_name -> lane.v1.TaskType
-	55,  // 53: lane.v1.TaskFilter.start_date:type_name -> lane.v1.DateRange
-	55,  // 54: lane.v1.TaskFilter.due_date:type_name -> lane.v1.DateRange
-	56,  // 55: lane.v1.TaskFilter.story_points:type_name -> lane.v1.PointRange
-	17,  // 56: lane.v1.TaskFilter.relationships:type_name -> lane.v1.RelationshipKind
-	30,  // 57: lane.v1.ListTasksRequest.page:type_name -> lane.v1.Page
-	2,   // 58: lane.v1.ListTasksRequest.progress:type_name -> lane.v1.Progress
-	3,   // 59: lane.v1.ListTasksRequest.proposal:type_name -> lane.v1.Proposal
-	57,  // 60: lane.v1.ListTasksRequest.filter:type_name -> lane.v1.TaskFilter
-	18,  // 61: lane.v1.ListTasksRequest.sort_key:type_name -> lane.v1.TaskSortKey
-	19,  // 62: lane.v1.ListTasksRequest.sort_direction:type_name -> lane.v1.SortDirection
-	29,  // 63: lane.v1.ListTasksResponse.items:type_name -> lane.v1.EntityResult
-	28,  // 64: lane.v1.CreateTaskRequest.meta:type_name -> lane.v1.MutationMeta
-	31,  // 65: lane.v1.CreateTaskRequest.repository:type_name -> lane.v1.RepositoryTarget
-	2,   // 66: lane.v1.CreateTaskRequest.progress:type_name -> lane.v1.Progress
-	3,   // 67: lane.v1.CreateTaskRequest.proposal:type_name -> lane.v1.Proposal
-	14,  // 68: lane.v1.CreateTaskRequest.priority:type_name -> lane.v1.TaskPriority
-	15,  // 69: lane.v1.CreateTaskRequest.type:type_name -> lane.v1.TaskType
-	61,  // 70: lane.v1.CreateTaskRequest.relationship_edits:type_name -> lane.v1.RelationshipEdits
-	29,  // 71: lane.v1.CreateTaskResponse.result:type_name -> lane.v1.EntityResult
-	29,  // 72: lane.v1.CreateTaskResponse.repository:type_name -> lane.v1.EntityResult
-	29,  // 73: lane.v1.CreateTaskResponse.affected:type_name -> lane.v1.EntityResult
-	28,  // 74: lane.v1.SaveTaskRequest.meta:type_name -> lane.v1.MutationMeta
-	23,  // 75: lane.v1.SaveTaskRequest.task:type_name -> lane.v1.Task
-	61,  // 76: lane.v1.SaveTaskRequest.relationship_edits:type_name -> lane.v1.RelationshipEdits
-	29,  // 77: lane.v1.SaveTaskResponse.result:type_name -> lane.v1.EntityResult
-	29,  // 78: lane.v1.SaveTaskResponse.affected:type_name -> lane.v1.EntityResult
-	28,  // 79: lane.v1.SetProgressRequest.meta:type_name -> lane.v1.MutationMeta
-	2,   // 80: lane.v1.SetProgressRequest.progress:type_name -> lane.v1.Progress
-	29,  // 81: lane.v1.SetProgressResponse.result:type_name -> lane.v1.EntityResult
-	28,  // 82: lane.v1.SetProposalRequest.meta:type_name -> lane.v1.MutationMeta
-	3,   // 83: lane.v1.SetProposalRequest.proposal:type_name -> lane.v1.Proposal
-	29,  // 84: lane.v1.SetProposalResponse.result:type_name -> lane.v1.EntityResult
-	28,  // 85: lane.v1.RestorePromptRequest.meta:type_name -> lane.v1.MutationMeta
-	29,  // 86: lane.v1.RestorePromptResponse.result:type_name -> lane.v1.EntityResult
-	28,  // 87: lane.v1.DeleteTaskRequest.meta:type_name -> lane.v1.MutationMeta
-	29,  // 88: lane.v1.DeleteTaskResponse.result:type_name -> lane.v1.EntityResult
-	30,  // 89: lane.v1.ListHistoryRequest.page:type_name -> lane.v1.Page
-	27,  // 90: lane.v1.ListHistoryResponse.versions:type_name -> lane.v1.EntityVersion
-	28,  // 91: lane.v1.ResolveConflictRequest.meta:type_name -> lane.v1.MutationMeta
-	27,  // 92: lane.v1.ResolveConflictRequest.resolved:type_name -> lane.v1.EntityVersion
-	29,  // 93: lane.v1.ResolveConflictResponse.result:type_name -> lane.v1.EntityResult
-	30,  // 94: lane.v1.ListDevicesRequest.page:type_name -> lane.v1.Page
-	36,  // 95: lane.v1.ListDevicesResponse.items:type_name -> lane.v1.Device
-	28,  // 96: lane.v1.DisconnectDeviceRequest.meta:type_name -> lane.v1.MutationMeta
-	36,  // 97: lane.v1.DisconnectDeviceResponse.device:type_name -> lane.v1.Device
-	30,  // 98: lane.v1.ListConnectionsRequest.page:type_name -> lane.v1.Page
-	37,  // 99: lane.v1.ListConnectionsResponse.items:type_name -> lane.v1.Connection
-	28,  // 100: lane.v1.RevokeConnectionRequest.meta:type_name -> lane.v1.MutationMeta
-	37,  // 101: lane.v1.RevokeConnectionResponse.connection:type_name -> lane.v1.Connection
-	28,  // 102: lane.v1.RegisterPushRequest.meta:type_name -> lane.v1.MutationMeta
-	7,   // 103: lane.v1.RegisterPushRequest.provider:type_name -> lane.v1.PushProvider
-	8,   // 104: lane.v1.RegisterPushRequest.content:type_name -> lane.v1.NotificationContent
-	36,  // 105: lane.v1.RegisterPushResponse.device:type_name -> lane.v1.Device
-	28,  // 106: lane.v1.BeginDataDeletionRequest.meta:type_name -> lane.v1.MutationMeta
-	9,   // 107: lane.v1.BeginDataDeletionRequest.mode:type_name -> lane.v1.DataDeletionMode
-	28,  // 108: lane.v1.DeleteAccountDataRequest.meta:type_name -> lane.v1.MutationMeta
-	9,   // 109: lane.v1.DeleteAccountDataRequest.mode:type_name -> lane.v1.DataDeletionMode
-	30,  // 110: lane.v1.ListReceiversRequest.page:type_name -> lane.v1.Page
-	38,  // 111: lane.v1.ListReceiversResponse.items:type_name -> lane.v1.WebhookReceiver
-	28,  // 112: lane.v1.CreateReceiverRequest.meta:type_name -> lane.v1.MutationMeta
-	38,  // 113: lane.v1.CreateReceiverResponse.receiver:type_name -> lane.v1.WebhookReceiver
-	28,  // 114: lane.v1.SaveReceiverRequest.meta:type_name -> lane.v1.MutationMeta
-	38,  // 115: lane.v1.SaveReceiverResponse.receiver:type_name -> lane.v1.WebhookReceiver
-	28,  // 116: lane.v1.RotateReceiverKeyRequest.meta:type_name -> lane.v1.MutationMeta
-	38,  // 117: lane.v1.RotateReceiverKeyResponse.receiver:type_name -> lane.v1.WebhookReceiver
-	28,  // 118: lane.v1.DeleteReceiverRequest.meta:type_name -> lane.v1.MutationMeta
-	41,  // 119: lane.v1.DeleteReceiverResponse.deletion:type_name -> lane.v1.DeletionRecord
-	30,  // 120: lane.v1.ListEventsRequest.page:type_name -> lane.v1.Page
-	10,  // 121: lane.v1.ListEventsRequest.states:type_name -> lane.v1.EventState
-	39,  // 122: lane.v1.ListEventsResponse.items:type_name -> lane.v1.WebhookEvent
-	39,  // 123: lane.v1.GetEventResponse.event:type_name -> lane.v1.WebhookEvent
-	40,  // 124: lane.v1.GetEventResponse.processing:type_name -> lane.v1.ProcessingRecord
-	28,  // 125: lane.v1.DeleteEventRequest.meta:type_name -> lane.v1.MutationMeta
-	41,  // 126: lane.v1.DeleteEventResponse.deletion:type_name -> lane.v1.DeletionRecord
-	28,  // 127: lane.v1.ClaimEventRequest.meta:type_name -> lane.v1.MutationMeta
-	39,  // 128: lane.v1.ClaimEventResponse.event:type_name -> lane.v1.WebhookEvent
-	156, // 129: lane.v1.ClaimEventResponse.expires_at:type_name -> google.protobuf.Timestamp
-	28,  // 130: lane.v1.RenewEventLeaseRequest.meta:type_name -> lane.v1.MutationMeta
-	156, // 131: lane.v1.RenewEventLeaseResponse.expires_at:type_name -> google.protobuf.Timestamp
-	28,  // 132: lane.v1.ReleaseEventLeaseRequest.meta:type_name -> lane.v1.MutationMeta
-	39,  // 133: lane.v1.ReleaseEventLeaseResponse.event:type_name -> lane.v1.WebhookEvent
-	28,  // 134: lane.v1.CompleteEventRequest.meta:type_name -> lane.v1.MutationMeta
-	60,  // 135: lane.v1.CompleteEventRequest.tasks:type_name -> lane.v1.CreateTaskRequest
-	39,  // 136: lane.v1.CompleteEventResponse.event:type_name -> lane.v1.WebhookEvent
-	40,  // 137: lane.v1.CompleteEventResponse.processing:type_name -> lane.v1.ProcessingRecord
-	29,  // 138: lane.v1.CompleteEventResponse.tasks:type_name -> lane.v1.EntityResult
-	28,  // 139: lane.v1.ReopenEventRequest.meta:type_name -> lane.v1.MutationMeta
-	39,  // 140: lane.v1.ReopenEventResponse.event:type_name -> lane.v1.WebhookEvent
-	32,  // 141: lane.v1.PushChangesRequest.mutations:type_name -> lane.v1.SyncMutation
-	33,  // 142: lane.v1.PushChangesResponse.results:type_name -> lane.v1.SyncResult
-	34,  // 143: lane.v1.PushChangesResponse.repository_mappings:type_name -> lane.v1.RepositoryMapping
-	42,  // 144: lane.v1.PullChangesResponse.changes:type_name -> lane.v1.Change
-	125, // 145: lane.v1.CapturedImage.capture:type_name -> lane.v1.CaptureReference
-	28,  // 146: lane.v1.CreateCaptureTaskRequest.meta:type_name -> lane.v1.MutationMeta
-	126, // 147: lane.v1.CreateCaptureTaskRequest.images:type_name -> lane.v1.CapturedImage
-	29,  // 148: lane.v1.CreateCaptureTaskResponse.result:type_name -> lane.v1.EntityResult
-	20,  // 149: lane.v1.GetAttachmentResponse.state:type_name -> lane.v1.AttachmentState
-	156, // 150: lane.v1.GetAttachmentResponse.expires_at:type_name -> google.protobuf.Timestamp
-	156, // 151: lane.v1.BeginAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
-	155, // 152: lane.v1.BeginAttachmentUploadResponse.headers:type_name -> lane.v1.BeginAttachmentUploadResponse.HeadersEntry
-	20,  // 153: lane.v1.BeginAttachmentUploadResponse.state:type_name -> lane.v1.AttachmentState
-	20,  // 154: lane.v1.CompleteAttachmentUploadResponse.state:type_name -> lane.v1.AttachmentState
-	30,  // 155: lane.v1.ListURLConnectionsRequest.page:type_name -> lane.v1.Page
-	29,  // 156: lane.v1.ListURLConnectionsResponse.items:type_name -> lane.v1.EntityResult
-	28,  // 157: lane.v1.CreateURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
-	135, // 158: lane.v1.CreateURLConnectionRequest.connection:type_name -> lane.v1.URLConnection
-	29,  // 159: lane.v1.CreateURLConnectionResponse.result:type_name -> lane.v1.EntityResult
-	28,  // 160: lane.v1.SaveURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
-	135, // 161: lane.v1.SaveURLConnectionRequest.connection:type_name -> lane.v1.URLConnection
-	29,  // 162: lane.v1.SaveURLConnectionResponse.result:type_name -> lane.v1.EntityResult
-	28,  // 163: lane.v1.DeleteURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
-	29,  // 164: lane.v1.DeleteURLConnectionResponse.result:type_name -> lane.v1.EntityResult
-	24,  // 165: lane.v1.PlanningBody.label:type_name -> lane.v1.Label
-	25,  // 166: lane.v1.PlanningBody.milestone:type_name -> lane.v1.Milestone
-	26,  // 167: lane.v1.PlanningBody.cycle:type_name -> lane.v1.Cycle
-	29,  // 168: lane.v1.GetPlanningItemResponse.result:type_name -> lane.v1.EntityResult
-	30,  // 169: lane.v1.ListPlanningItemsRequest.page:type_name -> lane.v1.Page
-	1,   // 170: lane.v1.ListPlanningItemsRequest.kind:type_name -> lane.v1.EntityKind
-	29,  // 171: lane.v1.ListPlanningItemsResponse.items:type_name -> lane.v1.EntityResult
-	28,  // 172: lane.v1.CreatePlanningItemRequest.meta:type_name -> lane.v1.MutationMeta
-	144, // 173: lane.v1.CreatePlanningItemRequest.item:type_name -> lane.v1.PlanningBody
-	29,  // 174: lane.v1.CreatePlanningItemResponse.result:type_name -> lane.v1.EntityResult
-	28,  // 175: lane.v1.SavePlanningItemRequest.meta:type_name -> lane.v1.MutationMeta
-	144, // 176: lane.v1.SavePlanningItemRequest.item:type_name -> lane.v1.PlanningBody
-	29,  // 177: lane.v1.SavePlanningItemResponse.result:type_name -> lane.v1.EntityResult
-	28,  // 178: lane.v1.DeletePlanningItemRequest.meta:type_name -> lane.v1.MutationMeta
-	29,  // 179: lane.v1.DeletePlanningItemResponse.result:type_name -> lane.v1.EntityResult
-	43,  // 180: lane.v1.LaneService.GetRepository:input_type -> lane.v1.GetRepositoryRequest
-	45,  // 181: lane.v1.LaneService.ListRepositories:input_type -> lane.v1.ListRepositoriesRequest
-	47,  // 182: lane.v1.LaneService.CreateRepository:input_type -> lane.v1.CreateRepositoryRequest
-	49,  // 183: lane.v1.LaneService.SaveRepository:input_type -> lane.v1.SaveRepositoryRequest
-	51,  // 184: lane.v1.LaneService.DeleteRepository:input_type -> lane.v1.DeleteRepositoryRequest
-	53,  // 185: lane.v1.LaneService.GetTask:input_type -> lane.v1.GetTaskRequest
-	58,  // 186: lane.v1.LaneService.ListTasks:input_type -> lane.v1.ListTasksRequest
-	60,  // 187: lane.v1.LaneService.CreateTask:input_type -> lane.v1.CreateTaskRequest
-	63,  // 188: lane.v1.LaneService.SaveTask:input_type -> lane.v1.SaveTaskRequest
-	65,  // 189: lane.v1.LaneService.SetProgress:input_type -> lane.v1.SetProgressRequest
-	67,  // 190: lane.v1.LaneService.SetProposal:input_type -> lane.v1.SetProposalRequest
-	69,  // 191: lane.v1.LaneService.RestorePrompt:input_type -> lane.v1.RestorePromptRequest
-	71,  // 192: lane.v1.LaneService.DeleteTask:input_type -> lane.v1.DeleteTaskRequest
-	73,  // 193: lane.v1.LaneService.ListHistory:input_type -> lane.v1.ListHistoryRequest
-	75,  // 194: lane.v1.LaneService.ResolveConflict:input_type -> lane.v1.ResolveConflictRequest
-	77,  // 195: lane.v1.AccountService.ListDevices:input_type -> lane.v1.ListDevicesRequest
-	79,  // 196: lane.v1.AccountService.DisconnectDevice:input_type -> lane.v1.DisconnectDeviceRequest
-	81,  // 197: lane.v1.AccountService.ListConnections:input_type -> lane.v1.ListConnectionsRequest
-	83,  // 198: lane.v1.AccountService.RevokeConnection:input_type -> lane.v1.RevokeConnectionRequest
-	85,  // 199: lane.v1.AccountService.RegisterPush:input_type -> lane.v1.RegisterPushRequest
-	87,  // 200: lane.v1.AccountService.BeginDataDeletion:input_type -> lane.v1.BeginDataDeletionRequest
-	89,  // 201: lane.v1.AccountService.DeleteAccountData:input_type -> lane.v1.DeleteAccountDataRequest
-	91,  // 202: lane.v1.WebhookService.ListReceivers:input_type -> lane.v1.ListReceiversRequest
-	93,  // 203: lane.v1.WebhookService.CreateReceiver:input_type -> lane.v1.CreateReceiverRequest
-	95,  // 204: lane.v1.WebhookService.SaveReceiver:input_type -> lane.v1.SaveReceiverRequest
-	97,  // 205: lane.v1.WebhookService.RotateReceiverKey:input_type -> lane.v1.RotateReceiverKeyRequest
-	99,  // 206: lane.v1.WebhookService.DeleteReceiver:input_type -> lane.v1.DeleteReceiverRequest
-	101, // 207: lane.v1.WebhookService.ListEvents:input_type -> lane.v1.ListEventsRequest
-	103, // 208: lane.v1.WebhookService.GetEvent:input_type -> lane.v1.GetEventRequest
-	105, // 209: lane.v1.WebhookService.DeleteEvent:input_type -> lane.v1.DeleteEventRequest
-	107, // 210: lane.v1.WebhookService.ClaimEvent:input_type -> lane.v1.ClaimEventRequest
-	109, // 211: lane.v1.WebhookService.RenewEventLease:input_type -> lane.v1.RenewEventLeaseRequest
-	111, // 212: lane.v1.WebhookService.ReleaseEventLease:input_type -> lane.v1.ReleaseEventLeaseRequest
-	113, // 213: lane.v1.WebhookService.CompleteEvent:input_type -> lane.v1.CompleteEventRequest
-	115, // 214: lane.v1.WebhookService.ReopenEvent:input_type -> lane.v1.ReopenEventRequest
-	117, // 215: lane.v1.SyncService.GetSyncInfo:input_type -> lane.v1.GetSyncInfoRequest
-	119, // 216: lane.v1.SyncService.PushChanges:input_type -> lane.v1.PushChangesRequest
-	121, // 217: lane.v1.SyncService.PullChanges:input_type -> lane.v1.PullChangesRequest
-	123, // 218: lane.v1.SyncService.WatchChanges:input_type -> lane.v1.WatchChangesRequest
-	131, // 219: lane.v1.CaptureService.BeginAttachmentUpload:input_type -> lane.v1.BeginAttachmentUploadRequest
-	133, // 220: lane.v1.CaptureService.CompleteAttachmentUpload:input_type -> lane.v1.CompleteAttachmentUploadRequest
-	127, // 221: lane.v1.CaptureService.CreateCaptureTask:input_type -> lane.v1.CreateCaptureTaskRequest
-	129, // 222: lane.v1.CaptureService.GetAttachment:input_type -> lane.v1.GetAttachmentRequest
-	136, // 223: lane.v1.CaptureService.ListURLConnections:input_type -> lane.v1.ListURLConnectionsRequest
-	138, // 224: lane.v1.CaptureService.CreateURLConnection:input_type -> lane.v1.CreateURLConnectionRequest
-	140, // 225: lane.v1.CaptureService.SaveURLConnection:input_type -> lane.v1.SaveURLConnectionRequest
-	142, // 226: lane.v1.CaptureService.DeleteURLConnection:input_type -> lane.v1.DeleteURLConnectionRequest
-	145, // 227: lane.v1.PlanningService.GetPlanningItem:input_type -> lane.v1.GetPlanningItemRequest
-	147, // 228: lane.v1.PlanningService.ListPlanningItems:input_type -> lane.v1.ListPlanningItemsRequest
-	149, // 229: lane.v1.PlanningService.CreatePlanningItem:input_type -> lane.v1.CreatePlanningItemRequest
-	151, // 230: lane.v1.PlanningService.SavePlanningItem:input_type -> lane.v1.SavePlanningItemRequest
-	153, // 231: lane.v1.PlanningService.DeletePlanningItem:input_type -> lane.v1.DeletePlanningItemRequest
-	44,  // 232: lane.v1.LaneService.GetRepository:output_type -> lane.v1.GetRepositoryResponse
-	46,  // 233: lane.v1.LaneService.ListRepositories:output_type -> lane.v1.ListRepositoriesResponse
-	48,  // 234: lane.v1.LaneService.CreateRepository:output_type -> lane.v1.CreateRepositoryResponse
-	50,  // 235: lane.v1.LaneService.SaveRepository:output_type -> lane.v1.SaveRepositoryResponse
-	52,  // 236: lane.v1.LaneService.DeleteRepository:output_type -> lane.v1.DeleteRepositoryResponse
-	54,  // 237: lane.v1.LaneService.GetTask:output_type -> lane.v1.GetTaskResponse
-	59,  // 238: lane.v1.LaneService.ListTasks:output_type -> lane.v1.ListTasksResponse
-	62,  // 239: lane.v1.LaneService.CreateTask:output_type -> lane.v1.CreateTaskResponse
-	64,  // 240: lane.v1.LaneService.SaveTask:output_type -> lane.v1.SaveTaskResponse
-	66,  // 241: lane.v1.LaneService.SetProgress:output_type -> lane.v1.SetProgressResponse
-	68,  // 242: lane.v1.LaneService.SetProposal:output_type -> lane.v1.SetProposalResponse
-	70,  // 243: lane.v1.LaneService.RestorePrompt:output_type -> lane.v1.RestorePromptResponse
-	72,  // 244: lane.v1.LaneService.DeleteTask:output_type -> lane.v1.DeleteTaskResponse
-	74,  // 245: lane.v1.LaneService.ListHistory:output_type -> lane.v1.ListHistoryResponse
-	76,  // 246: lane.v1.LaneService.ResolveConflict:output_type -> lane.v1.ResolveConflictResponse
-	78,  // 247: lane.v1.AccountService.ListDevices:output_type -> lane.v1.ListDevicesResponse
-	80,  // 248: lane.v1.AccountService.DisconnectDevice:output_type -> lane.v1.DisconnectDeviceResponse
-	82,  // 249: lane.v1.AccountService.ListConnections:output_type -> lane.v1.ListConnectionsResponse
-	84,  // 250: lane.v1.AccountService.RevokeConnection:output_type -> lane.v1.RevokeConnectionResponse
-	86,  // 251: lane.v1.AccountService.RegisterPush:output_type -> lane.v1.RegisterPushResponse
-	88,  // 252: lane.v1.AccountService.BeginDataDeletion:output_type -> lane.v1.BeginDataDeletionResponse
-	90,  // 253: lane.v1.AccountService.DeleteAccountData:output_type -> lane.v1.DeleteAccountDataResponse
-	92,  // 254: lane.v1.WebhookService.ListReceivers:output_type -> lane.v1.ListReceiversResponse
-	94,  // 255: lane.v1.WebhookService.CreateReceiver:output_type -> lane.v1.CreateReceiverResponse
-	96,  // 256: lane.v1.WebhookService.SaveReceiver:output_type -> lane.v1.SaveReceiverResponse
-	98,  // 257: lane.v1.WebhookService.RotateReceiverKey:output_type -> lane.v1.RotateReceiverKeyResponse
-	100, // 258: lane.v1.WebhookService.DeleteReceiver:output_type -> lane.v1.DeleteReceiverResponse
-	102, // 259: lane.v1.WebhookService.ListEvents:output_type -> lane.v1.ListEventsResponse
-	104, // 260: lane.v1.WebhookService.GetEvent:output_type -> lane.v1.GetEventResponse
-	106, // 261: lane.v1.WebhookService.DeleteEvent:output_type -> lane.v1.DeleteEventResponse
-	108, // 262: lane.v1.WebhookService.ClaimEvent:output_type -> lane.v1.ClaimEventResponse
-	110, // 263: lane.v1.WebhookService.RenewEventLease:output_type -> lane.v1.RenewEventLeaseResponse
-	112, // 264: lane.v1.WebhookService.ReleaseEventLease:output_type -> lane.v1.ReleaseEventLeaseResponse
-	114, // 265: lane.v1.WebhookService.CompleteEvent:output_type -> lane.v1.CompleteEventResponse
-	116, // 266: lane.v1.WebhookService.ReopenEvent:output_type -> lane.v1.ReopenEventResponse
-	118, // 267: lane.v1.SyncService.GetSyncInfo:output_type -> lane.v1.GetSyncInfoResponse
-	120, // 268: lane.v1.SyncService.PushChanges:output_type -> lane.v1.PushChangesResponse
-	122, // 269: lane.v1.SyncService.PullChanges:output_type -> lane.v1.PullChangesResponse
-	124, // 270: lane.v1.SyncService.WatchChanges:output_type -> lane.v1.WatchChangesResponse
-	132, // 271: lane.v1.CaptureService.BeginAttachmentUpload:output_type -> lane.v1.BeginAttachmentUploadResponse
-	134, // 272: lane.v1.CaptureService.CompleteAttachmentUpload:output_type -> lane.v1.CompleteAttachmentUploadResponse
-	128, // 273: lane.v1.CaptureService.CreateCaptureTask:output_type -> lane.v1.CreateCaptureTaskResponse
-	130, // 274: lane.v1.CaptureService.GetAttachment:output_type -> lane.v1.GetAttachmentResponse
-	137, // 275: lane.v1.CaptureService.ListURLConnections:output_type -> lane.v1.ListURLConnectionsResponse
-	139, // 276: lane.v1.CaptureService.CreateURLConnection:output_type -> lane.v1.CreateURLConnectionResponse
-	141, // 277: lane.v1.CaptureService.SaveURLConnection:output_type -> lane.v1.SaveURLConnectionResponse
-	143, // 278: lane.v1.CaptureService.DeleteURLConnection:output_type -> lane.v1.DeleteURLConnectionResponse
-	146, // 279: lane.v1.PlanningService.GetPlanningItem:output_type -> lane.v1.GetPlanningItemResponse
-	148, // 280: lane.v1.PlanningService.ListPlanningItems:output_type -> lane.v1.ListPlanningItemsResponse
-	150, // 281: lane.v1.PlanningService.CreatePlanningItem:output_type -> lane.v1.CreatePlanningItemResponse
-	152, // 282: lane.v1.PlanningService.SavePlanningItem:output_type -> lane.v1.SavePlanningItemResponse
-	154, // 283: lane.v1.PlanningService.DeletePlanningItem:output_type -> lane.v1.DeletePlanningItemResponse
-	232, // [232:284] is the sub-list for method output_type
-	180, // [180:232] is the sub-list for method input_type
-	180, // [180:180] is the sub-list for extension type_name
-	180, // [180:180] is the sub-list for extension extendee
-	0,   // [0:180] is the sub-list for field type_name
+	21,  // 0: lane.v1.TerminalEntry.kind:type_name -> lane.v1.TerminalEntryKind
+	160, // 1: lane.v1.TerminalEntry.entered_at:type_name -> google.protobuf.Timestamp
+	20,  // 2: lane.v1.CompletedFilter.selection:type_name -> lane.v1.CompletedSelection
+	160, // 3: lane.v1.CompletedFilter.cutoff:type_name -> google.protobuf.Timestamp
+	0,   // 4: lane.v1.Origin.kind:type_name -> lane.v1.OriginKind
+	2,   // 5: lane.v1.Task.progress:type_name -> lane.v1.Progress
+	3,   // 6: lane.v1.Task.proposal:type_name -> lane.v1.Proposal
+	129, // 7: lane.v1.Task.captures:type_name -> lane.v1.CaptureReference
+	14,  // 8: lane.v1.Task.priority:type_name -> lane.v1.TaskPriority
+	15,  // 9: lane.v1.Task.type:type_name -> lane.v1.TaskType
+	1,   // 10: lane.v1.EntityVersion.kind:type_name -> lane.v1.EntityKind
+	160, // 11: lane.v1.EntityVersion.created_at:type_name -> google.protobuf.Timestamp
+	25,  // 12: lane.v1.EntityVersion.origin:type_name -> lane.v1.Origin
+	26,  // 13: lane.v1.EntityVersion.repository:type_name -> lane.v1.Repository
+	27,  // 14: lane.v1.EntityVersion.task:type_name -> lane.v1.Task
+	139, // 15: lane.v1.EntityVersion.url_connection:type_name -> lane.v1.URLConnection
+	28,  // 16: lane.v1.EntityVersion.label:type_name -> lane.v1.Label
+	29,  // 17: lane.v1.EntityVersion.milestone:type_name -> lane.v1.Milestone
+	30,  // 18: lane.v1.EntityVersion.cycle:type_name -> lane.v1.Cycle
+	25,  // 19: lane.v1.MutationMeta.origin:type_name -> lane.v1.Origin
+	4,   // 20: lane.v1.EntityResult.result:type_name -> lane.v1.ResultKind
+	31,  // 21: lane.v1.EntityResult.version:type_name -> lane.v1.EntityVersion
+	31,  // 22: lane.v1.EntityResult.alternatives:type_name -> lane.v1.EntityVersion
+	32,  // 23: lane.v1.SyncMutation.meta:type_name -> lane.v1.MutationMeta
+	31,  // 24: lane.v1.SyncMutation.version:type_name -> lane.v1.EntityVersion
+	5,   // 25: lane.v1.SyncMutation.kind:type_name -> lane.v1.MutationKind
+	33,  // 26: lane.v1.SyncResult.result:type_name -> lane.v1.EntityResult
+	39,  // 27: lane.v1.SyncResult.error:type_name -> lane.v1.ErrorDetail
+	6,   // 28: lane.v1.ErrorDetail.reason:type_name -> lane.v1.ErrorReason
+	16,  // 29: lane.v1.ErrorDetail.violation:type_name -> lane.v1.ConstraintViolation
+	160, // 30: lane.v1.Device.last_sync_at:type_name -> google.protobuf.Timestamp
+	160, // 31: lane.v1.Device.disconnected_at:type_name -> google.protobuf.Timestamp
+	160, // 32: lane.v1.Connection.approved_at:type_name -> google.protobuf.Timestamp
+	160, // 33: lane.v1.Connection.revoked_at:type_name -> google.protobuf.Timestamp
+	160, // 34: lane.v1.WebhookEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	161, // 35: lane.v1.WebhookEvent.payload:type_name -> google.protobuf.Struct
+	10,  // 36: lane.v1.WebhookEvent.state:type_name -> lane.v1.EventState
+	160, // 37: lane.v1.ProcessingRecord.completed_at:type_name -> google.protobuf.Timestamp
+	25,  // 38: lane.v1.ProcessingRecord.origin:type_name -> lane.v1.Origin
+	13,  // 39: lane.v1.DeletionRecord.kind:type_name -> lane.v1.EntityKindOrRemoteKind
+	33,  // 40: lane.v1.Change.entity:type_name -> lane.v1.EntityResult
+	42,  // 41: lane.v1.Change.receiver:type_name -> lane.v1.WebhookReceiver
+	43,  // 42: lane.v1.Change.event:type_name -> lane.v1.WebhookEvent
+	44,  // 43: lane.v1.Change.processing:type_name -> lane.v1.ProcessingRecord
+	45,  // 44: lane.v1.Change.deletion:type_name -> lane.v1.DeletionRecord
+	33,  // 45: lane.v1.GetRepositoryResponse.result:type_name -> lane.v1.EntityResult
+	34,  // 46: lane.v1.ListRepositoriesRequest.page:type_name -> lane.v1.Page
+	33,  // 47: lane.v1.ListRepositoriesResponse.items:type_name -> lane.v1.EntityResult
+	32,  // 48: lane.v1.CreateRepositoryRequest.meta:type_name -> lane.v1.MutationMeta
+	33,  // 49: lane.v1.CreateRepositoryResponse.result:type_name -> lane.v1.EntityResult
+	32,  // 50: lane.v1.SaveRepositoryRequest.meta:type_name -> lane.v1.MutationMeta
+	33,  // 51: lane.v1.SaveRepositoryResponse.result:type_name -> lane.v1.EntityResult
+	32,  // 52: lane.v1.DeleteRepositoryRequest.meta:type_name -> lane.v1.MutationMeta
+	33,  // 53: lane.v1.DeleteRepositoryResponse.result:type_name -> lane.v1.EntityResult
+	33,  // 54: lane.v1.GetTaskResponse.result:type_name -> lane.v1.EntityResult
+	14,  // 55: lane.v1.TaskFilter.priorities:type_name -> lane.v1.TaskPriority
+	15,  // 56: lane.v1.TaskFilter.types:type_name -> lane.v1.TaskType
+	59,  // 57: lane.v1.TaskFilter.start_date:type_name -> lane.v1.DateRange
+	59,  // 58: lane.v1.TaskFilter.due_date:type_name -> lane.v1.DateRange
+	60,  // 59: lane.v1.TaskFilter.story_points:type_name -> lane.v1.PointRange
+	17,  // 60: lane.v1.TaskFilter.relationships:type_name -> lane.v1.RelationshipKind
+	34,  // 61: lane.v1.ListTasksRequest.page:type_name -> lane.v1.Page
+	2,   // 62: lane.v1.ListTasksRequest.progress:type_name -> lane.v1.Progress
+	3,   // 63: lane.v1.ListTasksRequest.proposal:type_name -> lane.v1.Proposal
+	61,  // 64: lane.v1.ListTasksRequest.filter:type_name -> lane.v1.TaskFilter
+	18,  // 65: lane.v1.ListTasksRequest.sort_key:type_name -> lane.v1.TaskSortKey
+	19,  // 66: lane.v1.ListTasksRequest.sort_direction:type_name -> lane.v1.SortDirection
+	24,  // 67: lane.v1.ListTasksRequest.completed:type_name -> lane.v1.CompletedFilter
+	33,  // 68: lane.v1.ListTasksResponse.items:type_name -> lane.v1.EntityResult
+	32,  // 69: lane.v1.CreateTaskRequest.meta:type_name -> lane.v1.MutationMeta
+	35,  // 70: lane.v1.CreateTaskRequest.repository:type_name -> lane.v1.RepositoryTarget
+	2,   // 71: lane.v1.CreateTaskRequest.progress:type_name -> lane.v1.Progress
+	3,   // 72: lane.v1.CreateTaskRequest.proposal:type_name -> lane.v1.Proposal
+	14,  // 73: lane.v1.CreateTaskRequest.priority:type_name -> lane.v1.TaskPriority
+	15,  // 74: lane.v1.CreateTaskRequest.type:type_name -> lane.v1.TaskType
+	65,  // 75: lane.v1.CreateTaskRequest.relationship_edits:type_name -> lane.v1.RelationshipEdits
+	33,  // 76: lane.v1.CreateTaskResponse.result:type_name -> lane.v1.EntityResult
+	33,  // 77: lane.v1.CreateTaskResponse.repository:type_name -> lane.v1.EntityResult
+	33,  // 78: lane.v1.CreateTaskResponse.affected:type_name -> lane.v1.EntityResult
+	32,  // 79: lane.v1.SaveTaskRequest.meta:type_name -> lane.v1.MutationMeta
+	27,  // 80: lane.v1.SaveTaskRequest.task:type_name -> lane.v1.Task
+	65,  // 81: lane.v1.SaveTaskRequest.relationship_edits:type_name -> lane.v1.RelationshipEdits
+	33,  // 82: lane.v1.SaveTaskResponse.result:type_name -> lane.v1.EntityResult
+	33,  // 83: lane.v1.SaveTaskResponse.affected:type_name -> lane.v1.EntityResult
+	32,  // 84: lane.v1.SetProgressRequest.meta:type_name -> lane.v1.MutationMeta
+	2,   // 85: lane.v1.SetProgressRequest.progress:type_name -> lane.v1.Progress
+	33,  // 86: lane.v1.SetProgressResponse.result:type_name -> lane.v1.EntityResult
+	32,  // 87: lane.v1.SetProposalRequest.meta:type_name -> lane.v1.MutationMeta
+	3,   // 88: lane.v1.SetProposalRequest.proposal:type_name -> lane.v1.Proposal
+	33,  // 89: lane.v1.SetProposalResponse.result:type_name -> lane.v1.EntityResult
+	32,  // 90: lane.v1.RestorePromptRequest.meta:type_name -> lane.v1.MutationMeta
+	33,  // 91: lane.v1.RestorePromptResponse.result:type_name -> lane.v1.EntityResult
+	32,  // 92: lane.v1.DeleteTaskRequest.meta:type_name -> lane.v1.MutationMeta
+	33,  // 93: lane.v1.DeleteTaskResponse.result:type_name -> lane.v1.EntityResult
+	34,  // 94: lane.v1.ListHistoryRequest.page:type_name -> lane.v1.Page
+	31,  // 95: lane.v1.ListHistoryResponse.versions:type_name -> lane.v1.EntityVersion
+	32,  // 96: lane.v1.ResolveConflictRequest.meta:type_name -> lane.v1.MutationMeta
+	31,  // 97: lane.v1.ResolveConflictRequest.resolved:type_name -> lane.v1.EntityVersion
+	33,  // 98: lane.v1.ResolveConflictResponse.result:type_name -> lane.v1.EntityResult
+	34,  // 99: lane.v1.ListDevicesRequest.page:type_name -> lane.v1.Page
+	40,  // 100: lane.v1.ListDevicesResponse.items:type_name -> lane.v1.Device
+	32,  // 101: lane.v1.DisconnectDeviceRequest.meta:type_name -> lane.v1.MutationMeta
+	40,  // 102: lane.v1.DisconnectDeviceResponse.device:type_name -> lane.v1.Device
+	34,  // 103: lane.v1.ListConnectionsRequest.page:type_name -> lane.v1.Page
+	41,  // 104: lane.v1.ListConnectionsResponse.items:type_name -> lane.v1.Connection
+	32,  // 105: lane.v1.RevokeConnectionRequest.meta:type_name -> lane.v1.MutationMeta
+	41,  // 106: lane.v1.RevokeConnectionResponse.connection:type_name -> lane.v1.Connection
+	32,  // 107: lane.v1.RegisterPushRequest.meta:type_name -> lane.v1.MutationMeta
+	7,   // 108: lane.v1.RegisterPushRequest.provider:type_name -> lane.v1.PushProvider
+	8,   // 109: lane.v1.RegisterPushRequest.content:type_name -> lane.v1.NotificationContent
+	40,  // 110: lane.v1.RegisterPushResponse.device:type_name -> lane.v1.Device
+	32,  // 111: lane.v1.BeginDataDeletionRequest.meta:type_name -> lane.v1.MutationMeta
+	9,   // 112: lane.v1.BeginDataDeletionRequest.mode:type_name -> lane.v1.DataDeletionMode
+	32,  // 113: lane.v1.DeleteAccountDataRequest.meta:type_name -> lane.v1.MutationMeta
+	9,   // 114: lane.v1.DeleteAccountDataRequest.mode:type_name -> lane.v1.DataDeletionMode
+	34,  // 115: lane.v1.ListReceiversRequest.page:type_name -> lane.v1.Page
+	42,  // 116: lane.v1.ListReceiversResponse.items:type_name -> lane.v1.WebhookReceiver
+	32,  // 117: lane.v1.CreateReceiverRequest.meta:type_name -> lane.v1.MutationMeta
+	42,  // 118: lane.v1.CreateReceiverResponse.receiver:type_name -> lane.v1.WebhookReceiver
+	32,  // 119: lane.v1.SaveReceiverRequest.meta:type_name -> lane.v1.MutationMeta
+	42,  // 120: lane.v1.SaveReceiverResponse.receiver:type_name -> lane.v1.WebhookReceiver
+	32,  // 121: lane.v1.RotateReceiverKeyRequest.meta:type_name -> lane.v1.MutationMeta
+	42,  // 122: lane.v1.RotateReceiverKeyResponse.receiver:type_name -> lane.v1.WebhookReceiver
+	32,  // 123: lane.v1.DeleteReceiverRequest.meta:type_name -> lane.v1.MutationMeta
+	45,  // 124: lane.v1.DeleteReceiverResponse.deletion:type_name -> lane.v1.DeletionRecord
+	34,  // 125: lane.v1.ListEventsRequest.page:type_name -> lane.v1.Page
+	10,  // 126: lane.v1.ListEventsRequest.states:type_name -> lane.v1.EventState
+	43,  // 127: lane.v1.ListEventsResponse.items:type_name -> lane.v1.WebhookEvent
+	43,  // 128: lane.v1.GetEventResponse.event:type_name -> lane.v1.WebhookEvent
+	44,  // 129: lane.v1.GetEventResponse.processing:type_name -> lane.v1.ProcessingRecord
+	32,  // 130: lane.v1.DeleteEventRequest.meta:type_name -> lane.v1.MutationMeta
+	45,  // 131: lane.v1.DeleteEventResponse.deletion:type_name -> lane.v1.DeletionRecord
+	32,  // 132: lane.v1.ClaimEventRequest.meta:type_name -> lane.v1.MutationMeta
+	43,  // 133: lane.v1.ClaimEventResponse.event:type_name -> lane.v1.WebhookEvent
+	160, // 134: lane.v1.ClaimEventResponse.expires_at:type_name -> google.protobuf.Timestamp
+	32,  // 135: lane.v1.RenewEventLeaseRequest.meta:type_name -> lane.v1.MutationMeta
+	160, // 136: lane.v1.RenewEventLeaseResponse.expires_at:type_name -> google.protobuf.Timestamp
+	32,  // 137: lane.v1.ReleaseEventLeaseRequest.meta:type_name -> lane.v1.MutationMeta
+	43,  // 138: lane.v1.ReleaseEventLeaseResponse.event:type_name -> lane.v1.WebhookEvent
+	32,  // 139: lane.v1.CompleteEventRequest.meta:type_name -> lane.v1.MutationMeta
+	64,  // 140: lane.v1.CompleteEventRequest.tasks:type_name -> lane.v1.CreateTaskRequest
+	43,  // 141: lane.v1.CompleteEventResponse.event:type_name -> lane.v1.WebhookEvent
+	44,  // 142: lane.v1.CompleteEventResponse.processing:type_name -> lane.v1.ProcessingRecord
+	33,  // 143: lane.v1.CompleteEventResponse.tasks:type_name -> lane.v1.EntityResult
+	32,  // 144: lane.v1.ReopenEventRequest.meta:type_name -> lane.v1.MutationMeta
+	43,  // 145: lane.v1.ReopenEventResponse.event:type_name -> lane.v1.WebhookEvent
+	36,  // 146: lane.v1.PushChangesRequest.mutations:type_name -> lane.v1.SyncMutation
+	37,  // 147: lane.v1.PushChangesResponse.results:type_name -> lane.v1.SyncResult
+	38,  // 148: lane.v1.PushChangesResponse.repository_mappings:type_name -> lane.v1.RepositoryMapping
+	46,  // 149: lane.v1.PullChangesResponse.changes:type_name -> lane.v1.Change
+	129, // 150: lane.v1.CapturedImage.capture:type_name -> lane.v1.CaptureReference
+	32,  // 151: lane.v1.CreateCaptureTaskRequest.meta:type_name -> lane.v1.MutationMeta
+	130, // 152: lane.v1.CreateCaptureTaskRequest.images:type_name -> lane.v1.CapturedImage
+	33,  // 153: lane.v1.CreateCaptureTaskResponse.result:type_name -> lane.v1.EntityResult
+	22,  // 154: lane.v1.GetAttachmentResponse.state:type_name -> lane.v1.AttachmentState
+	160, // 155: lane.v1.GetAttachmentResponse.expires_at:type_name -> google.protobuf.Timestamp
+	160, // 156: lane.v1.BeginAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	159, // 157: lane.v1.BeginAttachmentUploadResponse.headers:type_name -> lane.v1.BeginAttachmentUploadResponse.HeadersEntry
+	22,  // 158: lane.v1.BeginAttachmentUploadResponse.state:type_name -> lane.v1.AttachmentState
+	22,  // 159: lane.v1.CompleteAttachmentUploadResponse.state:type_name -> lane.v1.AttachmentState
+	34,  // 160: lane.v1.ListURLConnectionsRequest.page:type_name -> lane.v1.Page
+	33,  // 161: lane.v1.ListURLConnectionsResponse.items:type_name -> lane.v1.EntityResult
+	32,  // 162: lane.v1.CreateURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
+	139, // 163: lane.v1.CreateURLConnectionRequest.connection:type_name -> lane.v1.URLConnection
+	33,  // 164: lane.v1.CreateURLConnectionResponse.result:type_name -> lane.v1.EntityResult
+	32,  // 165: lane.v1.SaveURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
+	139, // 166: lane.v1.SaveURLConnectionRequest.connection:type_name -> lane.v1.URLConnection
+	33,  // 167: lane.v1.SaveURLConnectionResponse.result:type_name -> lane.v1.EntityResult
+	32,  // 168: lane.v1.DeleteURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
+	33,  // 169: lane.v1.DeleteURLConnectionResponse.result:type_name -> lane.v1.EntityResult
+	28,  // 170: lane.v1.PlanningBody.label:type_name -> lane.v1.Label
+	29,  // 171: lane.v1.PlanningBody.milestone:type_name -> lane.v1.Milestone
+	30,  // 172: lane.v1.PlanningBody.cycle:type_name -> lane.v1.Cycle
+	33,  // 173: lane.v1.GetPlanningItemResponse.result:type_name -> lane.v1.EntityResult
+	34,  // 174: lane.v1.ListPlanningItemsRequest.page:type_name -> lane.v1.Page
+	1,   // 175: lane.v1.ListPlanningItemsRequest.kind:type_name -> lane.v1.EntityKind
+	33,  // 176: lane.v1.ListPlanningItemsResponse.items:type_name -> lane.v1.EntityResult
+	32,  // 177: lane.v1.CreatePlanningItemRequest.meta:type_name -> lane.v1.MutationMeta
+	148, // 178: lane.v1.CreatePlanningItemRequest.item:type_name -> lane.v1.PlanningBody
+	33,  // 179: lane.v1.CreatePlanningItemResponse.result:type_name -> lane.v1.EntityResult
+	32,  // 180: lane.v1.SavePlanningItemRequest.meta:type_name -> lane.v1.MutationMeta
+	148, // 181: lane.v1.SavePlanningItemRequest.item:type_name -> lane.v1.PlanningBody
+	33,  // 182: lane.v1.SavePlanningItemResponse.result:type_name -> lane.v1.EntityResult
+	32,  // 183: lane.v1.DeletePlanningItemRequest.meta:type_name -> lane.v1.MutationMeta
+	33,  // 184: lane.v1.DeletePlanningItemResponse.result:type_name -> lane.v1.EntityResult
+	47,  // 185: lane.v1.LaneService.GetRepository:input_type -> lane.v1.GetRepositoryRequest
+	49,  // 186: lane.v1.LaneService.ListRepositories:input_type -> lane.v1.ListRepositoriesRequest
+	51,  // 187: lane.v1.LaneService.CreateRepository:input_type -> lane.v1.CreateRepositoryRequest
+	53,  // 188: lane.v1.LaneService.SaveRepository:input_type -> lane.v1.SaveRepositoryRequest
+	55,  // 189: lane.v1.LaneService.DeleteRepository:input_type -> lane.v1.DeleteRepositoryRequest
+	57,  // 190: lane.v1.LaneService.GetTask:input_type -> lane.v1.GetTaskRequest
+	62,  // 191: lane.v1.LaneService.ListTasks:input_type -> lane.v1.ListTasksRequest
+	64,  // 192: lane.v1.LaneService.CreateTask:input_type -> lane.v1.CreateTaskRequest
+	67,  // 193: lane.v1.LaneService.SaveTask:input_type -> lane.v1.SaveTaskRequest
+	69,  // 194: lane.v1.LaneService.SetProgress:input_type -> lane.v1.SetProgressRequest
+	71,  // 195: lane.v1.LaneService.SetProposal:input_type -> lane.v1.SetProposalRequest
+	73,  // 196: lane.v1.LaneService.RestorePrompt:input_type -> lane.v1.RestorePromptRequest
+	75,  // 197: lane.v1.LaneService.DeleteTask:input_type -> lane.v1.DeleteTaskRequest
+	77,  // 198: lane.v1.LaneService.ListHistory:input_type -> lane.v1.ListHistoryRequest
+	79,  // 199: lane.v1.LaneService.ResolveConflict:input_type -> lane.v1.ResolveConflictRequest
+	81,  // 200: lane.v1.AccountService.ListDevices:input_type -> lane.v1.ListDevicesRequest
+	83,  // 201: lane.v1.AccountService.DisconnectDevice:input_type -> lane.v1.DisconnectDeviceRequest
+	85,  // 202: lane.v1.AccountService.ListConnections:input_type -> lane.v1.ListConnectionsRequest
+	87,  // 203: lane.v1.AccountService.RevokeConnection:input_type -> lane.v1.RevokeConnectionRequest
+	89,  // 204: lane.v1.AccountService.RegisterPush:input_type -> lane.v1.RegisterPushRequest
+	91,  // 205: lane.v1.AccountService.BeginDataDeletion:input_type -> lane.v1.BeginDataDeletionRequest
+	93,  // 206: lane.v1.AccountService.DeleteAccountData:input_type -> lane.v1.DeleteAccountDataRequest
+	95,  // 207: lane.v1.WebhookService.ListReceivers:input_type -> lane.v1.ListReceiversRequest
+	97,  // 208: lane.v1.WebhookService.CreateReceiver:input_type -> lane.v1.CreateReceiverRequest
+	99,  // 209: lane.v1.WebhookService.SaveReceiver:input_type -> lane.v1.SaveReceiverRequest
+	101, // 210: lane.v1.WebhookService.RotateReceiverKey:input_type -> lane.v1.RotateReceiverKeyRequest
+	103, // 211: lane.v1.WebhookService.DeleteReceiver:input_type -> lane.v1.DeleteReceiverRequest
+	105, // 212: lane.v1.WebhookService.ListEvents:input_type -> lane.v1.ListEventsRequest
+	107, // 213: lane.v1.WebhookService.GetEvent:input_type -> lane.v1.GetEventRequest
+	109, // 214: lane.v1.WebhookService.DeleteEvent:input_type -> lane.v1.DeleteEventRequest
+	111, // 215: lane.v1.WebhookService.ClaimEvent:input_type -> lane.v1.ClaimEventRequest
+	113, // 216: lane.v1.WebhookService.RenewEventLease:input_type -> lane.v1.RenewEventLeaseRequest
+	115, // 217: lane.v1.WebhookService.ReleaseEventLease:input_type -> lane.v1.ReleaseEventLeaseRequest
+	117, // 218: lane.v1.WebhookService.CompleteEvent:input_type -> lane.v1.CompleteEventRequest
+	119, // 219: lane.v1.WebhookService.ReopenEvent:input_type -> lane.v1.ReopenEventRequest
+	121, // 220: lane.v1.SyncService.GetSyncInfo:input_type -> lane.v1.GetSyncInfoRequest
+	123, // 221: lane.v1.SyncService.PushChanges:input_type -> lane.v1.PushChangesRequest
+	125, // 222: lane.v1.SyncService.PullChanges:input_type -> lane.v1.PullChangesRequest
+	127, // 223: lane.v1.SyncService.WatchChanges:input_type -> lane.v1.WatchChangesRequest
+	135, // 224: lane.v1.CaptureService.BeginAttachmentUpload:input_type -> lane.v1.BeginAttachmentUploadRequest
+	137, // 225: lane.v1.CaptureService.CompleteAttachmentUpload:input_type -> lane.v1.CompleteAttachmentUploadRequest
+	131, // 226: lane.v1.CaptureService.CreateCaptureTask:input_type -> lane.v1.CreateCaptureTaskRequest
+	133, // 227: lane.v1.CaptureService.GetAttachment:input_type -> lane.v1.GetAttachmentRequest
+	140, // 228: lane.v1.CaptureService.ListURLConnections:input_type -> lane.v1.ListURLConnectionsRequest
+	142, // 229: lane.v1.CaptureService.CreateURLConnection:input_type -> lane.v1.CreateURLConnectionRequest
+	144, // 230: lane.v1.CaptureService.SaveURLConnection:input_type -> lane.v1.SaveURLConnectionRequest
+	146, // 231: lane.v1.CaptureService.DeleteURLConnection:input_type -> lane.v1.DeleteURLConnectionRequest
+	149, // 232: lane.v1.PlanningService.GetPlanningItem:input_type -> lane.v1.GetPlanningItemRequest
+	151, // 233: lane.v1.PlanningService.ListPlanningItems:input_type -> lane.v1.ListPlanningItemsRequest
+	153, // 234: lane.v1.PlanningService.CreatePlanningItem:input_type -> lane.v1.CreatePlanningItemRequest
+	155, // 235: lane.v1.PlanningService.SavePlanningItem:input_type -> lane.v1.SavePlanningItemRequest
+	157, // 236: lane.v1.PlanningService.DeletePlanningItem:input_type -> lane.v1.DeletePlanningItemRequest
+	48,  // 237: lane.v1.LaneService.GetRepository:output_type -> lane.v1.GetRepositoryResponse
+	50,  // 238: lane.v1.LaneService.ListRepositories:output_type -> lane.v1.ListRepositoriesResponse
+	52,  // 239: lane.v1.LaneService.CreateRepository:output_type -> lane.v1.CreateRepositoryResponse
+	54,  // 240: lane.v1.LaneService.SaveRepository:output_type -> lane.v1.SaveRepositoryResponse
+	56,  // 241: lane.v1.LaneService.DeleteRepository:output_type -> lane.v1.DeleteRepositoryResponse
+	58,  // 242: lane.v1.LaneService.GetTask:output_type -> lane.v1.GetTaskResponse
+	63,  // 243: lane.v1.LaneService.ListTasks:output_type -> lane.v1.ListTasksResponse
+	66,  // 244: lane.v1.LaneService.CreateTask:output_type -> lane.v1.CreateTaskResponse
+	68,  // 245: lane.v1.LaneService.SaveTask:output_type -> lane.v1.SaveTaskResponse
+	70,  // 246: lane.v1.LaneService.SetProgress:output_type -> lane.v1.SetProgressResponse
+	72,  // 247: lane.v1.LaneService.SetProposal:output_type -> lane.v1.SetProposalResponse
+	74,  // 248: lane.v1.LaneService.RestorePrompt:output_type -> lane.v1.RestorePromptResponse
+	76,  // 249: lane.v1.LaneService.DeleteTask:output_type -> lane.v1.DeleteTaskResponse
+	78,  // 250: lane.v1.LaneService.ListHistory:output_type -> lane.v1.ListHistoryResponse
+	80,  // 251: lane.v1.LaneService.ResolveConflict:output_type -> lane.v1.ResolveConflictResponse
+	82,  // 252: lane.v1.AccountService.ListDevices:output_type -> lane.v1.ListDevicesResponse
+	84,  // 253: lane.v1.AccountService.DisconnectDevice:output_type -> lane.v1.DisconnectDeviceResponse
+	86,  // 254: lane.v1.AccountService.ListConnections:output_type -> lane.v1.ListConnectionsResponse
+	88,  // 255: lane.v1.AccountService.RevokeConnection:output_type -> lane.v1.RevokeConnectionResponse
+	90,  // 256: lane.v1.AccountService.RegisterPush:output_type -> lane.v1.RegisterPushResponse
+	92,  // 257: lane.v1.AccountService.BeginDataDeletion:output_type -> lane.v1.BeginDataDeletionResponse
+	94,  // 258: lane.v1.AccountService.DeleteAccountData:output_type -> lane.v1.DeleteAccountDataResponse
+	96,  // 259: lane.v1.WebhookService.ListReceivers:output_type -> lane.v1.ListReceiversResponse
+	98,  // 260: lane.v1.WebhookService.CreateReceiver:output_type -> lane.v1.CreateReceiverResponse
+	100, // 261: lane.v1.WebhookService.SaveReceiver:output_type -> lane.v1.SaveReceiverResponse
+	102, // 262: lane.v1.WebhookService.RotateReceiverKey:output_type -> lane.v1.RotateReceiverKeyResponse
+	104, // 263: lane.v1.WebhookService.DeleteReceiver:output_type -> lane.v1.DeleteReceiverResponse
+	106, // 264: lane.v1.WebhookService.ListEvents:output_type -> lane.v1.ListEventsResponse
+	108, // 265: lane.v1.WebhookService.GetEvent:output_type -> lane.v1.GetEventResponse
+	110, // 266: lane.v1.WebhookService.DeleteEvent:output_type -> lane.v1.DeleteEventResponse
+	112, // 267: lane.v1.WebhookService.ClaimEvent:output_type -> lane.v1.ClaimEventResponse
+	114, // 268: lane.v1.WebhookService.RenewEventLease:output_type -> lane.v1.RenewEventLeaseResponse
+	116, // 269: lane.v1.WebhookService.ReleaseEventLease:output_type -> lane.v1.ReleaseEventLeaseResponse
+	118, // 270: lane.v1.WebhookService.CompleteEvent:output_type -> lane.v1.CompleteEventResponse
+	120, // 271: lane.v1.WebhookService.ReopenEvent:output_type -> lane.v1.ReopenEventResponse
+	122, // 272: lane.v1.SyncService.GetSyncInfo:output_type -> lane.v1.GetSyncInfoResponse
+	124, // 273: lane.v1.SyncService.PushChanges:output_type -> lane.v1.PushChangesResponse
+	126, // 274: lane.v1.SyncService.PullChanges:output_type -> lane.v1.PullChangesResponse
+	128, // 275: lane.v1.SyncService.WatchChanges:output_type -> lane.v1.WatchChangesResponse
+	136, // 276: lane.v1.CaptureService.BeginAttachmentUpload:output_type -> lane.v1.BeginAttachmentUploadResponse
+	138, // 277: lane.v1.CaptureService.CompleteAttachmentUpload:output_type -> lane.v1.CompleteAttachmentUploadResponse
+	132, // 278: lane.v1.CaptureService.CreateCaptureTask:output_type -> lane.v1.CreateCaptureTaskResponse
+	134, // 279: lane.v1.CaptureService.GetAttachment:output_type -> lane.v1.GetAttachmentResponse
+	141, // 280: lane.v1.CaptureService.ListURLConnections:output_type -> lane.v1.ListURLConnectionsResponse
+	143, // 281: lane.v1.CaptureService.CreateURLConnection:output_type -> lane.v1.CreateURLConnectionResponse
+	145, // 282: lane.v1.CaptureService.SaveURLConnection:output_type -> lane.v1.SaveURLConnectionResponse
+	147, // 283: lane.v1.CaptureService.DeleteURLConnection:output_type -> lane.v1.DeleteURLConnectionResponse
+	150, // 284: lane.v1.PlanningService.GetPlanningItem:output_type -> lane.v1.GetPlanningItemResponse
+	152, // 285: lane.v1.PlanningService.ListPlanningItems:output_type -> lane.v1.ListPlanningItemsResponse
+	154, // 286: lane.v1.PlanningService.CreatePlanningItem:output_type -> lane.v1.CreatePlanningItemResponse
+	156, // 287: lane.v1.PlanningService.SavePlanningItem:output_type -> lane.v1.SavePlanningItemResponse
+	158, // 288: lane.v1.PlanningService.DeletePlanningItem:output_type -> lane.v1.DeletePlanningItemResponse
+	237, // [237:289] is the sub-list for method output_type
+	185, // [185:237] is the sub-list for method input_type
+	185, // [185:185] is the sub-list for extension type_name
+	185, // [185:185] is the sub-list for extension extendee
+	0,   // [0:185] is the sub-list for field type_name
 }
 
 func init() { file_lane_v1_lane_proto_init() }
@@ -10961,10 +11211,10 @@ func file_lane_v1_lane_proto_init() {
 	if File_lane_v1_lane_proto != nil {
 		return
 	}
-	file_lane_v1_lane_proto_msgTypes[1].OneofWrappers = []any{}
-	file_lane_v1_lane_proto_msgTypes[2].OneofWrappers = []any{}
+	file_lane_v1_lane_proto_msgTypes[3].OneofWrappers = []any{}
 	file_lane_v1_lane_proto_msgTypes[4].OneofWrappers = []any{}
-	file_lane_v1_lane_proto_msgTypes[6].OneofWrappers = []any{
+	file_lane_v1_lane_proto_msgTypes[6].OneofWrappers = []any{}
+	file_lane_v1_lane_proto_msgTypes[8].OneofWrappers = []any{
 		(*EntityVersion_Repository)(nil),
 		(*EntityVersion_Task)(nil),
 		(*EntityVersion_UrlConnection)(nil),
@@ -10972,39 +11222,39 @@ func file_lane_v1_lane_proto_init() {
 		(*EntityVersion_Milestone)(nil),
 		(*EntityVersion_Cycle)(nil),
 	}
-	file_lane_v1_lane_proto_msgTypes[10].OneofWrappers = []any{
+	file_lane_v1_lane_proto_msgTypes[12].OneofWrappers = []any{
 		(*RepositoryTarget_Id)(nil),
 		(*RepositoryTarget_Url)(nil),
 	}
-	file_lane_v1_lane_proto_msgTypes[21].OneofWrappers = []any{
+	file_lane_v1_lane_proto_msgTypes[23].OneofWrappers = []any{
 		(*Change_Entity)(nil),
 		(*Change_Receiver)(nil),
 		(*Change_Event)(nil),
 		(*Change_Processing)(nil),
 		(*Change_Deletion)(nil),
 	}
-	file_lane_v1_lane_proto_msgTypes[26].OneofWrappers = []any{}
 	file_lane_v1_lane_proto_msgTypes[28].OneofWrappers = []any{}
-	file_lane_v1_lane_proto_msgTypes[34].OneofWrappers = []any{}
-	file_lane_v1_lane_proto_msgTypes[35].OneofWrappers = []any{}
+	file_lane_v1_lane_proto_msgTypes[30].OneofWrappers = []any{}
+	file_lane_v1_lane_proto_msgTypes[36].OneofWrappers = []any{}
 	file_lane_v1_lane_proto_msgTypes[37].OneofWrappers = []any{}
 	file_lane_v1_lane_proto_msgTypes[39].OneofWrappers = []any{}
-	file_lane_v1_lane_proto_msgTypes[70].OneofWrappers = []any{}
-	file_lane_v1_lane_proto_msgTypes[80].OneofWrappers = []any{}
-	file_lane_v1_lane_proto_msgTypes[104].OneofWrappers = []any{}
-	file_lane_v1_lane_proto_msgTypes[123].OneofWrappers = []any{
+	file_lane_v1_lane_proto_msgTypes[41].OneofWrappers = []any{}
+	file_lane_v1_lane_proto_msgTypes[72].OneofWrappers = []any{}
+	file_lane_v1_lane_proto_msgTypes[82].OneofWrappers = []any{}
+	file_lane_v1_lane_proto_msgTypes[106].OneofWrappers = []any{}
+	file_lane_v1_lane_proto_msgTypes[125].OneofWrappers = []any{
 		(*PlanningBody_Label)(nil),
 		(*PlanningBody_Milestone)(nil),
 		(*PlanningBody_Cycle)(nil),
 	}
-	file_lane_v1_lane_proto_msgTypes[126].OneofWrappers = []any{}
+	file_lane_v1_lane_proto_msgTypes[128].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lane_v1_lane_proto_rawDesc), len(file_lane_v1_lane_proto_rawDesc)),
-			NumEnums:      21,
-			NumMessages:   135,
+			NumEnums:      23,
+			NumMessages:   137,
 			NumExtensions: 0,
 			NumServices:   6,
 		},
