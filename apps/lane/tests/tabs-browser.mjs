@@ -61,6 +61,25 @@ const selectTab = async (name) => {
     name,
   );
 };
+const checkPanelClipping = async () => {
+  const panels = await page.locator(".tab-panel").evaluateAll((panels) =>
+    panels.map((panel) => ({
+      active: panel.getAttribute("data-active-tab") === "true",
+      display: getComputedStyle(panel).display,
+      overflow: getComputedStyle(panel).overflow,
+    })),
+  );
+  assert.ok(panels.some((panel) => !panel.active));
+  for (const panel of panels) {
+    if (panel.active) {
+      assert.notEqual(panel.display, "none");
+      assert.equal(panel.overflow, "visible", "active menus can overflow");
+    } else {
+      assert.equal(panel.display, "none");
+      assert.equal(panel.overflow, "hidden", "inactive native text is clipped");
+    }
+  }
+};
 const control = async (endpoint, query = "") =>
   (await fetch(`${base}/test/${endpoint}?${query}`)).json();
 const held = async (endpoint, count) => {
@@ -118,8 +137,11 @@ try {
   await selectTab("All tasks");
   assert.equal(await field("Search title or description").inputValue(), "Task");
   await button("New tab").click();
+  await checkPanelClipping();
   await button("Pace").click();
+  await checkPanelClipping();
   await button("Back to Lane").click();
+  await checkPanelClipping();
   await button("Close Pace").click();
   assert.equal(await field("Search title or description").inputValue(), "Task");
   await button("+ New task").click();
@@ -236,6 +258,7 @@ try {
   );
   await button("New tab").click();
   for (const app of ["Lane", "Pace", "RealQA"]) await button(app).waitFor();
+  await checkPanelClipping();
   await page.screenshot({ path: join(evidence, "new-tab-desktop.png") });
   await button("Lane").click();
   await selectTab("B unsaved, Unsaved changes");

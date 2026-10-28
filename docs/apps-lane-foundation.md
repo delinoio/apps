@@ -135,7 +135,9 @@ choosing All repositories selects the All tasks page.
 Keep each pane mounted while inactive so its sidebar selection and scroll,
 repository, search, filters, sort, All tasks display options, list scroll, editor scroll and drafts survive
 tab and mini-app switching. Inactive panels must be hidden from both keyboard
-navigation and assistive technology. A selected task tab retains its associated
+navigation and assistive technology. Clip inactive panels so native Lynx text
+cannot paint outside their zero-sized `display: none` bounds; active panels allow
+overflow for menus and focus rings. A selected task tab retains its associated
 list beside the editor on desktop. `Back to list` selects the corresponding
 list tab if it exists; otherwise it replaces the task tab after the same exit guard. The editor's `Cancel` action closes
 its tab through the same unsaved-change guard and is disabled while saving.
