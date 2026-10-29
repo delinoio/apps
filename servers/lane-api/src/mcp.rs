@@ -89,6 +89,54 @@ macro_rules! tool {
 }
 const TOOLS: &[Tool] = &[
     tool!(
+        "lane_begin_attachment_upload",
+        "CaptureService",
+        "BeginAttachmentUpload",
+        BeginAttachmentUploadRequest
+    ),
+    tool!(
+        "lane_complete_attachment_upload",
+        "CaptureService",
+        "CompleteAttachmentUpload",
+        CompleteAttachmentUploadRequest
+    ),
+    tool!(
+        "lane_create_capture_task",
+        "CaptureService",
+        "CreateCaptureTask",
+        CreateCaptureTaskRequest
+    ),
+    tool!(
+        "lane_get_attachment",
+        "CaptureService",
+        "GetAttachment",
+        GetAttachmentRequest
+    ),
+    tool!(
+        "lane_list_url_connections",
+        "CaptureService",
+        "ListURLConnections",
+        ListURLConnectionsRequest
+    ),
+    tool!(
+        "lane_create_url_connection",
+        "CaptureService",
+        "CreateURLConnection",
+        CreateURLConnectionRequest
+    ),
+    tool!(
+        "lane_save_url_connection",
+        "CaptureService",
+        "SaveURLConnection",
+        SaveURLConnectionRequest
+    ),
+    tool!(
+        "lane_delete_url_connection",
+        "CaptureService",
+        "DeleteURLConnection",
+        DeleteURLConnectionRequest
+    ),
+    tool!(
         "lane_get_repository",
         "LaneService",
         "GetRepository",
@@ -167,6 +215,36 @@ const TOOLS: &[Tool] = &[
         "LaneService",
         "ResolveConflict",
         ResolveConflictRequest
+    ),
+    tool!(
+        "lane_get_planning_item",
+        "PlanningService",
+        "GetPlanningItem",
+        GetPlanningItemRequest
+    ),
+    tool!(
+        "lane_list_planning_items",
+        "PlanningService",
+        "ListPlanningItems",
+        ListPlanningItemsRequest
+    ),
+    tool!(
+        "lane_create_planning_item",
+        "PlanningService",
+        "CreatePlanningItem",
+        CreatePlanningItemRequest
+    ),
+    tool!(
+        "lane_save_planning_item",
+        "PlanningService",
+        "SavePlanningItem",
+        SavePlanningItemRequest
+    ),
+    tool!(
+        "lane_delete_planning_item",
+        "PlanningService",
+        "DeletePlanningItem",
+        DeletePlanningItemRequest
     ),
     tool!(
         "lane_list_devices",
@@ -310,6 +388,63 @@ macro_rules! field {
 }
 fn fields(message: &str) -> &'static [Field] {
     match message {
+        "BeginAttachmentUploadRequest" => &[
+            field!("taskId", "string", false),
+            field!("attachmentId", "string", false),
+            field!("epoch", "string", false),
+        ],
+        "CompleteAttachmentUploadRequest" => &[
+            field!("taskId", "string", false),
+            field!("attachmentId", "string", false),
+            field!("uploadId", "string", false),
+            field!("epoch", "string", false),
+        ],
+        "CreateCaptureTaskRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+            field!("repositoryId", "string", false),
+            field!("title", "string", false),
+            field!("description", "string", false),
+            field!("images", "CapturedImage", true),
+        ],
+        "GetAttachmentRequest" => &[
+            field!("taskId", "string", false),
+            field!("attachmentId", "string", false),
+        ],
+        "ListURLConnectionsRequest" => &[field!("page", "Page", false)],
+        "CreateURLConnectionRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+            field!("connection", "URLConnection", false),
+        ],
+        "SaveURLConnectionRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+            field!("expectedVersionId", "string", false),
+            field!("connection", "URLConnection", false),
+        ],
+        "DeleteURLConnectionRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+        ],
+        "CapturedImage" => &[
+            field!("capture", "CaptureReference", false),
+            field!("png", "bytes", false),
+        ],
+        "CaptureReference" => &[
+            field!("attachmentId", "string", false),
+            field!("width", "uint32", false),
+            field!("height", "uint32", false),
+            field!("sha256", "string", false),
+            field!("byteSize", "uint64", false),
+            field!("pageUrl", "string", false),
+            field!("pageTitle", "string", false),
+            field!("cssSelector", "string", false),
+        ],
+        "URLConnection" => &[
+            field!("prefix", "string", false),
+            field!("repositoryId", "string", false),
+        ],
         "BeginDataDeletionRequest" => &[
             field!("meta", "MutationMeta", false),
             field!("mode", "DataDeletionMode", false),
@@ -346,6 +481,19 @@ fn fields(message: &str) -> &'static [Field] {
             field!("prompt", "string", false),
             field!("progress", "Progress", false),
             field!("proposal", "Proposal", false),
+            field!("priority", "TaskPriority", false),
+            field!("type", "TaskType", false),
+            field!("labelIds", "string", true),
+            field!("startDate", "string", false),
+            field!("dueDate", "string", false),
+            field!("storyPoints", "uint32", false),
+            field!("milestoneId", "string", false),
+            field!("cycleId", "string", false),
+            field!("parentTaskId", "string", false),
+            field!("dependsOnTaskIds", "string", true),
+            field!("relatedTaskIds", "string", true),
+            field!("duplicateOfTaskId", "string", false),
+            field!("relationshipEdits", "RelationshipEdits", false),
         ],
         "DeleteAccountDataRequest" => &[
             field!("meta", "MutationMeta", false),
@@ -383,10 +531,97 @@ fn fields(message: &str) -> &'static [Field] {
             field!("deleted", "bool", false),
             field!("repository", "Repository", false),
             field!("task", "Task", false),
+            field!("urlConnection", "URLConnection", false),
+            field!("label", "Label", false),
+            field!("milestone", "Milestone", false),
+            field!("cycle", "Cycle", false),
         ],
         "GetEventRequest" => &[field!("id", "string", false)],
         "GetRepositoryRequest" => &[field!("id", "string", false)],
         "GetTaskRequest" => &[field!("id", "string", false)],
+        "GetPlanningItemRequest" => &[field!("id", "string", false)],
+        "DeletePlanningItemRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+        ],
+        "ListPlanningItemsRequest" => &[
+            field!("page", "Page", false),
+            field!("repositoryId", "string", false),
+            field!("kind", "EntityKind", false),
+        ],
+        "CreatePlanningItemRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+            field!("item", "PlanningBody", false),
+        ],
+        "SavePlanningItemRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+            field!("expectedVersionId", "string", false),
+            field!("item", "PlanningBody", false),
+        ],
+        "PlanningBody" => &[
+            field!("label", "Label", false),
+            field!("milestone", "Milestone", false),
+            field!("cycle", "Cycle", false),
+        ],
+        "Label" => &[
+            field!("repositoryId", "string", false),
+            field!("name", "string", false),
+            field!("color", "string", false),
+            field!("description", "string", false),
+        ],
+        "Milestone" => &[
+            field!("repositoryId", "string", false),
+            field!("name", "string", false),
+            field!("description", "string", false),
+            field!("targetDate", "string", false),
+            field!("completed", "bool", false),
+        ],
+        "Cycle" => &[
+            field!("repositoryId", "string", false),
+            field!("name", "string", false),
+            field!("description", "string", false),
+            field!("startDate", "string", false),
+            field!("endDate", "string", false),
+        ],
+        "RelationshipEdits" => &[
+            field!("addSubtaskIds", "string", true),
+            field!("removeSubtaskIds", "string", true),
+            field!("addBlockedTaskIds", "string", true),
+            field!("removeBlockedTaskIds", "string", true),
+        ],
+        "DateRange" => &[
+            field!("from", "string", false),
+            field!("to", "string", false),
+            field!("includeUnassigned", "bool", false),
+        ],
+        "PointRange" => &[
+            field!("min", "uint32", false),
+            field!("max", "uint32", false),
+            field!("includeUnassigned", "bool", false),
+        ],
+        "TaskFilter" => &[
+            field!("priorities", "TaskPriority", true),
+            field!("includeUnassignedPriority", "bool", false),
+            field!("types", "TaskType", true),
+            field!("includeUnassignedType", "bool", false),
+            field!("labelIds", "string", true),
+            field!("includeUnlabeled", "bool", false),
+            field!("startDate", "DateRange", false),
+            field!("dueDate", "DateRange", false),
+            field!("storyPoints", "PointRange", false),
+            field!("milestoneIds", "string", true),
+            field!("includeNoMilestone", "bool", false),
+            field!("cycleIds", "string", true),
+            field!("includeNoCycle", "bool", false),
+            field!("relationships", "RelationshipKind", true),
+            field!("includeNoRelationships", "bool", false),
+        ],
+        "CompletedFilter" => &[
+            field!("selection", "CompletedSelection", false),
+            field!("cutoff", "google.protobuf.Timestamp", false),
+        ],
         "ListConnectionsRequest" => &[field!("page", "Page", false)],
         "ListDevicesRequest" => &[field!("page", "Page", false)],
         "ListEventsRequest" => &[
@@ -410,6 +645,10 @@ fn fields(message: &str) -> &'static [Field] {
             field!("progress", "Progress", true),
             field!("proposal", "Proposal", true),
             field!("search", "string", false),
+            field!("filter", "TaskFilter", false),
+            field!("sortKey", "TaskSortKey", false),
+            field!("sortDirection", "SortDirection", false),
+            field!("completed", "CompletedFilter", false),
         ],
         "MutationMeta" => &[field!("requestId", "string", false)],
         "Page" => &[
@@ -490,6 +729,7 @@ fn fields(message: &str) -> &'static [Field] {
             field!("id", "string", false),
             field!("expectedVersionId", "string", false),
             field!("task", "Task", false),
+            field!("relationshipEdits", "RelationshipEdits", false),
         ],
         "SetProgressRequest" => &[
             field!("meta", "MutationMeta", false),
@@ -510,6 +750,19 @@ fn fields(message: &str) -> &'static [Field] {
             field!("prompt", "string", false),
             field!("progress", "Progress", false),
             field!("proposal", "Proposal", false),
+            field!("captures", "CaptureReference", true),
+            field!("priority", "TaskPriority", false),
+            field!("type", "TaskType", false),
+            field!("labelIds", "string", true),
+            field!("startDate", "string", false),
+            field!("dueDate", "string", false),
+            field!("storyPoints", "uint32", false),
+            field!("milestoneId", "string", false),
+            field!("cycleId", "string", false),
+            field!("parentTaskId", "string", false),
+            field!("dependsOnTaskIds", "string", true),
+            field!("relatedTaskIds", "string", true),
+            field!("duplicateOfTaskId", "string", false),
         ],
         _ => &[],
     }
@@ -520,6 +773,49 @@ fn enum_values(kind: &str) -> Option<&'static [&'static str]> {
             "ENTITY_KIND_UNSPECIFIED",
             "ENTITY_KIND_REPOSITORY",
             "ENTITY_KIND_TASK",
+            "ENTITY_KIND_URL_CONNECTION",
+            "ENTITY_KIND_LABEL",
+            "ENTITY_KIND_MILESTONE",
+            "ENTITY_KIND_CYCLE",
+        ]),
+        "TaskPriority" => Some(&[
+            "TASK_PRIORITY_UNSPECIFIED",
+            "TASK_PRIORITY_URGENT",
+            "TASK_PRIORITY_HIGH",
+            "TASK_PRIORITY_NORMAL",
+            "TASK_PRIORITY_LOW",
+        ]),
+        "TaskType" => Some(&[
+            "TASK_TYPE_UNSPECIFIED",
+            "TASK_TYPE_BUG",
+            "TASK_TYPE_FEATURE",
+            "TASK_TYPE_IMPROVEMENT",
+            "TASK_TYPE_DOCUMENTATION",
+            "TASK_TYPE_MAINTENANCE",
+        ]),
+        "RelationshipKind" => Some(&[
+            "RELATIONSHIP_KIND_UNSPECIFIED",
+            "RELATIONSHIP_KIND_PARENT",
+            "RELATIONSHIP_KIND_SUBTASKS",
+            "RELATIONSHIP_KIND_DEPENDS_ON",
+            "RELATIONSHIP_KIND_BLOCKS",
+            "RELATIONSHIP_KIND_RELATED",
+            "RELATIONSHIP_KIND_DUPLICATE_OF",
+        ]),
+        "TaskSortKey" => Some(&[
+            "TASK_SORT_KEY_UNSPECIFIED",
+            "TASK_SORT_KEY_PRIORITY",
+            "TASK_SORT_KEY_TYPE",
+            "TASK_SORT_KEY_START_DATE",
+            "TASK_SORT_KEY_DUE_DATE",
+            "TASK_SORT_KEY_STORY_POINTS",
+            "TASK_SORT_KEY_MILESTONE_NAME",
+            "TASK_SORT_KEY_CYCLE_START_DATE",
+        ]),
+        "SortDirection" => Some(&[
+            "SORT_DIRECTION_UNSPECIFIED",
+            "SORT_DIRECTION_ASCENDING",
+            "SORT_DIRECTION_DESCENDING",
         ]),
         "Progress" => Some(&[
             "PROGRESS_UNSPECIFIED",
@@ -528,6 +824,14 @@ fn enum_values(kind: &str) -> Option<&'static [&'static str]> {
             "PROGRESS_BLOCKED",
             "PROGRESS_DONE",
             "PROGRESS_CANCELED",
+        ]),
+        "CompletedSelection" => Some(&[
+            "COMPLETED_SELECTION_UNSPECIFIED",
+            "COMPLETED_SELECTION_NONE",
+            "COMPLETED_SELECTION_LAST_24_HOURS",
+            "COMPLETED_SELECTION_LAST_7_DAYS",
+            "COMPLETED_SELECTION_LAST_30_DAYS",
+            "COMPLETED_SELECTION_ALL",
         ]),
         "Proposal" => Some(&[
             "PROPOSAL_UNSPECIFIED",
@@ -566,7 +870,15 @@ fn enum_values(kind: &str) -> Option<&'static [&'static str]> {
 fn oneof(message: &str) -> &[&str] {
     match message {
         "RepositoryTarget" => &["id", "url"],
-        "EntityVersion" => &["repository", "task"],
+        "EntityVersion" => &[
+            "repository",
+            "task",
+            "urlConnection",
+            "label",
+            "milestone",
+            "cycle",
+        ],
+        "PlanningBody" => &["label", "milestone", "cycle"],
         _ => &[],
     }
 }
@@ -602,8 +914,20 @@ fn schema(kind: &str) -> Value {
             let choices = oneof(kind);
             if !choices.is_empty() {
                 // Protobuf permits an absent oneof. Business validation decides
-                // whether a particular command requires a selected member.
-                result["not"] = json!({"required":choices});
+                // whether a particular command requires a selected member. Every
+                // pair is excluded separately: one `not` over all members would
+                // advertise invalid pairs as valid, while runtime validation
+                // rejects any two members.
+                let pairs = choices
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(index, first)| {
+                        choices[index + 1..]
+                            .iter()
+                            .map(move |second| json!({"not":{"required":[first, second]}}))
+                    })
+                    .collect::<Vec<_>>();
+                result["allOf"] = Value::Array(pairs);
             }
             result
         }
@@ -663,6 +987,9 @@ fn tool_description(tool: &Tool) -> String {
         "DeleteTask" | "DeleteEvent" => {
             " Irreversibly deletes this item. Invocation confirms deletion."
         }
+        "DeletePlanningItem" => {
+            " Irreversibly deletes this label, milestone or cycle and removes it from every task that uses it. Invocation confirms deletion."
+        }
         "DeleteReceiver" => " Stops intake; retains previously received events.",
         "BeginDataDeletion" => {
             " Starts mandatory human browser reauthentication for account-data deletion."
@@ -702,8 +1029,12 @@ fn protocol_error(id: Value, code: i32, message: &str) -> Response {
     Json(rpc_error(id, code, message)).into_response()
 }
 fn fault_data(fault: &Fault) -> Value {
-    json!({"code":fault.code.as_str(), "reason":fault.reason, "message":fault.message,
-        "correlationId":crate::id(), "retryable":matches!(fault.code, ErrorCode::Unavailable | ErrorCode::ResourceExhausted)})
+    let mut data = json!({"code":fault.code.as_str(), "reason":crate::error::reason(fault) as i32, "message":fault.message,
+        "correlationId":crate::id(), "retryable":matches!(fault.code, ErrorCode::Unavailable | ErrorCode::ResourceExhausted)});
+    if let Some(violation) = crate::planning::violation_of(fault) {
+        data["violation"] = json!(violation.name());
+    }
+    data
 }
 fn authentication_error<B: Backend>(backend: &B, fault: Fault, id: Value) -> Response {
     let mut body = rpc_error(id, -32000, "MCP authorization failed");
@@ -890,12 +1221,16 @@ async fn handle<B: Backend>(State(backend): State<Arc<B>>, request: Request) -> 
                     Ok(arguments) => arguments,
                     Err(_) => return protocol_error(id, -32602, "Invalid tool arguments"),
                 };
+            let started = std::time::Instant::now();
             let result = backend
                 .execute(&headers, tool.service, tool.method, arguments)
                 .await;
+            // Operation, outcome category and duration only: never task, name or description text.
             tracing::info!(
                 operation = tool.method,
                 success = result.is_ok(),
+                result = %result.as_ref().map_or_else(crate::planning::category, |_| "ok".to_owned()),
+                duration_ms = started.elapsed().as_millis() as u64,
                 category = "mcp",
                 "MCP operation completed"
             );
@@ -909,10 +1244,16 @@ async fn handle<B: Backend>(State(backend): State<Arc<B>>, request: Request) -> 
                 }
                 Err(fault) => {
                     let error = json!({"error":fault_data(&fault)});
-                    rpc_result(
+                    let mut response = rpc_result(
                         id,
                         json!({"content":[{"type":"text","text":error.to_string()}], "structuredContent":error, "isError":true}),
-                    )
+                    );
+                    response
+                        .extensions_mut()
+                        .insert(crate::metrics::BackendOutcome(
+                            crate::metrics::outcome_from_status(fault.code.http_status()),
+                        ));
+                    response
                 }
             }
         }

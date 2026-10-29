@@ -2,6 +2,7 @@
 //! Component integration tests use real PostgreSQL and the real entity domain.
 //! Run with LANE_TEST_DATABASE_URL pointing to a disposable PostgreSQL database.
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use delino_protocol::lane::v1::CompleteEventRequest;
 use hmac::{Hmac, Mac};
 use lane_api::{
     Principal, account_lock, entities, id, string,
@@ -58,6 +59,14 @@ impl Fixture {
                 .await
                 .unwrap();
         }
+        sqlx::raw_sql(include_str!("../migrations/00006_captures.sql"))
+            .execute(&mut db)
+            .await
+            .unwrap();
+        sqlx::raw_sql(include_str!("../migrations/00007_planning.sql"))
+            .execute(&mut db)
+            .await
+            .unwrap();
         let principal = Principal {
             account_id: id(),
             tenant_id: id(),
@@ -120,18 +129,20 @@ impl Fixture {
         }
     }
     async fn intake_raw(&mut self, raw: &[u8]) -> lane_api::Result<Value> {
+        let (receiver, secret) = (self.receiver.clone(), self.secret.clone());
+        self.intake_to(&receiver, &secret, raw).await
+    }
+    async fn intake_to(
+        &mut self,
+        receiver: &str,
+        secret: &str,
+        raw: &[u8],
+    ) -> lane_api::Result<Value> {
         let timestamp = chrono::Utc::now().timestamp().to_string();
-        let signature = sign(&self.secret, raw, &timestamp);
+        let signature = sign(secret, raw, &timestamp);
         let mut tx = self.db.begin().await?;
-        let result = webhooks::intake(
-            &mut tx,
-            &self.receiver,
-            raw,
-            &timestamp,
-            &signature,
-            &self.config,
-        )
-        .await;
+        let result =
+            webhooks::intake(&mut tx, receiver, raw, &timestamp, &signature, &self.config).await;
         match result {
             Ok(value) => {
                 tx.commit().await?;
@@ -177,6 +188,33 @@ fn sign(secret: &str, raw: &[u8], timestamp: &str) -> String {
 }
 fn task(repository: &str, title: &str) -> Value {
     json!({"meta":{"requestId":id()},"id":id(),"repository":{"id":repository},"title":title})
+}
+fn typed_completion(q: &Value) -> Value {
+    serde_json::to_value(serde_json::from_value::<CompleteEventRequest>(q.clone()).unwrap())
+        .unwrap()
+}
+
+async fn completion_counts(f: &mut Fixture) -> Vec<i64> {
+    let mut counts = Vec::new();
+    for table in [
+        "lane_entities",
+        "lane_versions",
+        "lane_entity_receipts",
+        "lane_webhook_receipts",
+        "lane_webhook_processing",
+        "lane_changes",
+    ] {
+        counts.push(
+            sqlx::query_scalar::<_, i64>(&format!(
+                "SELECT count(*) FROM {table} WHERE account_id=$1"
+            ))
+            .bind(&f.principal.account_id)
+            .fetch_one(&mut f.db)
+            .await
+            .unwrap(),
+        );
+    }
+    counts
 }
 
 #[tokio::test]
@@ -294,6 +332,215 @@ async fn completion_is_atomic_and_replay_survives_reopen_and_deletion() {
             .unwrap(),
         2
     );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn completion_replays_canonical_planning_sets_without_new_effects() {
+    let mut f = Fixture::new().await;
+    let labels = [id(), id()];
+    let referenced = [id(), id()];
+    let changed = [id(), id()];
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &f.principal.account_id)
+        .await
+        .unwrap();
+    for label in &labels {
+        entities::dispatch(
+            &mut tx,
+            &f.principal,
+            "CreatePlanningItem",
+            &json!({
+            "meta":{"requestId":id()},"id":label,"item":{"label":{
+                "repositoryId":f.repository,"name":label,"color":"#abcdef"}}}),
+            usize::MAX,
+        )
+        .await
+        .unwrap();
+    }
+    for endpoint in referenced.iter().chain(changed.iter()) {
+        let mut seed = task(&f.repository, endpoint);
+        seed["id"] = json!(endpoint);
+        entities::dispatch(&mut tx, &f.principal, "CreateTask", &seed, usize::MAX)
+            .await
+            .unwrap();
+    }
+    tx.commit().await.unwrap();
+    let event = f.event().await;
+    let token = f.claim(&event).await;
+    let mut q = mutation(&event);
+    q["leaseToken"] = json!(token);
+    let mut first = task(&f.repository, "planned");
+    for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+        first[key] = if key == "labelIds" {
+            json!([labels[1], labels[0]])
+        } else {
+            json!([referenced[1], referenced[0]])
+        };
+    }
+    first["relationshipEdits"] = json!({
+        "addSubtaskIds":[changed[1],changed[0]],
+        "removeSubtaskIds":[referenced[1],referenced[0]],
+        "addBlockedTaskIds":[changed[1],changed[0]],
+        "removeBlockedTaskIds":[referenced[1],referenced[0]]
+    });
+    q["tasks"] = json!([first, task(&f.repository, "second")]);
+    q = typed_completion(&q);
+    let completed = f
+        .call("CompleteEvent", &typed_completion(&q))
+        .await
+        .unwrap();
+    assert_eq!(completed["tasks"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        completed["processing"]["taskIds"],
+        json!([q["tasks"][0]["id"], q["tasks"][1]["id"]])
+    );
+    let stable = completion_counts(&mut f).await;
+    assert_eq!(stable[4], 1);
+    assert_eq!(f.call("CompleteEvent", &q).await.unwrap(), completed);
+    let mut equivalent = q.clone();
+    for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+        let ids = if key == "labelIds" {
+            &labels
+        } else {
+            &referenced
+        };
+        equivalent["tasks"][0][key] = json!([ids[0], ids[1], ids[0]]);
+        assert_eq!(
+            f.call("CompleteEvent", &typed_completion(&equivalent))
+                .await
+                .unwrap(),
+            completed
+        );
+        assert_eq!(completion_counts(&mut f).await, stable);
+    }
+    for key in [
+        "addSubtaskIds",
+        "removeSubtaskIds",
+        "addBlockedTaskIds",
+        "removeBlockedTaskIds",
+    ] {
+        let ids = if key.starts_with("add") {
+            &changed
+        } else {
+            &referenced
+        };
+        equivalent["tasks"][0]["relationshipEdits"][key] = json!([ids[0], ids[1], ids[0]]);
+        assert_eq!(
+            f.call("CompleteEvent", &typed_completion(&equivalent))
+                .await
+                .unwrap(),
+            completed
+        );
+        assert_eq!(completion_counts(&mut f).await, stable);
+    }
+    for key in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+        let mut altered = equivalent.clone();
+        altered["tasks"][0][key] = json!([]);
+        assert_eq!(
+            f.call("CompleteEvent", &altered).await.unwrap_err().code,
+            connectrpc::ErrorCode::AlreadyExists
+        );
+    }
+    for key in [
+        "addSubtaskIds",
+        "removeSubtaskIds",
+        "addBlockedTaskIds",
+        "removeBlockedTaskIds",
+    ] {
+        let mut altered = equivalent.clone();
+        altered["tasks"][0]["relationshipEdits"][key] = json!([]);
+        assert_eq!(
+            f.call("CompleteEvent", &altered).await.unwrap_err().code,
+            connectrpc::ErrorCode::AlreadyExists
+        );
+    }
+    for variant in 0..5 {
+        let mut altered = equivalent.clone();
+        match variant {
+            0 => altered["tasks"][0]["title"] = json!("changed"),
+            1 => altered["tasks"][0]["id"] = json!(id()),
+            2 => altered["tasks"][0]["meta"]["requestId"] = json!(id()),
+            3 => altered["tasks"][0]["prompt"] = json!(""),
+            _ => altered["tasks"].as_array_mut().unwrap().reverse(),
+        }
+        assert_eq!(
+            f.call("CompleteEvent", &altered).await.unwrap_err().code,
+            connectrpc::ErrorCode::AlreadyExists
+        );
+    }
+    assert_eq!(completion_counts(&mut f).await, stable);
+    let mut reopen = mutation(&event);
+    reopen["expectedRevision"] = completed["event"]["revision"].clone();
+    f.call("ReopenEvent", &reopen).await.unwrap();
+    assert_eq!(
+        f.call("CompleteEvent", &equivalent).await.unwrap(),
+        completed
+    );
+    assert_eq!(
+        f.call("GetEvent", &json!({"id":event})).await.unwrap()["event"]["state"],
+        "EVENT_STATE_PENDING"
+    );
+    f.call("DeleteEvent", &mutation(&event)).await.unwrap();
+    let redacted = f.call("CompleteEvent", &equivalent).await.unwrap();
+    assert_eq!(redacted["event"]["state"], "EVENT_STATE_DELETED");
+    assert!(redacted.get("tasks").is_none());
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn completion_tasks_follow_the_planning_rules_and_roll_back_together() {
+    let mut f = Fixture::new().await;
+    let label = id();
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &f.principal.account_id)
+        .await
+        .unwrap();
+    entities::dispatch(&mut tx,&f.principal,"CreatePlanningItem",&json!({"meta":{"requestId":id()},"id":label,"item":{"label":{"repositoryId":f.repository,"name":"Triage","color":"#00ff00"}}}),usize::MAX).await.unwrap();
+    tx.commit().await.unwrap();
+    let event = f.event().await;
+    let token = f.claim(&event).await;
+    let mut q = mutation(&event);
+    q["leaseToken"] = json!(token);
+    let mut first = task(&f.repository, "first");
+    first["labelIds"] = json!([label]);
+    first["priority"] = json!("TASK_PRIORITY_HIGH");
+    let mut second = task(&f.repository, "second");
+    second["parentTaskId"] = first["id"].clone();
+    // A later task that violates a rule rolls back the whole completion, earlier tasks included.
+    let mut bad = task(&f.repository, "bad");
+    bad["labelIds"] = json!([id()]);
+    q["tasks"] = json!([first, second, bad]);
+    let before = completion_counts(&mut f).await;
+    let rejected = f.call("CompleteEvent", &q).await.unwrap_err();
+    assert_eq!(
+        lane_api::planning::violation_of(&rejected).map(|v| v.name()),
+        Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")
+    );
+    let tasks: i64 = sqlx::query_scalar("SELECT count(*) FROM lane_entities WHERE kind=2")
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap();
+    assert_eq!(tasks, 0);
+    assert_eq!(completion_counts(&mut f).await, before);
+    assert_eq!(state(&mut f, &event).await, "LEASED");
+    q["tasks"] = json!([q["tasks"][0], q["tasks"][1]]);
+    let completed = f.call("CompleteEvent", &q).await.unwrap();
+    assert_eq!(
+        completed["tasks"][0]["version"]["task"]["labelIds"],
+        json!([label])
+    );
+    assert_eq!(
+        completed["tasks"][0]["version"]["task"]["priority"],
+        "TASK_PRIORITY_HIGH"
+    );
+    assert_eq!(
+        completed["tasks"][1]["version"]["task"]["parentTaskId"],
+        first["id"]
+    );
+    assert_eq!(f.call("CompleteEvent", &q).await.unwrap(), completed);
     f.close().await;
 }
 
@@ -768,5 +1015,1159 @@ async fn account_claimant_isolation_task_redaction_and_outer_rollback() {
             0
         );
     }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn create_receiver_endpoint_forms_and_legacy_receipt_replay() {
+    let mut f = Fixture::new().await;
+    let repository = f.repository.clone();
+    let origin = |base: &str| {
+        WebhookConfig::new(&URL_SAFE_NO_PAD.encode([8; 32]), base, 1024 * 1024).unwrap()
+    };
+    for (base, prefix) in [
+        ("https://lane.example", "https://lane.example/webhooks"),
+        ("https://lane.example/", "https://lane.example/webhooks"),
+        (
+            "https://lane.example/webhooks",
+            "https://lane.example/webhooks",
+        ),
+        (
+            "https://lane.example/webhooks/",
+            "https://lane.example/webhooks",
+        ),
+        ("https://lane.example/hooks/", "https://lane.example/hooks"),
+    ] {
+        f.config = origin(base);
+        let receiver = id();
+        let q = json!({"meta":{"requestId":id()},"id":receiver,"repositoryId":repository,"name":"form"});
+        let created = f.call("CreateReceiver", &q).await.unwrap();
+        assert_eq!(
+            created["endpoint"],
+            format!("{prefix}/{receiver}"),
+            "{base}"
+        );
+    }
+    // A receipt issued before the endpoint builder was corrected holds the old origin-relative
+    // URL. Replay returns the durable receipt unchanged and never creates another receiver or key.
+    f.config = origin("https://lane.example");
+    let receiver = id();
+    let q =
+        json!({"meta":{"requestId":id()},"id":receiver,"repositoryId":repository,"name":"legacy"});
+    let created = f.call("CreateReceiver", &q).await.unwrap();
+    let legacy = format!("https://lane.example/{receiver}");
+    sqlx::query("UPDATE lane_webhook_receipts SET response=jsonb_set(response,'{endpoint}',to_jsonb($1::text)) WHERE account_id=$2 AND method='CreateReceiver' AND request_id=$3")
+        .bind(&legacy)
+        .bind(&f.principal.account_id)
+        .bind(q["meta"]["requestId"].as_str().unwrap())
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    let key_query =
+        "SELECT encrypted_key FROM lane_webhook_receivers WHERE account_id=$1 AND id=$2";
+    let key_before: Vec<u8> = sqlx::query(key_query)
+        .bind(&f.principal.account_id)
+        .bind(&receiver)
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap()
+        .get(0);
+    let before: i64 =
+        sqlx::query("SELECT count(*) FROM lane_webhook_receivers WHERE account_id=$1")
+            .bind(&f.principal.account_id)
+            .fetch_one(&mut f.db)
+            .await
+            .unwrap()
+            .get(0);
+    let replay = f.call("CreateReceiver", &q).await.unwrap();
+    // Replay never re-discloses the signing key (existing behavior); the receipt is otherwise
+    // unchanged, including the old endpoint.
+    let mut expected = created.clone();
+    expected["endpoint"] = json!(legacy);
+    expected.as_object_mut().unwrap().remove("secret");
+    assert_eq!(replay, expected);
+    let after: i64 = sqlx::query("SELECT count(*) FROM lane_webhook_receivers WHERE account_id=$1")
+        .bind(&f.principal.account_id)
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(before, after);
+    let key_after: Vec<u8> = sqlx::query(key_query)
+        .bind(&f.principal.account_id)
+        .bind(&receiver)
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(key_before, key_after);
+    f.close().await;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Repository alias identity: webhook writes, projections, filters, cascade and cleanup.
+//
+// A synchronized repository alias L maps to canonical repository C inside one account. Receivers,
+// events, list filters and repository deletion must treat L and C as the same repository.
+// "Historical" rows model the state written before aliases were resolved: the stored repository
+// reference is the raw alias although the mapping already existed.
+// ---------------------------------------------------------------------------------------------
+
+const MARKER: &str = "synthetic-c06";
+const RECEIVER_NAME: &str = "receiver-name-c06";
+
+impl Fixture {
+    async fn entity_call(&mut self, method: &str, q: &Value) -> lane_api::Result<Value> {
+        let mut tx = self.db.begin().await?;
+        account_lock(&mut tx, &self.principal.account_id).await?;
+        let result = entities::dispatch(&mut tx, &self.principal, method, q, usize::MAX).await;
+        match result {
+            Ok(value) => {
+                tx.commit().await?;
+                Ok(value)
+            }
+            Err(e) => {
+                tx.rollback().await?;
+                Err(e)
+            }
+        }
+    }
+    async fn sync_call(&mut self, method: &str, mut q: Value) -> lane_api::Result<Value> {
+        let epoch: String =
+            sqlx::query_scalar("SELECT epoch FROM lane_accounts WHERE account_id=$1")
+                .bind(&self.principal.account_id)
+                .fetch_one(&mut self.db)
+                .await?;
+        q["formatVersion"] = json!(3);
+        q["epoch"] = json!(epoch);
+        q["deviceId"] = json!(self.principal.device_id);
+        let mut tx = self.db.begin().await?;
+        account_lock(&mut tx, &self.principal.account_id).await?;
+        let result =
+            lane_api::sync::dispatch(&mut tx, &self.principal, method, &q, usize::MAX).await;
+        match result {
+            Ok(value) => {
+                tx.commit().await?;
+                Ok(value)
+            }
+            Err(e) => {
+                tx.rollback().await?;
+                Err(e)
+            }
+        }
+    }
+    async fn create_repository(&mut self, repository: &str, url: &str) {
+        self.entity_call(
+            "CreateRepository",
+            &json!({"meta":{"requestId":id()},"id":repository,"url":url}),
+        )
+        .await
+        .unwrap();
+    }
+    /// Duplicate repository CREATE under `local` with the same normalized URL as `canonical`:
+    /// the real synchronization flow records the account-local mapping local -> canonical.
+    async fn alias(&mut self, canonical: &str, local: &str) {
+        let mut version = self
+            .entity_call("GetRepository", &json!({"id":canonical}))
+            .await
+            .unwrap()["result"]["version"]
+            .clone();
+        version["entityId"] = json!(local);
+        version["versionId"] = json!(id());
+        let mutation = json!({"meta":{"requestId":id()},"kind":"MUTATION_KIND_CREATE","version":version,"expectedHeadIds":[]});
+        let pushed = self
+            .sync_call("PushChanges", json!({"mutations":[mutation]}))
+            .await
+            .unwrap();
+        assert!(
+            pushed["repositoryMappings"]
+                .as_array()
+                .unwrap()
+                .contains(&json!({"localId":local,"canonicalId":canonical}))
+        );
+    }
+    async fn receiver_at(&mut self, repository: &str, name: &str) -> (String, String) {
+        let receiver = id();
+        let created = self
+            .call(
+                "CreateReceiver",
+                &json!({"meta":{"requestId":id()},"id":receiver,"repositoryId":repository,"name":name}),
+            )
+            .await
+            .unwrap();
+        (receiver, string(&created, "secret").into())
+    }
+    async fn event_at(&mut self, receiver: &str, secret: &str, tag: &str) -> String {
+        let raw = serde_json::to_vec(&json!({"id":id(),"type":"test","occurredAt":"2026-10-25T00:00:00Z","payload":{"marker":format!("{MARKER}-{tag}")}})).unwrap();
+        string(&self.intake_to(receiver, secret, &raw).await.unwrap(), "id").into()
+    }
+    async fn delete_repository(&mut self, repository: &str) {
+        self.entity_call(
+            "DeleteRepository",
+            &json!({"meta":{"requestId":id()},"id":repository}),
+        )
+        .await
+        .unwrap();
+    }
+    async fn pool(&self) -> sqlx::PgPool {
+        let url = std::env::var("LANE_TEST_DATABASE_URL").unwrap();
+        let schema = self.schema.clone();
+        sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .after_connect(move |conn, _| {
+                let schema = schema.clone();
+                Box::pin(async move {
+                    sqlx::query(&format!("SET search_path TO {schema}"))
+                        .execute(conn)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect(&url)
+            .await
+            .unwrap()
+    }
+    async fn count(&mut self, sql: &str, binds: &[&str]) -> i64 {
+        let mut query = sqlx::query_scalar::<_, i64>(sql);
+        for bind in binds {
+            query = query.bind(*bind);
+        }
+        query.fetch_one(&mut self.db).await.unwrap()
+    }
+    async fn stored_repository(&mut self, table: &str, id: &str) -> String {
+        sqlx::query_scalar(&format!("SELECT repository_id FROM {table} WHERE id=$1"))
+            .bind(id)
+            .fetch_one(&mut self.db)
+            .await
+            .unwrap()
+    }
+    async fn set_stored_repository(&mut self, table: &str, id: &str, repository: &str) {
+        sqlx::query(&format!("UPDATE {table} SET repository_id=$2 WHERE id=$1"))
+            .bind(id)
+            .bind(repository)
+            .execute(&mut self.db)
+            .await
+            .unwrap();
+    }
+    async fn list_all(&mut self, method: &str, repository: Option<&str>, size: u64) -> Vec<Value> {
+        let mut items = Vec::new();
+        let mut cursor = String::new();
+        loop {
+            let mut q = json!({"page":{"size":size,"cursor":cursor}});
+            if let Some(repository) = repository {
+                q["repositoryId"] = json!(repository);
+            }
+            let page = self.call(method, &q).await.unwrap();
+            items.extend(page["items"].as_array().unwrap().clone());
+            cursor = string(&page, "nextCursor").into();
+            if cursor.is_empty() {
+                return items;
+            }
+        }
+    }
+    async fn deletion_changes(&mut self) -> i64 {
+        let account = self.principal.account_id.clone();
+        self.count(
+            "SELECT count(*) FROM lane_changes WHERE account_id=$1 AND data->'deletion' IS NOT NULL",
+            &[&account],
+        )
+        .await
+    }
+    /// Receiver and event rows as `(id, revision, deletion version)` for stability comparisons.
+    async fn tombstones(&mut self) -> Vec<(String, i64, Option<String>)> {
+        sqlx::query_as("SELECT id,revision,deletion_version_id FROM (SELECT id,revision,deletion_version_id FROM lane_webhook_receivers UNION ALL SELECT id,revision,deletion_version_id FROM lane_webhook_events) t ORDER BY id")
+            .fetch_all(&mut self.db)
+            .await
+            .unwrap()
+    }
+}
+
+struct Seeded {
+    canonical: String,
+    alias_a: String,
+    alias_b: String,
+    receiver: String,
+    secret: String,
+    pending: String,
+    leased: String,
+    lease_token: String,
+    completed: String,
+    errored: String,
+}
+impl Seeded {
+    fn events(&self) -> [&str; 4] {
+        [&self.pending, &self.leased, &self.completed, &self.errored]
+    }
+}
+/// Two aliases of the fixture repository, a receiver created through alias A, and pending,
+/// leased, completed (zero tasks) and error-retaining events. `historical` rewrites the stored
+/// references to raw alias IDs, which is what the pre-fix flow persisted.
+async fn seed(f: &mut Fixture, historical: bool) -> Seeded {
+    let canonical = f.repository.clone();
+    let (alias_a, alias_b) = (id(), id());
+    f.alias(&canonical, &alias_a).await;
+    f.alias(&canonical, &alias_b).await;
+    let (receiver, secret) = f.receiver_at(&alias_a, RECEIVER_NAME).await;
+    assert_eq!(
+        f.stored_repository("lane_webhook_receivers", &receiver)
+            .await,
+        canonical,
+        "new receivers persist the canonical repository"
+    );
+    let pending = f.event_at(&receiver, &secret, "pending").await;
+    let leased = f.event_at(&receiver, &secret, "leased").await;
+    let completed = f.event_at(&receiver, &secret, "completed").await;
+    let errored = f.event_at(&receiver, &secret, "errored").await;
+    let lease_token = f.claim(&leased).await;
+    let token = f.claim(&completed).await;
+    let mut complete = mutation(&completed);
+    complete["leaseToken"] = json!(token);
+    f.call("CompleteEvent", &complete).await.unwrap();
+    let token = f.claim(&errored).await;
+    let mut release = mutation(&errored);
+    release["leaseToken"] = json!(token);
+    release["errorReason"] = json!(format!("{MARKER}-error"));
+    f.call("ReleaseEventLease", &release).await.unwrap();
+    if historical {
+        f.set_stored_repository("lane_webhook_receivers", &receiver, &alias_a)
+            .await;
+        for (event, alias) in [
+            (&pending, &alias_a),
+            (&leased, &alias_a),
+            (&completed, &alias_b),
+            (&errored, &alias_b),
+        ] {
+            f.set_stored_repository("lane_webhook_events", event, alias)
+                .await;
+        }
+    }
+    Seeded {
+        canonical,
+        alias_a,
+        alias_b,
+        receiver,
+        secret,
+        pending,
+        leased,
+        lease_token,
+        completed,
+        errored,
+    }
+}
+/// Everything retained by the listed receivers and events must be erased.
+async fn assert_scrubbed(f: &mut Fixture, receivers: &[&str], events: &[&str], needles: &[&str]) {
+    let account = f.principal.account_id.clone();
+    for receiver in receivers {
+        let row = sqlx::query(
+            "SELECT name,encrypted_key,deletion_version_id FROM lane_webhook_receivers WHERE id=$1",
+        )
+        .bind(receiver)
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap();
+        assert_eq!(row.get::<String, _>("name"), "", "{receiver}");
+        assert!(row.get::<Option<Vec<u8>>, _>("encrypted_key").is_none());
+        assert!(
+            row.get::<Option<String>, _>("deletion_version_id")
+                .is_some()
+        );
+    }
+    for event in events {
+        let row = sqlx::query("SELECT state,data,lease_hash,claimant,expires_at,last_error,deletion_version_id FROM lane_webhook_events WHERE id=$1")
+            .bind(event)
+            .fetch_one(&mut f.db)
+            .await
+            .unwrap();
+        assert_eq!(row.get::<String, _>("state"), "DELETED", "{event}");
+        assert!(row.get::<Option<Value>, _>("data").is_none());
+        assert!(row.get::<Option<String>, _>("lease_hash").is_none());
+        assert!(row.get::<Option<String>, _>("claimant").is_none());
+        assert!(
+            row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("expires_at")
+                .is_none()
+        );
+        assert!(row.get::<Option<String>, _>("last_error").is_none());
+        assert!(
+            row.get::<Option<String>, _>("deletion_version_id")
+                .is_some()
+        );
+        assert_eq!(
+            f.count(
+                "SELECT count(*) FROM lane_webhook_processing WHERE event_id=$1",
+                &[event]
+            )
+            .await,
+            0
+        );
+        let rejected = f.call("GetEvent", &json!({"id":event})).await.unwrap_err();
+        assert_eq!(rejected.reason, 7, "GetEvent must reject deleted events");
+    }
+    for needle in needles {
+        let pattern = format!("%{needle}%");
+        assert_eq!(
+            f.count(
+                "SELECT count(*) FROM lane_changes WHERE account_id=$1 AND data::text LIKE $2",
+                &[&account, &pattern]
+            )
+            .await,
+            0,
+            "changes retain {needle}"
+        );
+        assert_eq!(
+            f.count(
+                "SELECT count(*) FROM lane_webhook_receipts WHERE account_id=$1 AND response::text LIKE $2",
+                &[&account, &pattern]
+            )
+            .await,
+            0,
+            "receipts retain {needle}"
+        );
+        assert_eq!(
+            f.count(
+                "SELECT count(*) FROM lane_webhook_events WHERE account_id=$1 AND data::text LIKE $2",
+                &[&account, &pattern]
+            )
+            .await,
+            0
+        );
+    }
+    // Deletion-only history: a pull from the oldest cursor shows tombstones and no content.
+    let pulled = f.sync_call("PullChanges", json!({})).await.unwrap();
+    let changes = pulled["changes"].as_array().unwrap();
+    assert_eq!(pulled["hasMore"], false);
+    let text = Value::Array(changes.clone()).to_string();
+    assert!(needles.iter().all(|needle| !text.contains(needle)));
+    for resource in receivers.iter().chain(events.iter()) {
+        // Changes about this resource itself; surviving events may still name a deleted receiver.
+        let mentions: Vec<&Value> = changes
+            .iter()
+            .filter(|c| {
+                [
+                    &c["deletion"]["id"],
+                    &c["event"]["id"],
+                    &c["receiver"]["id"],
+                    &c["processing"]["eventId"],
+                ]
+                .contains(&&json!(resource))
+            })
+            .collect();
+        assert!(!mentions.is_empty(), "{resource} keeps a tombstone change");
+        assert!(
+            mentions
+                .iter()
+                .all(|c| c["deletion"]["id"] == json!(resource)),
+            "{resource} has only deletion changes: {mentions:?}"
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn alias_writes_persist_canonical_ownership_and_both_spellings_delete_the_repository() {
+    for delete_with_alias in [true, false] {
+        let mut f = Fixture::new().await;
+        let s = seed(&mut f, false).await;
+        // SaveReceiver through the second alias also persists the canonical repository.
+        let (second, second_secret) = f.receiver_at(&s.canonical, "direct").await;
+        let mut save = mutation(&second);
+        save["expectedRevision"] = json!("1");
+        save["repositoryId"] = json!(s.alias_b);
+        save["name"] = json!("saved");
+        let saved = f.call("SaveReceiver", &save).await.unwrap();
+        assert_eq!(saved["receiver"]["repositoryId"], json!(s.canonical));
+        assert_eq!(
+            f.stored_repository("lane_webhook_receivers", &second).await,
+            s.canonical
+        );
+        let event = f.event_at(&second, &second_secret, "saved").await;
+        assert_eq!(
+            f.stored_repository("lane_webhook_events", &event).await,
+            s.canonical,
+            "events inherit the canonical repository"
+        );
+        let fetched = f.call("GetEvent", &json!({"id":event})).await.unwrap();
+        assert_eq!(fetched["event"]["repositoryId"], json!(s.canonical));
+        // Every spelling selects the same live rows.
+        let by_canonical = f.list_all("ListReceivers", Some(&s.canonical), 100).await;
+        assert_eq!(by_canonical.len(), 3);
+        for spelling in [&s.alias_a, &s.alias_b] {
+            assert_eq!(
+                f.list_all("ListReceivers", Some(spelling), 100).await,
+                by_canonical
+            );
+        }
+        // Delete using L or C: the same account transaction scrubs every owned resource.
+        let target = if delete_with_alias {
+            s.alias_a.clone()
+        } else {
+            s.canonical.clone()
+        };
+        f.delete_repository(&target).await;
+        let mut events: Vec<&str> = s.events().to_vec();
+        events.push(&event);
+        let direct = f.receiver.clone();
+        let receivers = [s.receiver.as_str(), second.as_str(), direct.as_str()];
+        assert_scrubbed(&mut f, &receivers, &events, &[MARKER, RECEIVER_NAME]).await;
+        f.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn historical_alias_rows_filter_identically_across_pages() {
+    let mut f = Fixture::new().await;
+    let s = seed(&mut f, true).await;
+    // More rows in mixed spellings, and a second live repository that must stay isolated.
+    let (extra, extra_secret) = f.receiver_at(&s.canonical, "extra").await;
+    f.set_stored_repository("lane_webhook_receivers", &extra, &s.alias_b)
+        .await;
+    let extra_event = f.event_at(&extra, &extra_secret, "extra").await;
+    f.set_stored_repository("lane_webhook_events", &extra_event, &s.alias_b)
+        .await;
+    let other = id();
+    f.create_repository(&other, "https://example.com/other/repo")
+        .await;
+    let (other_receiver, other_secret) = f.receiver_at(&other, "other").await;
+    let other_event = f.event_at(&other_receiver, &other_secret, "other").await;
+
+    for (method, expected_total) in [("ListReceivers", 3usize), ("ListEvents", 5)] {
+        let baseline = f.list_all(method, Some(&s.canonical), 2).await;
+        assert_eq!(baseline.len(), expected_total, "{method}");
+        let mut seen: Vec<&str> = baseline.iter().map(|i| string(i, "id")).collect();
+        let sorted = {
+            let mut copy = seen.clone();
+            copy.sort();
+            copy.dedup();
+            copy
+        };
+        assert_eq!(seen, sorted, "{method} pages are ordered and not repeated");
+        seen.clear();
+        for item in &baseline {
+            assert_eq!(item["repositoryId"], json!(s.canonical), "{method}");
+        }
+        for spelling in [&s.alias_a, &s.alias_b] {
+            for size in [1, 2, 100] {
+                assert_eq!(
+                    f.list_all(method, Some(spelling), size).await,
+                    baseline,
+                    "{method} {spelling} size {size}"
+                );
+            }
+        }
+        // Isolation from the other repository and the unfiltered view.
+        let others = f.list_all(method, Some(&other), 1).await;
+        assert_eq!(others.len(), 1);
+        assert_eq!(others[0]["repositoryId"], json!(other));
+        assert!(baseline.iter().all(|i| i["id"] != others[0]["id"]));
+        assert_eq!(f.list_all(method, None, 2).await.len(), expected_total + 1);
+    }
+    // Cursors are scoped to the canonical query: alias and canonical share them, others reject.
+    let first = f
+        .call(
+            "ListEvents",
+            &json!({"repositoryId":s.alias_a,"page":{"size":2}}),
+        )
+        .await
+        .unwrap();
+    let cursor = string(&first, "nextCursor").to_owned();
+    assert!(!cursor.is_empty());
+    let via_canonical = f
+        .call(
+            "ListEvents",
+            &json!({"repositoryId":s.canonical,"page":{"size":100,"cursor":cursor}}),
+        )
+        .await
+        .unwrap();
+    let via_alias = f
+        .call(
+            "ListEvents",
+            &json!({"repositoryId":s.alias_b,"page":{"size":100,"cursor":cursor}}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(via_canonical, via_alias);
+    assert_eq!(via_canonical["items"].as_array().unwrap().len(), 3);
+    assert!(
+        f.call(
+            "ListEvents",
+            &json!({"repositoryId":other,"page":{"cursor":cursor}})
+        )
+        .await
+        .is_err()
+    );
+    // State filters still compose with the repository filter.
+    let leased = f
+        .call(
+            "ListEvents",
+            &json!({"repositoryId":s.alias_b,"states":["EVENT_STATE_LEASED"]}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(leased["items"].as_array().unwrap().len(), 1);
+    assert_eq!(leased["items"][0]["id"], json!(s.leased));
+    assert_ne!(string(&leased["items"][0], "id"), other_event);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn deleting_the_canonical_repository_scrubs_historical_alias_resources() {
+    let mut f = Fixture::new().await;
+    let s = seed(&mut f, true).await;
+    let direct = f.receiver.clone();
+    // Counterfactual before deletion: the retained alias content is live and readable.
+    assert_eq!(
+        f.call("GetEvent", &json!({"id":s.pending})).await.unwrap()["event"]["repositoryId"],
+        json!(s.canonical)
+    );
+    f.delete_repository(&s.canonical).await;
+    assert_scrubbed(
+        &mut f,
+        &[&s.receiver, &direct],
+        &s.events(),
+        &[MARKER, RECEIVER_NAME],
+    )
+    .await;
+    // The old lease cannot create tasks, and no event can be claimed again.
+    let mut late = mutation(&s.leased);
+    late["leaseToken"] = json!(s.lease_token);
+    late["tasks"] = json!([task(&s.canonical, "late task")]);
+    assert!(f.call("CompleteEvent", &late).await.is_err());
+    assert_eq!(task_count(&mut f).await, 0);
+    assert!(f.call("ClaimEvent", &mutation(&s.pending)).await.is_err());
+    assert!(f.intake_to(&s.receiver, &s.secret, br#"{}"#).await.is_err());
+    f.close().await;
+}
+
+/// Reproduce the missed cascade that earlier builds performed: they selected only exact
+/// repository IDs, so deleting the canonical repository left alias-owned rows behind.
+async fn delete_ignoring_aliases(f: &mut Fixture, repository: &str) {
+    let account = f.principal.account_id.clone();
+    let mappings: Vec<(String, String)> = sqlx::query_as(
+        "SELECT local_id,canonical_id FROM lane_repository_mappings WHERE account_id=$1",
+    )
+    .bind(&account)
+    .fetch_all(&mut f.db)
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM lane_repository_mappings WHERE account_id=$1")
+        .bind(&account)
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    f.delete_repository(repository).await;
+    for (local, canonical) in mappings {
+        sqlx::query("INSERT INTO lane_repository_mappings(account_id,local_id,canonical_id) VALUES($1,$2,$3)")
+            .bind(&account)
+            .bind(local)
+            .bind(canonical)
+            .execute(&mut f.db)
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn compatibility_cleanup_scrubs_orphans_idempotently_with_rollback_and_resume() {
+    let mut f = Fixture::new().await;
+    let s = seed(&mut f, true).await;
+    delete_ignoring_aliases(&mut f, &s.canonical).await;
+    // The missed deletion is committed: the receiver key and event content survive C's deletion.
+    let key_before: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT encrypted_key FROM lane_webhook_receivers WHERE id=$1")
+            .bind(&s.receiver)
+            .fetch_one(&mut f.db)
+            .await
+            .unwrap();
+    assert!(key_before.is_some());
+    assert!(f.call("GetEvent", &json!({"id":s.pending})).await.is_ok());
+    let changes_before = f.deletion_changes().await;
+    let tombstones_before = f.tombstones().await;
+    let pool = f.pool().await;
+
+    // Fixture transaction failure on the last event: the whole account's cleanup rolls back.
+    let last = s.events().iter().max().copied().unwrap().to_owned();
+    sqlx::raw_sql(&format!(
+        "CREATE FUNCTION fail_event_scrub() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected cleanup failure'; END $$; \
+         CREATE TRIGGER inject_failure BEFORE UPDATE ON lane_webhook_events FOR EACH ROW WHEN (NEW.id = '{last}' AND NEW.state = 'DELETED') EXECUTE FUNCTION fail_event_scrub()"
+    ))
+    .execute(&mut f.db)
+    .await
+    .unwrap();
+    assert!(
+        webhooks::cleanup_deleted_repository_resources(&pool)
+            .await
+            .is_err()
+    );
+    assert_eq!(f.tombstones().await, tombstones_before);
+    assert_eq!(f.deletion_changes().await, changes_before);
+    let key_after: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT encrypted_key FROM lane_webhook_receivers WHERE id=$1")
+            .bind(&s.receiver)
+            .fetch_one(&mut f.db)
+            .await
+            .unwrap();
+    assert_eq!(key_after, key_before, "partial cleanup must roll back");
+
+    // Retry after the fault is removed resumes and completes.
+    sqlx::raw_sql("DROP TRIGGER inject_failure ON lane_webhook_events")
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    let report = webhooks::cleanup_deleted_repository_resources(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        report,
+        webhooks::CleanupReport {
+            accounts: 1,
+            receivers: 1,
+            events: 4
+        }
+    );
+    let direct = f.receiver.clone();
+    assert_scrubbed(
+        &mut f,
+        &[&s.receiver, &direct],
+        &s.events(),
+        &[MARKER, RECEIVER_NAME],
+    )
+    .await;
+    // Second run: stable tombstone identities, revisions and deletion-change counts.
+    let tombstones = f.tombstones().await;
+    let changes = f.deletion_changes().await;
+    assert_eq!(changes, changes_before + 5);
+    assert_eq!(
+        webhooks::cleanup_deleted_repository_resources(&pool)
+            .await
+            .unwrap(),
+        webhooks::CleanupReport::default()
+    );
+    assert_eq!(f.tombstones().await, tombstones);
+    assert_eq!(f.deletion_changes().await, changes);
+    pool.close().await;
+    f.close().await;
+}
+
+/// R starts under L -> C and receives E1, moves to D and receives E2.
+struct Moved {
+    alias: String,
+    destination: String,
+    receiver: String,
+    secret: String,
+    first: String,
+    second: String,
+}
+async fn moved(f: &mut Fixture, historical: bool) -> Moved {
+    let canonical = f.repository.clone();
+    let alias = id();
+    f.alias(&canonical, &alias).await;
+    let destination = id();
+    f.create_repository(&destination, "https://example.com/destination/repo")
+        .await;
+    let (receiver, secret) = f.receiver_at(&alias, "moved-receiver").await;
+    let first = f.event_at(&receiver, &secret, "first").await;
+    let mut save = mutation(&receiver);
+    save["expectedRevision"] = json!("1");
+    save["repositoryId"] = json!(destination);
+    save["name"] = json!("moved-receiver");
+    f.call("SaveReceiver", &save).await.unwrap();
+    let second = f.event_at(&receiver, &secret, "second").await;
+    if historical {
+        f.set_stored_repository("lane_webhook_events", &first, &alias)
+            .await;
+    }
+    assert_eq!(
+        f.stored_repository("lane_webhook_events", &second).await,
+        destination
+    );
+    Moved {
+        alias,
+        destination,
+        receiver,
+        secret,
+        first,
+        second,
+    }
+}
+async fn assert_live(f: &mut Fixture, receiver: Option<(&str, i64)>, event: Option<&str>) {
+    if let Some((receiver, revision)) = receiver {
+        let row = sqlx::query("SELECT name,encrypted_key,revision,deletion_version_id FROM lane_webhook_receivers WHERE id=$1")
+            .bind(receiver)
+            .fetch_one(&mut f.db)
+            .await
+            .unwrap();
+        assert_eq!(row.get::<String, _>("name"), "moved-receiver");
+        assert!(row.get::<Option<Vec<u8>>, _>("encrypted_key").is_some());
+        assert_eq!(row.get::<i64, _>("revision"), revision);
+        assert!(
+            row.get::<Option<String>, _>("deletion_version_id")
+                .is_none()
+        );
+    }
+    if let Some(event) = event {
+        let fetched = f.call("GetEvent", &json!({"id":event})).await.unwrap();
+        assert!(fetched["event"]["payload"]["marker"].is_string());
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn receiver_reassignment_keeps_original_event_ownership_through_cascade_and_cleanup() {
+    for historical in [false, true] {
+        // Deleting C erases E1 only; R (now in D) and E2 survive, and new events still arrive.
+        let mut f = Fixture::new().await;
+        let m = moved(&mut f, historical).await;
+        let canonical = f.repository.clone();
+        f.delete_repository(&canonical).await;
+        let direct = f.receiver.clone();
+        let first_marker = format!("{MARKER}-first");
+        assert_scrubbed(&mut f, &[&direct], &[&m.first], &[&first_marker]).await;
+        assert_live(&mut f, Some((&m.receiver, 2)), Some(&m.second)).await;
+        f.event_at(&m.receiver, &m.secret, "third").await;
+        let pool = f.pool().await;
+        let tombstones = f.tombstones().await;
+        assert_eq!(
+            webhooks::cleanup_deleted_repository_resources(&pool)
+                .await
+                .unwrap(),
+            webhooks::CleanupReport::default()
+        );
+        assert_eq!(f.tombstones().await, tombstones);
+        assert_live(&mut f, Some((&m.receiver, 2)), Some(&m.second)).await;
+        pool.close().await;
+        f.close().await;
+
+        // Deleting D while C is live erases R and E2 only; E1 (originally C) survives.
+        let mut f = Fixture::new().await;
+        let m = moved(&mut f, historical).await;
+        f.delete_repository(&m.destination).await;
+        let receivers = [m.receiver.as_str()];
+        let second_marker = format!("{MARKER}-second");
+        assert_scrubbed(
+            &mut f,
+            &receivers,
+            &[&m.second],
+            &[&second_marker, "moved-receiver"],
+        )
+        .await;
+        assert_live(&mut f, None, Some(&m.first)).await;
+        let pool = f.pool().await;
+        let tombstones = f.tombstones().await;
+        assert_eq!(
+            webhooks::cleanup_deleted_repository_resources(&pool)
+                .await
+                .unwrap(),
+            webhooks::CleanupReport::default()
+        );
+        assert_eq!(f.tombstones().await, tombstones);
+        assert_live(&mut f, None, Some(&m.first)).await;
+        // E1 is deleted by its own repository later, through the alias spelling.
+        f.delete_repository(&m.alias).await;
+        let direct = f.receiver.clone();
+        assert_scrubbed(
+            &mut f,
+            &[&m.receiver, &direct],
+            &[&m.first, &m.second],
+            &[MARKER, "moved-receiver"],
+        )
+        .await;
+        pool.close().await;
+        f.close().await;
+    }
+}
+
+/// Everything account-visible about a webhook account, for exact before/after comparison.
+async fn account_snapshot(f: &mut Fixture) -> Value {
+    let account = f.principal.account_id.clone();
+    let receivers: Vec<Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(t) FROM lane_webhook_receivers t WHERE account_id=$1 ORDER BY id",
+    )
+    .bind(&account)
+    .fetch_all(&mut f.db)
+    .await
+    .unwrap();
+    let events: Vec<Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(t) FROM lane_webhook_events t WHERE account_id=$1 ORDER BY id",
+    )
+    .bind(&account)
+    .fetch_all(&mut f.db)
+    .await
+    .unwrap();
+    let processing: Vec<Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(t) FROM lane_webhook_processing t WHERE account_id=$1 ORDER BY id",
+    )
+    .bind(&account)
+    .fetch_all(&mut f.db)
+    .await
+    .unwrap();
+    let receipts: Vec<Value> = sqlx::query_scalar("SELECT to_jsonb(t) FROM lane_webhook_receipts t WHERE account_id=$1 ORDER BY method,request_id")
+        .bind(&account)
+        .fetch_all(&mut f.db)
+        .await
+        .unwrap();
+    let changes: Vec<Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(t) FROM lane_changes t WHERE account_id=$1 ORDER BY sequence",
+    )
+    .bind(&account)
+    .fetch_all(&mut f.db)
+    .await
+    .unwrap();
+    json!({"receivers":receivers,"events":events,"processing":processing,"receipts":receipts,"changes":changes})
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn cascade_and_cleanup_are_account_isolated_and_keep_receiver_only_deletion_semantics() {
+    let mut f = Fixture::new().await;
+    let first_principal = f.principal.clone();
+    // Account B uses the same repository and alias spellings, including a historical alias row.
+    let canonical = f.repository.clone();
+    let alias = id();
+    f.alias(&canonical, &alias).await;
+    let second_principal = Principal {
+        account_id: id(),
+        tenant_id: id(),
+        session_id: id(),
+        device_id: id(),
+        device_name: "Second account".into(),
+        origin_kind: "ORIGIN_KIND_CLI".into(),
+    };
+    sqlx::query("INSERT INTO lane_accounts VALUES($1,$2,$3)")
+        .bind(&second_principal.account_id)
+        .bind(&second_principal.tenant_id)
+        .bind(id())
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    f.principal = second_principal.clone();
+    f.create_repository(&canonical, "https://example.com/test/repo")
+        .await;
+    f.alias(&canonical, &alias).await;
+    let (b_receiver, b_secret) = f.receiver_at(&alias, "second-account").await;
+    let b_event = f.event_at(&b_receiver, &b_secret, "second-account").await;
+    f.set_stored_repository("lane_webhook_receivers", &b_receiver, &alias)
+        .await;
+    f.set_stored_repository("lane_webhook_events", &b_event, &alias)
+        .await;
+    let b_token = f.claim(&b_event).await;
+    let before = account_snapshot(&mut f).await;
+    f.principal = first_principal;
+
+    // Account A: alias-owned content, a live second repository with a leased event whose
+    // receiver is deleted alone, and a receiver/event ID collision.
+    let (a_receiver, a_secret) = f.receiver_at(&alias, "first-account").await;
+    let a_event = f.event_at(&a_receiver, &a_secret, "first-account").await;
+    f.set_stored_repository("lane_webhook_receivers", &a_receiver, &alias)
+        .await;
+    f.set_stored_repository("lane_webhook_events", &a_event, &alias)
+        .await;
+    let keep = id();
+    f.create_repository(&keep, "https://example.com/keep/repo")
+        .await;
+    let (keep_receiver, keep_secret) = f.receiver_at(&keep, "keep-receiver").await;
+    let keep_event = f.event_at(&keep_receiver, &keep_secret, "keep").await;
+    let keep_token = f.claim(&keep_event).await;
+    f.call("DeleteReceiver", &mutation(&keep_receiver))
+        .await
+        .unwrap();
+    assert_eq!(state(&mut f, &keep_event).await, "LEASED");
+    let mut complete = mutation(&keep_event);
+    complete["leaseToken"] = json!(keep_token);
+    assert!(f.call("CompleteEvent", &complete).await.is_ok());
+    // Collision: an event shares its ID with a receiver, and each owns receipts. The event and
+    // its claim receipt are seeded directly because intake always generates fresh event IDs.
+    let collision = format!("{MARKER}-collision");
+    sqlx::query("INSERT INTO lane_webhook_events(account_id,id,receiver_id,repository_id,sender_event_id,fingerprint,data,state) VALUES($1,$2,$3,$4,'collision','fingerprint',$5,'PENDING')")
+        .bind(&f.principal.account_id)
+        .bind(&a_receiver)
+        .bind(&a_receiver)
+        .bind(&alias)
+        .bind(json!({"eventType":"test","payload":{"marker":collision}}))
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO lane_webhook_receipts(account_id,method,request_id,resource_id,fingerprint,response) VALUES($1,'ClaimEvent',$2,$3,'fingerprint',$4)")
+        .bind(&f.principal.account_id)
+        .bind(id())
+        .bind(&a_receiver)
+        .bind(json!({"event":{"id":a_receiver,"state":"EVENT_STATE_LEASED","payload":{"marker":collision}}}))
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+
+    f.delete_repository(&canonical).await;
+    let direct = f.receiver.clone();
+    let a_markers = [
+        format!("{MARKER}-first-account"),
+        format!("{MARKER}-collision"),
+    ];
+    assert_scrubbed(
+        &mut f,
+        &[&a_receiver, &direct],
+        &[&a_event, &a_receiver],
+        &[&a_markers[0], &a_markers[1], "first-account"],
+    )
+    .await;
+    // Receipts keep separate redaction: the receiver's creation receipt is a receiver tombstone,
+    // the colliding event's claim receipt an event tombstone.
+    let created: Value = sqlx::query_scalar("SELECT response FROM lane_webhook_receipts WHERE method='CreateReceiver' AND resource_id=$1")
+        .bind(&a_receiver)
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        created,
+        json!({"receiver":{"id":a_receiver,"deleted":true}})
+    );
+    let claimed: Value = sqlx::query_scalar(
+        "SELECT response FROM lane_webhook_receipts WHERE method='ClaimEvent' AND resource_id=$1",
+    )
+    .bind(&a_receiver)
+    .fetch_one(&mut f.db)
+    .await
+    .unwrap();
+    assert_eq!(claimed["event"]["state"], "EVENT_STATE_DELETED");
+    assert!(claimed.get("deletion").is_none());
+
+    let pool = f.pool().await;
+    webhooks::cleanup_deleted_repository_resources(&pool)
+        .await
+        .unwrap();
+    // Receiver-only deletion in A kept its event and lease; B is untouched by delete and cleanup.
+    assert_eq!(state(&mut f, &keep_event).await, "COMPLETED");
+    f.principal = second_principal;
+    assert_eq!(account_snapshot(&mut f).await, before);
+    let mut late = mutation(&b_event);
+    late["leaseToken"] = json!(b_token);
+    assert!(f.call("CompleteEvent", &late).await.is_ok());
+    pool.close().await;
+    f.close().await;
+}
+
+/// Immutable identity material that alias resolution must never rewrite.
+async fn identities(f: &mut Fixture) -> Value {
+    let versions: Vec<Value> =
+        sqlx::query_scalar("SELECT to_jsonb(t) FROM lane_version_identities t ORDER BY version_id")
+            .fetch_all(&mut f.db)
+            .await
+            .unwrap();
+    let events: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('id',id,'receiver',receiver_id,'sender',sender_event_id,'fingerprint',fingerprint) FROM lane_webhook_events ORDER BY id",
+    )
+    .fetch_all(&mut f.db)
+    .await
+    .unwrap();
+    let receipts: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('method',method,'request',request_id,'resource',resource_id,'fingerprint',fingerprint) FROM lane_webhook_receipts ORDER BY method,request_id",
+    )
+    .fetch_all(&mut f.db)
+    .await
+    .unwrap();
+    json!({"versions":versions,"events":events,"receipts":receipts})
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn alias_resolution_preserves_versions_fingerprints_and_replay_identities() {
+    let mut f = Fixture::new().await;
+    let s = seed(&mut f, true).await;
+    let identities_before = identities(&mut f).await;
+    let versions_before: Vec<Value> =
+        sqlx::query_scalar("SELECT envelope FROM lane_versions ORDER BY version_id")
+            .fetch_all(&mut f.db)
+            .await
+            .unwrap();
+    // Reads and writes through every spelling leave immutable bodies and identities unchanged.
+    f.list_all("ListReceivers", Some(&s.alias_a), 1).await;
+    f.list_all("ListEvents", Some(&s.canonical), 1).await;
+    f.call("GetEvent", &json!({"id":s.pending})).await.unwrap();
+    let mut create = mutation(&id());
+    create["repositoryId"] = json!(s.alias_b);
+    create["name"] = json!("replayed");
+    let created = f.call("CreateReceiver", &create).await.unwrap();
+    let mut replay = created.clone();
+    replay.as_object_mut().unwrap().remove("secret");
+    assert_eq!(f.call("CreateReceiver", &create).await.unwrap(), replay);
+    let mut changed = create.clone();
+    changed["name"] = json!("changed content");
+    assert_eq!(
+        f.call("CreateReceiver", &changed).await.unwrap_err().code,
+        connectrpc::ErrorCode::AlreadyExists
+    );
+    // Sender deduplication: identical content replays, changed content under one sender conflicts.
+    let raw = serde_json::to_vec(&json!({"id":"sender-c06","type":"test","occurredAt":"2026-10-25T00:00:00Z","payload":{"marker":format!("{MARKER}-sender")}})).unwrap();
+    let first = f.intake_to(&s.receiver, &s.secret, &raw).await.unwrap();
+    assert_eq!(
+        f.intake_to(&s.receiver, &s.secret, &raw).await.unwrap()["id"],
+        first["id"]
+    );
+    let different = serde_json::to_vec(&json!({"id":"sender-c06","type":"test","occurredAt":"2026-10-25T00:00:00Z","payload":{"marker":"other"}})).unwrap();
+    assert!(
+        f.intake_to(&s.receiver, &s.secret, &different)
+            .await
+            .is_err()
+    );
+    let versions_after: Vec<Value> =
+        sqlx::query_scalar("SELECT envelope FROM lane_versions ORDER BY version_id")
+            .fetch_all(&mut f.db)
+            .await
+            .unwrap();
+    assert_eq!(versions_after, versions_before);
+    let identities_written = identities(&mut f).await;
+    for key in ["versions", "events", "receipts"] {
+        let before = identities_before[key].as_array().unwrap();
+        let after = identities_written[key].as_array().unwrap();
+        assert!(
+            before.iter().all(|row| after.contains(row)),
+            "{key} identities of existing rows are unchanged"
+        );
+    }
+
+    // Deletion keeps minimal identities and fingerprints, and replays reveal no erased content.
+    let mut completion = mutation(&s.leased);
+    completion["leaseToken"] = json!(s.lease_token);
+    f.call("CompleteEvent", &completion).await.unwrap();
+    let identities_complete = identities(&mut f).await;
+    f.delete_repository(&s.alias_b).await;
+    let pool = f.pool().await;
+    webhooks::cleanup_deleted_repository_resources(&pool)
+        .await
+        .unwrap();
+    let identities_deleted = identities(&mut f).await;
+    for key in ["events", "receipts"] {
+        let before = identities_complete[key].as_array().unwrap();
+        let after = identities_deleted[key].as_array().unwrap();
+        assert!(
+            before.iter().all(|row| after.contains(row)),
+            "{key} fingerprints and replay identities survive deletion"
+        );
+    }
+    let version_ids: Vec<&Value> = identities_complete["versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .collect();
+    assert!(
+        version_ids.iter().all(|row| identities_deleted["versions"]
+            .as_array()
+            .unwrap()
+            .contains(row)),
+        "version identities survive repository deletion"
+    );
+    let deleted_replay = f.intake_to(&s.receiver, &s.secret, &raw).await.unwrap_err();
+    // The receiver is deleted, so intake is rejected before replay and reveals nothing.
+    assert!(!format!("{deleted_replay:?}").contains(MARKER));
+    let replay = f.call("CompleteEvent", &completion).await.unwrap();
+    assert_eq!(replay["event"]["state"], "EVENT_STATE_DELETED");
+    assert!(replay.get("processing").is_none() && replay.get("tasks").is_none());
+    assert!(!replay.to_string().contains(MARKER));
+    assert_eq!(
+        f.call("CreateReceiver", &create).await.unwrap()["receiver"]["deleted"],
+        json!(true)
+    );
+    pool.close().await;
     f.close().await;
 }

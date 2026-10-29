@@ -1,10 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { homedir } from "node:os";
+import { packageChromeRelay } from "./desktop-relay.mjs";
+import {
+  ensureWindowsAppSdk,
+  windowsAppSdkKeys,
+} from "./desktop-windows-sdk.mjs";
+import {
+  installNativeMessaging,
+  removeNativeMessaging,
+} from "../../lane-chrome-extension/scripts/native-registration.mjs";
 import { ensureRuntime } from "@lynx-js/lynxtron/runtime-manager";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -18,6 +35,7 @@ function run(command, args) {
     cwd: root,
     stdio: "inherit",
     shell: false,
+    windowsHide: true,
   });
   if (result.error) throw result.error;
   if (result.status !== 0)
@@ -28,8 +46,8 @@ try {
     throw new Error("Lane desktop supports macOS and Windows.");
   if (!["lane-dev", "lane"].includes(scheme))
     throw new Error("LANE_URL_SCHEME must be lane-dev or lane.");
-  if (!["build", "run"].includes(action))
-    throw new Error("Expected build or run.");
+  if (!["build", "run", "install", "uninstall"].includes(action))
+    throw new Error("Expected build, run, install, or uninstall.");
   const app =
     process.platform === "darwin"
       ? join(output, "Lane.app")
@@ -43,6 +61,16 @@ try {
       ? join(app, "Contents/Resources/app")
       : join(app, "resources/app");
   if (action === "build") {
+    if (
+      process.env.LANE_RELEASE_TAG &&
+      (!/^lane@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(
+        process.env.LANE_RELEASE_TAG,
+      ) ||
+        !/^[a-f0-9]{40}$/.test(process.env.LANE_SOURCE_REVISION || ""))
+    )
+      throw new Error(
+        "Desktop release builds require a valid tag and source revision.",
+      );
     const runtime = await ensureRuntime({
       variant: "devtool",
       allowFetch: false,
@@ -51,6 +79,10 @@ try {
       process.platform === "darwin"
         ? resolve(runtime.executablePath, "../../..")
         : dirname(runtime.executablePath);
+    const windowsSdk =
+      process.platform === "win32"
+        ? await ensureWindowsAppSdk({ output })
+        : undefined;
     // Clear only the generated application; retain incremental native compilation.
     rmSync(app, { recursive: true, force: true });
     cpSync(runtimeRoot, app, {
@@ -69,16 +101,12 @@ try {
       `-DLANE_NATIVE_TESTING=${process.env.LANE_NATIVE_TESTING === "1" ? "ON" : "OFF"}`,
     ];
     if (process.platform === "win32") {
+      options.push("-A", process.arch === "arm64" ? "ARM64" : "x64");
       options.push(
         `-DLANE_NODE_IMPORT_LIBRARY=${join(runtimeRoot, "lynxtron.dll.lib")}`,
       );
-      for (const key of [
-        "LANE_WINDOWS_APP_SDK_INCLUDE_DIR",
-        "LANE_WINDOWS_APP_SDK_PROJECTIONS_DIR",
-        "LANE_WINDOWS_APP_SDK_BOOTSTRAP_DLL",
-        "LANE_WINDOWS_APP_SDK_LICENSE",
-      ])
-        if (process.env[key]) options.push(`-D${key}=${process.env[key]}`);
+      for (const key of windowsAppSdkKeys)
+        options.push(`-D${key}=${windowsSdk[key]}`);
     }
     run("cmake", options);
     run("cmake", [
@@ -91,6 +119,7 @@ try {
     ]);
     const binaryRoot =
       process.platform === "win32" ? join(nativeBuild, "Release") : nativeBuild;
+    await packageChromeRelay({ root, output, resources, binaryRoot });
     cpSync(
       join(binaryRoot, "lane_host.node"),
       join(resources, "lane_host.node"),
@@ -111,6 +140,8 @@ try {
       cpSync(join(binaryRoot, "licenses"), join(resources, "licenses"), {
         recursive: true,
       });
+      for (const { path, name } of windowsSdk.notices ?? [])
+        cpSync(path, join(resources, "licenses/windows-app-sdk", name));
     }
     await build({
       absWorkingDir: root,
@@ -130,8 +161,24 @@ try {
         type: "module",
         main: "main.mjs",
         scheme,
+        releaseTag: process.env.LANE_RELEASE_TAG || "",
+        sourceRevision: process.env.LANE_SOURCE_REVISION || "",
+        testing: process.env.LANE_NATIVE_TESTING === "1",
+        chromeExtensionIds: (process.env.LANE_CHROME_EXTENSION_IDS || "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
       }),
     );
+    await build({
+      absWorkingDir: root,
+      entryPoints: ["native/desktop/update-install.mjs"],
+      outfile: join(resources, "update-install.mjs"),
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      target: "node22",
+    });
     for (const file of ["main.lynx.bundle", "LICENSE", "NOTICE"])
       cpSync(join(root, "dist", file), join(resources, file));
     cpSync(join(root, "dist/licenses"), join(resources, "licenses/bundle"), {
@@ -213,6 +260,101 @@ try {
       run("codesign", ["--force", "--deep", "--sign", "-", app]);
     }
     console.info(JSON.stringify({ event: "lane_desktop_built" }));
+  } else if (action === "install" || action === "uninstall") {
+    const testRoot = process.env.LANE_NATIVE_INSTALL_TEST_ROOT;
+    // Relocating a manifest cannot isolate HKCU. Refuse Windows probes until
+    // registration has a separate test backend; never alter the user's key.
+    if (testRoot && process.platform === "win32")
+      throw new Error(
+        "Windows scratch installation is unavailable: Chrome registration cannot be isolated from HKCU.",
+      );
+    if (
+      testRoot &&
+      (process.env.LANE_NATIVE_TESTING !== "1" || !isAbsolute(testRoot))
+    )
+      throw new Error(
+        "Scratch installation requires explicit native testing and an absolute test root.",
+      );
+    if (
+      testRoot &&
+      action === "install" &&
+      !JSON.parse(readFileSync(join(resources, "package.json"), "utf8")).testing
+    )
+      throw new Error(
+        "Scratch installation requires a native-testing package.",
+      );
+    const installed = testRoot
+      ? join(
+          testRoot,
+          process.platform === "darwin"
+            ? "Applications/Lane.app"
+            : "Programs/Lane",
+        )
+      : process.platform === "darwin"
+        ? join(homedir(), "Applications/Lane.app")
+        : join(process.env.LOCALAPPDATA, "Programs/Lane");
+    const installedResources =
+      process.platform === "darwin"
+        ? join(installed, "Contents/Resources/app")
+        : join(installed, "resources/app");
+    if (action === "install") {
+      if (!existsSync(executable))
+        throw new Error("Run pnpm build:desktop first.");
+      if (existsSync(installed))
+        throw new Error(
+          "A Lane installation already exists. Quit and uninstall it before replacing it.",
+        );
+      mkdirSync(dirname(installed), { recursive: true });
+      cpSync(app, installed, {
+        recursive: true,
+        dereference: false,
+        verbatimSymlinks: true,
+      });
+    }
+    const config = JSON.parse(
+      readFileSync(join(installedResources, "package.json"), "utf8"),
+    );
+    if (config.name !== "lane")
+      throw new Error("The installed directory is not owned by Lane.");
+    const registration = {
+      extensionIds: config.chromeExtensionIds,
+      ...(testRoot ? { home: testRoot } : {}),
+      relayExecutable: join(
+        installedResources,
+        "relay",
+        process.platform === "darwin"
+          ? "lane-chrome-host"
+          : "lane-chrome-host.exe",
+      ),
+      ...(process.platform === "win32"
+        ? {
+            manifestDirectory: join(
+              testRoot || process.env.LOCALAPPDATA,
+              "io.delino.lane/native-messaging",
+            ),
+          }
+        : {}),
+    };
+    if (action === "install") {
+      if (config.chromeExtensionIds?.length)
+        await installNativeMessaging(registration);
+      else
+        console.info(
+          JSON.stringify({ event: "lane_chrome_registration_unconfigured" }),
+        );
+    } else {
+      if (config.chromeExtensionIds?.length)
+        await removeNativeMessaging(registration);
+      rmSync(installed, { recursive: true });
+    }
+    console.info(
+      JSON.stringify({
+        event:
+          action === "install"
+            ? "lane_desktop_installed"
+            : "lane_desktop_uninstalled",
+      }),
+    );
   } else {
     if (!existsSync(executable))
       throw new Error("Run pnpm build:desktop first.");

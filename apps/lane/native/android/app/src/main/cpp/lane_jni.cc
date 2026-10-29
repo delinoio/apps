@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 #include "lane_store.h"
+#include "vendor/json/json.hpp"
 #include "lane_log.h"
 
 namespace {
@@ -116,6 +117,11 @@ Java_io_delino_lane_NativeStore_call(JNIEnv* env, jobject, jlong handle,
       case 11: return encode(env, engine.recordSyncFailure(decode(env, method), decode(env, request)));
       case 12: return encode(env, engine.spacesForAccount(decode(env, request)));
       case 13: return encode(env, engine.confirmSyncEpoch(decode(env, method), decode(env, request)));
+      case 14: return encode(env, engine.reset(decode(env, request)));
+      case 15: {
+        auto body = nlohmann::json::parse(decode(env, request));
+        return encode(env, engine.cacheAttachment(decode(env, method), body.at("taskId"), body.at("attachmentId"), body.at("png")));
+      }
       default: throw std::invalid_argument("unknown JNI operation");
     }
   } catch (...) { fail(env); return nullptr; }

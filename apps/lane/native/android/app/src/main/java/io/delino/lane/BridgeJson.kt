@@ -24,12 +24,14 @@ internal object LaneMethods {
     val mutations = setOf("CreateRepository", "SaveRepository", "DeleteRepository", "CreateTask",
         "SaveTask", "SetProgress", "SetProposal", "RestorePrompt", "DeleteTask", "ResolveConflict",
         "CreateReceiver", "SaveReceiver", "RotateReceiverKey", "DeleteReceiver", "DeleteEvent",
-        "ClaimEvent", "RenewEventLease", "ReleaseEventLease", "CompleteEvent", "ReopenEvent")
+        "ClaimEvent", "RenewEventLease", "ReleaseEventLease", "CompleteEvent", "ReopenEvent",
+        "CreatePlanningItem", "SavePlanningItem", "DeletePlanningItem")
     val allowed = mutations + setOf("GetRepository", "ListRepositories", "GetTask", "ListTasks",
-        "ListHistory", "GetLocalStatus", "GetNotificationPreferences", "SetNotificationPreferences",
+        "GetAttachment", "ListHistory", "GetLocalStatus", "GetNotificationPreferences", "SetNotificationPreferences",
         "ConnectSync", "DisconnectSync", "RemoveDeviceData", "ListDevices", "DisconnectDevice",
         "ListConnections", "RevokeConnection", "RegisterPush", "BeginDataDeletion", "DeleteAccountData",
-        "ListReceivers", "ListEvents", "GetEvent")
+        "ListReceivers", "ListEvents", "GetEvent", "GetPlanningItem", "ListPlanningItems",
+        "ResetDevelopmentData", "RetryBlockedItems")
 
     fun appRequest(method: String, request: JSONObject, deviceId: String, deviceName: String) {
         if (method !in mutations) return

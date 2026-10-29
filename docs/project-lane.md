@@ -6,9 +6,11 @@ Provide repository-scoped task and prompt management for individuals and their e
 
 ## Project ID
 
-`lane`. The app workspace is `lane`; the application identifier remains `io.delino.lane`. The CLI installer is `@delinoio/lane`.
+`lane`. The app workspace is `@apps/lane`; the application identifier remains `io.delino.lane`. The CLI installer is `@delinoio/lane`.
 
 ## Domain Ownership Map
+
+The main-only `.github/workflows/release.yml` selects Lane web and binary publication from changesets and calls reusable deployment workflows. Follow the [release procedure](repository-workflow-contract.md#project-release-preparation) for commit identity, independent success tags and recovery.
 
 Existing paths retain their build ownership:
 
@@ -21,21 +23,28 @@ Existing paths retain their build ownership:
 
 Additional component ownership:
 
+- `apps/lane-chrome-extension`: RealQA Chrome companion source, build and store submission materials.
+
 - `apps/lane/native/store`: shared SQLite schema, native store support and bridge domain operations; platform adapters remain in the existing hosts.
 - `cmds/lane`: Rust CLI entry point and local stdio MCP.
 - `cmds/lane/src`: Rust local store, domain rules, synchronization and CLI/MCP adapters in the root Cargo workspace.
 - `protos/lane/v1`: canonical schemas, checked-in Go/TypeScript bindings and shared cross-language fixtures. Rust generation runs independently in `servers/crates/delino-protos` and `cmds/lane` Cargo output from the same canonical schema.
 - `servers/lane-api`: Rust Connect API, remote MCP, webhook intake, PostgreSQL migrations, push workers, OCI packaging and operator assets in the independent server workspace.
-- `packages/lane`: npm executable installer, common agent `SKILL.md`, installation and MCP connection guides.
+- `packages/lane`: npm executable launcher and generated platform-specific optional binary packages, common agent `SKILL.md`, installation and MCP connection guides.
 
 ## Domain Contract Documents
 
 - [Application and full product behavior](apps-lane-foundation.md)
+- [RealQA capture, editor, attachments and Chrome integration](apps-lane-realqa-contract.md)
 - [Protocol, domain rules and conformance vectors](protos-lane-v1-contract.md)
 - [Shared local store and native bridge](apps-lane-local-store-contract.md)
 - [Rust CLI and local MCP](cmds-lane-cli-contract.md)
 - [Server, synchronization, identity and operations](servers-lane-api-contract.md)
 - [Distribution and common agent skill](packages-lane-distribution-contract.md)
+
+## Agent Skills Distribution
+
+Skills that help agents use Lane will be distributed through [delinoio/lane-skills](https://github.com/delinoio/lane-skills). See the [distribution contract](packages-lane-distribution-contract.md#agent-skills-distribution) for this planned distribution channel.
 
 ## Cross-Domain Invariants
 
@@ -45,11 +54,17 @@ Native hosts and Rust CLI share the specified SQLite format on desktop. They imp
 
 Connect is the business interface. Local Native Modules, CLI, stdio MCP, remote MCP and webhooks are adapters to the same typed commands and invariants. Use UUID v7 entity, request and version identities. Preserve whole-task conflicts, history, deletion precedence and replay protection across languages. Never use wall-clock last-write-wins.
 
-Logto owns online identity. `lane-api` depends on Delcore Connect for personal-tenant authorization; it does not read Delcore tables or redefine tenants. Local use needs neither service. All repositories synchronize within one personal account; notification preferences remain per device. There are no teams, billing or feature flags.
+Logto owns online identity. `lane-api` depends on Delcore Connect for personal-tenant authorization; it does not read Delcore tables or redefine tenants. Local use needs neither service. All repositories synchronize within one personal account; notification preferences remain per device. There are no teams, billing or feature flags; task planning metadata adds no flag, plan, role or entitlement.
 
-Web is served at `lane.delino.io`; API and remote MCP at `lane.api.delino.io`. Deployable artifacts are required, but deployment, real external-provider acceptance and formal/store publication are separate. Native build/install/behavior acceptance remains required; a shared bundle build is not native acceptance.
+Web is served at `lane.delino.io`; API and remote MCP at `lane.api.delino.io`. The shared `delino@vMAJOR.MINOR.PATCH` release deploys the web client to Cloudflare Pages and publishes the `lane-api` image to GHCR, and publishes six-target CLI archives, a lightweight npm launcher and six platform npm archives and macOS/Windows x64 desktop archives on GitHub Releases. Lane package versions remain independent. Follow the [release workflow contract](repository-workflow-contract.md#web-publication) for environment configuration and recovery. API runtime deployment, migrations, real external-provider acceptance and formal/store publication are separate. Native build/install/behavior acceptance remains required; a shared bundle build is not native acceptance.
 
 Repository-owned server files/distributions use FSL-1.1-ALv2. Other repository-owned files/distributions use Apache-2.0. Preserve upstream SDK notices. Keep protocol and runtime consumers in one repository and review.
+
+## Task Planning Invariants
+
+Tasks carry optional priority, type, labels, start/due dates, story points, milestone and cycle, plus parent, dependency, related and duplicate relationships. Labels, milestones and cycles belong to one repository. Relationships stay within one repository and personal data space and never affect progress or completion. Filtering, sorting, history and conflict handling are identical in the apps, CLI, local MCP, remote MCP and web through the typed protocol; the web client stays online-only. [Application behavior](apps-lane-foundation.md#task-planning-metadata) owns the product rules and approved UI specification, and the [protocol](protos-lane-v1-contract.md#task-planning-schema) owns the wire format.
+
+Lane has not been deployed, so the planning change carries an explicit pre-release exception: the local store schema and data format advance to version 3 and the server schema advances by one forward migration without compatibility, data-preserving migration or old-client support. Stores and databases of another format are refused, never reset silently, and recovered only by the documented explicit development reset (`lane data reset`, the native Settings reset and the disposable database reset). This exception does not apply after Lane is deployed.
 
 ## Change Policy
 

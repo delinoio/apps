@@ -31,6 +31,10 @@ const (
 	WebhookServiceName = "lane.v1.WebhookService"
 	// SyncServiceName is the fully-qualified name of the SyncService service.
 	SyncServiceName = "lane.v1.SyncService"
+	// CaptureServiceName is the fully-qualified name of the CaptureService service.
+	CaptureServiceName = "lane.v1.CaptureService"
+	// PlanningServiceName is the fully-qualified name of the PlanningService service.
+	PlanningServiceName = "lane.v1.PlanningService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -146,6 +150,45 @@ const (
 	// SyncServiceWatchChangesProcedure is the fully-qualified name of the SyncService's WatchChanges
 	// RPC.
 	SyncServiceWatchChangesProcedure = "/lane.v1.SyncService/WatchChanges"
+	// CaptureServiceBeginAttachmentUploadProcedure is the fully-qualified name of the CaptureService's
+	// BeginAttachmentUpload RPC.
+	CaptureServiceBeginAttachmentUploadProcedure = "/lane.v1.CaptureService/BeginAttachmentUpload"
+	// CaptureServiceCompleteAttachmentUploadProcedure is the fully-qualified name of the
+	// CaptureService's CompleteAttachmentUpload RPC.
+	CaptureServiceCompleteAttachmentUploadProcedure = "/lane.v1.CaptureService/CompleteAttachmentUpload"
+	// CaptureServiceCreateCaptureTaskProcedure is the fully-qualified name of the CaptureService's
+	// CreateCaptureTask RPC.
+	CaptureServiceCreateCaptureTaskProcedure = "/lane.v1.CaptureService/CreateCaptureTask"
+	// CaptureServiceGetAttachmentProcedure is the fully-qualified name of the CaptureService's
+	// GetAttachment RPC.
+	CaptureServiceGetAttachmentProcedure = "/lane.v1.CaptureService/GetAttachment"
+	// CaptureServiceListURLConnectionsProcedure is the fully-qualified name of the CaptureService's
+	// ListURLConnections RPC.
+	CaptureServiceListURLConnectionsProcedure = "/lane.v1.CaptureService/ListURLConnections"
+	// CaptureServiceCreateURLConnectionProcedure is the fully-qualified name of the CaptureService's
+	// CreateURLConnection RPC.
+	CaptureServiceCreateURLConnectionProcedure = "/lane.v1.CaptureService/CreateURLConnection"
+	// CaptureServiceSaveURLConnectionProcedure is the fully-qualified name of the CaptureService's
+	// SaveURLConnection RPC.
+	CaptureServiceSaveURLConnectionProcedure = "/lane.v1.CaptureService/SaveURLConnection"
+	// CaptureServiceDeleteURLConnectionProcedure is the fully-qualified name of the CaptureService's
+	// DeleteURLConnection RPC.
+	CaptureServiceDeleteURLConnectionProcedure = "/lane.v1.CaptureService/DeleteURLConnection"
+	// PlanningServiceGetPlanningItemProcedure is the fully-qualified name of the PlanningService's
+	// GetPlanningItem RPC.
+	PlanningServiceGetPlanningItemProcedure = "/lane.v1.PlanningService/GetPlanningItem"
+	// PlanningServiceListPlanningItemsProcedure is the fully-qualified name of the PlanningService's
+	// ListPlanningItems RPC.
+	PlanningServiceListPlanningItemsProcedure = "/lane.v1.PlanningService/ListPlanningItems"
+	// PlanningServiceCreatePlanningItemProcedure is the fully-qualified name of the PlanningService's
+	// CreatePlanningItem RPC.
+	PlanningServiceCreatePlanningItemProcedure = "/lane.v1.PlanningService/CreatePlanningItem"
+	// PlanningServiceSavePlanningItemProcedure is the fully-qualified name of the PlanningService's
+	// SavePlanningItem RPC.
+	PlanningServiceSavePlanningItemProcedure = "/lane.v1.PlanningService/SavePlanningItem"
+	// PlanningServiceDeletePlanningItemProcedure is the fully-qualified name of the PlanningService's
+	// DeletePlanningItem RPC.
+	PlanningServiceDeletePlanningItemProcedure = "/lane.v1.PlanningService/DeletePlanningItem"
 )
 
 // LaneServiceClient is a client for the lane.v1.LaneService service.
@@ -1336,4 +1379,430 @@ func (UnimplementedSyncServiceHandler) PullChanges(context.Context, *connect.Req
 
 func (UnimplementedSyncServiceHandler) WatchChanges(context.Context, *connect.Request[v1.WatchChangesRequest], *connect.ServerStream[v1.WatchChangesResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.SyncService.WatchChanges is not implemented"))
+}
+
+// CaptureServiceClient is a client for the lane.v1.CaptureService service.
+type CaptureServiceClient interface {
+	BeginAttachmentUpload(context.Context, *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error)
+	CompleteAttachmentUpload(context.Context, *connect.Request[v1.CompleteAttachmentUploadRequest]) (*connect.Response[v1.CompleteAttachmentUploadResponse], error)
+	CreateCaptureTask(context.Context, *connect.Request[v1.CreateCaptureTaskRequest]) (*connect.Response[v1.CreateCaptureTaskResponse], error)
+	GetAttachment(context.Context, *connect.Request[v1.GetAttachmentRequest]) (*connect.Response[v1.GetAttachmentResponse], error)
+	ListURLConnections(context.Context, *connect.Request[v1.ListURLConnectionsRequest]) (*connect.Response[v1.ListURLConnectionsResponse], error)
+	CreateURLConnection(context.Context, *connect.Request[v1.CreateURLConnectionRequest]) (*connect.Response[v1.CreateURLConnectionResponse], error)
+	SaveURLConnection(context.Context, *connect.Request[v1.SaveURLConnectionRequest]) (*connect.Response[v1.SaveURLConnectionResponse], error)
+	DeleteURLConnection(context.Context, *connect.Request[v1.DeleteURLConnectionRequest]) (*connect.Response[v1.DeleteURLConnectionResponse], error)
+}
+
+// NewCaptureServiceClient constructs a client for the lane.v1.CaptureService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewCaptureServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) CaptureServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	captureServiceMethods := v1.File_lane_v1_lane_proto.Services().ByName("CaptureService").Methods()
+	return &captureServiceClient{
+		beginAttachmentUpload: connect.NewClient[v1.BeginAttachmentUploadRequest, v1.BeginAttachmentUploadResponse](
+			httpClient,
+			baseURL+CaptureServiceBeginAttachmentUploadProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("BeginAttachmentUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		completeAttachmentUpload: connect.NewClient[v1.CompleteAttachmentUploadRequest, v1.CompleteAttachmentUploadResponse](
+			httpClient,
+			baseURL+CaptureServiceCompleteAttachmentUploadProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("CompleteAttachmentUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		createCaptureTask: connect.NewClient[v1.CreateCaptureTaskRequest, v1.CreateCaptureTaskResponse](
+			httpClient,
+			baseURL+CaptureServiceCreateCaptureTaskProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("CreateCaptureTask")),
+			connect.WithClientOptions(opts...),
+		),
+		getAttachment: connect.NewClient[v1.GetAttachmentRequest, v1.GetAttachmentResponse](
+			httpClient,
+			baseURL+CaptureServiceGetAttachmentProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("GetAttachment")),
+			connect.WithClientOptions(opts...),
+		),
+		listURLConnections: connect.NewClient[v1.ListURLConnectionsRequest, v1.ListURLConnectionsResponse](
+			httpClient,
+			baseURL+CaptureServiceListURLConnectionsProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("ListURLConnections")),
+			connect.WithClientOptions(opts...),
+		),
+		createURLConnection: connect.NewClient[v1.CreateURLConnectionRequest, v1.CreateURLConnectionResponse](
+			httpClient,
+			baseURL+CaptureServiceCreateURLConnectionProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("CreateURLConnection")),
+			connect.WithClientOptions(opts...),
+		),
+		saveURLConnection: connect.NewClient[v1.SaveURLConnectionRequest, v1.SaveURLConnectionResponse](
+			httpClient,
+			baseURL+CaptureServiceSaveURLConnectionProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("SaveURLConnection")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteURLConnection: connect.NewClient[v1.DeleteURLConnectionRequest, v1.DeleteURLConnectionResponse](
+			httpClient,
+			baseURL+CaptureServiceDeleteURLConnectionProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("DeleteURLConnection")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// captureServiceClient implements CaptureServiceClient.
+type captureServiceClient struct {
+	beginAttachmentUpload    *connect.Client[v1.BeginAttachmentUploadRequest, v1.BeginAttachmentUploadResponse]
+	completeAttachmentUpload *connect.Client[v1.CompleteAttachmentUploadRequest, v1.CompleteAttachmentUploadResponse]
+	createCaptureTask        *connect.Client[v1.CreateCaptureTaskRequest, v1.CreateCaptureTaskResponse]
+	getAttachment            *connect.Client[v1.GetAttachmentRequest, v1.GetAttachmentResponse]
+	listURLConnections       *connect.Client[v1.ListURLConnectionsRequest, v1.ListURLConnectionsResponse]
+	createURLConnection      *connect.Client[v1.CreateURLConnectionRequest, v1.CreateURLConnectionResponse]
+	saveURLConnection        *connect.Client[v1.SaveURLConnectionRequest, v1.SaveURLConnectionResponse]
+	deleteURLConnection      *connect.Client[v1.DeleteURLConnectionRequest, v1.DeleteURLConnectionResponse]
+}
+
+// BeginAttachmentUpload calls lane.v1.CaptureService.BeginAttachmentUpload.
+func (c *captureServiceClient) BeginAttachmentUpload(ctx context.Context, req *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error) {
+	return c.beginAttachmentUpload.CallUnary(ctx, req)
+}
+
+// CompleteAttachmentUpload calls lane.v1.CaptureService.CompleteAttachmentUpload.
+func (c *captureServiceClient) CompleteAttachmentUpload(ctx context.Context, req *connect.Request[v1.CompleteAttachmentUploadRequest]) (*connect.Response[v1.CompleteAttachmentUploadResponse], error) {
+	return c.completeAttachmentUpload.CallUnary(ctx, req)
+}
+
+// CreateCaptureTask calls lane.v1.CaptureService.CreateCaptureTask.
+func (c *captureServiceClient) CreateCaptureTask(ctx context.Context, req *connect.Request[v1.CreateCaptureTaskRequest]) (*connect.Response[v1.CreateCaptureTaskResponse], error) {
+	return c.createCaptureTask.CallUnary(ctx, req)
+}
+
+// GetAttachment calls lane.v1.CaptureService.GetAttachment.
+func (c *captureServiceClient) GetAttachment(ctx context.Context, req *connect.Request[v1.GetAttachmentRequest]) (*connect.Response[v1.GetAttachmentResponse], error) {
+	return c.getAttachment.CallUnary(ctx, req)
+}
+
+// ListURLConnections calls lane.v1.CaptureService.ListURLConnections.
+func (c *captureServiceClient) ListURLConnections(ctx context.Context, req *connect.Request[v1.ListURLConnectionsRequest]) (*connect.Response[v1.ListURLConnectionsResponse], error) {
+	return c.listURLConnections.CallUnary(ctx, req)
+}
+
+// CreateURLConnection calls lane.v1.CaptureService.CreateURLConnection.
+func (c *captureServiceClient) CreateURLConnection(ctx context.Context, req *connect.Request[v1.CreateURLConnectionRequest]) (*connect.Response[v1.CreateURLConnectionResponse], error) {
+	return c.createURLConnection.CallUnary(ctx, req)
+}
+
+// SaveURLConnection calls lane.v1.CaptureService.SaveURLConnection.
+func (c *captureServiceClient) SaveURLConnection(ctx context.Context, req *connect.Request[v1.SaveURLConnectionRequest]) (*connect.Response[v1.SaveURLConnectionResponse], error) {
+	return c.saveURLConnection.CallUnary(ctx, req)
+}
+
+// DeleteURLConnection calls lane.v1.CaptureService.DeleteURLConnection.
+func (c *captureServiceClient) DeleteURLConnection(ctx context.Context, req *connect.Request[v1.DeleteURLConnectionRequest]) (*connect.Response[v1.DeleteURLConnectionResponse], error) {
+	return c.deleteURLConnection.CallUnary(ctx, req)
+}
+
+// CaptureServiceHandler is an implementation of the lane.v1.CaptureService service.
+type CaptureServiceHandler interface {
+	BeginAttachmentUpload(context.Context, *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error)
+	CompleteAttachmentUpload(context.Context, *connect.Request[v1.CompleteAttachmentUploadRequest]) (*connect.Response[v1.CompleteAttachmentUploadResponse], error)
+	CreateCaptureTask(context.Context, *connect.Request[v1.CreateCaptureTaskRequest]) (*connect.Response[v1.CreateCaptureTaskResponse], error)
+	GetAttachment(context.Context, *connect.Request[v1.GetAttachmentRequest]) (*connect.Response[v1.GetAttachmentResponse], error)
+	ListURLConnections(context.Context, *connect.Request[v1.ListURLConnectionsRequest]) (*connect.Response[v1.ListURLConnectionsResponse], error)
+	CreateURLConnection(context.Context, *connect.Request[v1.CreateURLConnectionRequest]) (*connect.Response[v1.CreateURLConnectionResponse], error)
+	SaveURLConnection(context.Context, *connect.Request[v1.SaveURLConnectionRequest]) (*connect.Response[v1.SaveURLConnectionResponse], error)
+	DeleteURLConnection(context.Context, *connect.Request[v1.DeleteURLConnectionRequest]) (*connect.Response[v1.DeleteURLConnectionResponse], error)
+}
+
+// NewCaptureServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewCaptureServiceHandler(svc CaptureServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	captureServiceMethods := v1.File_lane_v1_lane_proto.Services().ByName("CaptureService").Methods()
+	captureServiceBeginAttachmentUploadHandler := connect.NewUnaryHandler(
+		CaptureServiceBeginAttachmentUploadProcedure,
+		svc.BeginAttachmentUpload,
+		connect.WithSchema(captureServiceMethods.ByName("BeginAttachmentUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	captureServiceCompleteAttachmentUploadHandler := connect.NewUnaryHandler(
+		CaptureServiceCompleteAttachmentUploadProcedure,
+		svc.CompleteAttachmentUpload,
+		connect.WithSchema(captureServiceMethods.ByName("CompleteAttachmentUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	captureServiceCreateCaptureTaskHandler := connect.NewUnaryHandler(
+		CaptureServiceCreateCaptureTaskProcedure,
+		svc.CreateCaptureTask,
+		connect.WithSchema(captureServiceMethods.ByName("CreateCaptureTask")),
+		connect.WithHandlerOptions(opts...),
+	)
+	captureServiceGetAttachmentHandler := connect.NewUnaryHandler(
+		CaptureServiceGetAttachmentProcedure,
+		svc.GetAttachment,
+		connect.WithSchema(captureServiceMethods.ByName("GetAttachment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	captureServiceListURLConnectionsHandler := connect.NewUnaryHandler(
+		CaptureServiceListURLConnectionsProcedure,
+		svc.ListURLConnections,
+		connect.WithSchema(captureServiceMethods.ByName("ListURLConnections")),
+		connect.WithHandlerOptions(opts...),
+	)
+	captureServiceCreateURLConnectionHandler := connect.NewUnaryHandler(
+		CaptureServiceCreateURLConnectionProcedure,
+		svc.CreateURLConnection,
+		connect.WithSchema(captureServiceMethods.ByName("CreateURLConnection")),
+		connect.WithHandlerOptions(opts...),
+	)
+	captureServiceSaveURLConnectionHandler := connect.NewUnaryHandler(
+		CaptureServiceSaveURLConnectionProcedure,
+		svc.SaveURLConnection,
+		connect.WithSchema(captureServiceMethods.ByName("SaveURLConnection")),
+		connect.WithHandlerOptions(opts...),
+	)
+	captureServiceDeleteURLConnectionHandler := connect.NewUnaryHandler(
+		CaptureServiceDeleteURLConnectionProcedure,
+		svc.DeleteURLConnection,
+		connect.WithSchema(captureServiceMethods.ByName("DeleteURLConnection")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/lane.v1.CaptureService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case CaptureServiceBeginAttachmentUploadProcedure:
+			captureServiceBeginAttachmentUploadHandler.ServeHTTP(w, r)
+		case CaptureServiceCompleteAttachmentUploadProcedure:
+			captureServiceCompleteAttachmentUploadHandler.ServeHTTP(w, r)
+		case CaptureServiceCreateCaptureTaskProcedure:
+			captureServiceCreateCaptureTaskHandler.ServeHTTP(w, r)
+		case CaptureServiceGetAttachmentProcedure:
+			captureServiceGetAttachmentHandler.ServeHTTP(w, r)
+		case CaptureServiceListURLConnectionsProcedure:
+			captureServiceListURLConnectionsHandler.ServeHTTP(w, r)
+		case CaptureServiceCreateURLConnectionProcedure:
+			captureServiceCreateURLConnectionHandler.ServeHTTP(w, r)
+		case CaptureServiceSaveURLConnectionProcedure:
+			captureServiceSaveURLConnectionHandler.ServeHTTP(w, r)
+		case CaptureServiceDeleteURLConnectionProcedure:
+			captureServiceDeleteURLConnectionHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedCaptureServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedCaptureServiceHandler struct{}
+
+func (UnimplementedCaptureServiceHandler) BeginAttachmentUpload(context.Context, *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.BeginAttachmentUpload is not implemented"))
+}
+
+func (UnimplementedCaptureServiceHandler) CompleteAttachmentUpload(context.Context, *connect.Request[v1.CompleteAttachmentUploadRequest]) (*connect.Response[v1.CompleteAttachmentUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.CompleteAttachmentUpload is not implemented"))
+}
+
+func (UnimplementedCaptureServiceHandler) CreateCaptureTask(context.Context, *connect.Request[v1.CreateCaptureTaskRequest]) (*connect.Response[v1.CreateCaptureTaskResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.CreateCaptureTask is not implemented"))
+}
+
+func (UnimplementedCaptureServiceHandler) GetAttachment(context.Context, *connect.Request[v1.GetAttachmentRequest]) (*connect.Response[v1.GetAttachmentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.GetAttachment is not implemented"))
+}
+
+func (UnimplementedCaptureServiceHandler) ListURLConnections(context.Context, *connect.Request[v1.ListURLConnectionsRequest]) (*connect.Response[v1.ListURLConnectionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.ListURLConnections is not implemented"))
+}
+
+func (UnimplementedCaptureServiceHandler) CreateURLConnection(context.Context, *connect.Request[v1.CreateURLConnectionRequest]) (*connect.Response[v1.CreateURLConnectionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.CreateURLConnection is not implemented"))
+}
+
+func (UnimplementedCaptureServiceHandler) SaveURLConnection(context.Context, *connect.Request[v1.SaveURLConnectionRequest]) (*connect.Response[v1.SaveURLConnectionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.SaveURLConnection is not implemented"))
+}
+
+func (UnimplementedCaptureServiceHandler) DeleteURLConnection(context.Context, *connect.Request[v1.DeleteURLConnectionRequest]) (*connect.Response[v1.DeleteURLConnectionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.DeleteURLConnection is not implemented"))
+}
+
+// PlanningServiceClient is a client for the lane.v1.PlanningService service.
+type PlanningServiceClient interface {
+	GetPlanningItem(context.Context, *connect.Request[v1.GetPlanningItemRequest]) (*connect.Response[v1.GetPlanningItemResponse], error)
+	ListPlanningItems(context.Context, *connect.Request[v1.ListPlanningItemsRequest]) (*connect.Response[v1.ListPlanningItemsResponse], error)
+	CreatePlanningItem(context.Context, *connect.Request[v1.CreatePlanningItemRequest]) (*connect.Response[v1.CreatePlanningItemResponse], error)
+	SavePlanningItem(context.Context, *connect.Request[v1.SavePlanningItemRequest]) (*connect.Response[v1.SavePlanningItemResponse], error)
+	DeletePlanningItem(context.Context, *connect.Request[v1.DeletePlanningItemRequest]) (*connect.Response[v1.DeletePlanningItemResponse], error)
+}
+
+// NewPlanningServiceClient constructs a client for the lane.v1.PlanningService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewPlanningServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) PlanningServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	planningServiceMethods := v1.File_lane_v1_lane_proto.Services().ByName("PlanningService").Methods()
+	return &planningServiceClient{
+		getPlanningItem: connect.NewClient[v1.GetPlanningItemRequest, v1.GetPlanningItemResponse](
+			httpClient,
+			baseURL+PlanningServiceGetPlanningItemProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("GetPlanningItem")),
+			connect.WithClientOptions(opts...),
+		),
+		listPlanningItems: connect.NewClient[v1.ListPlanningItemsRequest, v1.ListPlanningItemsResponse](
+			httpClient,
+			baseURL+PlanningServiceListPlanningItemsProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("ListPlanningItems")),
+			connect.WithClientOptions(opts...),
+		),
+		createPlanningItem: connect.NewClient[v1.CreatePlanningItemRequest, v1.CreatePlanningItemResponse](
+			httpClient,
+			baseURL+PlanningServiceCreatePlanningItemProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("CreatePlanningItem")),
+			connect.WithClientOptions(opts...),
+		),
+		savePlanningItem: connect.NewClient[v1.SavePlanningItemRequest, v1.SavePlanningItemResponse](
+			httpClient,
+			baseURL+PlanningServiceSavePlanningItemProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("SavePlanningItem")),
+			connect.WithClientOptions(opts...),
+		),
+		deletePlanningItem: connect.NewClient[v1.DeletePlanningItemRequest, v1.DeletePlanningItemResponse](
+			httpClient,
+			baseURL+PlanningServiceDeletePlanningItemProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("DeletePlanningItem")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// planningServiceClient implements PlanningServiceClient.
+type planningServiceClient struct {
+	getPlanningItem    *connect.Client[v1.GetPlanningItemRequest, v1.GetPlanningItemResponse]
+	listPlanningItems  *connect.Client[v1.ListPlanningItemsRequest, v1.ListPlanningItemsResponse]
+	createPlanningItem *connect.Client[v1.CreatePlanningItemRequest, v1.CreatePlanningItemResponse]
+	savePlanningItem   *connect.Client[v1.SavePlanningItemRequest, v1.SavePlanningItemResponse]
+	deletePlanningItem *connect.Client[v1.DeletePlanningItemRequest, v1.DeletePlanningItemResponse]
+}
+
+// GetPlanningItem calls lane.v1.PlanningService.GetPlanningItem.
+func (c *planningServiceClient) GetPlanningItem(ctx context.Context, req *connect.Request[v1.GetPlanningItemRequest]) (*connect.Response[v1.GetPlanningItemResponse], error) {
+	return c.getPlanningItem.CallUnary(ctx, req)
+}
+
+// ListPlanningItems calls lane.v1.PlanningService.ListPlanningItems.
+func (c *planningServiceClient) ListPlanningItems(ctx context.Context, req *connect.Request[v1.ListPlanningItemsRequest]) (*connect.Response[v1.ListPlanningItemsResponse], error) {
+	return c.listPlanningItems.CallUnary(ctx, req)
+}
+
+// CreatePlanningItem calls lane.v1.PlanningService.CreatePlanningItem.
+func (c *planningServiceClient) CreatePlanningItem(ctx context.Context, req *connect.Request[v1.CreatePlanningItemRequest]) (*connect.Response[v1.CreatePlanningItemResponse], error) {
+	return c.createPlanningItem.CallUnary(ctx, req)
+}
+
+// SavePlanningItem calls lane.v1.PlanningService.SavePlanningItem.
+func (c *planningServiceClient) SavePlanningItem(ctx context.Context, req *connect.Request[v1.SavePlanningItemRequest]) (*connect.Response[v1.SavePlanningItemResponse], error) {
+	return c.savePlanningItem.CallUnary(ctx, req)
+}
+
+// DeletePlanningItem calls lane.v1.PlanningService.DeletePlanningItem.
+func (c *planningServiceClient) DeletePlanningItem(ctx context.Context, req *connect.Request[v1.DeletePlanningItemRequest]) (*connect.Response[v1.DeletePlanningItemResponse], error) {
+	return c.deletePlanningItem.CallUnary(ctx, req)
+}
+
+// PlanningServiceHandler is an implementation of the lane.v1.PlanningService service.
+type PlanningServiceHandler interface {
+	GetPlanningItem(context.Context, *connect.Request[v1.GetPlanningItemRequest]) (*connect.Response[v1.GetPlanningItemResponse], error)
+	ListPlanningItems(context.Context, *connect.Request[v1.ListPlanningItemsRequest]) (*connect.Response[v1.ListPlanningItemsResponse], error)
+	CreatePlanningItem(context.Context, *connect.Request[v1.CreatePlanningItemRequest]) (*connect.Response[v1.CreatePlanningItemResponse], error)
+	SavePlanningItem(context.Context, *connect.Request[v1.SavePlanningItemRequest]) (*connect.Response[v1.SavePlanningItemResponse], error)
+	DeletePlanningItem(context.Context, *connect.Request[v1.DeletePlanningItemRequest]) (*connect.Response[v1.DeletePlanningItemResponse], error)
+}
+
+// NewPlanningServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewPlanningServiceHandler(svc PlanningServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	planningServiceMethods := v1.File_lane_v1_lane_proto.Services().ByName("PlanningService").Methods()
+	planningServiceGetPlanningItemHandler := connect.NewUnaryHandler(
+		PlanningServiceGetPlanningItemProcedure,
+		svc.GetPlanningItem,
+		connect.WithSchema(planningServiceMethods.ByName("GetPlanningItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	planningServiceListPlanningItemsHandler := connect.NewUnaryHandler(
+		PlanningServiceListPlanningItemsProcedure,
+		svc.ListPlanningItems,
+		connect.WithSchema(planningServiceMethods.ByName("ListPlanningItems")),
+		connect.WithHandlerOptions(opts...),
+	)
+	planningServiceCreatePlanningItemHandler := connect.NewUnaryHandler(
+		PlanningServiceCreatePlanningItemProcedure,
+		svc.CreatePlanningItem,
+		connect.WithSchema(planningServiceMethods.ByName("CreatePlanningItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	planningServiceSavePlanningItemHandler := connect.NewUnaryHandler(
+		PlanningServiceSavePlanningItemProcedure,
+		svc.SavePlanningItem,
+		connect.WithSchema(planningServiceMethods.ByName("SavePlanningItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	planningServiceDeletePlanningItemHandler := connect.NewUnaryHandler(
+		PlanningServiceDeletePlanningItemProcedure,
+		svc.DeletePlanningItem,
+		connect.WithSchema(planningServiceMethods.ByName("DeletePlanningItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/lane.v1.PlanningService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case PlanningServiceGetPlanningItemProcedure:
+			planningServiceGetPlanningItemHandler.ServeHTTP(w, r)
+		case PlanningServiceListPlanningItemsProcedure:
+			planningServiceListPlanningItemsHandler.ServeHTTP(w, r)
+		case PlanningServiceCreatePlanningItemProcedure:
+			planningServiceCreatePlanningItemHandler.ServeHTTP(w, r)
+		case PlanningServiceSavePlanningItemProcedure:
+			planningServiceSavePlanningItemHandler.ServeHTTP(w, r)
+		case PlanningServiceDeletePlanningItemProcedure:
+			planningServiceDeletePlanningItemHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedPlanningServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedPlanningServiceHandler struct{}
+
+func (UnimplementedPlanningServiceHandler) GetPlanningItem(context.Context, *connect.Request[v1.GetPlanningItemRequest]) (*connect.Response[v1.GetPlanningItemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.GetPlanningItem is not implemented"))
+}
+
+func (UnimplementedPlanningServiceHandler) ListPlanningItems(context.Context, *connect.Request[v1.ListPlanningItemsRequest]) (*connect.Response[v1.ListPlanningItemsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.ListPlanningItems is not implemented"))
+}
+
+func (UnimplementedPlanningServiceHandler) CreatePlanningItem(context.Context, *connect.Request[v1.CreatePlanningItemRequest]) (*connect.Response[v1.CreatePlanningItemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.CreatePlanningItem is not implemented"))
+}
+
+func (UnimplementedPlanningServiceHandler) SavePlanningItem(context.Context, *connect.Request[v1.SavePlanningItemRequest]) (*connect.Response[v1.SavePlanningItemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.SavePlanningItem is not implemented"))
+}
+
+func (UnimplementedPlanningServiceHandler) DeletePlanningItem(context.Context, *connect.Request[v1.DeletePlanningItemRequest]) (*connect.Response[v1.DeletePlanningItemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.DeletePlanningItem is not implemented"))
 }

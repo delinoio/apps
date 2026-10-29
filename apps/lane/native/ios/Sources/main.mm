@@ -4,10 +4,12 @@
 #import <XElement/LynxUIInput.h>
 #import <XElement/LynxUITextArea.h>
 #import "LaneLog.h"
+#import "LaneHTTPSImageData.h"
 #import <Lynx/LynxConfig.h>
 #import <Lynx/LynxEnv.h>
 #import <Lynx/LynxTemplateProvider.h>
 #import <Lynx/LynxView.h>
+#import <Lynx/LynxImageFetcher.h>
 
 @interface LaneProvider : NSObject <LynxTemplateProvider>
 @end
@@ -28,8 +30,51 @@
 }
 @end
 
+// The host validates attachment ownership before returning inline PNGs. Neither
+// authorized bytes nor remote Markdown images enter a shared image cache.
+@interface LaneImageFetcher : NSObject <LynxImageFetcher>
+@property(nonatomic, strong) LaneHTTPSImageData *remote;
+@end
+@implementation LaneImageFetcher
+- (instancetype)init {
+  if ((self = [super init])) _remote = [LaneHTTPSImageData new];
+  return self;
+}
+- (dispatch_block_t)loadImageWithURL:(NSURL *)url size:(CGSize)size contextInfo:(NSDictionary *)context
+    completion:(LynxImageLoadCompletionBlock)completion {
+  NSProgress *progress = [NSProgress progressWithTotalUnitCount:1];
+  void (^finish)(NSData *, BOOL) = ^(NSData *data, BOOL remote) {
+    if (progress.cancelled) return;
+    UIImage *image = data ? [UIImage imageWithData:data] : nil;
+    CGImageRef pixels = image.CGImage;
+    if (remote && pixels && (CGImageGetWidth(pixels) == 0 || CGImageGetHeight(pixels) == 0 ||
+        (uint64_t)CGImageGetWidth(pixels) * CGImageGetHeight(pixels) > 16000000)) image = nil;
+    NSError *error = image ? nil : [NSError errorWithDomain:@"io.delino.lane.image" code:1 userInfo:nil];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      @synchronized(progress) {
+        if (!progress.cancelled) completion(image, error, url);
+      }
+    });
+  };
+  NSString *prefix = @"data:image/png;base64,";
+  NSString *source = url.absoluteString;
+  if ([source hasPrefix:prefix]) {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+      NSData *data = [[NSData alloc] initWithBase64EncodedString:[source substringFromIndex:prefix.length] options:0];
+      finish(data, NO);
+    });
+    return ^{ @synchronized(progress) { [progress cancel]; } };
+  }
+  dispatch_block_t cancel = [self.remote loadURL:url completion:^(NSData *data, NSError *error) {
+    finish(error ? nil : data, YES);
+  }];
+  return ^{ @synchronized(progress) { [progress cancel]; } cancel(); };
+}
+@end
+
 @interface LaneController : UIViewController
 @property(nonatomic, strong) LynxView *lynxView;
+@property(nonatomic, strong) LaneImageFetcher *images;
 @property(nonatomic) CGRect keyboardFrame;
 @end
 @implementation LaneController
@@ -51,6 +96,8 @@
     builder.screenSize = self.view.safeAreaLayoutGuide.layoutFrame.size;
     builder.fontScale = [UIFontMetrics.defaultMetrics scaledValueForValue:1.0];
   }];
+  self.images = [LaneImageFetcher new];
+  self.lynxView.imageFetcher = self.images;
   self.lynxView.layoutWidthMode = LynxViewSizeModeExact;
   self.lynxView.layoutHeightMode = LynxViewSizeModeExact;
   [self.view addSubview:self.lynxView];

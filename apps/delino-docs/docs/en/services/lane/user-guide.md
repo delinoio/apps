@@ -8,17 +8,123 @@ Rename a repository or change its URL without losing tasks, history, or webhook 
 
 A task requires only a title. Description and one prompt are optional. Progress is **To do**, **In progress**, **Blocked**, **Done**, or **Canceled**; all transitions are allowed, including reopening. Omitted progress starts at To do. Proposal disposition is separate: agents can create regular tasks or proposals. Acceptance makes a proposal regular without resetting progress. Rejected proposals remain available and can later be accepted.
 
-Use repository lists or the all-repository list, filter by progress or proposal disposition, and search titles/descriptions. Move a task to another repository without changing its ID, prompt, or history. Linked webhook events remain in their original repository and continue to reference the task.
+Use repository lists or the all-repository list, filter by progress or proposal disposition, filter and sort by [planning fields](#plan-tasks), and search titles/descriptions. Move a task to another repository without changing its ID, prompt, or history. Linked webhook events remain in their original repository and continue to reference the task.
 
-The CLI provides `repository list/get/create/edit/delete`, `task list/get/create/edit/delete`, `task progress`, `task accept`, `task reject`, and `task move`. Run command help for the required arguments. Mutations accept `--request-id <uuid>`; keep the returned ID for retries. Edits require `--expected-version <uuid>` from a current read. Reusing a request ID with different content fails.
+The CLI provides `repository list/get/create/edit/delete`, `task list/get/create/edit/delete`, `task progress`, `task accept`, `task reject`, and `task move`, plus `label`, `milestone`, and `cycle` for repository planning items. Run command help for the required arguments. Mutations accept `--request-id <uuid>`; keep the returned ID for retries. Edits require `--expected-version <uuid>` from a current read. Reusing a request ID with different content fails.
+
+## Work in tabs
+
+Open tasks, pages and repository lists in separate tabs. Each tab keeps its own
+sidebar selection, list filters, scroll position and unsaved task input. Selecting
+an already open task returns to its tab. **New task** opens a separate draft;
+**+** in the tab strip opens the page and repository picker. Use the open-tabs
+menu to find a complete title or reach a tab outside the visible strip.
+
+Switching tabs does not save or discard edits. A dot marks unsaved changes. Use
+**Save** to keep them. Closing an edited tab asks whether to discard changes or
+keep editing; a tab cannot close while its save is running. **Back to list**
+returns to the list while keeping the task tab. **Cancel** closes the task tab
+through the same unsaved-change confirmation. Tabs and unsaved input are not
+restored after a restart or synchronized to another device.
+
+The tab list includes Lane, Pace and RealQA. Each Lane tab keeps its sidebar
+and page. On narrow screens, open **Tabs** to reach the same list. Up/Down and
+Home/End move keyboard focus between tab rows; Enter or Space selects a row.
+
+On macOS desktop, Command+T opens New tab, Command+W closes the selected tab,
+and Command+Shift+T reopens the last closed tab. On Windows, use Ctrl+T,
+Ctrl+W (or Ctrl+F4), and Ctrl+Shift+T. Closed-tab history holds up to 20 tabs
+in the current window. Reopening a saved task reads its current data; input
+discarded from a new-task draft does not return.
+
+On both desktops, Ctrl+Tab or Ctrl+PageDown selects the next tab; add Shift
+to Ctrl+Tab or use Ctrl+PageUp for the previous tab. On macOS, Command+Option
+Right/Left, Command+Shift+]/[, and Command+PageDown/PageUp also select the
+next/previous tab. Command+1–8 (macOS) or Ctrl+1–8 (Windows) selects a tab by
+its displayed position; 9 selects the last tab. Ctrl+Shift+PageUp/PageDown
+moves the selected tab one place without changing its contents. With a tab row
+focused, Command+Shift+Home/End (macOS) or Ctrl+Shift+Home/End (Windows) moves
+that row to the first/last position. A pending dialog blocks these commands.
+Web browser tab shortcuts remain controlled by the browser.
 
 ## Save, history, and prompts
 
 App edits require **Save**. An explicit CLI edit saves as one command/version. Descriptions and prompts are Markdown source; embedded HTML does not execute and automatic image loading is limited to HTTPS. You can edit and copy the source.
 
-History shows before/after values, time, and app/CLI/MCP origin with device and signed-in identity when available. Prompt versions remain until the owning task or repository is deleted. Inspect an old prompt and restore it to create a new version; restoration does not rewrite history. Only prompts have a past-version restore action. CLI commands include `task history`, `task prompt-history`, and `task restore-prompt`.
+History shows before/after values, including planning fields and relationship changes, time, and app/CLI/MCP origin with device and signed-in identity when available. Prompt versions remain until the owning task or repository is deleted. Inspect an old prompt and restore it to create a new version; restoration does not rewrite history. Only prompts have a past-version restore action. CLI commands include `task history`, `task prompt-history`, and `task restore-prompt`.
 
 If another process or device changes an open editor, Lane retains your unsaved input and indicates the external change. Saving checks for conflicts. If storage is full or a save fails, keep the screen open, correct the problem, and retry. In web, a connection loss blocks Save while retaining current-screen input. Reconnection requires an explicit retry; web has no offline queue or offline relaunch guarantee.
+
+## Plan tasks
+
+Every planning field is optional. A title alone still creates a task, and an unset field is shown as unassigned. In the app, open a task and use **Properties** and **Relationships**. Changes stay in the draft until **Save** succeeds. In the CLI, `task create` and `task edit` accept the options below; omitting an option leaves it unchanged on edit, and `none` or a `--clear-*` option clears it. This applies to the CLI only: the MCP `lane_save_task` tool replaces the whole task, so an MCP client must copy the current task and keep every field it does not change (see [Task planning through MCP](./mcp#task-planning-through-mcp)).
+
+| Field        | Values and CLI option                                                                                                                                           |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Priority     | None, Urgent, High, Normal, Low. `--priority none\|urgent\|high\|normal\|low`.                                                                                  |
+| Type         | None, Bug, Feature, Improvement, Documentation, Maintenance. `--type none\|bug\|feature\|improvement\|documentation\|maintenance`.                              |
+| Labels       | Up to 100 labels of the task's repository. `--label-id UUID` (repeat to replace the whole set) and `--clear-labels`.                                            |
+| Start / due  | Real calendar dates as `YYYY-MM-DD`, with no time or time zone. The start date cannot be later than the due date. `--start-date D\|none`, `--due-date D\|none`. |
+| Story points | A whole number from 0 through 2147483647. 0 is different from unassigned. Fractions and negative numbers are rejected. `--story-points N\|none`.                |
+| Milestone    | One milestone of the task's repository. `--milestone-id UUID\|none`.                                                                                            |
+| Cycle        | One cycle of the task's repository. `--cycle-id UUID\|none`.                                                                                                    |
+
+Task dates do not have to fall inside a milestone's target date or a cycle's period. Lane sends no deadline reminders, changes no progress automatically, and does not roll tasks over to a later cycle. Invalid values are rejected with a message that names the field.
+
+## Labels, milestones, and cycles
+
+Labels, milestones, and cycles belong to one repository. In the app, open the repository and use the **Labels**, **Milestones**, and **Cycles** tabs to create, edit, delete, and view the history of each item. The CLI provides `label`, `milestone`, and `cycle` with `list`, `get`, `create`, `edit`, `delete`, and `history`.
+
+- Names are trimmed and have 1 to 100 characters. Descriptions have at most 4000 characters. A name must be unique within its repository and item kind, ignoring letter case. Different kinds and different repositories can use the same name.
+- A label needs a color in `#RRGGBB` form, which Lane stores in upper case. You can change it later. The name is always shown, so color is never the only cue.
+- A milestone has an optional target date and a completed setting that starts as not completed. You change it explicitly; no task state changes it.
+- A cycle needs a start date and an end date that is not earlier than the start date. A cycle has no lifecycle state and does not repeat.
+- An item's repository and kind cannot change. Edits need the current version, like other edits (`edit ID --expected-version UUID`).
+- **Delete** detaches the item from every task that uses it and keeps those tasks. The item's name and description are erased everywhere, including from the tasks' history, which keeps only the reference.
+- History shows the before and after values, time, and origin. There is no restore action for planning metadata; only prompts can be restored.
+
+Examples:
+
+```sh
+lane label create --repository-id <repository-uuid> --name Backend --color '#075AFF'
+lane cycle create --repository-id <repository-uuid> --name "Sprint 12" --start-date 2026-11-02 --end-date 2026-11-15
+lane task edit <task-uuid> --expected-version <version-uuid> --priority high --type bug --label-id <label-uuid> --story-points 3
+```
+
+## Relationships
+
+Link tasks of the same repository from the task's **Relationships** section or with the CLI:
+
+- **Parent** and **Subtasks**: a task has at most one parent. Subtasks are the inverse view. CLI: `--parent-id UUID|none`, `--add-subtask UUID`, `--remove-subtask UUID`.
+- **Depends on** and **Blocks**: two views of one directed dependency. CLI: `--depends-on UUID` (repeat to replace the set), `--clear-depends-on`, `--add-blocks UUID`, `--remove-blocks UUID`.
+- **Related**: a symmetric link stored on both tasks. CLI: `--related UUID` (repeat to replace the set), `--clear-related`.
+- **Duplicate of**: at most one original task. CLI: `--duplicate-of UUID|none`.
+
+Lane rejects a link to the task itself, to a task of another repository, and to a missing or deleted task. It also rejects a cycle in the parent, dependency, or duplicate links. Editing Subtasks or Blocks changes the other tasks in the same operation, and each changed task gets its own history entry. If one of those tasks is in a conflict, the whole edit fails and nothing changes.
+
+Relationships only describe work. They never change progress or proposal state, never stop you from completing a task, and never close a duplicate or parent automatically.
+
+**Moves and deletion.** Moving a task to another repository clears its labels, milestone, cycle, and relationships, and removes other tasks' links to it. It keeps the priority, type, dates, story points, prompt, and ID. Deleting a task, label, milestone, or cycle detaches the references from other tasks. In every case the other tasks remain, with a new history entry for each removed reference. If the operation fails, nothing is changed.
+
+## Filter and sort tasks
+
+Task lists, for one repository or all repositories, have a **Filters** region and separate sort key and direction controls. Search, progress, and proposal filters keep working and combine with the planning filters. In the all-repository list, labels, milestones, and cycles show their repository name, and items with the same name stay distinct.
+
+- Different filters combine with **AND**. Several values chosen in one filter combine with **OR**. A task matches a label filter when it has at least one selected label.
+- Each filter has its own **Unassigned** choice (no priority, no type, no labels, no start date, no due date, no points, no milestone, no cycle, or no relationships). It is added to the selected values with OR. A filter with no selection does not restrict the list.
+- Date and story point ranges include their bounds. A range with only bounds excludes tasks without a value; add the unassigned choice to include them.
+- A relationship filter matches tasks that have at least one of the chosen kinds (parent, subtasks, depends on, blocks, related, duplicate of), or none at all.
+- Sort by one key: priority, type, start date, due date, story points, milestone name, or cycle start date, ascending or descending. Tasks without a value always come last in both directions. Tasks with equal values are ordered by task ID. Without a sort key, lists keep their task ID order. Paging continues in the same order.
+
+CLI options for `task list`: `--priority V` (repeatable) with `--priority-unassigned`, `--type V` with `--type-unassigned`, `--label-id UUID` with `--unlabeled`, `--start-from D`, `--start-to D`, `--start-unassigned`, `--due-from D`, `--due-to D`, `--due-unassigned`, `--points-min N`, `--points-max N`, `--points-unassigned`, `--milestone-id UUID` with `--no-milestone`, `--cycle-id UUID` with `--no-cycle`, `--relationship KIND` (repeatable; `parent`, `subtasks`, `depends-on`, `blocks`, `related`, `duplicate-of`) with `--no-relationships`, `--sort KEY` (`priority`, `type`, `start-date`, `due-date`, `story-points`, `milestone-name`, `cycle-start-date`) and `--direction asc|desc`. Add `--cursor` to continue a page.
+
+```sh
+lane task list --priority urgent --priority high --priority-unassigned --due-to 2026-12-31 --sort due-date --direction asc
+```
+
+## Planning limits
+
+Lane has no assignees, bulk editing, grouping, saved views, nested Boolean filters, multi-key sorting, user-defined fields or vocabularies, cross-repository relationships, time tracking, estimated hours, fractional story points, date-time or time-zone inputs, external issue-tracker integration, deadline reminders, recurring cycles, or restore for planning metadata. Planning data synchronizes with the rest of your account. The web app needs an online connection for every planning change.
 
 ## Synchronization and conflicts
 
@@ -26,11 +132,25 @@ Native apps and the local CLI work without login. Enable synchronization explici
 
 Local work continues during network failure or expired login. Pending changes remain for reconnection or reauthentication. An oversized upload blocks that item with an explanation; other items continue. Lower server limits do not prevent reading or deleting previously accepted data. Unsupported synchronization formats stop synchronization with an update instruction while compatible local work remains available.
 
-A task conflict includes the whole task, even if devices changed different fields. Both versions remain for comparison; normal edits are blocked until explicit resolution. `conflict list/get/resolve` supports this workflow in the CLI. Resolution creates a new version and preserves the alternatives and resolution history. A stale competing resolution is rejected; read the current state again before resolving. Repository conflicts follow the same explicit-resolution principle.
+A task conflict includes the whole task, even if devices changed different fields. Both versions remain for comparison; normal edits are blocked until explicit resolution. `conflict list/get/resolve` supports this workflow in the CLI. Resolution creates a new version and preserves the alternatives and resolution history. A stale competing resolution is rejected; read the current state again before resolving. Repository conflicts follow the same explicit-resolution principle. Label, milestone, and cycle conflicts cover the whole item and use `conflict list/get/resolve --kind label|milestone|cycle`.
 
-Desktop synchronization can continue after the window closes. Mobile synchronization runs while the app is active and at OS-permitted background opportunities. Web uses its active online connection.
+Desktop synchronization can continue after the window closes. Mobile synchronization runs while the app is active and at OS-permitted background opportunities. Web uses its active online connection and needs it for every change, including planning changes.
 
 Use `sync connect/status/run/disconnect`, `login`, and `logout` in the CLI. Logging in does not switch ordinary commands to remote data. Logout or disabling sync requires choosing whether to keep or remove local account data. Kept data remains separated from other accounts and is not automatically uploaded on an account switch.
+
+### Rejected planning changes
+
+Changes made on different devices can be valid alone but invalid together, for example a dependency cycle, a second parent, or the same label name created twice. The server then rejects the changed item with `CONSTRAINT_VIOLATION` and the reason, such as `PARENT_CYCLE`, `DEPENDENCY_CYCLE`, `DUPLICATE_CYCLE`, `CROSS_REPOSITORY`, `REFERENCE_NOT_FOUND`, `DUPLICATE_NAME`, `LABEL_LIMIT`, `DATE_ORDER`, or `FIELD_RANGE`. The server keeps the data it already accepted. Your local version stays on the device in the blocked state with the reason `CONSTRAINT_VIOLATION:<VIOLATION>`. Lane never marks it as synchronized and never discards it, and `sync status` lists it.
+
+Correct the local data with an ordinary edit, then retry the blocked items:
+
+```sh
+lane sync status
+lane task edit <task-uuid> --expected-version <version-uuid> --parent-id none
+lane sync run --retry-blocked
+```
+
+The retry does not confirm an account epoch change and does not clear account-deletion state. Whole-task version conflicts are a different state and use `conflict list/get/resolve`.
 
 ## Devices, connections, and deletion
 
@@ -43,6 +163,22 @@ Deletion has three distinct scopes:
 3. **Clear server, keep local** clears synchronized server data and webhook receiving settings, retains local copies, and disconnects all devices and remote grants. Reconnection is explicit. CLI: `--remote data clear-server`.
 
 The two server scopes require explicit account confirmation and fresh browser reauthentication. They preserve your Logto identity. Individual task/repository/event deletion commands confirm the named target and do not add another prompt. Deletion removes owned content/history; there is no trash or restore feature. Retried creation after deletion reports the deleted result without recreating content.
+
+## Development data reset
+
+Lane has not been released. The planning feature changed the local data format, and Lane does not migrate earlier development data. Opening a local space in an older or incompatible format fails with `UNSUPPORTED_FORMAT` and names the reset command. Lane never resets or recreates a store silently.
+
+The reset is an explicit, destructive procedure for disposable development data. It discards all data of the one local space you name and creates an empty store with the same space ID. Do not use it for data you want to keep, and do not use it to clear a synchronization rejection or conflict.
+
+```sh
+lane --space <space-uuid> data reset --confirm-development-reset
+```
+
+- It works only on an existing local space. It rejects `--remote`, a missing `--space`, a missing confirmation flag, and request payloads.
+- Quit the app and stop other CLI commands, MCP clients, and `sync run` before you start. If any of them still uses the space, the command fails with `STORAGE_BUSY` and changes nothing; stop them and run it again. An interrupted reset is finished by running the same command again.
+- A space connected to an account keeps its account connection but loses its local data, and synchronization stays stopped until you confirm reconnection with `sync connect --confirm-epoch-change`. A reset never deletes server data and never signs you out.
+- Native desktop and mobile apps offer the same operation as **Reset development data** in Settings; you type the shown confirmation text first. Cancelling or mistyping changes nothing.
+- No MCP tool performs a reset. Agents must not run the command unless you explicitly ask them to.
 
 ## Webhooks
 
@@ -70,3 +206,35 @@ Events stay until explicitly deleted. Use `event list/get/delete/claim/renew/rel
 Enable notifications in settings to request OS permission. Configure each device independently. Default notices show repository name and task title; choose generic content for more privacy. Only a newly proposed task created through MCP triggers an OS notice. CLI/app changes and progress updates do not. Pending proposals remain visible in-app.
 
 Local MCP proposals can notify locally without synchronization. With sync, other eligible devices receive push; proposal/device deduplication avoids duplicates on the origin device. Windows remote WNS is not supported in this version; running/background synchronization and local notifications remain available. Android without required Google Play services and other unsupported push environments can still use Lane and its in-app indications.
+
+## RealQA: capture a problem as a task
+
+RealQA is part of Lane on macOS and Windows. Start Lane, select **RealQA**, and choose **Screen**, **Window**, **Region**, or **Chrome element**. Screen capture asks which monitor to capture. Window capture asks which window. For a region, drag a rectangle; press Esc to cancel only that selection. Capture is available while Lane's main window is closed, but stops when you quit Lane.
+
+A successful capture opens the floating composer. Use **Add capture** to append more images to the same draft. Arrange or remove images before saving. A canceled or failed capture does not discard the draft. Retry a failed capture manually after correcting its cause.
+
+Select an image to draw, add arrows, rectangles or text, crop, blur, or cover an area. Undo, redo, and layer ordering apply to the selected image. Inspect the final image carefully before saving, especially when it contains private information. Saved attachments contain the final PNG; editable layers and original captures are not saved with the task.
+
+Choose a repository, enter a title, and describe the problem. For browser captures, inspect each image's page URL, title, and CSS selector. Edit or remove any value, including sensitive query parameters. Removing a value excludes it from the saved prompt. A selector is descriptive text; Lane does not execute it.
+
+**Save task** creates one task with the description, ordered images, and retained browser metadata in its prompt. A local save needs no account or network. If synchronization is enabled, images can still be waiting to upload after the task is saved. Do not create a second task to retry an upload. A failed local save keeps the draft for manual retry. Closing an unsaved composer asks whether to keep editing or discard it.
+
+### Chrome element capture
+
+Install the matching RealQA extension, start Lane, and open a normal Chrome profile. Click the extension, name the profile so you can identify it in Lane, and select **Connect to Lane**. In Lane, inspect the extension and profile identifiers, then select **Approve** or **Reject**. Approval applies to that profile on that device. Disconnect it in RealQA settings or in the extension to invalidate its credentials. A later connection needs approval again.
+
+Click **Select an element**, point at an element, then click to capture it. You can also use Tab or Shift+Tab to select visible elements and Enter to capture. Esc cancels. Only the part inside the visible page is captured. Scroll yourself and capture again if you need another portion; RealQA does not scroll or stitch images. The Chrome element button in Lane brings the last connected approved Chrome profile to the front and selects its last-focused active tab. The shortcut requires Chrome to be in front and requires access to the current tab: if prompted, click the extension on that page first.
+
+Incognito, Chrome internal pages, the Chrome Web Store, local files, and other browsers are not supported for element selection. Start Lane if the extension says it is unavailable. RealQA does not start a quit Lane automatically or substitute region capture when element capture fails. You can select **Region** separately.
+
+### Shortcuts and URL connections
+
+The four capture shortcuts start unassigned. Assign, change, or clear each one in RealQA settings. If a shortcut conflicts, choose another; the previous valid shortcut remains active.
+
+URL connections suggest a repository for a captured page. Add an HTTP or HTTPS URL prefix and an existing repository in settings. Prefix matching ignores the query and fragment, respects path boundaries, and uses the longest matching prefix. Inspect the selected repository before saving; you can change it. Deleting a repository removes its connections. Rules can synchronize with your Lane account; Chrome profile approvals and shortcuts stay on the device.
+
+### View saved captures
+
+Open the task in Lane on desktop, mobile, or web to view its prompt and images. Mobile and web show saved results; capture and RealQA configuration require desktop. Use the image viewer to inspect an attachment. If an image is waiting for synchronization, reconnect its source device and wait for upload. Access is limited to the task's current authorized account or local space. Deleted images are not replaced with stale cached data.
+
+Task moves preserve images and prompt history. Restoring an earlier prompt restores its retained image references as a new version. Deleting the owning task or repository removes its attachments with the rest of its content. CLI and approved MCP clients retrieve attachments through Lane's attachment commands; downloaded access links can expire and are not permanent image addresses.

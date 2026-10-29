@@ -4,10 +4,12 @@ import realqaIcon from "../assets/realqa-icon.png?inline";
 import laneIcon from "../assets/icon-source.png?inline";
 import paceIcon from "../assets/pace-icon.png?inline";
 
-export enum MiniApp {
-  Lane = "Lane",
-  Pace = "Pace",
-  RealQA = "RealQA",
+import { MiniApp } from "./navigation";
+export { MiniApp } from "./navigation";
+
+export enum SettingsSection {
+  Account = "account",
+  Notifications = "notifications",
 }
 
 // Inline the artwork so packaged native hosts do not need a separate image URL.
@@ -28,37 +30,41 @@ export function AppIcon({ app }: { app: MiniApp }) {
   );
 }
 
-export function AppRail({
-  selected,
-  select,
-}: {
-  selected: MiniApp;
-  select: (app: MiniApp) => void;
-}) {
+export function NewTabPage({ open }: { open: (app: MiniApp) => void }) {
+  const descriptions = {
+    [MiniApp.Lane]: "Tasks and repositories",
+    [MiniApp.Pace]: "Coming soon",
+    [MiniApp.RealQA]: "Capture and review",
+  };
   return (
-    <view className="app-rail">
-      {[MiniApp.Lane, MiniApp.Pace, MiniApp.RealQA].map((app) => (
-        <view
-          key={app}
-          className={`button app-switch ${selected === app ? "selected" : ""}`}
-          accessibility-element
-          accessibility-traits="button"
-          accessibility-label={app}
-          accessibility-value={selected === app ? "Selected" : "Not selected"}
-          focusable
-          bindtap={() => select(app)}
-          bindkeydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") select(app);
-          }}
-        >
-          {selected === app && <view className="app-selection" />}
-          <AppIcon app={app} />
-          <view className="app-tooltip" accessibility-elements-hidden>
-            <text>{app}</text>
-          </view>
+    <scroll-view className="page-scroll" scroll-orientation="vertical">
+      <view className="new-tab-page">
+        <text className="coming-soon-title" accessibility-heading>
+          New tab
+        </text>
+        <text className="muted">Choose a mini-app to open.</text>
+        <view className="miniapp-picker">
+          {Object.values(MiniApp).map((app) => (
+            <view
+              key={app}
+              className="button miniapp-card"
+              accessibility-element
+              accessibility-traits="button"
+              accessibility-label={app}
+              focusable
+              bindtap={() => open(app)}
+              bindkeydown={(event) => {
+                if (event.key === "Enter" || event.key === " ") open(app);
+              }}
+            >
+              <AppIcon app={app} />
+              <text className="heading">{app}</text>
+              <text className="muted">{descriptions[app]}</text>
+            </view>
+          ))}
         </view>
-      ))}
-    </view>
+      </view>
+    </scroll-view>
   );
 }
 
@@ -73,15 +79,23 @@ export function MiniAppNavigation({ app }: { app: MiniApp }) {
         <Button primary>Overview</Button>
       </view>
       <view className="nav-spacer" />
-      <text className="muted miniapp-status">Coming soon</text>
+      <text className="muted miniapp-status">
+        {app === MiniApp.RealQA
+          ? "Saved captures appear in Lane"
+          : "Coming soon"}
+      </text>
     </view>
   );
 }
 
 export function ComingSoon({ app, back }: { app: MiniApp; back: () => void }) {
+  const pace = app === MiniApp.Pace;
   return (
-    <scroll-view className="page-scroll" scroll-orientation="vertical">
-      <view className="coming-soon">
+    <scroll-view
+      className={`page-scroll ${pace ? "pace-page-scroll" : ""}`}
+      scroll-orientation="vertical"
+    >
+      <view className={`coming-soon ${pace ? "pace-coming-soon" : ""}`}>
         <view className="coming-soon-icon">
           <AppIcon app={app} />
         </view>
@@ -90,9 +104,15 @@ export function ComingSoon({ app, back }: { app: MiniApp; back: () => void }) {
           Coming soon
         </text>
         <text className="muted">{app} is not available yet.</text>
-        <Button primary onClick={back}>
-          Back to Lane
-        </Button>
+        {pace ? (
+          <view className="pace-return">
+            <Button onClick={back}>Back to Lane</Button>
+          </view>
+        ) : (
+          <Button primary onClick={back}>
+            Back to Lane
+          </Button>
+        )}
       </view>
     </scroll-view>
   );

@@ -1,6 +1,6 @@
 {
-  "name": "perfine-action",
-  "version": "0.1.0",
+  "name": "@actions/perfine",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",

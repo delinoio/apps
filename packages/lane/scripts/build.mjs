@@ -11,9 +11,10 @@ import {
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { platforms } from "../bin/verify.mjs";
+import { platforms, platformPackage } from "../bin/verify.mjs";
 import { targets } from "./targets.mjs";
 import { collectNotices } from "./notices.mjs";
+import { npm } from "./npm.mjs";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const { values } = parseArgs({
   options: {
@@ -93,6 +94,15 @@ collectNotices(
   selectedPlatforms,
 );
 const { scripts, ...published } = pkg;
+if (
+  JSON.stringify(pkg.optionalDependencies) !==
+  JSON.stringify(
+    Object.fromEntries(
+      platforms.map((key) => [platformPackage(key).name, pkg.version]),
+    ),
+  )
+)
+  throw new Error("Exact matching platform optionalDependencies required");
 writeFileSync(
   resolve(stage, "package.json"),
   `${JSON.stringify(published, null, 2)}\n`,
@@ -144,7 +154,7 @@ for (const key of selectedPlatforms) {
   const entry = {
     platform: key,
     version: pkg.version,
-    path: `artifacts/${directory}/${name}`,
+    path: name,
     size: bytes.length,
     sha256: createHash("sha256").update(bytes).digest("hex"),
   };
@@ -158,14 +168,49 @@ for (const key of selectedPlatforms) {
     `${JSON.stringify({ ...entry, path: name, sourceRevision: manifest.sourceRevision }, null, 2)}\n`,
   );
   writeFileSync(resolve(artifact, "SHA256SUMS"), `${entry.sha256}  ${name}\n`);
-  cpSync(artifact, resolve(stage, "artifacts", directory), { recursive: true });
-  execFileSync("tar", [
-    "-czf",
-    resolve(dist, `${directory}-${pkg.version}.tar.gz`),
-    "-C",
-    resolve(dist, "artifacts"),
-    directory,
-  ]);
+  const platformStage = resolve(dist, "platforms", directory);
+  cpSync(artifact, platformStage, { recursive: true });
+  const info = platformPackage(key);
+  writeFileSync(
+    resolve(platformStage, "package.json"),
+    `${JSON.stringify(
+      {
+        name: info.name,
+        version: pkg.version,
+        description: `Lane native executable for ${info.os}/${info.cpu}`,
+        license: pkg.license,
+        os: [info.os],
+        cpu: [info.cpu],
+        files: [
+          name,
+          "manifest.json",
+          "SHA256SUMS",
+          "LICENSE",
+          "NOTICE",
+          "THIRD_PARTY_NOTICES",
+        ],
+        repository: pkg.repository,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  npm(["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"], {
+    cwd: platformStage,
+    stdio: "inherit",
+  });
+  // GNU tar treats drive-qualified archive names as remote hosts on Windows.
+  execFileSync(
+    "tar",
+    [
+      "-czf",
+      `${directory}-${pkg.version}.tar.gz`,
+      "-C",
+      "artifacts",
+      directory,
+    ],
+    { cwd: dist },
+  );
 }
 writeFileSync(
   resolve(stage, "manifest.json"),
@@ -186,13 +231,16 @@ if (
   throw new Error(
     "CLI source changed during packaging; discard artifacts and rebuild",
   );
-execFileSync(
-  "npm",
-  ["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"],
-  { cwd: stage, stdio: "inherit" },
-);
+rmSync(resolve(stage, "THIRD_PARTY_NOTICES"), { recursive: true, force: true });
+npm(["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"], {
+  cwd: stage,
+  stdio: "inherit",
+});
 const files = selectedPlatforms
-  .map((key) => `lane-${key}-${pkg.version}.tar.gz`)
+  .flatMap((key) => [
+    `lane-${key}-${pkg.version}.tar.gz`,
+    `delinoio-lane-${key}-${pkg.version}.tgz`,
+  ])
   .concat(`delinoio-lane-${pkg.version}.tgz`);
 writeFileSync(
   resolve(dist, "SHA256SUMS"),

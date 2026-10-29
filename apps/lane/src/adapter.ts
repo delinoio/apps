@@ -11,13 +11,15 @@ import {
   type JsonValue,
 } from "@bufbuild/protobuf";
 
-import { AccountService } from "@delino/protos/lane/v1/lane_pb";
+import { AccountService } from "@repo/protos/lane/v1/lane_pb";
 
 export interface BridgeError {
   reason: string;
   message: string;
   correlationId?: string;
   retryable?: boolean;
+  // Named ConstraintViolation (for example PARENT_CYCLE) when reason is CONSTRAINT_VIOLATION.
+  violation?: string;
 }
 export type Reply<T> =
   | { ok: true; response: T; sequence?: string }
@@ -72,7 +74,14 @@ export interface LocalOperations {
   ];
   DisconnectSync: [{ retention: number }, { completed: boolean }];
   RemoveDeviceData: [{}, { completed: boolean }];
+  // Explicit pre-release development reset; the host rejects any request whose
+  // confirmed flag is not true. Native only: the web host refuses it.
+  ResetDevelopmentData: [{ confirmed: boolean }, { completed: boolean }];
+  // Returns blocked or rejected pending rows to pending, like `sync run --retry-blocked`.
+  RetryBlockedItems: [{}, Record<string, unknown>];
 }
+// The format written by task planning. Earlier formats are refused, never migrated.
+export const STORE_FORMAT_VERSION = 3;
 export class LaneError extends Error {
   constructor(readonly detail: BridgeError) {
     super(detail.message);
@@ -85,9 +94,12 @@ export function decodeReply<T>(raw: string | Reply<T>): T {
 }
 export interface LaneAdapter {
   readonly mode: "native" | "web";
+  readonly spaceId?: string;
   deleteReauthenticated?(challengeId: string): Promise<void>;
   cancelDeletion?(): void;
   open(spaceId?: string): Promise<void>;
+  // Native only: reset the active space when it could not be opened (unsupported format).
+  resetUnopened?(): Promise<void>;
   call<I extends DescMessage, O extends DescMessage>(
     method: DescMethodUnary<I, O>,
     input: UI<MessageInitShape<I>>,
@@ -112,6 +124,9 @@ export interface EventSource {
 export class NativeAdapter implements LaneAdapter {
   readonly mode = "native";
   private info?: StoreInfo;
+  get spaceId() {
+    return this.info?.spaceId;
+  }
   private generation = 0;
   private deletion?: {
     generation: number;
@@ -148,13 +163,16 @@ export class NativeAdapter implements LaneAdapter {
     if (generation !== this.generation)
       throw new Error("The data space changed. Reopen Lane.");
     const info = await new Promise<StoreInfo>((resolve, reject) =>
-      this.module.open(JSON.stringify({ formatVersion: 1, spaceId }), (raw) => {
-        try {
-          resolve(decodeReply(raw));
-        } catch (e) {
-          reject(e);
-        }
-      }),
+      this.module.open(
+        JSON.stringify({ formatVersion: STORE_FORMAT_VERSION, spaceId }),
+        (raw) => {
+          try {
+            resolve(decodeReply(raw));
+          } catch (e) {
+            reject(e);
+          }
+        },
+      ),
     );
     if (generation !== this.generation) {
       this.module.close(info.spaceId, () => {});
@@ -166,11 +184,59 @@ export class NativeAdapter implements LaneAdapter {
         "The host opened a different data space. Navigation was stopped.",
       );
     }
-    if (info.schemaVersion !== 1 || info.formatVersion !== 1)
-      throw new Error(
-        "Update Lane to open this data format. Your data has not been changed.",
+    if (
+      info.schemaVersion !== STORE_FORMAT_VERSION ||
+      info.formatVersion !== STORE_FORMAT_VERSION
+    ) {
+      await new Promise<void>((resolve) =>
+        this.module.close(info.spaceId, () => resolve()),
       );
+      throw new Error(
+        "This data space uses an unsupported format. Lane never migrates or resets it automatically; update Lane or explicitly reset disposable development data. Your data has not been changed.",
+      );
+    }
     this.info = info;
+  }
+  async resetUnopened() {
+    // The host resolves the empty space ID to the registry's active space.
+    await this.resetSpace("");
+  }
+  private resetSpace(spaceId: string) {
+    return new Promise<void>((resolve, reject) =>
+      this.module.invoke(
+        "ResetDevelopmentData",
+        JSON.stringify({ spaceId, request: { confirmed: true } }),
+        (raw) => {
+          try {
+            decodeReply(raw);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        },
+      ),
+    );
+  }
+  // The host refuses a development reset with a retryable STORAGE_BUSY while
+  // any handle of the space is open, including this window's own. Close the
+  // handle first; callers reopen the space after a successful reset, and a
+  // refused reset restores the handle so the window keeps working.
+  private async resetOpen() {
+    const open = this.info;
+    if (!open) throw new Error("The local store is not open.");
+    this.info = undefined;
+    this.deletion = undefined;
+    ++this.generation;
+    await new Promise<void>((resolve) =>
+      this.module.close(open.spaceId, () => resolve()),
+    );
+    try {
+      await this.resetSpace(open.spaceId);
+    } catch (reset) {
+      await this.open(open.spaceId);
+      throw reset;
+    }
+    return { completed: true };
   }
   private async invoke<T>(method: string, request: unknown): Promise<T> {
     if (!this.info) throw new Error("The local store is not open.");
@@ -228,6 +294,8 @@ export class NativeAdapter implements LaneAdapter {
     method: K,
     input: LocalOperations[K][0],
   ): Promise<LocalOperations[K][1]> {
+    if (method === "ResetDevelopmentData")
+      return this.resetOpen() as Promise<LocalOperations[K][1]>;
     return this.invoke(method, input);
   }
   cancelDeletion() {
@@ -254,16 +322,32 @@ export class NativeAdapter implements LaneAdapter {
   }
 
   subscribe(listener: () => void) {
+    // Every subscription tracks the newest sequence it has accepted. Sharing
+    // one counter would let the first callback consume an event on behalf of
+    // all other subscribers. The baseline is rebased from the open store the
+    // first time an event arrives after the store generation changes, which
+    // covers registration before open(), reopening and data-space switches.
+    let observed: { generation: number; sequence: bigint } | undefined;
     const changed = (event: { spaceId?: string; sequence?: string }) => {
+      const info = this.info;
       if (
-        event.spaceId === this.info?.spaceId &&
-        event.sequence &&
-        /^\d+$/.test(event.sequence) &&
-        BigInt(event.sequence) > BigInt(this.info?.sequence || "0")
-      ) {
-        if (this.info && event.sequence) this.info.sequence = event.sequence;
-        listener();
-      }
+        !info ||
+        event.spaceId !== info.spaceId ||
+        !event.sequence ||
+        !/^\d+$/.test(event.sequence)
+      )
+        return;
+      if (!observed || observed.generation !== this.generation)
+        observed = {
+          generation: this.generation,
+          sequence: BigInt(
+            /^\d+$/.test(info.sequence || "") ? info.sequence : "0",
+          ),
+        };
+      const sequence = BigInt(event.sequence);
+      if (sequence <= observed.sequence) return;
+      observed.sequence = sequence;
+      listener();
     };
     this.events.addListener("lane.storeChanged", changed);
     return () => this.events.removeListener("lane.storeChanged", changed);

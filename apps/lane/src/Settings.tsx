@@ -6,9 +6,10 @@ import {
   DataDeletionMode,
   LocalRetention,
   NotificationContent,
+  NotificationPermission,
   type Device as ProtoDevice,
   type Connection as ProtoConnection,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import {
   meta,
   type LaneAdapter,
@@ -22,15 +23,58 @@ import {
   type ReconnectTarget,
 } from "./reconnect";
 import { hostAction, listenReauthentication } from "./runtime";
+import { AppUpdates } from "./AppUpdates";
+import { hasUpdaterSupport } from "./updates";
+import { ResetDevelopmentDialog } from "./ResetDevelopment";
+import { describeItemError } from "./planning";
+import { SettingsSection } from "./AppNavigation";
+// Native hosts return ProtoJSON enum names while the web adapter and Choices use
+// numbers. Display and Save share this conversion so a save never changes the
+// content preference that the screen shows. Missing or unspecified values keep
+// the DETAIL default.
+const notificationContent = (
+  value: NotificationPreferences["content"] | undefined,
+): NotificationContent =>
+  Number(value) === NotificationContent.GENERIC ||
+  value === "NOTIFICATION_CONTENT_GENERIC"
+    ? NotificationContent.GENERIC
+    : NotificationContent.DETAIL;
 const time = (value?: { seconds: string }) =>
   value ? new Date(Number(value.seconds) * 1000).toLocaleString() : "Never";
+type LoadState = "loading" | "ready" | "failed";
+const permissionLabel = (permission: NotificationPreferences["permission"]) => {
+  switch (permission) {
+    case NotificationPermission.GRANTED:
+    case "NOTIFICATION_PERMISSION_GRANTED":
+      return "Granted";
+    case NotificationPermission.DENIED:
+    case "NOTIFICATION_PERMISSION_DENIED":
+      return "Denied";
+    case NotificationPermission.UNSUPPORTED:
+    case "NOTIFICATION_PERMISSION_UNSUPPORTED":
+      return "Unsupported";
+    default:
+      return "Not requested";
+  }
+};
 export function Settings({
   adapter,
   onReset,
+  target,
+  stateChanged,
+  active: visible = true,
+  mobile = false,
+  beforeDataChange,
 }: {
   adapter: LaneAdapter;
   onReset: () => void;
+  active?: boolean;
+  mobile?: boolean;
+  beforeDataChange?: () => Promise<boolean>;
+  stateChanged?: (dirty: boolean, busy: boolean, exitBusy: boolean) => void;
+  target?: { section: SettingsSection; request: number };
 }) {
+  const revealedTarget = useRef<number | undefined>(undefined);
   const [deletion, setDeletion] = useState<{
     challengeId: string;
     ready: boolean;
@@ -66,22 +110,33 @@ export function Settings({
     };
   }, [adapter]);
   const [status, setStatus] = useState<LocalStatus>();
+  const [statusLoad, setStatusLoad] = useState<LoadState>("loading");
   const prefsDirty = useRef(false);
   const [prefs, setPrefs] = useState<NotificationPreferences>();
+  const [prefsLoad, setPrefsLoad] = useState<LoadState>("loading");
   const [devices, setDevices] = useState<Device[]>([]);
+  const [devicesLoad, setDevicesLoad] = useState<LoadState>("loading");
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [connectionsLoad, setConnectionsLoad] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [operationBusy, setBusy] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const busy = operationBusy || updateBusy;
+  useEffect(() => {
+    stateChanged?.(prefsDirty.current, busy, operationBusy);
+  }, [prefs, busy, operationBusy]);
   const [confirm, setConfirm] = useState<
     null | "disconnect" | "local" | "server" | "everywhere" | "reconnect"
   >(null);
   const [reconnect, setReconnect] = useState<ReconnectTarget>();
+  const [resetOpen, setResetOpen] = useState(false);
   const [account, setAccount] = useState("");
   const [retention, setRetention] = useState<LocalRetention>(
     LocalRetention.KEEP_LOCAL,
   );
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (fn: () => Promise<void>, changesData = false) => {
+    if (changesData && beforeDataChange && !(await beforeDataChange())) return;
     setBusy(true);
     setError("");
     setMessage("");
@@ -94,61 +149,225 @@ export function Settings({
     }
   };
   const load = async () => {
-    const local = await adapter.local("GetLocalStatus", {});
-    setStatus(local);
-    const latestPreferences = await adapter.local(
-      "GetNotificationPreferences",
-      {},
-    );
-    if (!prefsDirty.current) setPrefs(latestPreferences);
-    // Account lists are online-only; local preferences stay usable if these fail.
-    const ds: Device[] = [];
-    let cursor = "";
-    do {
-      const r = await adapter.call(AccountService.method.listDevices, {
-        page: { size: 100, cursor },
-      });
-      ds.push(...r.items);
-      cursor = r.nextCursor;
-    } while (cursor);
-    setDevices(ds);
-    const cs: Connection[] = [];
-    cursor = "";
-    do {
-      const r = await adapter.call(AccountService.method.listConnections, {
-        page: { size: 100, cursor },
-      });
-      cs.push(...r.items);
-      cursor = r.nextCursor;
-    } while (cursor);
-    setConnections(cs);
+    setStatusLoad("loading");
+    setPrefsLoad("loading");
+    setDevicesLoad("loading");
+    setConnectionsLoad("loading");
+    try {
+      const local = await adapter.local("GetLocalStatus", {});
+      setStatus(local);
+      setStatusLoad("ready");
+      const latestPreferences = await adapter.local(
+        "GetNotificationPreferences",
+        {},
+      );
+      if (!prefsDirty.current) setPrefs(latestPreferences);
+      setPrefsLoad("ready");
+    } catch (cause) {
+      setStatusLoad("failed");
+      setPrefsLoad("failed");
+      setDevicesLoad("failed");
+      setConnectionsLoad("failed");
+      throw cause;
+    }
+    // Fetch the online lists independently. Either failure leaves local settings usable.
+    const readDevices = async () => {
+      const items: Device[] = [];
+      let cursor = "";
+      do {
+        const page = await adapter.call(AccountService.method.listDevices, {
+          page: { size: 100, cursor },
+        });
+        items.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor);
+      setDevices(items);
+      setDevicesLoad("ready");
+    };
+    const readConnections = async () => {
+      const items: Connection[] = [];
+      let cursor = "";
+      do {
+        const page = await adapter.call(AccountService.method.listConnections, {
+          page: { size: 100, cursor },
+        });
+        items.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor);
+      setConnections(items);
+      setConnectionsLoad("ready");
+    };
+    const results = await Promise.allSettled([
+      readDevices(),
+      readConnections(),
+    ]);
+    if (results[0].status === "rejected") setDevicesLoad("failed");
+    if (results[1].status === "rejected") setConnectionsLoad("failed");
   };
   useEffect(() => {
     void run(load);
   }, [adapter]);
+  useEffect(() => {
+    "background only";
+    if (
+      !visible ||
+      !target ||
+      adapter.mode === "web" ||
+      revealedTarget.current === target.request
+    )
+      return;
+    revealedTarget.current = target.request;
+    // Wait for layout before measuring; native acceptance is tracked per host.
+    let active = true;
+    const timer = setTimeout(() => {
+      const query = lynx.createSelectorQuery();
+      query
+        .select(`#settings-${target.section}`)
+        .invoke({
+          method: "boundingClientRect",
+          success: (heading) => {
+            if (!active) return;
+            lynx
+              .createSelectorQuery()
+              .select("#settings-scroll")
+              .invoke({
+                method: "boundingClientRect",
+                success: (viewport) => {
+                  if (!active) return;
+                  lynx
+                    .createSelectorQuery()
+                    .select("#settings-scroll")
+                    .invoke({
+                      method: "getScrollInfo",
+                      success: (info) => {
+                        if (!active) return;
+                        lynx
+                          .createSelectorQuery()
+                          .select("#settings-scroll")
+                          .invoke({
+                            method: "scrollTo",
+                            params: {
+                              offset: Math.max(
+                                0,
+                                info.scrollY + heading.top - viewport.top,
+                              ),
+                              smooth: false,
+                            },
+                          })
+                          .exec();
+                        lynx
+                          .createSelectorQuery()
+                          .select(`#settings-${target.section}`)
+                          .invoke({
+                            method: "setFocus",
+                            params: { focus: true },
+                          })
+                          .exec();
+                        lynx
+                          .createSelectorQuery()
+                          .select(`#settings-${target.section}`)
+                          .invoke({ method: "requestAccessibilityFocus" })
+                          .exec();
+                      },
+                    })
+                    .exec();
+                },
+              })
+              .exec();
+          },
+        })
+        .exec();
+    }, 0);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [target, adapter, visible]);
   return (
-    <view className="section">
-      <text className="heading">Settings</text>
-      <Button onClick={() => void run(load)}>Refresh settings</Button>
-      {error && <Notice>{error}</Notice>}
-      {message && <Notice>{message}</Notice>}
-      <view className="card">
-        <text className="heading">
-          {adapter.mode === "native"
-            ? "Local data and synchronization"
-            : "Online account"}
+    <view
+      className="section settings-page"
+      data-settings-target={
+        visible && target ? `${target.section}:${target.request}` : ""
+      }
+    >
+      <view className="settings-header">
+        <view className="settings-header-copy">
+          <text className="heading settings-title" accessibility-heading>
+            Settings
+          </text>
+          <text className="settings-description">
+            Manage this device, synchronization, and account access.
+          </text>
+        </view>
+        <Button disabled={busy} onClick={() => void run(load)}>
+          Refresh settings
+        </Button>
+      </view>
+      {visible && (
+        <AppUpdates
+          desktop={hasUpdaterSupport()}
+          settingsDirty={() => prefsDirty.current}
+          settingsBusy={
+            operationBusy || resetOpen || confirm !== null || !!deletion
+          }
+          onBusyChange={setUpdateBusy}
+        />
+      )}
+      {error && (
+        <view accessibility-live-region="polite">
+          <Notice>{error}</Notice>
+        </view>
+      )}
+      {message && (
+        <view accessibility-live-region="polite">
+          <Notice>{message}</Notice>
+        </view>
+      )}
+      <view className="card settings-card">
+        <view
+          id="settings-account"
+          accessibility-element
+          accessibility-heading
+          focusable
+          accessibility-label={
+            adapter.mode === "native"
+              ? "Local data and synchronization"
+              : "Online account"
+          }
+        >
+          <text
+            className="heading settings-section-title"
+            accessibility-elements-hidden
+          >
+            {adapter.mode === "native"
+              ? "Local data and synchronization"
+              : "Online account"}
+          </text>
+        </view>
+        <text className="settings-status">
+          {statusLoad === "loading"
+            ? "Loading account status…"
+            : statusLoad === "failed" && !status
+              ? "Account status unavailable"
+              : status?.syncEnabled
+                ? "Synchronization enabled"
+                : adapter.mode === "native"
+                  ? "Local data on this device"
+                  : "Web requires an online connection"}
         </text>
-        <text>
-          {status?.syncEnabled
-            ? "Synchronization enabled"
-            : adapter.mode === "native"
-              ? "Local data on this device"
-              : "Web requires an online connection"}
-        </text>
-        <text>
-          {status?.connected ? "Connected" : "Disconnected"} · Pending items:{" "}
-          {status?.pendingItemCount ?? "Unknown"}
-        </text>
+        <view className="settings-metadata">
+          <text className="settings-status">
+            {statusLoad === "loading"
+              ? "Connection: Loading…"
+              : statusLoad === "failed" && !status
+                ? "Connection: Unavailable"
+                : status?.connected
+                  ? "Connection: Connected"
+                  : "Connection: Disconnected"}
+          </text>
+          <text>Pending items: {status?.pendingItemCount ?? "Unknown"}</text>
+          <text>Last synchronization: {status?.lastSyncAt || "Never"}</text>
+        </view>
         {status?.reconnectRequired && (
           <Notice>
             Reconnection required. Synchronization is stopped. Retained local
@@ -156,14 +375,29 @@ export function Settings({
           </Notice>
         )}
         {status?.syncErrorReason && <Notice>{status.syncErrorReason}</Notice>}
-        <text>Last synchronization: {status?.lastSyncAt || "Never"}</text>
         {status?.itemErrors?.map((e) => (
           <Notice key={e.entityId}>
-            {e.entityId}: {e.reason}. Other eligible items can continue
-            synchronizing.
+            {e.entityId}: {describeItemError(e.reason)} Other eligible items can
+            continue synchronizing.
           </Notice>
         ))}
-        <view className="row wrap">
+        {adapter.mode === "native" && !!status?.itemErrors?.length && (
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await adapter.local("RetryBlockedItems", {});
+                await load();
+                setMessage(
+                  "Blocked items were returned to pending and will synchronize again.",
+                );
+              })
+            }
+          >
+            Retry blocked items
+          </Button>
+        )}
+        <view className="row wrap settings-actions">
           <Button
             disabled={busy}
             onClick={() => {
@@ -183,7 +417,7 @@ export function Settings({
                 setMessage(
                   "Complete browser approval, then refresh. Retained data from other accounts stays separate.",
                 );
-              });
+              }, true);
             }}
           >
             {adapter.mode === "native"
@@ -195,15 +429,38 @@ export function Settings({
           </Button>
         </view>
       </view>
-      <view className="card">
-        <text className="heading">Notifications on this device</text>
+      <view className="card settings-card">
+        <view
+          id="settings-notifications"
+          accessibility-element
+          accessibility-heading
+          focusable
+          accessibility-label="Notifications on this device"
+        >
+          <text
+            className="heading settings-section-title"
+            accessibility-elements-hidden
+          >
+            Notifications on this device
+          </text>
+        </view>
         <text>
           Only new proposals created through MCP notify you. In-app proposal
           counts remain available.
         </text>
+        {prefsLoad === "loading" && !prefs && (
+          <text>Loading notification preferences…</text>
+        )}
+        {prefsLoad === "failed" && !prefs && (
+          <text>
+            Notification preferences unavailable. Refresh settings to try again.
+          </text>
+        )}
         {prefs && (
           <>
             <Choices
+              exclusive
+              disabled={busy}
               label="Enable notifications"
               value={prefs.enabled ? "on" : "off"}
               options={[
@@ -216,11 +473,10 @@ export function Settings({
               }}
             />
             <Choices
+              exclusive
+              disabled={busy}
               label="Notification content"
-              value={
-                Number(prefs.content) ||
-                (prefs.content === "NOTIFICATION_CONTENT_GENERIC" ? 2 : 1)
-              }
+              value={notificationContent(prefs.content)}
               options={[
                 [NotificationContent.DETAIL, "Repository and title"],
                 [NotificationContent.GENERIC, "Generic notice"],
@@ -230,7 +486,9 @@ export function Settings({
                 setPrefs({ ...prefs, content });
               }}
             />
-            <text>Permission: {String(prefs.permission)}</text>
+            <text className="settings-status">
+              Permission: {permissionLabel(prefs.permission)}
+            </text>
             <Button
               disabled={busy}
               primary
@@ -240,7 +498,7 @@ export function Settings({
                     "SetNotificationPreferences",
                     {
                       enabled: prefs.enabled,
-                      content: Number(prefs.content) || 1,
+                      content: notificationContent(prefs.content),
                     },
                   );
                   prefsDirty.current = false;
@@ -261,92 +519,203 @@ export function Settings({
           local notifications and in-app indications.
         </text>
       </view>
-      <view className="card">
-        <text className="heading">Devices</text>
+      <view className="card settings-card">
+        <text className="heading settings-section-title" accessibility-heading>
+          Devices
+        </text>
         <text>
           Disconnection blocks later server access. It cannot erase an offline
           device’s existing data.
         </text>
-        {devices.map((d) => (
-          <view className="card" key={d.id}>
-            <text>{d.name}</text>
-            <text>
-              Last synchronization: {time(d.lastSyncAt)} ·{" "}
-              {d.disconnectedAt ? "Disconnected" : "Connected"}
-            </text>
-            <Button
-              disabled={busy || !!d.disconnectedAt}
-              onClick={() =>
-                void run(async () => {
-                  await adapter.call(AccountService.method.disconnectDevice, {
-                    meta: meta(),
-                    deviceId: d.id,
-                  });
-                  await load();
-                })
-              }
-            >
-              Disconnect device
-            </Button>
-          </view>
-        ))}
+        {devicesLoad === "loading" && <text>Loading devices…</text>}
+        {devicesLoad === "failed" && (
+          <text>Devices unavailable. Refresh settings to try again.</text>
+        )}
+        {devicesLoad === "ready" && devices.length === 0 && (
+          <text>No devices</text>
+        )}
+        {devicesLoad === "ready" &&
+          devices.map((d) => (
+            <view className="settings-list-row" key={d.id}>
+              <view className="settings-list-details">
+                <text className="settings-row-name">{d.name}</text>
+                <text className="muted">
+                  Last synchronization: {time(d.lastSyncAt)}
+                </text>
+                <text className="settings-status">
+                  {d.disconnectedAt ? "Disconnected" : "Connected"}
+                </text>
+              </view>
+              <Button
+                disabled={busy || !!d.disconnectedAt}
+                onClick={() =>
+                  void run(async () => {
+                    await adapter.call(AccountService.method.disconnectDevice, {
+                      meta: meta(),
+                      deviceId: d.id,
+                    });
+                    await load();
+                  })
+                }
+              >
+                Disconnect device
+              </Button>
+            </view>
+          ))}
       </view>
-      <view className="card">
-        <text className="heading">Approved remote MCP connections</text>
+      <view className="card settings-card">
+        <text className="heading settings-section-title" accessibility-heading>
+          Approved remote MCP connections
+        </text>
         <Notice>
           Each approved connection has full management access to every
           repository in this account.
         </Notice>
-        {connections.map((c) => (
-          <view className="card" key={c.id}>
-            <text>
-              {c.name} · Approved {time(c.approvedAt)}
-            </text>
-            <text>{c.revokedAt ? "Revoked" : "Full management access"}</text>
-            <Button
-              disabled={busy || !!c.revokedAt}
-              onClick={() =>
-                void run(async () => {
-                  await adapter.call(AccountService.method.revokeConnection, {
-                    meta: meta(),
-                    connectionId: c.id,
-                  });
-                  await load();
-                })
-              }
-            >
-              Revoke access
-            </Button>
-          </view>
-        ))}
+        {connectionsLoad === "loading" && (
+          <text>Loading approved remote MCP connections…</text>
+        )}
+        {connectionsLoad === "failed" && (
+          <text>
+            Approved remote MCP connections unavailable. Refresh settings to try
+            again.
+          </text>
+        )}
+        {connectionsLoad === "ready" && connections.length === 0 && (
+          <text>No approved remote MCP connections</text>
+        )}
+        {connectionsLoad === "ready" &&
+          connections.map((c) => (
+            <view className="settings-list-row" key={c.id}>
+              <view className="settings-list-details">
+                <text className="settings-row-name">{c.name}</text>
+                <text className="muted">Approved: {time(c.approvedAt)}</text>
+                <text className="settings-status">
+                  {c.revokedAt ? "Revoked" : "Full management access"}
+                </text>
+              </view>
+              <Button
+                disabled={busy || !!c.revokedAt}
+                onClick={() =>
+                  void run(async () => {
+                    await adapter.call(AccountService.method.revokeConnection, {
+                      meta: meta(),
+                      connectionId: c.id,
+                    });
+                    await load();
+                  })
+                }
+              >
+                Revoke access
+              </Button>
+            </view>
+          ))}
       </view>
-      <view className="card">
-        <text className="heading">Delete Lane data</text>
+      {adapter.mode === "native" && (
+        <view className="card settings-card">
+          <text
+            className="heading settings-section-title"
+            accessibility-heading
+          >
+            Development data
+          </text>
+          <text>
+            Lane is pre-release. If a data space cannot be opened because its
+            format is outdated, or you want to discard disposable development
+            data, reset this space explicitly. Lane never resets data
+            automatically.
+          </text>
+          <text className="muted">
+            There is no recovery. Reset does not contact or delete server data.
+          </text>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              setError("");
+              setResetOpen(true);
+            }}
+          >
+            Reset development data
+          </Button>
+        </view>
+      )}
+      <view className="card settings-card settings-deletion">
+        <text className="heading settings-section-title" accessibility-heading>
+          Delete Lane data
+        </text>
         <text>These actions preserve your shared Logto identity.</text>
         {adapter.mode === "native" && (
-          <Button onClick={() => setConfirm("local")}>
-            Remove only this device’s data
-          </Button>
+          <view className="settings-list-row settings-delete-row">
+            <view className="settings-list-details">
+              <text className="settings-row-name">
+                Remove only this device’s data
+              </text>
+              <text className="muted">
+                Server data stays. Unsynchronized content cannot be recovered.
+              </text>
+            </view>
+            <Button disabled={busy} onClick={() => setConfirm("local")}>
+              Remove only this device’s data
+            </Button>
+          </view>
         )}
-        <Button
-          onClick={() => {
-            cancelDeletion();
-            setConfirm("everywhere");
-          }}
-        >
-          Delete server and connected-device data
-        </Button>
-        <Button
-          onClick={() => {
-            cancelDeletion();
-            setConfirm("server");
-          }}
-        >
-          Delete server data, keep local data
-        </Button>
+        <view className="settings-list-row settings-delete-row">
+          <view className="settings-list-details">
+            <text className="settings-row-name">
+              Delete server and connected-device data
+            </text>
+            <text className="muted">
+              Offline devices receive a deletion directive on reconnect.
+            </text>
+          </view>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              cancelDeletion();
+              setConfirm("everywhere");
+            }}
+          >
+            Delete server and connected-device data
+          </Button>
+        </view>
+        <view className="settings-list-row settings-delete-row">
+          <view className="settings-list-details">
+            <text className="settings-row-name">
+              Delete server data, keep local data
+            </text>
+            <text className="muted">
+              All devices disconnect. Uploading again requires explicit
+              reconnection.
+            </text>
+          </view>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              cancelDeletion();
+              setConfirm("server");
+            }}
+          >
+            Delete server data, keep local data
+          </Button>
+        </view>
       </view>
+      {resetOpen && (
+        <ResetDevelopmentDialog
+          onClose={() => setResetOpen(false)}
+          onConfirm={async () => {
+            if (beforeDataChange && !(await beforeDataChange()))
+              throw new Error("Data reset cancelled. Your input is retained.");
+            await adapter.local("ResetDevelopmentData", { confirmed: true });
+            setResetOpen(false);
+            onReset();
+          }}
+        />
+      )}
       {deletion && (
-        <Dialog title="Complete data deletion" onClose={cancelDeletion}>
+        <Dialog
+          title="Complete data deletion"
+          onClose={cancelDeletion}
+          className="settings-dialog"
+        >
           <Notice>
             {deletion.ready
               ? "Reauthentication completed. Select Delete now to permanently remove the confirmed data."
@@ -372,7 +741,7 @@ export function Settings({
                 deletionRef.current = undefined;
                 setDeletion(undefined);
                 onReset();
-              })
+              }, true)
             }
           >
             Delete now
@@ -390,6 +759,7 @@ export function Settings({
                 : "Confirm permanent data removal"
           }
           onClose={() => setConfirm(null)}
+          className="settings-dialog"
         >
           {confirm === "reconnect" ? (
             <Notice>
@@ -404,6 +774,7 @@ export function Settings({
                 space.
               </Notice>
               <Choices
+                disabled={busy}
                 label="Local data"
                 value={retention}
                 options={[
@@ -494,7 +865,7 @@ export function Settings({
                   );
                   setConfirm(null);
                 }
-              })
+              }, true)
             }
           >
             {confirm === "server" || confirm === "everywhere"

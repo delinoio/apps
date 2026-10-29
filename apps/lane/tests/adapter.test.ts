@@ -4,11 +4,12 @@ import assert from "node:assert/strict";
 import {
   NativeAdapter,
   decodeReply,
+  LaneError,
   newId,
   type LaneStoreModule,
   type EventSource,
 } from "../src/adapter.ts";
-import { LaneService } from "@delino/protos/lane/v1/lane_pb";
+import { LaneService } from "@repo/protos/lane/v1/lane_pb";
 function harness() {
   const calls: { method: string; request: Record<string, unknown> }[] = [];
   const listeners = new Map<
@@ -23,8 +24,8 @@ function harness() {
           response: {
             spaceId: JSON.parse(_req).spaceId || "space",
             deviceId: "device",
-            formatVersion: 1,
-            schemaVersion: 1,
+            formatVersion: 3,
+            schemaVersion: 3,
             sequence: "0",
           },
         }),
@@ -121,12 +122,12 @@ test("unsupported schema refuses opening", async () => {
       response: {
         spaceId: "s",
         deviceId: "d",
-        schemaVersion: 2,
-        formatVersion: 1,
+        schemaVersion: 99,
+        formatVersion: 3,
         sequence: "0",
       },
     });
-  await assert.rejects(h.adapter.open(), /Update Lane/);
+  await assert.rejects(h.adapter.open(), /unsupported format/);
 });
 test("request IDs are UUID v7", () => {
   for (let i = 0; i < 100; i++)
@@ -149,7 +150,7 @@ test("explicit route opens exactly the named space with no fallback on error", a
     cb({ ok: false, error: { reason: "NOT_FOUND", message: "Space removed" } });
   };
   await assert.rejects(h.adapter.open("named-space"), /Space removed/);
-  assert.deepEqual(requests, [{ formatVersion: 1, spaceId: "named-space" }]);
+  assert.deepEqual(requests, [{ formatVersion: 3, spaceId: "named-space" }]);
   assert.equal(closes, 1);
   await assert.rejects(
     h.adapter.call(LaneService.method.listTasks, {}),
@@ -170,8 +171,8 @@ test("late read from old space is rejected after a new space opens", async () =>
       response: {
         spaceId: "new-space",
         deviceId: "device",
-        schemaVersion: 1,
-        formatVersion: 1,
+        schemaVersion: 3,
+        formatVersion: 3,
         sequence: "0",
       },
     });
@@ -198,7 +199,7 @@ test("sequence invalidation compares decimal values beyond safe integers without
 });
 
 test("native deletion is explicit, challenge-bound, and sends no proof to JavaScript", async () => {
-  const { AccountService } = await import("@delino/protos/lane/v1/lane_pb");
+  const { AccountService } = await import("@repo/protos/lane/v1/lane_pb");
   const h = harness();
   await h.adapter.open();
   h.module.invoke = (method, json, cb) => {
@@ -236,7 +237,7 @@ test("native deletion is explicit, challenge-bound, and sends no proof to JavaSc
   await assert.rejects(h.adapter.deleteReauthenticated("challenge"));
 });
 test("cancel and space change invalidate native deletion challenge", async () => {
-  const { AccountService } = await import("@delino/protos/lane/v1/lane_pb");
+  const { AccountService } = await import("@repo/protos/lane/v1/lane_pb");
   for (const action of ["cancel", "switch"]) {
     const h = harness();
     await h.adapter.open();
@@ -250,4 +251,285 @@ test("cancel and space change invalidate native deletion challenge", async () =>
     else await h.adapter.open("another");
     await assert.rejects(h.adapter.deleteReauthenticated("challenge"));
   }
+});
+
+test("an earlier store format is refused with reset guidance and never migrated", async () => {
+  const h = harness();
+  const closed: string[] = [];
+  h.module.open = (_r, cb) =>
+    cb({
+      ok: true,
+      response: {
+        spaceId: "old",
+        deviceId: "d",
+        schemaVersion: 2,
+        formatVersion: 2,
+        sequence: "0",
+      },
+    });
+  h.module.close = (space, callback) => {
+    closed.push(space);
+    callback({ ok: true, response: { completed: true } });
+  };
+  await assert.rejects(
+    h.adapter.open("old"),
+    /never migrates or resets it automatically/,
+  );
+  assert.deepEqual(closed, ["old"]);
+  assert.equal("migrate" in h.adapter, false);
+  await assert.rejects(
+    h.adapter.call(LaneService.method.listTasks, {}),
+    /not open/,
+  );
+});
+test("development reset closes this window's handle first, carries the confirmation flag and restores the handle when refused", async () => {
+  const h = harness();
+  const order: string[] = [];
+  const close = h.module.close.bind(h.module);
+  const open = h.module.open.bind(h.module);
+  const invoke = h.module.invoke.bind(h.module);
+  h.module.close = (space, cb) => {
+    order.push(`close:${space}`);
+    close(space, cb);
+  };
+  h.module.open = (request, cb) => {
+    order.push("open");
+    open(request, cb);
+  };
+  await h.adapter.open();
+  const result = await h.adapter.local("ResetDevelopmentData", {
+    confirmed: true,
+  });
+  assert.deepEqual(result, { completed: true });
+  assert.deepEqual(order, ["open", "close:space"]);
+  assert.deepEqual(h.calls.at(-1), {
+    method: "ResetDevelopmentData",
+    request: { spaceId: "space", request: { confirmed: true } },
+  });
+  // After a successful reset the caller reopens the space; nothing is cached.
+  assert.equal(h.adapter.spaceId, undefined);
+  await h.adapter.open("space");
+  // A refused reset (another process holds a handle) reopens this window's handle.
+  h.module.invoke = (method, json, cb) => {
+    if (method !== "ResetDevelopmentData") return invoke(method, json, cb);
+    cb({
+      ok: false,
+      error: { reason: "STORAGE_BUSY", message: "Close other Lane windows." },
+    });
+  };
+  order.length = 0;
+  await assert.rejects(
+    h.adapter.local("ResetDevelopmentData", { confirmed: true }),
+    /Close other Lane windows/,
+  );
+  assert.deepEqual(order, ["close:space", "open"]);
+  assert.equal(h.adapter.spaceId, "space");
+});
+test("constraint violations keep their named code through the bridge error", () => {
+  assert.throws(
+    () =>
+      decodeReply({
+        ok: false,
+        error: {
+          reason: "CONSTRAINT_VIOLATION",
+          message: "Parent loop",
+          violation: "PARENT_CYCLE",
+        },
+      }),
+    (error: unknown) =>
+      error instanceof LaneError && error.detail.violation === "PARENT_CYCLE",
+  );
+});
+test("an unsupported store can be reset without opening it, using the active space and the confirmation flag", async () => {
+  const h = harness();
+  h.module.open = (_r, cb) =>
+    cb({
+      ok: false,
+      error: {
+        reason: "ERROR_REASON_UNSUPPORTED_FORMAT",
+        message: "Run the explicit development reset.",
+      },
+    });
+  await assert.rejects(h.adapter.open(), /explicit development reset/);
+  await h.adapter.resetUnopened!();
+  assert.deepEqual(h.calls.at(-1), {
+    method: "ResetDevelopmentData",
+    request: { spaceId: "", request: { confirmed: true } },
+  });
+  // Rejections stay visible to the user.
+  h.module.invoke = (_m, _r, cb) =>
+    cb({
+      ok: false,
+      error: { reason: "STORAGE_BUSY", message: "Close other Lane windows." },
+    });
+  await assert.rejects(h.adapter.resetUnopened!(), /Close other Lane windows/);
+});
+test("blocked synchronization items are retried through the local operation", async () => {
+  const h = harness();
+  await h.adapter.open();
+  await h.adapter.local("RetryBlockedItems", {});
+  assert.deepEqual(h.calls.at(-1), {
+    method: "RetryBlockedItems",
+    request: { spaceId: "space", request: {} },
+  });
+});
+
+// An event source that retains every callback, like the real host bridge, so
+// fanout to several subscribers is observable.
+function fanoutHarness(openSequence: Record<string, string> = {}) {
+  const callbacks = new Set<
+    (event: { spaceId?: string; sequence?: string }) => void
+  >();
+  const module: LaneStoreModule = {
+    open(request, cb) {
+      const spaceId = JSON.parse(request).spaceId || "S";
+      cb(
+        JSON.stringify({
+          ok: true,
+          response: {
+            spaceId,
+            deviceId: "device",
+            formatVersion: 3,
+            schemaVersion: 3,
+            sequence: openSequence[spaceId] ?? "0",
+          },
+        }),
+      );
+    },
+    invoke(_method, _json, cb) {
+      cb(JSON.stringify({ ok: true, response: {} }));
+    },
+    close(_space, callback) {
+      callback({ ok: true, response: { completed: true } });
+    },
+  };
+  const events: EventSource = {
+    addListener(_name, cb) {
+      callbacks.add(cb);
+    },
+    removeListener(_name, cb) {
+      callbacks.delete(cb);
+    },
+  };
+  return {
+    adapter: new NativeAdapter(module, events),
+    callbacks,
+    emit: (spaceId: string | undefined, sequence: string | undefined) => {
+      for (const cb of [...callbacks]) cb({ spaceId, sequence });
+    },
+  };
+}
+
+test("every subscriber receives each newer event once regardless of registration order", async () => {
+  for (const openAfter of [0, 1, 2, 3]) {
+    const h = fanoutHarness();
+    const counts = [0, 0, 0];
+    const stops: (() => void)[] = [];
+    // Register `openAfter` subscribers before open() and the rest after it.
+    const register = (i: number) =>
+      stops.push(h.adapter.subscribe(() => counts[i]++));
+    for (let i = 0; i < openAfter; i++) register(i);
+    await h.adapter.open();
+    for (let i = openAfter; i < 3; i++) register(i);
+    h.emit("S", "1");
+    h.emit("S", "1");
+    h.emit("S", "2");
+    assert.deepEqual(counts, [2, 2, 2], `registered before open: ${openAfter}`);
+    stops.forEach((stop) => stop());
+    assert.equal(h.callbacks.size, 0);
+  }
+});
+
+test("registration order does not change which subscriber is notified", async () => {
+  const h = fanoutHarness();
+  await h.adapter.open();
+  const order: string[] = [];
+  const stopC = h.adapter.subscribe(() => order.push("C"));
+  const stopB = h.adapter.subscribe(() => order.push("B"));
+  const stopA = h.adapter.subscribe(() => order.push("A"));
+  h.emit("S", "1");
+  assert.deepEqual(order, ["C", "B", "A"]);
+  stopA();
+  stopB();
+  stopC();
+});
+
+test("duplicate, older, malformed and other-space events notify no subscriber", async () => {
+  const h = fanoutHarness({ S: "5" });
+  await h.adapter.open();
+  const counts = [0, 0, 0];
+  const stops = counts.map((_, i) => h.adapter.subscribe(() => counts[i]++));
+  h.emit("other", "9");
+  h.emit(undefined, "9");
+  h.emit("S", undefined);
+  h.emit("S", "");
+  h.emit("S", "bad");
+  h.emit("S", "-9");
+  h.emit("S", "9.5");
+  h.emit("S", "5");
+  h.emit("S", "4");
+  assert.deepEqual(counts, [0, 0, 0]);
+  h.emit("S", "9007199254740992");
+  h.emit("S", "9007199254740993");
+  h.emit("S", "9007199254740992");
+  assert.deepEqual(counts, [2, 2, 2]);
+  stops.forEach((stop) => stop());
+});
+
+test("unsubscribing one listener leaves the others active and removes its handler", async () => {
+  const h = fanoutHarness();
+  await h.adapter.open();
+  const counts = [0, 0, 0];
+  const stops = counts.map((_, i) => h.adapter.subscribe(() => counts[i]++));
+  assert.equal(h.callbacks.size, 3);
+  stops[0]();
+  assert.equal(h.callbacks.size, 2);
+  h.emit("S", "1");
+  assert.deepEqual(counts, [0, 1, 1]);
+  stops[1]();
+  stops[2]();
+  assert.equal(h.callbacks.size, 0);
+  h.emit("S", "2");
+  assert.deepEqual(counts, [0, 1, 1]);
+});
+
+test("switching data spaces and reopening rebase every subscriber without leaking old events", async () => {
+  const h = fanoutHarness({ S: "100", T: "0" });
+  await h.adapter.open("S");
+  const counts = [0, 0];
+  const stops = counts.map((_, i) => h.adapter.subscribe(() => counts[i]++));
+  h.emit("S", "101");
+  assert.deepEqual(counts, [1, 1]);
+  await h.adapter.open("T");
+  // An old event of the previous space and a stale high sequence stay silent.
+  h.emit("S", "102");
+  assert.deepEqual(counts, [1, 1]);
+  h.emit("T", "1");
+  assert.deepEqual(counts, [2, 2]);
+  h.emit("T", "1");
+  assert.deepEqual(counts, [2, 2]);
+  // Closing ignores events until reopened; a reopened store starts again from
+  // its own sequence, so a lower sequence from the earlier generation is new.
+  h.adapter.close();
+  h.emit("T", "2");
+  assert.deepEqual(counts, [2, 2]);
+  await h.adapter.open("T");
+  h.emit("T", "1");
+  assert.deepEqual(counts, [3, 3]);
+  stops.forEach((stop) => stop());
+  assert.equal(h.callbacks.size, 0);
+});
+
+test("a subscriber registered while closed starts observing once the store opens", async () => {
+  const h = fanoutHarness({ S: "7" });
+  let count = 0;
+  const stop = h.adapter.subscribe(() => count++);
+  h.emit("S", "8");
+  assert.equal(count, 0);
+  await h.adapter.open("S");
+  h.emit("S", "7");
+  assert.equal(count, 0);
+  h.emit("S", "8");
+  assert.equal(count, 1);
+  stop();
 });

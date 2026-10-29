@@ -8,7 +8,7 @@
 
 using namespace lane::windows;
 int wmain(int count, wchar_t** args) {
-  winrt::init_apartment(winrt::apartment_type::multi_threaded);
+  ApartmentScope apartment;
   if (count > 1) {
     if (std::wstring(args[1]) == L"--hang") { Sleep(INFINITE); return 0; }
     if (std::wstring(args[1]) == L"--invalid") return 2;
@@ -27,9 +27,30 @@ int wmain(int count, wchar_t** args) {
   for (const auto& invalid : {"http://example.com", "javascript:alert(1)", "file:///tmp/a", "https://u:p@example.com", "https://", "https://example.com\n"}) assert(!HTTPS(invalid));
   assert(!HTTPS(std::string("https://example.com\0evil", 24)));
   auto error = Parse(Failure("ERROR_REASON_INVALID_INPUT", "Invalid request."));
-  assert(UUID(Text(error.GetNamedObject(L"error"), L"correlationId")));
+  assert(lane::windows::UUID(Text(error.GetNamedObject(L"error"), L"correlationId")));
   auto exact = Parse(R"({"sequence":"18446744073709551615","permission":"NOTIFICATION_PERMISSION_DENIED"})");
   assert(Text(Parse(Dump(exact)), L"sequence") == "18446744073709551615");
+  // Regression evidence for the original DisconnectSync failure: the two-argument
+  // GetNamedString overload throws for a present numeric value, so Text() must not
+  // read the numeric retention that Settings sends.
+  auto numeric = Parse(R"({"retention":2})");
+  bool numeric_text_threw = false;
+  try { (void)Text(numeric, L"retention"); } catch (const winrt::hresult_error&) { numeric_text_threw = true; }
+  assert(numeric_text_threw);
+  const auto retention = [](const char* request) { return RetentionChoice(Parse(request)); };
+  assert(retention(R"({"retention":1})") == LocalRetention::KeepLocal);
+  assert(retention(R"({"retention":2})") == LocalRetention::RemoveLocal);
+  assert(retention(R"({"retention":"LOCAL_RETENTION_KEEP_LOCAL"})") == LocalRetention::KeepLocal);
+  assert(retention(R"({"retention":"LOCAL_RETENTION_REMOVE_LOCAL"})") == LocalRetention::RemoveLocal);
+  for (const auto* invalid : {"{}", R"({"retention":0})", R"({"retention":3})", R"({"retention":"INVALID"})",
+                              R"({"retention":true})", R"({"retention":null})", R"({"retention":[2]})",
+                              R"({"retention":{"value":2}})"})
+    assert(retention(invalid) == LocalRetention::Unspecified);
+  const auto input = [](const char* value) { return RetentionChoiceOfInput(Parse(value)); };
+  assert(input(R"({"spaceId":"s","request":{"retention":2}})") == LocalRetention::RemoveLocal);
+  assert(input(R"({"spaceId":"s","request":{"retention":1}})") == LocalRetention::KeepLocal);
+  assert(input(R"({"spaceId":"s","request":"LOCAL_RETENTION_REMOVE_LOCAL"})") == LocalRetention::Unspecified);
+  assert(input(R"({"spaceId":"s"})") == LocalRetention::Unspecified);
   wchar_t path[32768];
   const auto length = GetModuleFileNameW(nullptr, path, 32768);
   assert(length && length < 32768);
@@ -48,6 +69,5 @@ int wmain(int count, wchar_t** args) {
   auto child = Launch(path, {L"--hang"}, null.Get(), null.Get(), null.Get());
   assert(child->Running());
   child->Stop(); assert(!child->Running());
-  winrt::uninit_apartment();
   std::cout << "Windows platform and helper transport tests passed\n";
 }

@@ -185,10 +185,10 @@ test("only owning manual release admits macOS and publication requires the compl
   const require = createRequire(import.meta.url);
   const yaml = require("js-yaml");
   const workflow = yaml.load(
-    readFileSync(join(root, ".github/workflows/release-perfine.yml"), "utf8"),
+    readFileSync(join(root, ".github/workflows/deploy-perfine.yml"), "utf8"),
   );
-  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
-  assert.equal(workflow.on.workflow_dispatch.inputs.publish.default, false);
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_call"]);
+  assert.equal(workflow.on.workflow_call.inputs.publish.default, false);
   assert.match(workflow.jobs.source.if, /refs\/heads\/main/);
   assert.equal(workflow.jobs.build.strategy["fail-fast"], false);
   assert.deepEqual(
@@ -201,7 +201,7 @@ test("only owning manual release admits macOS and publication requires the compl
     "build",
     "prepare-set",
   ]);
-  assert.equal(workflow.jobs.publish.environment, "perfine-production");
+  assert.equal(workflow.jobs.publish.environment, "release-publish");
   const steps = workflow.jobs.publish.steps;
   const preflight = steps.findIndex((x) => x.run?.includes(" preflight "));
   const action = steps.findIndex((x) => x.run?.includes(" publish-action"));

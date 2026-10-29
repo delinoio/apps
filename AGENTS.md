@@ -28,7 +28,7 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
-- CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Allow the separate main-only manual Perfine release workflow to use macOS runners only for its owning distribution gates. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
+- CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Allow the Perfine and Lane binary reusable workflows called by the main-only unified release to use macOS runners only for their owning distribution gates. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
 - Application and API development `dev` and `dev:*` scripts must inject Infisical development variables through the local root project configuration. Root `dev:db:*` commands manage local Compose databases directly without Infisical; follow the [development Compose procedure](docs/repository-workflow-contract.md#local-development-databases). Follow [environment ownership](docs/repository-environment-contract.md) for CLI setup and secret boundaries.
 - Run root `pnpm dev` to expose the frontends and Rust APIs through Portless named local URLs, with Turborepo running workspace development. Each frontend and API `dev` script owns its Portless route; the root launcher must start `pnpm exec turbo run dev` directly after database preparation. For one app, run `pnpm dev` from the owning app to serve its frontend or `pnpm dev:desktop` to launch its native shell. Keep the documented fixed loopback ports and fail on conflicts. Follow the [repository workflow](docs/repository-workflow-contract.md) and owning application contracts.
 - Root `pnpm dev` must wait for the local Compose databases and pass their resolved URLs only to API development launchers, which apply them after Infisical injection. Keep service-local environment files unchanged. Follow the [development Compose procedure](docs/repository-workflow-contract.md#local-development-databases), keep schema migrations explicit and run application development commands on the host.
@@ -61,6 +61,7 @@
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
 - `packages/lynx-ui`: Shared ReactLynx UI primitives; follow `packages/AGENTS.md` and [Lynx UI contracts](docs/project-lynx-ui.md).
 - `docs/`: Source of truth for project contracts and repository documentation.
+- `.release/`: Main-only release preparation commits the consumed changeset plan here; follow the release procedure in `docs/repository-workflow-contract.md`.
 - `apps/devbase`: DevBase web application; its API server lives in `servers/devbase-api`.
 - `apps/delino-site`: Delino web application.
 - `apps/delino-docs`: Public documentation app for Delino services.
@@ -111,6 +112,8 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 - Ensure path and naming contracts are consistent across docs and AGENTS rules.
 
 ## Naming Rules
+
+- Name private npm workspaces by repository path (`@apps/<name>`, `@servers/<name>`, `@packages/<name>`, `@actions/<name>` and `@examples/<name>`). Use `@repo/protos` for the top-level protocol workspace. Preserve the root package and public distribution names; follow [workspace naming](docs/repository-workflow-contract.md#npm-workspace-names).
 
 - Use lowercase kebab-case for project IDs and directory names unless runtime conventions require otherwise.
 - Use `project-` prefix for project index docs.
@@ -200,3 +203,10 @@ Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfin
 - `apps/lane` owns the shared ReactLynx client and native/browser hosts.
 - Planned Lane protocol, Rust CLI/local MCP, Rust server/remote MCP and npm distribution paths are routed through the [Lane project index](docs/project-lane.md) and their parent scoped instructions.
 - Read [Lane project](docs/project-lane.md) and [application foundation](docs/apps-lane-foundation.md) before changing these paths.
+
+## Changeset procedure
+
+- Record component behavior changes and validate pending records according to the [changeset contract](docs/repository-changeset-contract.md). Use owning npm package names and keep public notes separate from internal summaries.
+- `tools/changeset/` owns the Go CLI; `.changeset/` owns pending records. Run its Go tests and vet check when changing the CLI.
+- Write public changelog notes for the affected product's end users. Describe observable behavior, benefits or required user actions. Keep repository tooling, changeset mechanics, CI, refactoring and implementation details in the internal summary unless they are part of the product's supported public interface or workflow. Omit the public block when there is no user-visible change; do not rephrase internal work as a public feature.
+- Apply the same audience rule to examples and initial-release notes. Announce the product release without inventing capabilities or describing release tooling. Before committing a public note, preview it with `pnpm changeset changelog` and review its audience and factual claims; format validation alone does not establish suitable public content.

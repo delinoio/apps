@@ -6,7 +6,7 @@ This contract belongs to `delinoio/apps`. The schema and generated Go and TypeSc
 
 ## Runtime and Language
 
-Protobuf package `delitools.v1` with service `DelitoolsService`. Generated Go clients and handlers use the root `github.com/delinoio/apps` module. TypeScript bindings are exported by the private `@delino/protos` workspace as `@delino/protos/delitools/v1/delitools_pb`. Rust bindings are generated into Cargo output by `servers/crates/delino-protos`; do not check them in. There is no REST surface, handwritten SDK or published client package.
+Protobuf package `delitools.v1` with service `DelitoolsService`. Generated Go clients and handlers use the root `github.com/delinoio/apps` module. TypeScript bindings are exported by the private `@repo/protos` workspace as `@repo/protos/delitools/v1/delitools_pb`. Rust bindings are generated into Cargo output by `servers/crates/delino-protos`; do not check them in. There is no REST surface, handwritten SDK or published client package.
 
 ## Users and Operators
 

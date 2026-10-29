@@ -1,6 +1,6 @@
 {
   "name": "@delinoio/lane",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Local Lane CLI and MCP launcher",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,11 +12,9 @@
   },
   "files": [
     "bin",
-    "artifacts",
     "manifest.json",
     "LICENSE",
     "NOTICE",
-    "THIRD_PARTY_NOTICES",
     "README.md",
     "SKILL.md",
     "guides"
@@ -30,5 +28,13 @@
     "type": "git",
     "url": "https://github.com/delinoio/apps.git",
     "directory": "packages/lane"
+  },
+  "optionalDependencies": {
+    "@delinoio/lane-darwin-amd64": "0.2.1",
+    "@delinoio/lane-darwin-arm64": "0.2.1",
+    "@delinoio/lane-linux-amd64": "0.2.1",
+    "@delinoio/lane-linux-arm64": "0.2.1",
+    "@delinoio/lane-windows-amd64": "0.2.1",
+    "@delinoio/lane-windows-arm64": "0.2.1"
   }
 }

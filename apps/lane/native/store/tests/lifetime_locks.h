@@ -10,7 +10,7 @@ void lifetime_lock_removal_retry() {
   const auto lock_path = f.root.path / "locks" / (f.space + ".handles.lock");
   require(fs::exists(lock_path), "opening space creates stable lifetime lock");
   lane::Store holder(f.root.path.string());
-  success(holder.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump()));
+  success(holder.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump()));
   holder.poll();
   const auto start = std::chrono::steady_clock::now();
   error(remove_space(f.store, f.space), "STORAGE_BUSY");
@@ -22,7 +22,7 @@ void lifetime_lock_removal_retry() {
   require(registry.scalar("SELECT account_key FROM spaces WHERE id='" + f.space + "'") == "removed:" + f.space,
           "busy removal removes normal account routing");
   lane::Store late(f.root.path.string());
-  error(J::parse(late.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump())), "NOT_FOUND");
+  error(J::parse(late.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump())), "NOT_FOUND");
   require(fs::exists(f.database()), "late rejected open leaves held database intact");
   require(J::parse(holder.poll()).empty(), "poll drains marked subscription without content invalidation");
   // No open call is legal now; cleanup is deliberately routed before ordinary
@@ -33,7 +33,7 @@ void lifetime_lock_removal_retry() {
   require(fs::exists(lock_path), "successful cleanup preserves stable lifetime lock file");
   require(registry.scalar("SELECT count(*) FROM spaces WHERE id='" + f.space + "'") == "0", "successful cleanup unregisters space");
   require(registry.scalar("SELECT value FROM registry_meta WHERE key='unavailable:" + f.space + "'") == "1", "unavailable marker remains permanent after cleanup");
-  error(J::parse(holder.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump())), "NOT_FOUND");
+  error(J::parse(holder.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump())), "NOT_FOUND");
   require(!fs::exists(directory), "old holder cannot recreate removed database");
   auto repeated = remove_space(late, f.space);
   require(repeated.value("ok", false) && !fs::exists(directory), "cleanup idempotently retries without an open handle");
@@ -44,7 +44,7 @@ void restart_marked_cleanup() {
     TempRoot root; std::string space;
     {
       lane::Store initial(root.path.string());
-      space = success(initial.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+      space = success(initial.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId");
     }
     const auto directory = root.path / "spaces" / space;
     const auto lock = root.path / "locks" / (space + ".handles.lock");
@@ -57,7 +57,7 @@ void restart_marked_cleanup() {
     }
     if (files_already_removed) fs::remove_all(directory);
     lane::Store restarted(root.path.string());
-    error(J::parse(restarted.open(J{{"formatVersion", 1}, {"spaceId", space}}.dump())), "NOT_FOUND");
+    error(J::parse(restarted.open(J{{"formatVersion", 3}, {"spaceId", space}}.dump())), "NOT_FOUND");
     if (files_already_removed) require(!fs::exists(directory), "restart/open refusal cannot recreate marked database");
     require(J::parse(restarted.poll()).empty(), "restart poll does not reopen marked space");
     auto removed = remove_space(restarted, space);
@@ -69,7 +69,7 @@ void restart_marked_cleanup() {
     // Even a fresh process lifetime cannot treat an unavailable UUID as a new
     // empty space after cleanup completes.
     lane::Store next(root.path.string());
-    error(J::parse(next.open(J{{"formatVersion", 1}, {"spaceId", space}}.dump())), "NOT_FOUND");
+    error(J::parse(next.open(J{{"formatVersion", 3}, {"spaceId", space}}.dump())), "NOT_FOUND");
     require(!fs::exists(directory), "future Store cannot resurrect marked space");
   }
 }
@@ -78,7 +78,7 @@ void deferred_registry_compatibility_failure() {
     TempRoot root;
     {
       lane::Store initial(root.path.string());
-      success(initial.open(R"({"formatVersion":1,"spaceId":""})"));
+      success(initial.open(R"({"formatVersion":3,"spaceId":""})"));
     }
     Sql registry(root.path / "registry.sqlite");
     const auto active = registry.scalar("SELECT value FROM registry_meta WHERE key='active_space_id'");
@@ -87,8 +87,8 @@ void deferred_registry_compatibility_failure() {
     // Construction must not throw across the native host boundary. The normal
     // open response owns compatibility errors and update instructions.
     lane::Store unsupported(root.path.string());
-    error(J::parse(unsupported.open(R"({"formatVersion":1,"spaceId":""})")), "UNSUPPORTED_FORMAT");
-    error(J::parse(unsupported.open(J{{"formatVersion", 1}, {"spaceId", active}}.dump())), "UNSUPPORTED_FORMAT");
+    error(J::parse(unsupported.open(R"({"formatVersion":3,"spaceId":""})")), "UNSUPPORTED_FORMAT");
+    error(J::parse(unsupported.open(J{{"formatVersion", 3}, {"spaceId", active}}.dump())), "UNSUPPORTED_FORMAT");
     require(registry.scalar(std::string("PRAGMA ") + pragma) == "987654", "unsupported registry header remains untouched");
     require(registry.scalar("SELECT value FROM registry_meta WHERE key='active_space_id'") == active &&
         registry.scalar("SELECT count(*) FROM spaces") == count, "deferred failure does not initialize replacement registry state");

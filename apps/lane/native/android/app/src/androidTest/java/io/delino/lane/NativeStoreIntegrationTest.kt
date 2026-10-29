@@ -19,11 +19,11 @@ class NativeStoreIntegrationTest {
         val task = LaneHostServices.uuid7()
         try {
             NativeStore(directory.path, app.runtime.host).use { first ->
-                val opened = BridgeJson.response(first.open("{\"formatVersion\":1,\"spaceId\":\"\"}"))
+                val opened = BridgeJson.response(first.open("{\"formatVersion\":3,\"spaceId\":\"\"}"))
                 val space = opened.getString("spaceId")
                 first.poll()
                 NativeStore(directory.path, app.runtime.host).use { second ->
-                    BridgeJson.response(second.open(JSONObject().put("formatVersion", 1).put("spaceId", space).toString()))
+                    BridgeJson.response(second.open(JSONObject().put("formatVersion", 3).put("spaceId", space).toString()))
                     val request = JSONObject().put("id", task).put("title", "Unicode 🧪")
                         .put("prompt", "# Exact\n😀\u0000end")
                         .put("repository", JSONObject().put("url", "https://example.com/lane.git"))
@@ -41,9 +41,11 @@ class NativeStoreIntegrationTest {
                 BridgeJson.response(first.release(space))
             }
             NativeStore(directory.path, app.runtime.host).use { reopened ->
-                val space = BridgeJson.response(reopened.open("{\"formatVersion\":1,\"spaceId\":\"\"}")).getString("spaceId")
+                val space = BridgeJson.response(reopened.open("{\"formatVersion\":3,\"spaceId\":\"\"}")).getString("spaceId")
                 val result = BridgeJson.response(reopened.invoke("GetTask", BridgeJson.request(space, JSONObject().put("id", task))))
                 assertEquals("# Exact\n😀\u0000end", result.getJSONObject("result").getJSONObject("version").getJSONObject("task").getString("prompt"))
+                assertFalse(JSONObject(reopened.open("{\"formatVersion\":1,\"spaceId\":\"\"}")).getBoolean("ok"))
+                assertFalse(JSONObject(reopened.open("{\"formatVersion\":2,\"spaceId\":\"\"}")).getBoolean("ok"))
                 assertFalse(JSONObject(reopened.open("{\"formatVersion\":99,\"spaceId\":\"\"}")).getBoolean("ok"))
             }
         } finally { directory.deleteRecursively() }

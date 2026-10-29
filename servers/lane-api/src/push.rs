@@ -1372,6 +1372,40 @@ WKgZtSNaVvVIh0CUGOnHJip/8DwH7dR6SS1rtc/UT0nkE4YvhMu4j4S8
             .unwrap(),
             0
         );
+        // A browser without a push subscription disables through the same registration:
+        // WEB_PUSH with enabled=false and no endpoint or keys stores the selected content
+        // and cancels the device's pending deliveries.
+        let mut tx = db.begin().await.unwrap();
+        register(
+            &mut tx,
+            &principal("ORIGIN_KIND_APP", "device"),
+            &json!({"deviceId":"device","provider":2,"endpoint":"token","enabled":true}),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        seed(&db, "web-disabled", clock.now()).await;
+        assert_eq!(state(&db, "web-disabled").await, "pending");
+        let mut tx = db.begin().await.unwrap();
+        register(
+            &mut tx,
+            &principal("ORIGIN_KIND_APP", "device"),
+            &json!({"deviceId":"device","provider":"PUSH_PROVIDER_WEB_PUSH","enabled":false,"content":"NOTIFICATION_CONTENT_GENERIC"}),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(state(&db, "web-disabled").await, "cancelled");
+        let stored = sqlx::query("SELECT provider,endpoint,public_key,auth_secret,enabled,content FROM lane_push_registrations WHERE account_id='account' AND device_id='device'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(stored.get::<i16, _>("provider"), 3);
+        assert_eq!(stored.get::<String, _>("endpoint"), "");
+        assert_eq!(stored.get::<String, _>("public_key"), "");
+        assert_eq!(stored.get::<String, _>("auth_secret"), "");
+        assert!(!stored.get::<bool, _>("enabled"));
+        assert_eq!(stored.get::<i16, _>("content"), 2);
         let mut tx = db.begin().await.unwrap();
         register(&mut tx,&principal("ORIGIN_KIND_APP","device"),&json!({"deviceId":"device","provider":2,"endpoint":"token","enabled":true,"content":2})).await.unwrap();
         tx.commit().await.unwrap();

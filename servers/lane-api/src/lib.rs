@@ -31,6 +31,7 @@ pub async fn account_lock(db: &mut PgConnection, account: &str) -> Result<()> {
     Ok(())
 }
 
+pub mod capture;
 pub mod config;
 pub mod metrics;
 pub mod rate;
@@ -42,6 +43,7 @@ pub mod error;
 pub mod http;
 pub mod mcp;
 pub mod migration;
+pub mod planning;
 pub mod push;
 pub mod rpc;
 pub mod sync;
@@ -67,12 +69,14 @@ impl Server {
 
 /// Clear only Lane content in the account deletion transaction; identity and deletion directives remain.
 pub async fn clear_account_content(db: &mut PgConnection, account: &str) -> Result<()> {
+    capture::delete_account(db, account).await?;
     webhooks::delete_account(db, account).await?;
     for table in [
         "lane_push_deliveries",
         "lane_push_registrations",
         "lane_entity_receipts",
         "lane_version_identities",
+        "lane_attachment_identities",
         "lane_entity_cursors",
         "lane_repository_mappings",
         "lane_entities",

@@ -32,3 +32,5 @@
 - [Git Tracker web](../docs/apps-git-tracker-web-contract.md)
 
 - Lane ownership: [project](../docs/project-lane.md); [application foundation](../docs/apps-lane-foundation.md).
+
+- `apps/lane-chrome-extension` owns the RealQA Chrome companion and store materials. Read the [RealQA contract](../docs/apps-lane-realqa-contract.md); native installation and messaging integration remain in the existing Lane desktop host.

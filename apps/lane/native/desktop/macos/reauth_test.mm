@@ -25,11 +25,11 @@ int main() {
         {"accountId",account},{"tenantId","01900000-0000-7000-8000-000000000011"},
         {"epoch","01900000-0000-7000-8000-000000000012"}}.dump(),false));
       Check(approved.value("ok",false), "Seed account");
-      space = J::parse(seed.open(R"({"formatVersion":1,"spaceId":""})"))["response"]["spaceId"];
+      space = J::parse(seed.open(R"({"formatVersion":3,"spaceId":""})"))["response"]["spaceId"];
     }
     LaneRuntime* runtime = [LaneRuntime new];
     auto store = [runtime storeHandler], host = [runtime hostHandler];
-    Check(J::parse((*store)("open",{R"({"formatVersion":1,"spaceId":""})"})).value("ok",false), "Open");
+    Check(J::parse((*store)("open",{R"({"formatVersion":3,"spaceId":""})"})).value("ok",false), "Open");
     auto workerFile = std::filesystem::path(root)/"helper-worker-pid";
     for (int attempt=0; attempt<30 && !std::filesystem::exists(workerFile); ++attempt) usleep(100000);
     int workerPID = 0; std::ifstream(workerFile) >> workerPID;

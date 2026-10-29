@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{
-    error::{Result, invalid},
+    error::{Failure, Result, invalid},
+    planning_args::{self, TaskPlanning},
     protocol::{self, strv},
 };
 use serde_json::{Value, json};
@@ -16,6 +17,7 @@ pub struct Options {
     pub once: bool,
     pub confirm_epoch_change: bool,
     pub retry_blocked: bool,
+    pub confirm_development_reset: bool,
     pub space: String,
     pub expected_space: String,
     pub reauth_challenge: String,
@@ -84,12 +86,12 @@ fn execute(
                 "once",
                 "help",
                 "version",
-                "prompt-stdin",
                 "clear-prompt",
                 "confirm-epoch-change",
                 "retry-blocked",
             ]
             .contains(&flag)
+                || planning_args::SWITCHES.contains(&flag)
             {
                 (flag, "true".into())
             } else {
@@ -117,7 +119,16 @@ fn execute(
     opt.reauth_challenge = pop(&mut flags, "reauth-challenge");
     opt.endpoint = pop(&mut flags, "endpoint");
     opt.redirect_uri = pop(&mut flags, "redirect-uri");
-    opt.color = pop(&mut flags, "color");
+    opt.confirm_development_reset = pop(&mut flags, "confirm-development-reset") == "true";
+    // `--color never|auto` selects terminal color; any other value is a label color
+    // (`label create/edit --color #RRGGBB`), which the planning parser reads below.
+    for value in flags.remove("color").unwrap_or_default() {
+        if matches!(value.as_str(), "auto" | "never") {
+            opt.color = value;
+        } else {
+            flags.entry("label-color".into()).or_default().push(value);
+        }
+    }
     if pop(&mut flags, "version") == "true" {
         writeln!(out, "lane {}", env!("CARGO_PKG_VERSION"))?;
         return Ok(());
@@ -151,6 +162,13 @@ fn execute(
         .get(&key)
         .ok_or_else(|| invalid("unknown command; use --help"))?;
     let mut method = strv(command, "method").to_owned();
+    let group = key.split(' ').next().unwrap_or("").to_owned();
+    if flags.contains_key("label-color") && !matches!(key.as_str(), "label create" | "label edit") {
+        return Err(invalid("--color must be auto or never"));
+    }
+    if opt.confirm_development_reset && method != "ResetDevelopmentData" {
+        return Err(invalid("--confirm-development-reset requires data reset"));
+    }
     if opt.confirm_epoch_change && method != "ConnectSync" {
         return Err(invalid(
             "--confirm-epoch-change requires sync connect or login",
@@ -167,6 +185,7 @@ fn execute(
         return dispatcher.mcp(opt, input, out);
     }
     let mut raw = pop(&mut flags, "request-json");
+    let had_payload = !raw.is_empty();
     if raw == "-" {
         raw.clear();
         input.read_to_string(&mut raw)?;
@@ -193,7 +212,7 @@ fn execute(
             "--reauth-challenge requires remote DeleteAccountData",
         ));
     }
-    if words.len() > 1 {
+    if words.len() > 1 || (method == "ResetDevelopmentData" && !words.is_empty()) {
         return Err(invalid("too many positional arguments"));
     }
     if let Some(word) = words.pop() {
@@ -207,6 +226,73 @@ fn execute(
     for (k, f) in mapping.as_object().unwrap() {
         if let Some(v) = flags.remove(k) {
             q[f.as_str().unwrap()] = v.last().unwrap().clone().into();
+        }
+    }
+    let mut task_planning = None;
+    match key.as_str() {
+        "task create" | "task edit" => task_planning = Some(TaskPlanning::take(&mut flags)?),
+        "task list" => planning_args::take_list(&mut flags, &mut q)?,
+        _ => {}
+    }
+    if let Some(planning) = &task_planning
+        && method == "CreateTask"
+    {
+        planning.apply_to_request(&mut q);
+        if !planning.edits().is_null() {
+            q["relationshipEdits"] = planning.edits().clone();
+        }
+    }
+    if let Some(kind) = planning_args::group_kind(&group) {
+        match method.as_str() {
+            "ListPlanningItems" => q["kind"] = kind.into(),
+            "CreatePlanningItem" => {
+                let body = planning_args::item_body(&group, &mut flags, &mut q, &json!({}))?;
+                if !q["item"].is_object() {
+                    q["item"] = json!({});
+                }
+                q["item"][group.as_str()] = body;
+            }
+            "SavePlanningItem" | "GetPlanningItem" | "DeletePlanningItem" | "ListHistory"
+                if !strv(&q, "id").is_empty() =>
+            {
+                if method == "SavePlanningItem" && q.get("expectedVersionId").is_none() {
+                    return Err(invalid("--expected-version is required"));
+                }
+                *code = 1;
+                let read = dispatcher.invoke(opt, "GetPlanningItem", json!({"id":q["id"]}))?;
+                // A conflicted item has no single version; every alternative shares its kind.
+                let read_kind = if read["result"]["version"].is_object() {
+                    &read["result"]["version"]["kind"]
+                } else {
+                    &read["result"]["alternatives"][0]["kind"]
+                };
+                if read_kind != kind {
+                    return Err(Failure::new("NOT_FOUND", "Planning item does not exist."));
+                }
+                *code = 2;
+                if method == "SavePlanningItem" && !read["result"]["version"].is_object() {
+                    // Only resolution or permanent deletion can change a conflicted item.
+                    return Err(Failure::new(
+                        "CONFLICT_READ_ONLY",
+                        "Resolve the conflict before editing.",
+                    ));
+                }
+                if method == "SavePlanningItem" {
+                    let base = &read["result"]["version"][group.as_str()];
+                    if !base.is_object() {
+                        return Err(Failure::new(
+                            "NOT_FOUND",
+                            "Planning item is unavailable or deleted.",
+                        ));
+                    }
+                    let body = planning_args::item_body(&group, &mut flags, &mut q, base)?;
+                    if !q["item"].is_object() {
+                        q["item"] = json!({});
+                    }
+                    q["item"][group.as_str()] = body;
+                }
+            }
+            _ => {}
         }
     }
     for (k, prefix) in [
@@ -239,7 +325,11 @@ fn execute(
     if let Some(heads) = flags.remove("expected-head") {
         q["expectedHeadIds"] = json!(heads);
     }
-    for (k, f) in [("tasks-json", "tasks"), ("resolved-json", "resolved")] {
+    for (k, f) in [
+        ("tasks-json", "tasks"),
+        ("resolved-json", "resolved"),
+        ("images-json", "images"),
+    ] {
         let raw = pop(&mut flags, k);
         if !raw.is_empty() {
             q[f] = serde_json::from_str(&raw)?;
@@ -308,6 +398,33 @@ fn execute(
         "task prompt-history" => q["promptsOnly"] = true.into(),
         _ => {}
     }
+    if method == "ResetDevelopmentData" {
+        let reason = if opt.remote {
+            Some("data reset is local-only; remove --remote")
+        } else if !protocol::valid_id(&opt.space) {
+            Some("data reset requires an explicit --space UUID")
+        } else if !opt.confirm_development_reset {
+            Some("data reset requires --confirm-development-reset")
+        } else if had_payload || !q.as_object().unwrap().is_empty() {
+            Some("data reset accepts no request payload")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(invalid(reason));
+        }
+    }
+    if matches!(method.as_str(), "CreateURLConnection" | "SaveURLConnection")
+        && q.get("connection").is_none()
+    {
+        let mut connection = json!({});
+        for field in ["prefix", "repositoryId"] {
+            if let Some(value) = q.as_object_mut().unwrap().remove(field) {
+                connection[field] = value;
+            }
+        }
+        q["connection"] = connection;
+    }
     if method == "CreateTask" {
         let mut target = json!({});
         for (k, f) in [("repositoryId", "id"), ("repositoryUrl", "url")] {
@@ -317,6 +434,15 @@ fn execute(
         }
         if !target.as_object().unwrap().is_empty() {
             q["repository"] = target;
+        }
+    }
+    if method == "SaveTask"
+        && q.get("task").is_some_and(Value::is_object)
+        && let Some(planning) = &task_planning
+    {
+        planning.apply_to_task(&mut q["task"]);
+        if !planning.edits().is_null() {
+            q["relationshipEdits"] = planning.edits().clone();
         }
     }
     if method == "SaveTask" && q.get("task").is_none() {
@@ -343,6 +469,12 @@ fn execute(
                 } else {
                     task[f] = v;
                 }
+            }
+        }
+        if let Some(planning) = &task_planning {
+            planning.apply_to_task(&mut task);
+            if !planning.edits().is_null() {
+                q["relationshipEdits"] = planning.edits().clone();
             }
         }
         q["task"] = task;

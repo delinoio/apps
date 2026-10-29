@@ -13,9 +13,11 @@ pub mod error;
 pub mod protocol;
 
 pub mod auth;
+pub mod capture;
 pub mod cli;
 pub mod locallog;
 pub mod mcp;
+pub mod planning_args;
 pub mod remote;
 pub mod runtime;
 pub mod store;

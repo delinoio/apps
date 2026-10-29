@@ -50,6 +50,10 @@ function classifyShared(paths) {
   const repositoryShared = paths.some(
     (path) =>
       !Object.values(sharedPatterns).some((pattern) => pattern.test(path)) &&
+      // Release records do not change runtime inputs. Configuration files keep
+      // the conservative shared-path fallback; record validation always runs
+      // in check-formatting.
+      !/^\.changeset\/[^/]+\.md$/u.test(path) &&
       !/^(crates\/perfine-core\/|cmds\/(?:perfine|lane)\/|packages\/(?:perfine|lane)\/)/u.test(
         path,
       ) &&
@@ -212,7 +216,7 @@ export function select(paths, lockfiles) {
       shared.lynxUi ||
       shared.protocol ||
       paths.some((path) =>
-        /^(apps\/lane\/|protos\/lane\/|docs\/(?:project-lane|apps-lane|protos-lane))/u.test(
+        /^(apps\/(?:lane|lane-chrome-extension)\/|protos\/lane\/|docs\/(?:project-lane|apps-lane|protos-lane))/u.test(
           path,
         ),
       ),

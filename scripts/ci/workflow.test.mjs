@@ -88,7 +88,7 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
       );
       assert.equal(
         build.run,
-        `pnpm exec turbo run build:frontend --filter=${owner === "delitools" ? "delitools" : "delidev-desktop"}`,
+        `pnpm exec turbo run build:frontend --filter=@apps/${owner}`,
       );
       assert.ok(steps.indexOf(build) < steps.indexOf(command));
     }
@@ -279,7 +279,7 @@ test("all CI formatting checks belong to Check Formatting", () => {
     "pnpm format:check --all",
     "cargo fmt --all --check",
     "cargo fmt --manifest-path servers/Cargo.toml --all --check",
-    "node scripts/ci/check-go-format.mjs protos examples",
+    "node scripts/ci/check-go-format.mjs protos examples tools/changeset",
     "pnpm exec buf format --diff --exit-code",
   ])
     assert.ok(commands.has(command), command);
@@ -594,7 +594,7 @@ test("shared checks allocate independent jobs from planner outputs", () => {
   assert.equal(workflow.jobs.validate, undefined);
   assert.equal(
     workflow.jobs["shared-ui"].steps.find((step) => step.id === "lynx-ui").run,
-    "pnpm --filter @delino/lynx-ui test",
+    "pnpm --filter @packages/lynx-ui test",
   );
   assert.match(
     workflow.jobs["shared-ui"].steps.find(
@@ -604,7 +604,7 @@ test("shared checks allocate independent jobs from planner outputs", () => {
   );
   for (const [id, key, command] of [
     ["tooling", "tooling", "pnpm test:tooling"],
-    ["shared-ui", "shared_ui", "pnpm --filter @delino/ui test"],
+    ["shared-ui", "shared_ui", "pnpm --filter @packages/ui test"],
     ["workflows", "workflows", "go tool actionlint -shellcheck=''"],
   ]) {
     assert.equal(
@@ -739,5 +739,58 @@ test("Perfine jobs use owned package contracts and real fixture interfaces", () 
       (step) => step.id === "adapters",
     ).run,
     /node scripts\/ci\/perfine-acceptance\.mjs/u,
+  );
+});
+
+test("Lane integration owns a pinned disposable loopback S3 fixture", () => {
+  const job = workflow.jobs["rust-servers"];
+  const step = job.steps.find((step) => step.id === "integration");
+  assert.match(
+    step.run,
+    /if \[ "\$SERVICE" = lane-api \]; then\s+python3 "servers\/lane-api\/tests\/integration_fixture\.py"\s+else\s+cargo test/u,
+  );
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  assert.equal(step["timeout-minutes"], 10);
+  assert.match(
+    job.steps.find((step) => step.id === "protoc").run,
+    /if \[ "\$SERVICE" = lane-api \]; then sudo apt-get install -y python3-venv; fi/u,
+  );
+  const helper = readFileSync(
+    new URL(
+      "../../servers/lane-api/tests/integration_fixture.py",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(helper, /MOTO_VERSION = "5\.1\.22"/u);
+  assert.match(helper, /moto\[server\]==\{MOTO_VERSION\}/u);
+  assert.match(
+    helper,
+    /ThreadedMotoServer\(ip_address="127\.0\.0\.1", port=0/u,
+  );
+  assert.match(helper, /client\.create_bucket/u);
+  assert.match(helper, /client\.head_bucket/u);
+  assert.match(helper, /TemporaryDirectory/u);
+  assert.match(helper, /finally:\s+stop\(mock\)/u);
+  assert.match(helper, /SIGINT, signal\.SIGTERM/u);
+  assert.match(helper, /"--ignored", "--nocapture"/u);
+  assert.doesNotMatch(step.run, /docker build|ci:oci/u);
+});
+
+test("Lane Ubuntu validation includes extension and desktop RealQA fixtures", () => {
+  const job = workflow.jobs["lane-frontend"];
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  assert.equal(job.if, "needs.changes.outputs.lane == 'true'");
+  assert.equal(
+    job.steps.find((step) => step.id === "frontend").run.trim(),
+    "pnpm --filter @apps/lane test\npnpm --filter @apps/lane-chrome-extension test\nnode --test apps/lane/native/desktop/realqa*.test.mjs",
+  );
+  const cleanup = job.steps.find(
+    (step) => step.name === "Remove generated output",
+  );
+  assert.equal(cleanup.if, "${{ always() }}");
+  assert.equal(
+    cleanup.run,
+    'rm -rf "apps/lane/dist" "apps/lane-chrome-extension/dist"',
   );
 });

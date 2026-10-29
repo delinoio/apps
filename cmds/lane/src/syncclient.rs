@@ -4,11 +4,12 @@ use crate::{
     error::{Failure, Result, invalid},
     protocol::{id, strv, valid_id},
     remote,
-    store::{Identity, Store, meta, put_meta, rows, sync},
+    store::{Identity, Store, meta, planning, put_meta, rows, sync},
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use std::{
+    collections::{HashMap, HashSet},
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
@@ -162,10 +163,126 @@ pub fn run(auth: &Auth, s: &Store, endpoint: &str, once: bool, retry_blocked: bo
     let released = release(s, &owner);
     result.and(released)
 }
+/// One unsynchronized outbox row, in stored (timestamp) order.
+struct Pending {
+    entity: String,
+    mutation: Value,
+    state: i64,
+}
+/// Order outbox rows so that every row follows the earlier row of its own entity and the
+/// pending creation of every entity it references, keeping the stored order otherwise. A
+/// version that was rewritten to an older upload position (for example a corrected task that
+/// now references a label created after it) therefore still uploads after what it references.
+/// Reference cycles are cut at the edge that closes them.
+fn dependency_order(rows: &[Pending]) -> Vec<usize> {
+    let mut creations: HashMap<&str, usize> = HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
+        if row.mutation["kind"] == "MUTATION_KIND_CREATE" {
+            creations.entry(row.entity.as_str()).or_insert(index);
+        }
+    }
+    let mut last: HashMap<&str, usize> = HashMap::new();
+    let dependencies: Vec<Vec<usize>> = rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let mut deps: Vec<usize> = last
+                .insert(row.entity.as_str(), index)
+                .into_iter()
+                .collect();
+            deps.extend(
+                planning::referenced_ids(&row.mutation["version"])
+                    .iter()
+                    .filter_map(|id| creations.get(id.as_str()).copied())
+                    .filter(|dep| *dep != index),
+            );
+            deps
+        })
+        .collect();
+    // 1 = on the current path, 2 = placed.
+    let mut state = vec![0_u8; rows.len()];
+    let mut order = Vec::with_capacity(rows.len());
+    for start in 0..rows.len() {
+        if state[start] != 0 {
+            continue;
+        }
+        state[start] = 1;
+        let mut stack = vec![(start, 0_usize)];
+        while let Some((node, next)) = stack.last_mut() {
+            if let Some(dep) = dependencies[*node].get(*next).copied() {
+                *next += 1;
+                if state[dep] == 0 {
+                    state[dep] = 1;
+                    stack.push((dep, 0));
+                }
+            } else {
+                state[*node] = 2;
+                order.push(*node);
+                stack.pop();
+            }
+        }
+    }
+    order
+}
+/// Select the next upload batch in causal order.
+///
+/// The stored (creation) order is adjusted so a version follows the pending creations it
+/// references. A pending version is held back while
+/// an earlier version of the same entity is blocked, because the server never accepted its
+/// parent, and while it references an entity whose creation is blocked or itself held back.
+/// Both resume after the blocked item is retried or corrected, so dependent pushes never
+/// race ahead of the item they depend on.
+pub fn pending_batch(c: &Connection) -> Result<Vec<Value>> {
+    let mut stmt =
+        c.prepare("SELECT entity_id,request_json,state FROM outbox ORDER BY created_at_us,rowid")?;
+    let mut rows = vec![];
+    for row in stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, i64>(2)?,
+        ))
+    })? {
+        let (entity, raw, state) = row?;
+        rows.push(Pending {
+            entity,
+            mutation: serde_json::from_str(&raw)?,
+            state,
+        });
+    }
+    let mut blocked = HashSet::new();
+    let mut blocked_creations = HashSet::new();
+    let mut out = vec![];
+    for index in dependency_order(&rows) {
+        let Pending {
+            entity,
+            mutation,
+            state,
+        } = &rows[index];
+        if *state != 1 && *state != 2 {
+            continue;
+        }
+        let held = *state == 2
+            || blocked.contains(entity)
+            || planning::referenced_ids(&mutation["version"])
+                .iter()
+                .any(|id| blocked_creations.contains(id));
+        if held {
+            if mutation["kind"] == "MUTATION_KIND_CREATE" {
+                blocked_creations.insert(entity.clone());
+            }
+            blocked.insert(entity.clone());
+        } else {
+            out.push(mutation.clone());
+        }
+    }
+    out.truncate(100);
+    Ok(out)
+}
 fn info(auth: &Auth, s: &Store, endpoint: &str) -> Result<Value> {
     let info = remote::call(auth, s, endpoint, "GetSyncInfo", &json!({}))?;
     let identity = s.identity()?;
-    if info["formatVersion"] != 1 {
+    if info["formatVersion"] != 3 {
         return Err(Failure::new(
             "UNSUPPORTED_FORMAT",
             "Update Lane before synchronizing this format.",
@@ -202,16 +319,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
     if stale {
         return Err(auth::reconnect_error());
     }
-    let items = s.with(false, |c| {
-        rows(
-            c,
-            "SELECT request_json FROM outbox WHERE state=1 ORDER BY created_at_us,rowid LIMIT 100",
-            [],
-        )?
-        .into_iter()
-        .map(|raw| Ok(serde_json::from_str::<Value>(&raw)?))
-        .collect::<Result<Vec<_>>>()
-    })?;
+    let items = s.with(false, pending_batch)?;
     if !items.is_empty() {
         lease(s, owner, Some(identity))?;
         let response = remote::call(
@@ -220,7 +328,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
             endpoint,
             "PushChanges",
             &json!({
-            "formatVersion":1,"epoch":epoch,"deviceId":s.device,"mutations":items}
+            "formatVersion":3,"epoch":epoch,"deviceId":s.device,"mutations":items}
             ),
         )?;
         let results = response["results"]
@@ -263,13 +371,25 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
                             ],
                         )?;
                     }
+                    // A constraint rejection is final for this immutable version: keep it
+                    // blocked with the named violation until the user corrects the data.
+                    let (next_state, stored) = if reason == "ERROR_REASON_CONSTRAINT_VIOLATION" {
+                        (
+                            2,
+                            format!(
+                                "CONSTRAINT_VIOLATION:{}",
+                                strv(e, "violation").trim_start_matches("CONSTRAINT_VIOLATION_")
+                            ),
+                        )
+                    } else {
+                        (
+                            if e["retryable"] == true { 1 } else { 2 },
+                            reason.to_owned(),
+                        )
+                    };
                     c.execute(
                         "UPDATE outbox SET state=?,error_reason=? WHERE request_id=?",
-                        params![
-                            if e["retryable"] == true { 1 } else { 2 },
-                            reason,
-                            strv(r, "requestId")
-                        ],
+                        params![next_state, stored, strv(r, "requestId")],
                     )?;
                 } else {
                     sync::apply(c, &r["result"])?;
@@ -295,7 +415,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
             endpoint,
             "PullChanges",
             &json!({
-            "formatVersion":1,"epoch":epoch,"cursor":cursor,"pageSize":100}
+            "formatVersion":3,"epoch":epoch,"cursor":cursor,"pageSize":100}
             ),
         )?;
         if response["hasMore"] == true && response["nextCursor"] == cursor {
@@ -321,6 +441,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
             break;
         }
     }
+    attachments(auth, s, endpoint, owner, identity, epoch)?;
     s.with(true, |c| {
         guard(s, c, owner)?;
         put_meta(c, "sync_error_reason", "")?;
@@ -355,7 +476,7 @@ pub fn reconnect(auth: &Auth, s: &Store, consent: &Value) -> Result<()> {
                 "",
                 "PullChanges",
                 &json!({
-                "formatVersion":1,"epoch":epoch,"pageSize":1}
+                "formatVersion":3,"epoch":epoch,"pageSize":1}
                 ),
             );
             match probe {
@@ -404,6 +525,7 @@ if current!=sequence||meta(c,"reconnect_required")?!="1"{
 return Err(auth::reconnect_error());
 }
 let versions=sync::ordered(c)?;
+c.execute("UPDATE attachments SET synchronized=0", [])?;
 c.execute("DELETE FROM outbox",[])?;
 for(i,v)in versions.into_iter().enumerate(){
 let rid=id();
@@ -480,7 +602,9 @@ sync::mappings(dst,&json!([{
 ]))?;
 }
 }
+    import_attachment_identities(src, dst)?;
     import_versions(src, dst)?;
+    import_attachments(src, dst)?;
     let mut stmt=src.prepare("SELECT method,request_id,fingerprint,entity_id,result_json FROM receipts")?;
 for row in stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,String>(4)?)))?{
 let(method,id,fp,entity,mut result)=row?;
@@ -505,8 +629,11 @@ if deleted&&mutation["version"]["deleted"]!=true{
 continue;
 }
 let old:Option<String>=dst.query_row("SELECT request_json FROM outbox WHERE request_id=?",[&id],|r|r.get(0)).optional()?;
-if old.is_some_and(|old|old!=raw){
+if let Some(old)=old {
+let previous:Value=serde_json::from_str(&old)?;
+if crate::protocol::fingerprint(&crate::protocol::message("SyncMutation",&previous)?) != crate::protocol::fingerprint(&crate::protocol::message("SyncMutation",&mutation)?) {
 return Err(invalid("Outbox identity reused during import."));
+}
 }
 dst.execute("INSERT OR IGNORE INTO outbox VALUES(?,?,?,?,?,?)",params![id,entity,raw,state,reason,created])?;
 }
@@ -573,3 +700,298 @@ fn import_versions(src: &Connection, dst: &Connection) -> Result<()> {
     }
     Ok(())
 }
+
+fn import_attachment_identities(src: &Connection, dst: &Connection) -> Result<()> {
+    // Include deleted owners with no remaining bytes, heads or versions. The
+    // identity table deliberately has no FK to content-bearing entities.
+    let mut stmt =
+        src.prepare("SELECT id,task_id,sha256,width,height,byte_size FROM attachment_identities")?;
+    for row in stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)?,
+            r.get::<_, i64>(4)?,
+            r.get::<_, i64>(5)?,
+        ))
+    })? {
+        let (id, task, hash, width, height, size) = row?;
+        Store::remember_capture_identity(
+            dst,
+            &task,
+            &json!({"attachmentId":id,"sha256":hash,"width":width,"height":height,"byteSize":size.to_string()}),
+        )?;
+    }
+    Ok(())
+}
+
+fn import_attachments(src: &Connection, dst: &Connection) -> Result<()> {
+    let mut stmt =
+        src.prepare("SELECT id,task_id,sha256,width,height,byte_size,png_base64 FROM attachments")?;
+    for row in stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)?,
+            r.get::<_, i64>(4)?,
+            r.get::<_, i64>(5)?,
+            r.get::<_, Option<String>>(6)?,
+        ))
+    })? {
+        let (id, task, hash, width, height, size, png) = row?;
+        Store::remember_capture_identity(
+            dst,
+            &task,
+            &json!({"attachmentId":id,"sha256":hash,"width":width,"height":height,"byteSize":size.to_string()}),
+        )?;
+        let alive: bool = dst.query_row(
+            "SELECT EXISTS(SELECT 1 FROM entities WHERE id=? AND kind=2 AND deleted=0)",
+            [&task],
+            |r| r.get(0),
+        )?;
+        if !alive {
+            continue;
+        }
+        let old: Option<(String, String, i64, i64, i64)> = dst
+            .query_row(
+                "SELECT task_id,sha256,width,height,byte_size FROM attachments WHERE id=?",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()?;
+        if old.is_some_and(|old| old != (task.clone(), hash.clone(), width, height, size)) {
+            return Err(invalid("Immutable attachment changed during import."));
+        }
+        dst.execute("INSERT INTO attachments(id,task_id,sha256,width,height,byte_size,png_base64,synchronized) VALUES(?,?,?,?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET png_base64=coalesce(attachments.png_base64,excluded.png_base64)", params![id,task,hash,width,height,size,png])?;
+    }
+    Ok(())
+}
+
+// Transfer URLs are transient capabilities. Use a separate client with no Lane
+// bearer token, cookies, or redirects, and never store or log these URLs.
+fn object_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+        .timeout(Duration::from_secs(45))
+        .build()
+        .map_err(|_| {
+            Failure::new(
+                "DEPENDENCY_UNAVAILABLE",
+                "Attachment transport is unavailable.",
+            )
+        })
+}
+fn signed_url(value: &Value, field: &str) -> Result<url::Url> {
+    let url = url::Url::parse(strv(value, field))
+        .map_err(|_| invalid("Invalid signed attachment access."))?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(invalid(
+            "Signed attachment access requires HTTPS without credentials.",
+        ));
+    }
+    if !chrono::DateTime::parse_from_rfc3339(strv(value, "expiresAt"))
+        .is_ok_and(|t| t > chrono::Utc::now())
+    {
+        return Err(Failure::new(
+            "DEPENDENCY_UNAVAILABLE",
+            "Attachment access expired; retry synchronization.",
+        ));
+    }
+    Ok(url)
+}
+fn attachments(
+    auth: &Auth,
+    s: &Store,
+    endpoint: &str,
+    owner: &str,
+    identity: &Identity,
+    epoch: &str,
+) -> Result<()> {
+    use crate::network::SendRequest;
+    let client = object_client()?;
+    let rpc = |method: &str, request: &Value| remote::call(auth, s, endpoint, method, request);
+    let object =
+        |request: reqwest::RequestBuilder, limit| request.send_cancellable_limit(auth, limit);
+    attachments_with_io(
+        s,
+        owner,
+        identity,
+        epoch,
+        &AttachmentIo {
+            client: &client,
+            rpc: &rpc,
+            object: &object,
+        },
+    )
+}
+
+// Private injection boundary: tests replace I/O, never URL validation or the
+// authenticated store/epoch guards. Production always uses the isolated client.
+struct AttachmentIo<'a> {
+    client: &'a reqwest::Client,
+    rpc: &'a dyn Fn(&str, &Value) -> Result<Value>,
+    object: &'a dyn Fn(reqwest::RequestBuilder, usize) -> Result<crate::network::Response>,
+}
+fn attachments_with_io(
+    s: &Store,
+    owner: &str,
+    identity: &Identity,
+    epoch: &str,
+    io: &AttachmentIo<'_>,
+) -> Result<()> {
+    let pending = s.with(false, |c| {
+        let mut stmt = c.prepare("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE e.deleted=0 AND (a.synchronized=0 OR a.png_base64 IS NULL) ORDER BY a.id")?;
+        let items = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,i64>(5)?,r.get::<_,Option<String>>(6)?)))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        Ok(items)
+    })?;
+    let mut failure = None;
+    for (attachment, task, hash, width, height, size, png) in pending {
+        lease(s, owner, Some(identity))?;
+        let reference = json!({"attachmentId":attachment,"sha256":hash,"width":width,"height":height,"byteSize":size.to_string()});
+        let result = transfer_attachment(io, epoch, &task, &reference, png.as_deref());
+        match result {
+            Ok(bytes) => {
+                use base64::Engine;
+                lease(s, owner, Some(identity))?;
+                s.with(true, |c| {
+                    guard(s,c,owner)?;
+                    if meta(c,"account_epoch")? != epoch || meta(c,"reconnect_required")? == "1" { return Err(auth::reconnect_error()); }
+                    // Owner deletion or replacement during I/O must never recreate content.
+                    c.execute("UPDATE attachments SET png_base64=?,synchronized=1 WHERE id=? AND task_id=? AND sha256=? AND width=? AND height=? AND byte_size=? AND EXISTS(SELECT 1 FROM entities WHERE id=? AND deleted=0)", params![base64::engine::general_purpose::STANDARD.encode(bytes),attachment,task,hash,width,height,size,task])?;
+                    c.execute("INSERT INTO changes(entity_id,change_kind) VALUES(?,1)", [&task])?;
+                    Ok(())
+                })?;
+            }
+            Err(e) => {
+                if matches!(
+                    e.reason.as_str(),
+                    "ERROR_REASON_FORBIDDEN"
+                        | "ERROR_REASON_UNAUTHENTICATED"
+                        | "ERROR_REASON_STALE_EPOCH"
+                        | "ERROR_REASON_UNSUPPORTED_FORMAT"
+                ) {
+                    return Err(e);
+                }
+                tracing::warn!(reason=%e.reason, "Lane attachment synchronization failed");
+                failure = Some(e);
+            }
+        }
+    }
+    failure.map_or(Ok(()), Err)
+}
+fn transfer_attachment(
+    io: &AttachmentIo<'_>,
+    epoch: &str,
+    task: &str,
+    reference: &Value,
+    png: Option<&str>,
+) -> Result<Vec<u8>> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let request = json!({"taskId":task,"attachmentId":reference["attachmentId"],"epoch":epoch});
+    let unavailable = || {
+        Failure::new(
+            "DEPENDENCY_UNAVAILABLE",
+            "Attachment is waiting for synchronization; retry.",
+        )
+    };
+    let bytes = if let Some(png) = png {
+        let bytes = STANDARD
+            .decode(png)
+            .map_err(|_| invalid("Invalid stored attachment encoding."))?;
+        crate::capture::validate_png(reference, &bytes)?;
+        let begin = (io.rpc)("BeginAttachmentUpload", &request)?;
+        if begin["state"] != "ATTACHMENT_STATE_AVAILABLE" {
+            let url = signed_url(&begin, "uploadUrl")?;
+            let mut put = io.client.put(url).body(bytes.clone());
+            if let Some(headers) = begin["headers"].as_object() {
+                for (name, value) in headers {
+                    if name.eq_ignore_ascii_case("authorization")
+                        || name.eq_ignore_ascii_case("proxy-authorization")
+                        || name.eq_ignore_ascii_case("cookie")
+                        || name.eq_ignore_ascii_case("host")
+                    {
+                        return Err(invalid("Invalid attachment upload header."));
+                    }
+                    put = put.header(
+                        name,
+                        value
+                            .as_str()
+                            .ok_or_else(|| invalid("Invalid attachment upload header."))?,
+                    );
+                }
+            }
+            if !(io.object)(put, 16 << 20)?.status().is_success() {
+                return Err(unavailable());
+            }
+            let mut complete = request;
+            complete["uploadId"] = begin["uploadId"].clone();
+            if (io.rpc)("CompleteAttachmentUpload", &complete)?["state"]
+                != "ATTACHMENT_STATE_AVAILABLE"
+            {
+                return Err(unavailable());
+            }
+        }
+        bytes
+    } else {
+        let response = (io.rpc)(
+            "GetAttachment",
+            &json!({"taskId":task,"attachmentId":reference["attachmentId"]}),
+        )?;
+        if response["state"] != "ATTACHMENT_STATE_AVAILABLE" {
+            return Err(unavailable());
+        }
+        if strv(&response, "png").is_empty() {
+            let size = strv(reference, "byteSize")
+                .parse::<usize>()
+                .map_err(|_| invalid("Invalid attachment byte count."))?;
+            let response = (io.object)(io.client.get(signed_url(&response, "downloadUrl")?), size)?;
+            if !response.status().is_success() {
+                return Err(unavailable());
+            }
+            response.body
+        } else {
+            STANDARD
+                .decode(strv(&response, "png"))
+                .map_err(|_| invalid("Invalid attachment encoding."))?
+        }
+    };
+    crate::capture::validate_png(reference, &bytes)?;
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::*;
+    #[test]
+    fn signed_access_rejects_credentials_insecure_transport_and_expiry() {
+        let expires = (chrono::Utc::now() + chrono::Duration::minutes(1)).to_rfc3339();
+        for url in [
+            "http://example.com/image",
+            "https://user:secret@example.com/image",
+            "https://example.com/image#fragment",
+            "file:///image",
+        ] {
+            assert!(
+                signed_url(
+                    &json!({"downloadUrl":url,"expiresAt":expires}),
+                    "downloadUrl"
+                )
+                .is_err()
+            );
+        }
+        assert!(signed_url(&json!({"downloadUrl":"https://example.com/image?signature=transient","expiresAt":expires}),"downloadUrl").is_ok());
+        assert!(signed_url(&json!({"downloadUrl":"https://example.com/image","expiresAt":"2000-01-01T00:00:00Z"}),"downloadUrl").is_err());
+    }
+}
+
+#[cfg(test)]
+#[path = "syncclient_attachment_tests.rs"]
+mod object_transport_tests;

@@ -16,7 +16,7 @@ import { createConnectTransport } from "@connectrpc/connect-web";
 import {
   ApiKeyPermission,
   DevBaseService,
-} from "@delino/protos/devbase/v1/devbase_pb";
+} from "@repo/protos/devbase/v1/devbase_pb";
 import { randomUUID } from "node:crypto";
 
 const base = process.env.DEVBASE_URL || "http://127.0.0.1:46317";

@@ -9,22 +9,193 @@ import {
   lynxBridge,
 } from "@lynx-js/lynxtron";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { control, WindowSession, unavailable } from "./bridge.mjs";
+import { DesktopUpdater } from "./updater.mjs";
+import { RealQA } from "./realqa.mjs";
+import { connectChrome } from "./realqa-chrome.mjs";
+import { homedir } from "node:os";
+import { WorkspaceExit } from "./workspace-exit.mjs";
+import { realQASmoke } from "./realqa-smoke.mjs";
+import {
+  dispatchReadyTabCommand,
+  tabCommandAvailable,
+  tabShortcutItems,
+} from "./tab-shortcuts.mjs";
 
 const resources = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const { scheme } = require("./package.json");
+const config = require("./package.json");
+const { scheme, chromeExtensionIds = [] } = config;
 const native = require("./lane_host.node");
-let window, windowSession, tray, poller;
+let window, windowSession, tray, poller, composer, realqa, updater;
+let captureWindows = [];
+let pendingCommandPalette = false;
+let workspaceExit = new WorkspaceExit();
+let tabState;
+let tabMenuItems = [];
+const updateTabMenu = () => {
+  const active =
+    window &&
+    !window.isDestroyed() &&
+    window.isFocused() &&
+    windowSession?.ready;
+  for (const item of tabMenuItems)
+    if (item.menuItem)
+      item.menuItem.enabled = !!active && tabCommandAvailable(item, tabState);
+};
+const dispatchTabCommand = (request, focusedWindow, event) => {
+  try {
+    if (
+      !dispatchReadyTabCommand(
+        request,
+        focusedWindow,
+        event,
+        window,
+        windowSession,
+        tabState,
+        stopping,
+      )
+    )
+      log("lane_tab_command_rejected");
+  } catch {
+    log("lane_tab_command_failed");
+  }
+};
+const pendingRealQA = [];
+const emitRealQA = (name, value) => {
+  if (
+    ["lane.realqa.select", "lane.realqa.saved", "lane.realqa.error"].includes(
+      name,
+    ) &&
+    !windowSession?.ready
+  ) {
+    pendingRealQA.push([name, value]);
+    return;
+  }
+  for (const owner of [window, composer])
+    if (owner && !owner.isDestroyed()) owner.sendGlobalEvent(name, value);
+};
+const facade = (kind) => ({
+  store: native.store,
+  host: {
+    ...native.host,
+    workspace: (raw, reply) => {
+      if (kind !== "main") {
+        reply(unavailable);
+        return;
+      }
+      try {
+        const action = workspaceExit.update(raw);
+        const { tabs } = JSON.parse(raw);
+        if (
+          tabs &&
+          Number.isInteger(tabs.count) &&
+          tabs.count >= 1 &&
+          Number.isInteger(tabs.history) &&
+          tabs.history >= 0 &&
+          Number.isInteger(tabs.selectedIndex) &&
+          tabs.selectedIndex >= 0 &&
+          tabs.selectedIndex < tabs.count &&
+          Number.isInteger(tabs.focusedIndex) &&
+          tabs.focusedIndex >= -1 &&
+          tabs.focusedIndex < tabs.count
+        ) {
+          tabState = tabs;
+          updateTabMenu();
+        }
+        reply(JSON.stringify({ ok: true }));
+        if (action === "quit") app.quit();
+        else if (action === "close") window?.close();
+      } catch {
+        reply(unavailable);
+      }
+    },
+    realqa: (raw, reply) => void realqa.invoke(raw, kind).then(reply),
+    update: (action, reply) => {
+      if (
+        kind !== "main" ||
+        !updater ||
+        !["status", "start", "cancel"].includes(action)
+      ) {
+        reply(unavailable);
+        return;
+      }
+      const operation =
+        action === "start"
+          ? updater.start()
+          : action === "cancel"
+            ? Promise.resolve(updater.cancel()).then(() => updater.status())
+            : updater.status();
+      void operation.then(
+        (response) => reply(JSON.stringify({ ok: true, response })),
+        () => reply(unavailable),
+      );
+    },
+  },
+});
+function showComposer() {
+  if (composer && !composer.isDestroyed()) {
+    composer.show();
+    composer.focus();
+    return;
+  }
+  const owner = new LynxWindow({
+    width: 1200,
+    height: 840,
+    minWidth: 390,
+    minHeight: 480,
+    title: "RealQA",
+    resizable: true,
+  });
+  composer = owner;
+  owner.setAlwaysOnTop(true, "floating");
+  const session = new WindowSession((result) =>
+    log("lane_view_handle_release_failed", result, "composer"),
+  );
+  owner.on("-lynx-invoke", (event, channel, request) => {
+    if (channel !== "lane.native") return;
+    const response = stopping
+      ? Promise.resolve(unavailable)
+      : session.invoke(facade("composer"), request);
+    void response.then(
+      (result) => event.sendReply(result),
+      () => event.sendReply(unavailable),
+    );
+  });
+  owner.on("close", (event) => {
+    if (!quitting && realqa?.draft) {
+      event.preventDefault();
+      owner.sendGlobalEvent("lane.realqa.closeRequested", {});
+    }
+  });
+  owner.on("closed", () => {
+    session.retire();
+    if (composer === owner) composer = undefined;
+  });
+  owner.once("ready-to-show", () =>
+    owner.sendGlobalEvent("lane.realqa.composer", {}),
+  );
+  if (!owner.loadFile(join(resources, "main.lynx.bundle")))
+    throw new Error("RealQA template could not load.");
+  owner.show();
+}
+
 let started = false;
 let quitting = false,
   stopping = false;
 const pendingURLs = [];
 const pendingRoutes = [];
-const log = (event) =>
-  console.info(JSON.stringify({ event, platform: process.platform }));
+const log = (event, result, view) =>
+  console.info(
+    JSON.stringify({
+      event,
+      platform: process.platform,
+      ...(result ? { result } : {}),
+      ...(view ? { view } : {}),
+    }),
+  );
 const failed = () => log("lane_host_operation_failed");
 const runControl = (method, value) =>
   control(native, method, value).catch(failed);
@@ -36,7 +207,9 @@ function showWindow() {
     window.focus();
     return;
   }
-  const session = new WindowSession();
+  const session = new WindowSession((result) =>
+    log("lane_view_handle_release_failed", result, "main"),
+  );
   windowSession = session;
   window = new LynxWindow({
     width: 1280,
@@ -52,23 +225,44 @@ function showWindow() {
     if (channel !== "lane.native") return;
     const response = stopping
       ? Promise.resolve(unavailable)
-      : session.invoke(native, request);
+      : session.invoke(facade("main"), request);
     void response.then(
-      (result) => event.sendReply(result),
+      (result) => {
+        updateTabMenu();
+        event.sendReply(result);
+      },
       () => event.sendReply(unavailable),
     );
   });
-  window.on("focus", () => runControl("resume"));
+  owner.on("close", (event) => {
+    if (!quitting && !workspaceExit.request("close")) {
+      event.preventDefault();
+      log("lane_window_close_deferred");
+      owner.sendGlobalEvent("lane.workspace.exitRequested", {});
+    }
+  });
+  window.on("focus", () => {
+    updateTabMenu();
+    runControl("resume");
+  });
+  window.on("blur", updateTabMenu);
   window.on("closed", () => {
+    updater?.cancel();
     session.retire();
     if (window === owner) {
+      workspaceExit = new WorkspaceExit();
+      tabState = undefined;
+      updateTabMenu();
       window = undefined;
       windowSession = undefined;
       runControl("viewClosed");
     }
   });
   window.on("--lynx-error", () => log("lane_template_failed"));
-  window.once("ready-to-show", () => log("lane_template_loaded"));
+  window.once("ready-to-show", () => {
+    log("lane_template_loaded");
+    void updater?.healthy();
+  });
   if (!window.loadFile(join(resources, "main.lynx.bundle")))
     throw new Error("The embedded Lane template could not be loaded.");
   window.show();
@@ -85,13 +279,43 @@ function activateURL(url) {
 }
 function flushEvents() {
   for (const event of JSON.parse(native.poll())) {
+    if (event.name === "lane.realqa.shortcut") {
+      void realqa
+        .invoke(
+          JSON.stringify({
+            op: "capture",
+            mode: event.arguments[0].mode,
+            trigger: "shortcut",
+          }),
+          "main",
+        )
+        .then((raw) => {
+          const reply = JSON.parse(raw);
+          if (!reply.ok) {
+            showWindow();
+            emitRealQA("lane.realqa.error", reply.error);
+          }
+        });
+      continue;
+    }
     if (event.name === "lane.activate") {
       showWindow();
       continue;
     }
     if (event.name === "lane.openRoute") pendingRoutes.push(event.arguments);
-    else if (window && !window.isDestroyed())
-      window.sendGlobalEvent(event.name, ...event.arguments);
+    else {
+      for (const owner of [window, composer])
+        if (owner && !owner.isDestroyed())
+          owner.sendGlobalEvent(event.name, ...event.arguments);
+    }
+  }
+  if (windowSession?.ready && window && !window.isDestroyed()) {
+    if (pendingCommandPalette) {
+      pendingCommandPalette = false;
+      window.sendGlobalEvent("lane.commandPalette", {});
+    }
+    for (const [name, value] of pendingRealQA.splice(0))
+      window.sendGlobalEvent(name, value);
   }
   if (windowSession?.ready && window && !window.isDestroyed())
     for (const args of pendingRoutes.splice(0))
@@ -133,18 +357,30 @@ app.on("before-quit", (event) => {
   if (!started || quitting) return;
   event.preventDefault();
   if (stopping) return;
+  if (window && !window.isDestroyed() && !workspaceExit.request("quit")) {
+    showWindow();
+    log("lane_quit_deferred");
+    window.sendGlobalEvent("lane.workspace.exitRequested", {});
+    return;
+  }
   stopping = true;
+  updater?.cancel();
   // Keep event pumping active while native workers finish their UI callbacks.
-  control(native, "stop")
+  Promise.resolve(realqa?.stop())
+    .then(() => control(native, "stop"))
+    .then(() => updater?.commitInstall())
     .then(() => {
       clearInterval(poller);
       tray?.destroy();
       quitting = true;
+      realqa?.originals.clear();
+      composer?.destroy();
       log("lane_stopped");
       app.quit();
     })
     .catch(() => {
       stopping = false;
+      if (updater?.state.phase === "installing") void updater.abortInstall();
       failed();
     });
 });
@@ -158,8 +394,75 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
 } else {
   app
     .whenReady()
-    .then(() => {
+    .then(async () => {
       native.configure(resources, scheme);
+      updater = new DesktopUpdater({
+        resources,
+        install: resolve(
+          resources,
+          process.platform === "darwin" ? "../../.." : "../..",
+        ),
+        stateDirectory: app.getPath("userData"),
+        config,
+        restart: () => app.quit(),
+        canRestart: () =>
+          !realqa?.draft &&
+          !workspaceExit.dirty &&
+          !workspaceExit.busy &&
+          !stopping &&
+          !!window &&
+          !window.isDestroyed(),
+        log: (event) => console.info(JSON.stringify(event)),
+      });
+      const dataRoot =
+        native.testing && process.env.LANE_NATIVE_TEST_ROOT
+          ? process.env.LANE_NATIVE_TEST_ROOT
+          : process.platform === "darwin"
+            ? join(homedir(), "Library/Application Support/io.delino.lane")
+            : join(process.env.LOCALAPPDATA, "io.delino.lane");
+      realqa = new RealQA({
+        native,
+        settingsPath: join(dataRoot, "realqa-shortcuts.json"),
+        emit: emitRealQA,
+        showComposer,
+        closeComposer: () => composer?.destroy(),
+        onSaved: (taskId, spaceId) => {
+          showWindow();
+          emitRealQA("lane.realqa.saved", { taskId, spaceId });
+        },
+        selectSource: (mode) => {
+          showWindow();
+          emitRealQA("lane.realqa.select", { mode });
+        },
+        beforeCapture: async () => {
+          captureWindows = [window, composer].filter(
+            (owner) => owner && !owner.isDestroyed() && owner.isVisible(),
+          );
+          for (const owner of captureWindows) owner.hide();
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        },
+        afterCapture: () => {
+          if (stopping) return;
+          for (const owner of captureWindows)
+            if (!owner.isDestroyed()) owner.show();
+          captureWindows = [];
+          if (realqa.draft && composer && !composer.isDestroyed())
+            composer.focus();
+        },
+      });
+      await realqa.start();
+      if (chromeExtensionIds.length) {
+        try {
+          realqa.extension = await connectChrome({
+            realqa,
+            dataRoot,
+            extensionIds: chromeExtensionIds,
+            showWindow,
+          });
+        } catch {
+          log("lane_chrome_connection_unavailable");
+        }
+      }
       started = true;
       if (notificationRoute)
         pendingRoutes.push([JSON.parse(notificationRoute)]);
@@ -174,26 +477,54 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
         });
       if (!app.setAsDefaultProtocolClient(scheme))
         log("lane_protocol_registration_unavailable");
-      Menu.setApplicationMenu(
-        Menu.buildFromTemplate([
-          {
-            label: "Lane",
-            submenu: [
-              {
-                label: "Open Lane",
-                accelerator: "CmdOrCtrl+O",
-                click: showWindow,
-              },
-              {
-                label: "Quit Lane",
-                accelerator: "CmdOrCtrl+Q",
-                click: () => app.quit(),
-              },
-            ],
-          },
-          { role: "editMenu" },
-        ]),
+      const tabShortcuts = tabShortcutItems(
+        process.platform,
+        dispatchTabCommand,
       );
+      const applicationMenu = Menu.buildFromTemplate([
+        {
+          label: "Lane",
+          submenu: [
+            {
+              label: "Open Lane",
+              accelerator: "CmdOrCtrl+O",
+              click: showWindow,
+            },
+            {
+              label: "Quit Lane",
+              accelerator: "CmdOrCtrl+Q",
+              click: () => app.quit(),
+            },
+          ],
+        },
+        { role: "editMenu" },
+        {
+          label: "Navigate",
+          submenu: [
+            {
+              label: "Go to a page or repository...",
+              accelerator: "CmdOrCtrl+K",
+              click: () => {
+                showWindow();
+                pendingCommandPalette = true;
+              },
+            },
+            { type: "separator" },
+            ...tabShortcuts.map(({ id, label, accelerator, click }) => ({
+              id,
+              label,
+              accelerator,
+              click,
+              enabled: false,
+            })),
+          ],
+        },
+      ]);
+      tabMenuItems = tabShortcuts.map((item) => ({
+        ...item,
+        menuItem: applicationMenu.getMenuItemById(item.id),
+      }));
+      Menu.setApplicationMenu(applicationMenu);
       if (process.platform === "win32") {
         tray = new Tray(
           nativeImage.createFromPath(join(resources, "Lane.ico")),
@@ -219,6 +550,17 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
       for (const url of [...pendingURLs.splice(0), ...process.argv])
         activateURL(url);
       log("lane_started");
+      if (
+        native.testing &&
+        process.env.LANE_NATIVE_TEST_ROOT &&
+        process.env.LANE_NATIVE_TEST_CAPTURE === "1"
+      ) {
+        try {
+          await realQASmoke(realqa);
+        } catch {
+          console.log("LANE_NATIVE_CAPTURE_FAILED");
+        }
+      }
       if (native.testing && process.env.LANE_NATIVE_TEST_LIFECYCLE === "1") {
         setTimeout(() => {
           window?.close();

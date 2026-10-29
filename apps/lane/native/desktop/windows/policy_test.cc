@@ -47,6 +47,13 @@ int main() {
   assert(QuoteArgument(L"a b") == L"\"a b\"");
   assert(QuoteArgument(L"a\"b") == L"\"a\\\"b\"");
   assert(QuoteArgument(L"C:\\path with spaces\\") == L"\"C:\\path with spaces\\\\\"");
+  assert(RetentionFromNumber(1) == LocalRetention::KeepLocal);
+  assert(RetentionFromNumber(2) == LocalRetention::RemoveLocal);
+  for (double invalid : {0.0, 3.0, -1.0, 1.5, 2.000001}) assert(RetentionFromNumber(invalid) == LocalRetention::Unspecified);
+  assert(RetentionFromName("LOCAL_RETENTION_KEEP_LOCAL") == LocalRetention::KeepLocal);
+  assert(RetentionFromName("LOCAL_RETENTION_REMOVE_LOCAL") == LocalRetention::RemoveLocal);
+  for (const auto* invalid : {"", "INVALID", "KEEP_LOCAL", "REMOVE_LOCAL", "LOCAL_RETENTION_UNSPECIFIED", "1", "2"})
+    assert(RetentionFromName(invalid) == LocalRetention::Unspecified);
   assert(RetryDelay(0).count() == 1 && RetryDelay(1000).count() == 60);
 
   std::thread::id owner;

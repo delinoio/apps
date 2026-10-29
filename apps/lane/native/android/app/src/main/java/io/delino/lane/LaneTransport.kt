@@ -9,6 +9,7 @@ import java.net.URLEncoder
 
 internal class LaneTransport(private val base: String = "https://lane.api.delino.io",
     private val open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
+    class AttachmentFailure : Exception("Signed attachment access failed; renew access and retry")
     class Failure(val status: Int, val body: String) : Exception("Lane network request failed")
     fun form(path: String, fields: Map<String, String>): JSONObject = JSONObject(exchange(path,
         fields.entries.joinToString("&") { "${encode(it.key)}=${encode(it.value)}" },
@@ -29,6 +30,23 @@ internal class LaneTransport(private val base: String = "https://lane.api.delino
         JSONObject(exchange(path, request.toString(), "application/json", token))
     fun rpc(service: String, method: String, request: String, token: String): String =
         exchange("/$service/$method", request, "application/json", token)
+    // Signed object access never carries API credentials, cookies or redirect authority.
+    fun attachment(url: String): ByteArray {
+        val target = URL(url)
+        require(target.protocol == "https" && target.host.isNotEmpty() && target.userInfo == null && target.ref == null)
+        val connection = open(target).apply {
+            instanceFollowRedirects = false
+            useCaches = false
+            connectTimeout = 15000
+            readTimeout = 30000
+            requestMethod = "GET"
+        }
+        try {
+            val status = connection.responseCode
+            if (status !in 200..299) throw AttachmentFailure()
+            return connection.inputStream.use { it.readBytes() }
+        } finally { connection.disconnect() }
+    }
     private fun connection(path: String, type: String, token: String?): HttpURLConnection {
         require(base.startsWith("https://") && path.startsWith('/'))
         return open(URL(base + path)).apply {

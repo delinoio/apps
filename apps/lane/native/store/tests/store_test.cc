@@ -94,9 +94,9 @@ struct Fixture {
   lane::Store store{root.path.string()};
   std::string space, device;
   Fixture() {
-    const auto opened = success(store.open(R"({"formatVersion":1,"spaceId":""})"));
+    const auto opened = success(store.open(R"({"formatVersion":3,"spaceId":""})"));
     space = opened.at("spaceId"); device = opened.at("deviceId");
-    require(opened.at("schemaVersion") == 1 && opened.at("formatVersion") == 1,
+    require(opened.at("schemaVersion") == 3 && opened.at("formatVersion") == 3,
             "open version metadata");
   }
   fs::path database() const { return root.path / "spaces" / space / "lane.sqlite"; }
@@ -161,11 +161,11 @@ void crud_replay_persistence() {
   require(items(f.call("ListRepositories")).size() == 1, "atomic repository creation");
   success(f.store.close(f.space));
   lane::Store reopened(f.root.path.string());
-  auto opened = success(reopened.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump()));
+  auto opened = success(reopened.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump()));
   require(opened.at("deviceId") == f.device, "persistent device");
   auto result = success(reopened.invoke("GetTask", J{{"spaceId", f.space}, {"request", {{"id", v.at("entityId")}}}}.dump()));
   require(result.at("result").at("version") == same, "durable reopen");
-  error(J::parse(reopened.open(J{{"formatVersion", 1}, {"spaceId", uuid()}}.dump())), "NOT_FOUND");
+  error(J::parse(reopened.open(J{{"formatVersion", 3}, {"spaceId", uuid()}}.dump())), "NOT_FOUND");
 }
 void transitions_and_proposals() {
   Fixture f;
@@ -350,7 +350,7 @@ void observation_and_rollback() {
   require(events[0].at("sequence") == db.scalar("SELECT max(sequence) FROM changes"), "committed sequence");
   require(J::parse(f.store.poll()).empty(), "no repeated unchanged invalidation");
   lane::Store other(f.root.path.string());
-  success(other.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump()));
+  success(other.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump()));
   auto request = f.createRequest("Second writer");
   success(other.invoke("CreateTask", J{{"spaceId", f.space}, {"request", request}}.dump()));
   require(!J::parse(f.store.poll()).empty(), "second engine writer observed");
@@ -378,19 +378,19 @@ struct RemoteProposals {
   explicit RemoteProposals(Fixture& fixture) : f(fixture) {
     success(f.store.approveAccount(J{{"issuer", "https://identity.example.test"},
         {"accountId", uuid()}, {"tenantId", uuid()}, {"epoch", epoch}}.dump(), false));
-    f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+    f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId");
     success(f.store.acquireSync(f.space, owner));
     repository = f.call("CreateRepository", {{"meta", f.meta()}, {"id", uuid()},
         {"url", "https://example.test/remote/proposals"}}).at("result").at("version");
   }
   void apply(const J& version) {
-    success(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner},
+    success(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", epoch}, {"owner", owner},
         {"pull", {{"changes", J::array({J{{"sequence", "1"}, {"entity", {
             {"result", "RESULT_KIND_APPLIED"}, {"version", version}}}}})},
             {"nextCursor", "synthetic-proposal-cursor"}, {"hasMore", false}}}}.dump()));
   }
   J create() {
-    J version = {{"formatVersion", 1}, {"entityId", uuid()}, {"kind", "ENTITY_KIND_TASK"},
+    J version = {{"formatVersion", 3}, {"entityId", uuid()}, {"kind", "ENTITY_KIND_TASK"},
         {"versionId", uuid()}, {"parentVersionIds", J::array()}, {"createdAt", "2026-01-01T00:00:00Z"},
         {"origin", {{"kind", "ORIGIN_KIND_MCP"}, {"deviceId", remote_device},
             {"deviceName", "Synthetic remote MCP"}, {"accountId", ""}}}, {"deleted", false},
@@ -445,6 +445,39 @@ void preferences_and_notifications() {
   f.call("SetNotificationPreferences", {{"enabled", true}, {"content", "NOTIFICATION_CONTENT_DETAIL"}});
   require(f.call("GetNotificationPreferences").at("permission") == "NOTIFICATION_PERMISSION_DENIED", "denial visible");
 }
+// The Settings screen submits numeric NotificationContent values even when the
+// store reads back ProtoJSON names, so notification items must follow both.
+void notification_content_from_ui_preferences() {
+  Fixture f; RemoteProposals remote(f);
+  lane::HostHooks hooks;
+  hooks.requestNotificationPermission = [] { return "NOTIFICATION_PERMISSION_GRANTED"; };
+  f.store.setHostHooks(hooks);
+  struct Case { int content; const char* name; bool generic; };
+  for (const auto& c : {Case{2, "NOTIFICATION_CONTENT_GENERIC", true},
+                        Case{1, "NOTIFICATION_CONTENT_DETAIL", false}}) {
+    f.call("SetNotificationPreferences", {{"enabled", true}, {"content", c.content}});
+    require(f.call("GetNotificationPreferences").at("content") == c.name, "numeric content reads back by name");
+    // Saving the named readback again without a content edit keeps the value.
+    f.call("SetNotificationPreferences", {{"enabled", true}, {"content", c.content}});
+    auto proposal = remote.create();
+    remote.apply(proposal);
+    const auto items = success(f.store.pendingNotifications(f.space)).at("items");
+    const auto id = proposal.at("entityId").get<std::string>();
+    bool found = false;
+    for (const auto& item : items) {
+      if (item.at("proposalId") != id) continue;
+      found = true;
+      require(item.at("content") == c.name, "notification item content");
+      if (c.generic) {
+        require(item.at("repositoryName") == "" && item.at("title") == "New Lane proposal", "generic item hides repository and title");
+      } else {
+        require(item.at("repositoryName") != "" && item.at("title") == "Remote proposal", "detail item keeps repository and title");
+      }
+    }
+    require(found, "eligible proposal produced a notification item");
+    success(f.store.acknowledgeNotification(f.space, id));
+  }
+}
 void concurrent_notification_claims() {
   Fixture f; RemoteProposals remote(f);
   lane::HostHooks hooks;
@@ -453,7 +486,7 @@ void concurrent_notification_claims() {
   f.call("SetNotificationPreferences", {{"enabled", true}, {"content", "NOTIFICATION_CONTENT_DETAIL"}});
   auto proposal = remote.create();
   lane::Store other(f.root.path.string());
-  success(other.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump()));
+  success(other.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump()));
   std::atomic<int> ready{0};
   auto claim = [&](lane::Store& store) {
     const auto claimant = uuid();
@@ -504,7 +537,7 @@ void accounts_and_host_hooks() {
   require(authorizations == 1 && connection.at("challengeId") == "synthetic-challenge", "authorization hook");
   const auto account_a = identity(uuid(), uuid(), uuid());
   success(f.store.approveAccount(account_a.dump(), false));
-  auto opened = success(f.store.open(R"({"formatVersion":1,"spaceId":""})"));
+  auto opened = success(f.store.open(R"({"formatVersion":3,"spaceId":""})"));
   f.space = opened.at("spaceId"); const auto first = f.space;
   require(first != standalone && items(f.call("ListTasks")).empty(), "approval without merge isolates standalone");
   auto same_request = f.createRequest("Account-scoped ID"); auto a = f.task(same_request);
@@ -519,30 +552,30 @@ void accounts_and_host_hooks() {
   require(disconnects == 1 && f.get(a.at("entityId")) == a, "keep local disconnect");
   const auto account_b = identity(uuid(), uuid(), uuid());
   success(f.store.approveAccount(account_b.dump(), false));
-  f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId");
   require(f.space != first && items(f.call("ListTasks")).empty(), "account B isolated");
   error(f.raw("GetTask", {{"id", a.at("entityId")}}), "NOT_FOUND");
   same_request["meta"]["origin"]["accountId"] = account_b.at("accountId");
   auto b = f.task(same_request);
   require(b.at("entityId") == a.at("entityId"), "same identity permitted in separate account");
   success(f.store.approveAccount(account_a.dump(), false));
-  f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId");
   require(f.space == first && f.get(a.at("entityId")) == a, "account reselection preserves original data");
-  success(f.store.open(J{{"formatVersion", 1}, {"spaceId", standalone}}.dump()));
+  success(f.store.open(J{{"formatVersion", 3}, {"spaceId", standalone}}.dump()));
   f.space = standalone;
   require(f.get(local.at("entityId")) == local, "standalone retained");
 }
 void explicit_account_merge() {
   Fixture f; auto local = f.task();
   success(f.store.approveAccount(identity(uuid(), uuid(), uuid()).dump(), true));
-  f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId");
   require(f.get(local.at("entityId")).at("task") == local.at("task"), "explicit standalone merge preserves task");
   require(f.history(local).size() == 1, "merge preserves history");
 }
 void sync_and_remote_cache() {
   Fixture f; const auto epoch = uuid();
   success(f.store.approveAccount(identity(uuid(), uuid(), epoch).dump(), false));
-  f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId");
   auto v = f.task(); Sql db(f.database());
   const auto owner = uuid(), rival = uuid();
   success(f.store.acquireSync(f.space, owner));
@@ -550,8 +583,8 @@ void sync_and_remote_cache() {
   require(db.scalar("SELECT value FROM store_meta WHERE key='sync_owner'") == owner, "single sync owner");
   f.store.pendingSync(f.space, owner);
   const auto before = counts(db);
-  error(J::parse(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", epoch}, {"owner", owner}}.dump())), "UNSUPPORTED_FORMAT");
-  error(J::parse(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", uuid()}, {"owner", owner}}.dump())), "STALE_EPOCH");
+  error(J::parse(f.store.applySync(f.space, J{{"formatVersion", 99}, {"epoch", epoch}, {"owner", owner}}.dump())), "UNSUPPORTED_FORMAT");
+  error(J::parse(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", uuid()}, {"owner", owner}}.dump())), "STALE_EPOCH");
   require(counts(db) == before, "invalid sync preserves pending mutations");
   const auto event_id = uuid(), receiver_id = uuid(), processing_id = uuid();
   auto repository_id = v.at("task").at("repositoryId");
@@ -564,7 +597,7 @@ void sync_and_remote_cache() {
       {"completedAt", "2026-01-01T00:01:00Z"}, {"origin", f.meta().at("origin")}};
   J changes = J::array({J{{"sequence", "1"}, {"receiver", receiver}},
       J{{"sequence", "2"}, {"event", event}}, J{{"sequence", "3"}, {"processing", processing}}});
-  J sync = {{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner},
+  J sync = {{"formatVersion", 3}, {"epoch", epoch}, {"owner", owner},
       {"pull", {{"changes", changes}, {"nextCursor", "synthetic-cursor-3"}, {"hasMore", false}}}};
   const auto cursor_before = db.scalar("SELECT value FROM store_meta WHERE key='pull_cursor'");
   db.exec("CREATE TRIGGER test_cache_failure BEFORE INSERT ON remote_objects BEGIN SELECT RAISE(ABORT,'synthetic cache failure'); END;");
@@ -594,12 +627,12 @@ void sync_and_remote_cache() {
   const auto request_id = mutation.at("meta").at("requestId").get<std::string>();
   J blocked = {{"results", J::array({J{{"requestId", request_id}, {"error", {
       {"reason", "ERROR_REASON_ITEM_TOO_LARGE"}, {"retryable", false}}}}})}};
-  success(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner}, {"push", blocked}}.dump()));
+  success(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", epoch}, {"owner", owner}, {"push", blocked}}.dump()));
   require(db.scalar("SELECT state FROM outbox WHERE request_id='" + request_id + "'") == "2", "oversized item remains blocked");
   require(db.scalar("SELECT count(*) FROM outbox") == pending, "one blocked item preserves other mutations");
   J push = {{"results", J::array({J{{"requestId", request_id}, {"result", {
       {"result", "RESULT_KIND_APPLIED"}, {"version", mutation.at("version")}}}}})}};
-  success(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner}, {"push", push}}.dump()));
+  success(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", epoch}, {"owner", owner}, {"push", push}}.dump()));
   require(db.scalar("SELECT count(*) FROM outbox WHERE request_id='" + request_id + "'") == "0", "ack removes only durable pending item");
 }
 void pagination_and_removal() {
@@ -627,7 +660,7 @@ void pagination_and_removal() {
   require(f.call("RemoveDeviceData").at("completed") == true, "remove selected device data");
   auto stale = f.raw("CreateTask", f.createRequest());
   require(!stale.value("ok", true), "removed space refuses new operations");
-  error(J::parse(f.store.open(J{{"formatVersion", 1}, {"spaceId", old_space}}.dump())), "NOT_FOUND");
+  error(J::parse(f.store.open(J{{"formatVersion", 3}, {"spaceId", old_space}}.dump())), "NOT_FOUND");
 }
 void repository_conflicts() {
   Fixture f;
@@ -660,23 +693,28 @@ void repository_conflicts() {
 void unsupported_schema() {
   Fixture f; auto v = f.task(); Sql db(f.database());
   const auto before = counts(db);
-  db.exec("PRAGMA user_version=2;");
+  db.exec("PRAGMA user_version=99;");
   error(f.raw("CreateTask", f.createRequest()), "UNSUPPORTED_FORMAT");
   require(counts(db) == before, "long-lived writer refuses upgraded schema");
   lane::Store second(f.root.path.string());
-  error(J::parse(second.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump())), "UNSUPPORTED_FORMAT");
-  require(db.scalar("PRAGMA user_version") == "2", "unsupported schema not replaced");
-  db.exec("PRAGMA user_version=1;");
-  db.exec("UPDATE store_meta SET value='2' WHERE key='format_version';");
+  error(J::parse(second.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump())), "UNSUPPORTED_FORMAT");
+  require(db.scalar("PRAGMA user_version") == "99", "unsupported schema not replaced");
+  db.exec("PRAGMA user_version=3;");
+  db.exec("UPDATE store_meta SET value='99' WHERE key='format_version';");
   error(f.raw("DeleteTask", {{"meta", f.meta()}, {"id", v.at("entityId")}}), "UNSUPPORTED_FORMAT");
   require(counts(db) == before, "unsupported format cannot delete data");
-  db.exec("UPDATE store_meta SET value='1' WHERE key='format_version'; PRAGMA application_id=123;");
+  db.exec("UPDATE store_meta SET value='3' WHERE key='format_version'; PRAGMA application_id=123;");
   error(f.raw("CreateTask", f.createRequest()), "UNSUPPORTED_FORMAT");
   require(counts(db) == before, "foreign application database preserved");
 }
+#include "capture_cases.h"
 #include "shared_fixture_runner.h"
+#include "planning_fixture_runner.h"
+#include "completed_fixture_runner.h"
+#include "planning_cases.h"
 #include "disk_full_vfs.h"
 #include "sync_hard_cases.h"
+#include "repository_identifier_cases.h"
 #include "shared_sync_runner.h"
 #include "epoch_lifecycle.h"
 #include "lifetime_locks.h"
@@ -686,12 +724,23 @@ int main(int argc, char** argv) {
   const std::vector<std::pair<const char*, std::function<void()>>> tests = {
     {"CRUD, replay and persistence", crud_replay_persistence},
     {"25 progress transitions and proposals", transitions_and_proposals},
+    {"legacy capture defaults",capture_legacy_empty_defaults},
+    {"capture lifecycle",capture_lifecycle},
+    {"capture upload handoff",capture_upload_handoff},
+    {"moved capture retained history import", moved_capture_and_rule_import_retained_history},
+    {"attachment identity deletion and import", attachment_identity_survives_deletion_and_import},
+    {"moved capture deleted repository replay", moved_capture_survives_deleted_repository_replay},
+    {"moved URL rule deleted repository replay", moved_url_rule_survives_deleted_repository_replay},
+    {"capture validation and cache",capture_validation_and_cache},
+    {"URL connection lifecycle",url_connections_lifecycle},
+    {"capture sync and import",capture_sync_and_import},
     {"prompt history and restore", prompt_history_restore},
     {"whole-task conflicts and resolution", conflicts_and_resolution},
     {"deletion, moves and replay", deletion_move_and_replay},
     {"URLs, Unicode and validation", urls_unicode_and_validation},
     {"external writers and rollback", observation_and_rollback},
     {"preferences and notifications", preferences_and_notifications},
+    {"notification content from UI preferences", notification_content_from_ui_preferences},
     {"concurrent notification claims", concurrent_notification_claims},
     {"accounts and host hooks", accounts_and_host_hooks},
     {"explicit account merge", explicit_account_merge},
@@ -714,6 +763,31 @@ int main(int argc, char** argv) {
     {"lifetime lock removal retry", lifetime_lock_removal_retry},
     {"restart marked cleanup", restart_marked_cleanup},
     {"deferred registry compatibility failure", deferred_registry_compatibility_failure},
+    {"planning lifecycle and restart", planning_lifecycle_and_restart},
+    {"planning conflicts and resolution", planning_conflicts_and_resolution},
+    {"planning deletion redaction and cascade", planning_deletion_redaction_and_cascade},
+    {"planning cleanup rollback", planning_cleanup_rolls_back_atomically},
+    {"conflicted tasks block cleanup", planning_conflicted_tasks_block_cleanup},
+    {"planning sync rejection and retry", planning_sync_rejection_and_retry},
+    {"planning envelope formats", planning_envelope_formats},
+    {"correction supersedes rejected chain", planning_correction_supersedes_rejected_chain},
+    {"stale alternative ignores discarded edits", planning_stale_alternative_ignores_discarded_edits},
+    {"stale specialized mutations are validated", planning_stale_specialized_mutations_are_validated},
+    {"deleted affected task is redacted from receipts", planning_deleted_affected_task_is_redacted_from_receipts},
+    {"list ignores dangling references", planning_list_ignores_dangling_references},
+    {"uploads edge removals before additions", planning_uploads_edge_removals_before_dependent_additions},
+    {"save removes one-sided incoming related links", planning_save_removes_one_sided_incoming_related_links},
+    {"unsupported store and reset", unsupported_store_and_reset},
+    {"development reset coordination", development_reset_coordination},
+    {"reset rejects open handles of the same process", reset_rejects_open_handles_of_the_same_process},
+    {"interrupted reset is repeatable", interrupted_reset_is_repeatable},
+    {"conflicted heads, union cycles and cursor scope", planning_conflict_union_cycle_and_cursor_scope},
+    {"reset account reconnect flow", reset_account_space_reconnect_flow},
+    {"repository identifier resolution and editing", repository_identifier_resolution_and_editing},
+    {"repository identifier name-only save with counterpart", repository_identifier_name_only_save_with_counterpart},
+    {"repository identifier sync, import and merge", repository_identifier_sync_import_and_merge},
+    {"malformed repository identifier pull rolls back", repository_identifier_malformed_pull_rolls_back},
+    {"completed deep diamond public API", completed_deep_diamond_api_fixture},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {
@@ -727,7 +801,13 @@ int main(int argc, char** argv) {
 #endif
   if (argc > 2) { std::cerr << "Usage: lane_store_tests [fixture-directory]\n"; return 2; }
   if (argc == 2) fixture_directory = argv[1];
-  if (!fixture_directory.empty()) { failures += run_shared_fixtures(fixture_directory); failures += run_sync_fixtures(fixture_directory); }
+  if (!fixture_directory.empty()) {
+    failures += run_shared_fixtures(fixture_directory);
+    failures += run_sync_fixtures(fixture_directory);
+    failures += run_planning_fixtures(fixture_directory);
+    try { failures += run_completed_fixtures(fixture_directory); }
+    catch (const std::exception& e) { ++failures; std::cerr << "FAIL completed-list fixtures: " << e.what() << '\n'; }
+  }
   else std::cout << "Shared fixtures not run: provide fixture-directory or LANE_STORE_FIXTURE_DIR\n";
   return failures ? 1 : 0;
 }

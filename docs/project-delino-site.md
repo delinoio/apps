@@ -6,12 +6,12 @@ Provide the Delino company and product website, centered on software that helps 
 
 ## Project ID
 
-`delino-site`. The npm workspace is `delino-site`.
+`delino-site`. The npm workspace is `@apps/delino-site`.
 
 ## Domain Ownership Map
 
 - `apps/delino-site`: independently built web application served at `https://delino.io`.
-- `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-docs`. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `.github/workflows/release.yml`: changeset-selected Cloudflare Pages publication with a `delino@vMAJOR.MINOR.PATCH` success tag and independent app versions. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 

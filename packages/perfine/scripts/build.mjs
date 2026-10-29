@@ -10,6 +10,7 @@ import {
   existsSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { normalizeLauncherArchive } from "./archive.mjs";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 export const root = resolve(
@@ -168,18 +169,28 @@ export function stage({
         join(output, "action", name),
       );
   const archives = archiveNames(releaseVersion, target);
-  execFileSync("tar", [
-    "-czf",
-    join(output, archives.standalone),
-    "-C",
-    join(output, "standalone"),
-    ".",
-  ]);
+  execFileSync(
+    "tar",
+    [
+      "-czf",
+      // Relative archive paths keep GNU tar from treating a Windows drive as a remote host.
+      archives.standalone,
+      "-C",
+      "standalone",
+      ".",
+    ],
+    { cwd: output },
+  );
   for (const kind of ["npm", "platform"])
     npm(["pack", "--ignore-scripts", "--pack-destination", output], {
       cwd: join(output, kind),
       stdio: "pipe",
     });
+  const entryArchive = join(output, archives.entry);
+  writeFileSync(
+    entryArchive,
+    normalizeLauncherArchive(readFileSync(entryArchive)),
+  );
   const files = Object.values(archives);
   writeFileSync(
     join(output, "SHA256SUMS"),

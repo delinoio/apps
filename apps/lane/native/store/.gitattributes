@@ -1,3 +1,4 @@
+/vendor/** text eol=lf
 /vendor/ada/ada.cpp filter=lfs diff=lfs merge=lfs -text
 /vendor/utf8proc/utf8proc_data.c filter=lfs diff=lfs merge=lfs -text
 /vendor/sqlite/sqlite3.c filter=lfs diff=lfs merge=lfs -text

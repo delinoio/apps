@@ -87,6 +87,7 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Repository workflow
 
+- [Changeset contract](repository-changeset-contract.md): npm package identities, pending change records and public changelog previews.
 - [Workflow contract](repository-workflow-contract.md): affected CI, release gates, formatting, cache and validation evidence.
 - [Environment contract](repository-environment-contract.md): committed configuration and service/release secret ownership.
 
@@ -125,6 +126,7 @@ Historical DeliDev validation describes the retired implementation and does not 
 
 - [Project index](project-lane.md)
 - [Application foundation and Lynxtron desktop build](apps-lane-foundation.md)
+- [RealQA capture, editor, attachments and Chrome integration](apps-lane-realqa-contract.md)
 
 - [Local store and native bridge](apps-lane-local-store-contract.md)
 - [Connect protocol and conformance](protos-lane-v1-contract.md)

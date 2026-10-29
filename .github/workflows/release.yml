@@ -1,0 +1,106 @@
+name: Release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+      components: ${{ steps.source.outputs.components }}
+      servers: ${{ steps.source.outputs.servers }}
+    steps:
+      - name: Create release bot token
+        id: bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: apps
+          permission-contents: write
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          # Checkout removes its persisted credential in the post-job cleanup.
+          token: ${{ steps.bot.outputs.token }}
+          persist-credentials: true
+      - name: Verify release bot API and Git access
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Check the issued token, not only the App installation settings.
+          # Keep credentials and HTTP traces out of the diagnostic output.
+          gh api graphql \
+            -f query='{ repository(owner: "delinoio", name: "apps") { viewerPermission } }' \
+            --jq '{event: "release_bot_api_access", permission: .data.repository.viewerPermission}'
+          # Exercise Git receive authentication without updating any ref.
+          # API access alone does not establish that checkout credentials can push.
+          git push --dry-run origin HEAD:refs/heads/main
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Resolve release bot commit identity
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          BOT_SLUG: ${{ steps.bot.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          login="${BOT_SLUG}[bot]"
+          id=$(gh api "users/$login" --jq .id)
+          git config user.name "$login"
+          git config user.email "$id+$login@users.noreply.github.com"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: ./.github/actions/setup-ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm exec lefthook install
+      - name: Commit changeset consumption and push the release source
+        id: source
+        run: node "scripts/release/prepare.mjs"
+
+  images:
+    needs: prepare
+    if: needs.prepare.outputs.servers != '[]'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy-images.yml
+    with:
+      revision: ${{ needs.prepare.outputs.revision }}
+      servers: ${{ needs.prepare.outputs.servers }}
+    secrets: inherit
+
+  servers:
+    needs: [prepare, images]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.images.result == 'success' || needs.images.result == 'skipped') }}
+    uses: ./.github/workflows/deploy-servers.yml
+    with:
+      revision: ${{ needs.prepare.outputs.revision }}
+      servers: ${{ needs.prepare.outputs.servers }}
+
+  components:
+    needs: [prepare, servers]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.servers.result == 'success' && needs.prepare.outputs.components != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.prepare.outputs.components) }}
+    permissions:
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/deploy-component.yml
+    with:
+      revision: ${{ needs.prepare.outputs.revision }}
+      component: ${{ toJSON(matrix.component) }}
+    secrets: inherit

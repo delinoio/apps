@@ -78,7 +78,12 @@ jobs:
         run: |
           cargo fmt --manifest-path servers/Cargo.toml --all --check
       - id: gofmt
-        run: node scripts/ci/check-go-format.mjs protos examples
+        run: node scripts/ci/check-go-format.mjs protos examples tools/changeset
+      - id: changesets
+        run: |
+          go vet ./tools/changeset
+          go test -race ./tools/changeset
+          pnpm changeset check
       - id: protobuf-format
         run: pnpm exec buf format --diff --exit-code
       - name: Save pnpm cache after successful main validation
@@ -166,9 +171,9 @@ jobs:
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: shared-ui
-        run: pnpm --filter @delino/ui test
+        run: pnpm --filter @packages/ui test
       - id: lynx-ui
-        run: pnpm --filter @delino/lynx-ui test
+        run: pnpm --filter @packages/lynx-ui test
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -257,7 +262,7 @@ jobs:
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: frontend
-        run: pnpm --filter delidev-desktop test
+        run: pnpm --filter @apps/delidev test
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -300,7 +305,7 @@ jobs:
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: frontend
-        run: pnpm --filter delitools test
+        run: pnpm --filter @apps/delitools test
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -343,7 +348,10 @@ jobs:
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: frontend
-        run: pnpm --filter lane test
+        run: |
+          pnpm --filter @apps/lane test
+          pnpm --filter @apps/lane-chrome-extension test
+          node --test apps/lane/native/desktop/realqa*.test.mjs
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -367,7 +375,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/lane/dist"
+        run: rm -rf "apps/lane/dist" "apps/lane-chrome-extension/dist"
   lane-cli:
     needs: changes
     if: needs.changes.outputs.lane_cli == 'true'
@@ -443,8 +451,8 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: frontend
         run: |
-          pnpm --filter git-tracker test
-          pnpm --filter git-tracker-action ci:checks
+          pnpm --filter @apps/git-tracker test
+          pnpm --filter @actions/git-tracker ci:checks
           pnpm proto:generate
           test -z "$(git status --porcelain --untracked-files=all -- protos)"
       - name: Save pnpm cache after successful main validation
@@ -489,7 +497,7 @@ jobs:
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: frontend
-        run: pnpm --filter devbase test
+        run: pnpm --filter @apps/devbase test
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -532,7 +540,7 @@ jobs:
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: frontend
-        run: pnpm --filter delino-site test
+        run: pnpm --filter @apps/delino-site test
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -575,7 +583,7 @@ jobs:
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: frontend
-        run: pnpm --filter delino-docs test
+        run: pnpm --filter @apps/delino-docs test
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -652,10 +660,10 @@ jobs:
           cache-on-failure: false
       - id: delidev-build
         if: contains(fromJSON(needs.changes.outputs.rust_clippy), 'delidev-desktop')
-        run: pnpm exec turbo run build:frontend --filter=delidev-desktop
+        run: pnpm exec turbo run build:frontend --filter=@apps/delidev
       - id: delitools-build
         if: contains(fromJSON(needs.changes.outputs.rust_clippy), 'delitools-shell')
-        run: pnpm exec turbo run build:frontend --filter=delitools
+        run: pnpm exec turbo run build:frontend --filter=@apps/delitools
       - id: clippy
         run: node scripts/ci/rust-check.mjs clippy
       - name: Save pnpm cache after successful main validation
@@ -725,10 +733,10 @@ jobs:
           cache-on-failure: false
       - id: delidev-build
         if: matrix.package == 'delidev-desktop'
-        run: pnpm exec turbo run build:frontend --filter=delidev-desktop
+        run: pnpm exec turbo run build:frontend --filter=@apps/delidev
       - id: delitools-build
         if: matrix.package == 'delitools-shell'
-        run: pnpm exec turbo run build:frontend --filter=delitools
+        run: pnpm exec turbo run build:frontend --filter=@apps/delitools
       - id: test
         run: node scripts/ci/rust-check.mjs test
       - name: Save pnpm cache after successful main validation
@@ -827,7 +835,9 @@ jobs:
           toolchain: nightly-2026-09-28
       - name: Install protocol compiler
         id: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+        run: |
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+          if [ "$SERVICE" = lane-api ]; then sudo apt-get install -y python3-venv; fi
       - name: Validate Rust server with local protocol packages
         run: |
           cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE"
@@ -854,10 +864,10 @@ jobs:
           TEST_DATABASE_URL: ${{ format('postgres://{0}:{0}@127.0.0.1:{1}/{2}?sslmode=disable', matrix.user, matrix.port, matrix.database) }}
         run: |
           if [ "$SERVICE" = lane-api ]; then
-            export LANE_TEST_DATABASE_URL="$TEST_DATABASE_URL"
-            export LANE_PUSH_TEST_DATABASE_URL="$TEST_DATABASE_URL"
+            python3 "servers/lane-api/tests/integration_fixture.py"
+          else
+            cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE" -- --ignored --nocapture
           fi
-          cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE" -- --ignored --nocapture
         id: integration
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
@@ -1076,7 +1086,7 @@ jobs:
           go build -o "$RUNNER_TEMP/git-tracker-client" ./examples/git-tracker-client
           go build -o "$RUNNER_TEMP/devbase-client" ./examples/devbase-client
           go build -o "$RUNNER_TEMP/delitools-client" ./examples/delitools-client
-          pnpm --filter devbase-client-ts typecheck
+          pnpm --filter @examples/devbase-client-ts typecheck
           pnpm exec buf lint
           pnpm proto:generate
           test -z "$(git status --porcelain --untracked-files=all -- protos)"

@@ -24,7 +24,21 @@ npx skills add lynx-community/skills --skill '*' --agent codex --yes
 
 The commands fetch the current upstream skills. Review content and lockfile changes before committing updates. Imported skills retain their upstream license metadata and available license files; see the [license contract](repository-license-contract.md). The shared formatter excludes `.agents/skills/` to preserve imported content.
 
+## npm workspace names
+
+Private workspace packages use their repository path as a scoped npm name:
+`apps/<name>` becomes `@apps/<name>`, `servers/<name>` becomes
+`@servers/<name>`, and the same rule applies to `packages/`, `actions/` and
+`examples/`. The top-level `protos/` workspace uses `@repo/protos`. The root
+package keeps `delino-apps`. Public distributions keep their supported registry
+names, including `@delinoio/lane` and `perfine`. Package imports, dependency keys,
+pnpm filters, Turbo task keys and pending changesets use the owning npm name.
+Directory names, Rust crate names, executable names and service routes retain
+their existing identities.
+
 ## Worktree dependency sharing
+
+The root install lifecycle invokes the Git hook installer through `sh` explicitly, including on Windows hosts with Git for Windows. This keeps hook installation available when npm lifecycle commands use the Windows command processor.
 
 Root `pnpm-workspace.yaml` sets `virtualStoreType: global` so worktrees share installed package contents through pnpm's global virtual store. Each worktree retains its own `node_modules` links and dependency versions selected by its lockfile.
 
@@ -40,7 +54,7 @@ The root `server-build` script invokes `servers/scripts/build-rust.mjs`, the onl
 
 The shared build declares server Rust source, Cargo manifests and lockfile, SQL, protocol source and the build helper as inputs. The server build has no root client-crate inputs. API task inputs include their package manifest and shared launch helpers. Turbo does not watch these inputs or automatically rebuild or restart APIs. Stop and rerun `pnpm dev` after server changes, including catalog YAML edits; frontend HMR continues through each frontend's own watcher.
 
-A failed shared build blocks dependent API startup while independent frontend tasks continue to run. A failed application task does not stop other tasks whose dependencies succeeded. Turbo reports task failures and returns a nonzero exit code when the run finishes. Failed tasks do not restart automatically; correct the failure and rerun `pnpm dev`. Stop development with `Ctrl+C`; the databases remain running. Use `pnpm dev --ui=stream` for streaming logs, or `pnpm dev --filter=@delinoio/delcore-api` to select one API. Extra root `dev` arguments go to `turbo run`. Service-local development retains its existing entry points. Each frontend and API `dev` script registers its own Portless route after Infisical injection. The root launcher prepares the databases once, then Turbo owns task execution and dependency ordering.
+A failed shared build blocks dependent API startup while independent frontend tasks continue to run. A failed application task does not stop other tasks whose dependencies succeeded. Turbo reports task failures and returns a nonzero exit code when the run finishes. Failed tasks do not restart automatically; correct the failure and rerun `pnpm dev`. Stop development with `Ctrl+C`; the databases remain running. Use `pnpm dev --ui=stream` for streaming logs, or `pnpm dev --filter=@servers/delcore-api` to select one API. Extra root `dev` arguments go to `turbo run`. Service-local development retains its existing entry points. Each frontend and API `dev` script registers its own Portless route after Infisical injection. The root launcher prepares the databases once, then Turbo owns task execution and dependency ordering.
 
 ## Local development databases
 
@@ -149,7 +163,7 @@ For server-to-server calls from Git Tracker to local Delcore, set `DELCORE_URL` 
 
 ## Validation
 
-The `shared-ui` job validates both `@delino/ui` and `@delino/lynx-ui` on Ubuntu.
+The `shared-ui` job validates both `@packages/ui` and `@packages/lynx-ui` on Ubuntu.
 Lynx UI source and owning contract changes select this job without selecting
 unrelated application or server checks. The Lynx gallery builds web and native
 bundles; these builds do not establish native host acceptance. Remove its
@@ -159,7 +173,7 @@ The root `package.json` pins pnpm 12.14.0; the shared CI Node setup uses the sam
 
 Install with `pnpm install --frozen-lockfile`. Run `pnpm test` in each app, root `cargo test`, and `go test ./...`. Generate frontend `dist` before Rust validation, then remove generated `dist` directories. Native builds, device launches, account-backed integration and store acceptance are separate checks. Preserve source revision, commands, results and unperformed checks in commits and CI artifacts.
 
-CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile release workflow and the dedicated main-only manual Perfine release procedure below. Protocol validation includes Go vet, unit tests, consumer example builds and the DevBase TypeScript example type check; the dedicated formatting job checks Go formatting. Real PostgreSQL integration runs for the affected services under `servers/`. Ordinary CI does not run server OCI tests or release image builds. The Perfine adapter gate builds a disposable test-tool image only. Protocol CI requires lint, format and regeneration freshness; it does not run FILE breaking comparisons.
+CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile release workflow, the Perfine and Lane binary jobs called by the main-only unified release workflow. Protocol validation includes Go vet, unit tests, consumer example builds and the DevBase TypeScript example type check; the dedicated formatting job checks Go formatting. Real PostgreSQL integration runs for the affected services under `servers/`. Ordinary CI does not run server OCI tests or release image builds. The Perfine adapter gate builds a disposable test-tool image only. Protocol CI requires lint, format and regeneration freshness; it does not run FILE breaking comparisons.
 
 Mobile dispatch preserves signed build-only mode and opt-in Google Play internal/TestFlight uploads. Configure the protected environment described in the application contract before use. Release workflows do not establish store acceptance until run with real accounts.
 
@@ -185,6 +199,8 @@ Rust tests run one affected crate per matrix entry with `fail-fast: false`. Each
 
 Server runtime validation runs in this checkout. `rust-servers-clippy` and `rust-servers` use Ubuntu runners and the independent server Cargo workspace for all five APIs. The planner emits only affected Rust services in the matrix and skips the job when the matrix is empty. Matrix entries run independently with `fail-fast: false` and retain separate validation artifacts with their service identity. Server and protocol changes select the affected service checks before runner allocation. Changes to `docs/protos-delcore-v1-contract.md` select Delcore server validation; changes to `docs/protos-devbase-v1-contract.md` select DevBase server validation; changes to `docs/protos-git-tracker-v1-contract.md` select Git Tracker server validation; changes to `docs/project-delitools.md`, `docs/servers-delitools-api-contract.md`, `docs/protos-delitools-v1-contract.md` and `examples/delitools*` select DeliTools server validation. The `delitools-frontend` job is selected by `docs/project-delitools.md` and `docs/apps-delitools-*` but not by the server and protocol contracts, and the `protocol` job also builds `examples/delitools-client`. Protocol source changes select every server entry, so API key changes in `protos/delcore/v1` also validate DeliTools. `rust-servers-clippy` runs service-specific Cargo Clippy with all targets and warnings denied. The independent `rust-servers` job runs unit tests and PostgreSQL tests. Its PostgreSQL step streams test output and has a ten-minute timeout so a stalled fixture fails before the runner job limit while preserving validation evidence and database cleanup. Both jobs use the same affected-service matrix, retain separate validation artifacts and are required by `ci-result` when selected. Neither job installs Go or runs Go compatibility checks. OCI test commands remain available for explicit local packaging validation. Go formatting remains in `check-formatting`. `ci-result` rejects failed, canceled or skipped selected server jobs. Record source revision, comparison, commands, results and unperformed live-account checks in the same review and CI evidence. See the [repository boundary contract](repository-boundary-contract.md).
 
+Markdown release records directly under `.changeset/` do not select affected project or shared validation jobs. Other changed paths retain their normal selections. Changeset configuration and unknown paths retain the conservative shared-path fallback. The unconditional `check-formatting` job still validates all pending changesets and formatting.
+
 ### Perfine repository validation
 
 Perfine has explicit affected ownership for CLI/distribution, fixture profiles and hosted API. Changes in `crates/perfine-core` select local Rust validation and profiling gates without selecting the Perfine server matrix entry. Root Cargo manifest changes do not select the hosted consumer. Cargo-mono expands root engine changes to the `perfine` CLI for Rust tests; Perfine contract, protocol and distribution changes select the available `perfine-core` and `perfine` packages explicitly. Shared server inputs still select every API. Perfine protocol changes select protocol and client consumers.
@@ -199,9 +215,9 @@ The gate preserves driver results, command logs and profile artifacts, excluding
 
 ### Perfine release validation
 
-The dedicated manual `release-perfine.yml` procedure is separate from PR, main-push and affected manual CI. Ordinary CI remains affected-only with its existing Linux gates. The macOS exception applies only to Perfine release preparation and validation; it does not introduce a full manual CI mode or change the owning mobile release gates.
+The reusable `deploy-perfine.yml` procedure runs through the main-only `release.yml` entry point, separately from PR, main-push and affected manual CI. Ordinary CI remains affected-only with its existing Linux gates. The macOS exception applies only to Perfine release preparation and validation; it does not introduce a full manual CI mode or change the owning mobile release gates.
 
-Prepare the immutable main-ancestor source tag on all four native host targets:
+Prepare the immutable main-ancestor release commit on all four native host targets:
 
 | Runner           | CLI target       |
 | ---------------- | ---------------- |
@@ -216,7 +232,7 @@ Retain separate records for package/executable smoke checks, minimum-OS executio
 
 Manual Docker checks cover each host's baseline/candidate measurement, comparison, resume/cancel, unavailable daemon, missing images/tools, wrong architecture, inaccessible mounts and authentication prerequisites. Record ARM Mac x86_64 emulation distinctly from native Linux x86_64 evidence, and mocked agents distinctly from live providers. Unperformed full Docker or live-provider checks remain explicit but do not block publication. Do not waive the required native package/executable checks or publishing-authority checks on that basis.
 
-Preserve default preparation-only `publish: false`, explicit publication opt-in, main-only dispatch, the protected `perfine-production` environment, immutable source/distribution tags, package versions and release assets, and manual partial-publication reconciliation. Verify publishing authority for `perfine` and all four approved platform names before publication; absent public names or failed registry authentication do not establish authority. Never overwrite artifacts to repair a release. Follow the [distribution contract](packages-perfine-distribution-contract.md#release-preparation-and-exact-commit-verification) for exact Action commit verification and release ordering.
+The reusable Perfine workflow defaults to preparation-only `publish: false`. The unified release dispatch authorizes publication for a changeset-selected Perfine distribution and passes `publish: true`. Preserve main-only dispatch, the protected `release-publish` environment, immutable source/distribution tags, package versions and release assets, and manual partial-publication reconciliation. Verify publishing authority for `perfine` and all four approved platform names before publication; absent public names or failed registry authentication do not establish authority. Never overwrite artifacts to repair a release. Follow the [distribution contract](packages-perfine-distribution-contract.md#release-preparation-and-exact-commit-verification) for exact Action commit verification and release ordering.
 
 ### Perfine local development
 
@@ -236,37 +252,94 @@ See the [upstream GitHub Actions guide](https://turborepo.dev/docs/guides/ci-ven
 
 ## Project release preparation
 
-`.github/workflows/release-project.yml` follows the shared preparation and project-specific publication pattern. Dispatch it from `main`, select `devbase`, `delino` or `delitools`, and choose `patch`, `minor` or `major`. Only the selected release's application versions change. The `delino` release calculates the next version from `apps/delino-site/package.json` and writes it to both that manifest and `apps/delino-docs/package.json`, regardless of their previous version agreement. Other web-only releases update their own npm manifest. DeliTools also updates its Tauri configuration, native package manifest and corresponding workspace `Cargo.lock` entry. Native source versions must agree before preparation.
+The release preparation commit runs the normal pre-commit hooks in local formatting mode. Only that `git commit` subprocess sets `CI=false` and removes inherited `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`, allowing staged formatting of the generated release files. The parent release process and independent CI formatting checks keep their original environment and validation rules.
 
-`scripts/release/project.mjs` owns version calculation, source validation and the Git transaction. Preparation uses the release bot's identity, commits the selected files and atomically pushes `main` and its immutable tag. A concurrent main change or an existing tag rejects publication without moving the remote branch or tag. Preparation is serialized across projects. The commit records the workflow run ID and bump; rerunning the same run validates and reuses its recorded source even if main has advanced. Changed inputs, source contents or tags are rejected. Start a new run for a new version. Do not replace a tag or bypass branch protection to recover a failed run.
+`.github/workflows/release.yml` is the only release entry point. Dispatch it on `main` with pending changesets. The dispatch has no inputs. `scripts/release/prepare.mjs` validates records through the Go changeset CLI, resolves workspace consumers and server prerequisites, and pushes one commit to main. That commit changes selected versions, deletes consumed records and writes `.release/plan.json`. Every deployment and publication checks out that exact commit. Preparation does not create tags or publish artifacts.
 
-Tags are `devbase@vMAJOR.MINOR.PATCH`, `delino@vMAJOR.MINOR.PATCH` and `delitools@vMAJOR.MINOR.PATCH`. A GitHub App installation for this repository supplies `DELINO_RELEASE_BOT_CLIENT_ID` as an Actions variable and `DELINO_RELEASE_BOT_PRIVATE_KEY` as a secret. It requires contents write access and repository rules that permit its release commits and tag creation. The app token allows tag pushes to start the owning workflows; the default Actions token does not trigger that follow-up automation. Checkout temporarily retains the app credential for the atomic push and removes it during post-job cleanup. Registry package publication occurs only in the `delino` release workflow described under [Server image publication](#server-image-publication).
+`scripts/release/plan.mjs` owns selection and `scripts/release/versions.mjs` owns native/distribution version mirrors. The strongest recorded bump applies once to each explicitly named package. A frontend's version never changes merely because another frontend, a shared dependency or a server changed. Delino Site and Docs keep independent package versions. Shared workspace dependency changes select consuming deployables without inventing frontend bumps. Shared protocol changes also select every Rust API consumer outside the npm dependency graph. Runtime prerequisites are explicit: DevBase, Git Tracker, DeliTools and Lane select their API; each API depends on Delcore. Perfine API also depends on Delcore. Server-only records do not select frontends. A `none` entry can select a deployment without changing its package version. Internal-only packages have no deployment; unsupported application releases fail before consumption.
 
-DeliDev has no release entry because its owning desktop contract removes distribution automation. Server runtimes live under `servers/`. Only the `delino` tag publishes their images; see [Server image publication](#server-image-publication). Release preparation itself does not publish images.
+The success-tag component names remain `delino`, `delitools`, `devbase`, `perfine` and `lane`. Delino owns Site, Docs, Git Tracker and Delcore; the other components own their respective apps, APIs and distributions. Only selected apps deploy within a component. Component tag versions are separate from frontend package versions: choose the greatest prior component version (including existing tags and selected component manifest baselines), then apply the strongest recorded bump, or patch for a deployment without a package bump. Store these reserved versions in the release plan so failed releases cannot reuse them for different source. Tags use `<component>@vMAJOR.MINOR.PATCH`. DeliTools native configuration and Cargo lock entries follow its app version. Lane CLI follows its npm package version independently of its frontend. Perfine's core, CLI, Action, npm entry and optional platform versions follow the selected Perfine distribution release version.
+
+The release bot uses repository variable `DELINO_RELEASE_BOT_CLIENT_ID` and secret `DELINO_RELEASE_BOT_PRIVATE_KEY`. Its GitHub App needs contents write authority and repository rules permitting release commits and component success tags. Component completion uses a fresh token from the same App. Checkout retains the credential only for the main push and removes it during cleanup. Never bypass branch protection. Global release concurrency serializes runs without canceling an active run. A concurrent main update rejects the push; no success tags are left behind. No release workflow runs on a tag push.
+
+Before dependency installation or changeset consumption, preparation records the issued token's GraphQL `viewerPermission` and runs a Git push dry run with checkout's persisted credential. The dry run updates no refs and checks Git receive authentication separately from API access; it does not establish acceptance of a later release commit by branch rules. Keep tokens, authorization headers and HTTP traces out of diagnostic logs. A failed probe stops preparation before release files change.
+
+Preparation always consumes pending changesets from main; it does not accept or recover a previous release commit. After preparation succeeds, use GitHub's failed-job rerun to retry deployment jobs with the original preparation outputs. Do not rerun all jobs to recover a deployment. Successfully tagged components skip deployment on retry; draft publication can still be completed. Do not force tags, rebuild over immutable published bytes, or infer success from a missing response. For partial npm/Action publication, reconcile existing immutable artifacts under the Perfine contract before retrying.
+
+The entry point calls reusable workflows for parallel image publication, ordered mock server deployment, and independently completing components. Each component calls the applicable web, Lane binary, Perfine distribution and DeliTools mobile workflows. A failed component does not cancel another component. After every required job for one component succeeds, its completion job creates that component's success tag on the release commit and publishes any staged GitHub Release. Existing tags must resolve to the same commit. Components that fail get no new success tag. An upload or tag/publication failure can leave a draft or partial immutable artifacts; retain them for reconciliation.
+
+DeliDev has no distribution automation. The release plan retains only explicit public note text for future publication; internal changeset summaries are not copied to release notes. The original records remain in Git history.
 
 ## Web publication
 
-The individual `.github/workflows/release-devbase.yml`, `release-delino.yml` and `release-delitools.yml` workflows publish the corresponding web applications. Each starts from its release tag. `release-delino.yml` publishes `delino-site`, `delino-docs`, `devbase` and `git-tracker` in parallel from the same `delino@vMAJOR.MINOR.PATCH` tag and source revision. Source validation checks the `delino-site` and `delino-docs` package versions; `devbase` and `git-tracker` keep their own independent versions and are built from the tagged revision. The `devbase` application is also published by its own `release-devbase.yml`, which remains available for web-only releases. The former `delino-site@v*` trigger is retired. To retry a deployment without another bump, dispatch the individual workflow from `main` with the existing tag. A source job checks the tag format, version and main ancestry using the trusted main helper before allocating the protected deployment job. Each deployment job checks out the resolved immutable source revision, hydrates LFS objects, installs the frozen workspace and runs the app's `pnpm test` to check types and build the static output. The `delino` release workflow runs only the app's `pnpm build`.
+`deploy-web.yml` builds only the applications selected by changesets or their changed workspace dependencies, after all selected server mock deployments succeed. Each job checks out the release commit, hydrates LFS objects, installs the frozen workspace and builds its static output. DevBase and DeliTools retain their owning `pnpm test` validation/build command; the other apps retain `pnpm build`. Web matrices use `fail-fast: false`. Uploads are not atomic; inspect every job before recovery.
 
-The Delino deployment matrix keeps `fail-fast: false` so one app failure does not cancel the others. The Cloudflare uploads are not atomic; inspect every job and retry the existing tag if any fails.
+All web apps use `delino-site-production`, its `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ACCOUNT_ID` variable. Optional per-app project overrides are `CLOUDFLARE_PAGES_PROJECT_SITE`, `CLOUDFLARE_PAGES_PROJECT_DOCS`, `CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER`, `CLOUDFLARE_PAGES_PROJECT_LANE`, `CLOUDFLARE_PAGES_PROJECT_DEVBASE` and `CLOUDFLARE_PAGES_PROJECT_DELITOOLS`. Without an override, use the app directory name. `scripts/release/web.mjs` verifies the selected project and creates it through the Pages API if missing, with production branch `main` and no Git integration. Authentication or API failures stop publication; an existing project with a different branch or Git integration is rejected without modification. Each app has a serialized `release-web-<app>` upload group. Git Tracker also reads public `PUBLIC_LOGTO_ENDPOINT` and `PUBLIC_LOGTO_APP_ID`; missing values leave sign-in unconfigured. Lane uses its default public API origin `https://lane.api.delino.io` and the Pages domain `lane.delino.io`; server credentials never enter browser builds.
 
-The Delino Wrangler action sets `pnpm_config_ignore_workspace_root_check=true` only for its deployment step because the pinned action installs its CLI with `pnpm add` at the workspace root without `--workspace-root`. pnpm 12 requires the `pnpm_config_` prefix for this setting. This exception allows that temporary CLI installation without changing the workspace-wide pnpm configuration. Remove it when the action supports explicit workspace-root installation. The workspace build-script allowlist permits `workerd`, which Wrangler installs during deployment.
+Configure environment reviewers and branch restrictions to permit main-dispatched releases. The Cloudflare token needs Pages edit permission for its account. Release preparation creates missing direct-upload projects with production branch `main`. Bind each project’s documented domain and keep automatic Git-based deployment disabled so the preparation commit cannot bypass the release graph. Account credentials and domain provisioning remain outside Git.
 
-DevBase and DeliTools production deployments use the corresponding `<project>-production` GitHub environment with secret `CLOUDFLARE_API_TOKEN` and variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT`. The `delino` release shares the `delino-site-production` environment among Delino Site, Delino Docs and Git Tracker with secret `CLOUDFLARE_API_TOKEN` and variable `CLOUDFLARE_ACCOUNT_ID`. Its `CLOUDFLARE_PAGES_PROJECT_SITE`, `CLOUDFLARE_PAGES_PROJECT_DOCS` and `CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER` variables select the marketing, documentation and Git Tracker Pages projects. The DevBase application in the same release deploys through its owning `devbase-production` environment and the `release-devbase` concurrency group, exactly like `release-devbase.yml`, so one reviewer gate and one serialized upload queue protect its Pages project. `devbase-production` must also permit `delino@v*` tags and main-dispatched recovery. Each matrix entry names its environment and concurrency group. The Git Tracker build also reads the public browser identifiers `PUBLIC_LOGTO_ENDPOINT` and `PUBLIC_LOGTO_APP_ID` from this environment. Without them the Git Tracker sign-in is not configured; the workflow does not validate them. These values are not secrets. The deployment matrix maps each application to its own variable for both configuration validation and upload. The token needs Cloudflare Pages edit permission for the owning account. Configure reviewers and deployment branch/tag restrictions to permit the owning project tags and main-dispatched recovery. `delino-site-production` must permit `delino@v*` tags and main-dispatched recovery. Create each Pages project with production branch `main` and bind its documented domain before publication. Disable automatic Git-based deployments if the Pages project already has Git integration, so source preparation does not also publish an untagged build.
+The pinned Wrangler action and CLI upload the exact candidate retained as an artifact, including repository `LICENSE` and `NOTICE`. The deployment step alone sets `pnpm_config_ignore_workspace_root_check=true`, because the action installs Wrangler at the workspace root without `--workspace-root`; pnpm 12 requires the `pnpm_config_` prefix. Remove this exception when the action supports explicit workspace-root installation. The workspace build-script allowlist permits `workerd` for Wrangler.
 
-The workflow includes repository `LICENSE` and `NOTICE`, retains the exact candidate as an artifact before upload, and uses a pinned Wrangler action and CLI to upload to the Pages production branch. Each project serializes deployments without canceling an active release. Source revision and version appear in the run summary; command and upload outcomes remain in the owning job logs. Generated frontend `dist` is removed even after failure. A failed upload can be retried with the existing immutable tag. Actual Cloudflare deployment, domain routing and account configuration require a real platform run; local fixtures and builds do not establish those outcomes.
+Jobs record source identity and upload outcomes and remove generated frontend `dist` even after failure. Actual Cloudflare deployment, domain routing and account configuration require a real platform run; local fixtures and builds do not establish those outcomes.
 
 ## Server image publication
 
-A `delino@vMAJOR.MINOR.PATCH` release also publishes the four server images. The `images` job runs after the shared source job, in parallel with the web publication. It builds `servers/delcore-api`, `servers/devbase-api`, `servers/git-tracker-api` and `servers/delitools-api` from their Dockerfiles at the tagged revision and publishes `ghcr.io/<owner>/<server>:<version>` with the repository's `GITHUB_TOKEN`. Only this job holds `packages: write`. The image labels carry the source repository, version, revision and server license.
+`deploy-images.yml` publishes all selected server images in parallel with `fail-fast: false`. Images use `ghcr.io/<owner>/<server>:sha-<release-commit>`. Dockerfiles belong to `servers/delcore-api`, `servers/devbase-api`, `servers/git-tracker-api`, `servers/delitools-api`, `servers/perfine-api` and `servers/lane-api`. Only image jobs hold `packages: write`; they use `GITHUB_TOKEN` and retain repository, source revision, version identity and FSL-1.1-ALv2 labels. Retries reuse an existing immutable image for the same commit.
 
-A release tag never moves, so a retry reuses an existing image tag instead of rebuilding it. Retry a failed run by dispatching `release-delino.yml` from `main` with the existing tag. The release does not deploy the images or run migrations; operators deploy them and apply migrations as the server contracts require. The Git Tracker migration is a one-time initial schema and is not repeatable. DeliTools provides fix-forward recovery only: it has no previous-image rollback or reverse migrations, and its operator procedures live in the [server contract](servers-delitools-api-contract.md#operator-procedures). Make the published GHCR packages readable by the deployment target, either public or with registry credentials held by that target.
+After image publication succeeds, `deploy-servers.yml` performs **mock deployment only**: Delcore first, then the selected dependent APIs. Logs and summaries explicitly identify the mock; no service, readiness probe or migration is changed. Frontend deployment waits for this mock sequence. This preserves the orchestration boundary until a real runtime deployment adapter and readiness contract replace it. Image publication and mock success are not runtime acceptance.
 
-GHCR package creation and visibility have not been exercised against a real account. Record the first real release run as the platform acceptance evidence.
+Operators still deploy images and apply explicit migrations under server contracts. Git Tracker's initial schema migration is not repeatable. DeliTools supports fix-forward only, with no previous-image rollback or reverse migrations; follow its [operator procedures](servers-delitools-api-contract.md#operator-procedures). Make GHCR images readable by the deployment target using public visibility or target-held registry credentials. GHCR package creation and visibility have not been exercised against a real account; record the first real release as platform acceptance evidence.
+
+## Lane binary publication
+
+`release.yml` calls the reusable `deploy-lane.yml` for selected Lane app or CLI changes after immutable release-commit/main ancestry validation. It builds CLI binaries for Linux amd64/arm64, macOS
+amd64/arm64 and Windows amd64/arm64 at the resolved source revision. Linux and
+macOS targets execute on matching architecture runners; Windows ARM64 is
+cross-built on the Windows x64 runner and is not executed there. Each host runs
+the package tests and the real packed CLI version/help/MCP smoke checks.
+
+The two macOS runners and Windows x64 runner also build the desktop archive with
+`LANE_URL_SCHEME=lane`, the production bundle, native host, Chrome relay and
+matching verified CLI synchronization helper. macOS archives retain framework
+symlinks and ad-hoc signatures; Windows is an unsigned portable application
+archive. The owning desktop build launcher prepares its pinned Windows App SDK
+and C++/WinRT packages and generates both Windows OS and App SDK projections.
+The release workflow leaves the SDK override variables unset so that this
+automatic preparation remains active.
+Windows ARM64 GUI, formal installers, signing/notarization and mobile store
+publication are separate. The macOS runner exception applies only to this owning
+release workflow, never PR, main-push or affected manual CI.
+
+Host candidates travel as tar archives so artifact storage does not discard
+executable modes or symlinks. Assembly rejects missing/duplicate targets, mixed
+source revisions, version mismatches and corrupted executable or desktop bytes.
+It requires all six CLI targets and all three desktop archives before preparing
+the lightweight npm launcher and six platform npm archives, direct CLI archives, `lane-release.json` and
+`SHA256SUMS`. CLI/npm versions remain those committed in Lane, independent of
+the Lane component release version; desktop archive names carry the Lane tag version.
+Desktop packages also embed the exact release tag and source revision for
+in-app update comparison and candidate verification. Desktop packaging rejects
+a missing installer or mismatched embedded release identity. Follow the
+[desktop update contract](apps-lane-foundation.md#desktop-app-updates).
+
+The publication job uses `delino-site-production` and is the only Lane binary job
+with `contents: write`. It creates a draft GitHub Release for the planned `lane@vMAJOR.MINOR.PATCH` tag at the release commit and uploads verified candidates. Component completion creates the success tag and publishes the draft only after all required Lane jobs succeed. No additional stored credential is required. The npm archive is a
+GitHub Release download; this workflow does not publish to the npm registry.
+Direct CLI assembly uses sorted file entries, fixed ownership and timestamps,
+and a deterministic gzip header. Reassembling the same retained candidates
+produces byte-identical assets and checksums. Rerun failed jobs to reuse retained
+candidates after an upload failure. Existing
+assets are downloaded and checked byte-for-byte before reuse; never overwrite
+them. A rebuilt candidate that differs from a published asset fails and requires
+a new release tag. CLI smoke checks and desktop builds do not establish native
+installation, GUI behavior, provider delivery, account acceptance or formal
+signing/store acceptance. Record the source revision, commands and actual
+platform outcomes in the owning job logs and summaries. Generated `dist` and
+desktop build directories are removed even on failure.
 
 ## Native publication handoff
 
-The DeliTools tag starts only its web publication. Dispatch `release-delitools-mobile.yml` on main separately with a new store build number and the desired platform. Signed build-only mode remains the default; Google Play internal testing and TestFlight uploads require explicit `publish`. Native builds, signing, device acceptance and store acceptance remain distinct from source preparation and web deployment.
+A selected DeliTools app changeset calls `deploy-delitools-mobile.yml` from the same release commit. The unified workflow builds both Android and iOS and uses its GitHub Actions run number as the shared native build number. The number remains the same when failed jobs are rerun and must satisfy the native 1..9999 limit. Android and iOS signing jobs use the repository-wide `release-signing` environment. Separate optional upload jobs use `release-publish` and download the retained signed candidates; they do not receive keystores or rebuild binaries. The unified release uses signed build-only mode and does not upload to Google Play or TestFlight. The reusable mobile workflow retains its explicit test-channel upload capability for callers. Native builds, signing, device acceptance and store acceptance remain distinct from source preparation and web deployment.
 
 Git Tracker client changes select `git-tracker-clients` on Ubuntu. The job checks the web app, Action tests/bundle freshness and shared generated bindings under `protos/`. Root `pnpm proto:generate` generates Go and TypeScript bindings together; both protocol and client freshness checks reject tracked and untracked changes in that tree. Protocol changes also select the client job because the web app consumes those schemas. Default manual validation remains affected-only.
 
@@ -274,8 +347,8 @@ Delcore, DevBase, Git Tracker and DeliTools use the [server Rust workspace](serv
 
 ### Lane validation
 
-Lane source and owning contract changes select the Ubuntu `lane-frontend` job.
-It checks TypeScript and builds native and browser bundles. These checks do not
+Lane source, Chrome extension source and owning contract changes select the Ubuntu `lane-frontend` job.
+It checks TypeScript, builds native and browser bundles, runs the Chrome extension tests/build, and runs the desktop RealQA bridge fixtures with Node. It removes both app and extension generated `dist` output even on failure. These checks do not
 establish native SDK compilation or device/store acceptance. Native host build
 commands and prerequisites belong to the [Lane contract](apps-lane-foundation.md).
 
@@ -285,8 +358,17 @@ The affected Lane API test job also runs `servers/lane-api/ops/check.sh` with di
 
 Lane participates in root development through its existing `lane` frontend route and the `lane-api` Rust service route. The API uses fixed loopback port `46326`; the frontend keeps `46325`. Root Compose includes `lane-postgres`, with loopback port `${LANE_POSTGRES_PORT:-55437}`, database/user `lane` and disposable password `local-lane`. Its named `lane-postgres-data` volume is independent of other services. These values are local development defaults only.
 
-Run `pnpm dev:db:up` to prepare the local databases. Run the Lane binary's `migrate` command explicitly before serving; application startup does not migrate. Root `pnpm dev` waits for Compose, then runs Turbo directly. Only the Lane API task receives its resolved database URL, after service-local Infisical injection. Root `pnpm dev:db:reset` includes the Lane database in its existing build, reset and explicit migration procedure. Do not run that destructive reset merely to validate a change; tests use disposable data.
+Run `pnpm dev:db:up` to prepare the local databases. Run the Lane binary's `migrate` command explicitly before serving; application startup does not migrate. Root `pnpm dev` waits for Compose, then runs Turbo directly. Only the Lane API task receives its resolved database URL, after service-local Infisical injection. Root `pnpm dev:db:reset` includes the Lane database in its existing build, reset and explicit migration procedure. It is also the documented server-side recovery for the pre-release Lane task planning schema change, which ships no data-preserving migration; see the [Lane development data reset](servers-lane-api-contract.md#development-data-reset). Local SQLite stores are reset separately with the explicit `lane data reset` or native Settings procedure. Do not run these destructive resets merely to validate a change; tests use disposable data.
 
 The [Lane project](project-lane.md) and [API contract](servers-lane-api-contract.md) own product scope and service configuration. Native build/install/behavior acceptance remains separate from frontend compilation and fixture checks.
 
-Lane CI uses the existing `lane-frontend` job, an affected `lane-cli` job, and a `lane-api` entry in both Rust server matrices. CLI/package changes select Rust tests and package tests/builds for the Linux amd64 host on Ubuntu; full six-target packaging requires the corresponding Rust target, linker and native SDK toolchains. Root Cargo changes also select CLI validation; local-store schema changes select both CLI and frontend consumers. Lane protocol changes select its app, CLI and server consumers plus protocol validation. Shared Lynx UI changes select Lane frontend validation. The result gate rejects failed, canceled or skipped selected Lane jobs. The API matrix uses disposable database `lane_api_test` on port `55437`. These checks do not add macOS runners, a full manual mode or production publication.
+Lane CI uses the existing `lane-frontend` job, an affected `lane-cli` job, and a `lane-api` entry in both Rust server matrices. CLI/package changes select Rust tests and package tests/builds for the Linux amd64 host on Ubuntu; full six-target packaging requires the corresponding Rust target, linker and native SDK toolchains. Root Cargo changes also select CLI validation; local-store schema changes select both CLI and frontend consumers. Lane protocol changes select its app, CLI and server consumers plus protocol validation. Shared Lynx UI changes select Lane frontend validation. The result gate rejects failed, canceled or skipped selected Lane jobs. The API matrix uses disposable database `lane_api_test` on port `55437`. Its existing integration step invokes `servers/lane-api/tests/integration_fixture.py` to supply a pinned disposable loopback S3 mock while running all Lane ignored tests. See the [server fixture procedure](servers-lane-api-contract.md#disposable-s3-integration-fixture) for prerequisites and cleanup. These checks do not add macOS runners, a full manual mode or production publication.
+
+## Pending changesets
+
+The [changeset contract](repository-changeset-contract.md) owns pending change
+records and the Go CLI under `tools/changeset/`. Use npm package names for all
+component identities. Public changelog previews select explicitly authored public
+notes only. The unconditional formatting job validates records, runs CLI tests
+and vet, and checks Go formatting in this directory. Release preparation and
+record deletion remain separate from this workflow.

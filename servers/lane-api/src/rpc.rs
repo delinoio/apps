@@ -4,6 +4,34 @@ use axum::http::HeaderMap;
 use connectrpc::{RequestContext, Response, ServiceRequest, ServiceResult, ServiceStream};
 use delino_protocol::lane::v1::*;
 use serde_json::{Value, json};
+use sqlx::Acquire;
+
+/// Record a successful synchronization contact for the authenticated device.
+///
+/// The caller holds the account advisory lock in the transaction that also carries the successful
+/// pull or push-item work and has reauthorized the principal, so the timestamp commits atomically
+/// with that work and is skipped when the work rolls back. The device identity comes from the
+/// principal, never from the request body or a version origin. The time is the database server
+/// clock so every Lane instance reports one consistent source.
+async fn record_sync_contact(tx: &mut sqlx::PgConnection, p: &crate::Principal) -> Result<()> {
+    let updated =
+        sqlx::query("UPDATE lane_devices SET last_sync_at=clock_timestamp() WHERE account_id=$1 AND id=$2 AND disconnected_at IS NULL")
+            .bind(&p.account_id)
+            .bind(&p.device_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+    if updated != 1 {
+        // authorize() just proved this device is connected under the same lock, so this is an invariant breach.
+        tracing::error!(
+            operation = "RecordSyncContact",
+            rows = updated,
+            "authorized device row is unavailable"
+        );
+        return Err(Fault::unauthenticated());
+    }
+    Ok(())
+}
 
 impl Server {
     pub async fn authenticate_mcp(&self, headers: &HeaderMap) -> Result<crate::Principal> {
@@ -63,7 +91,7 @@ impl Server {
         account_lock(&mut tx, &principal.account_id).await?;
         self.auth.authorize(&mut tx, &principal).await?;
         if service == "SyncService" && method == "PullChanges" {
-            if q["formatVersion"].as_u64() != Some(1) {
+            if q["formatVersion"].as_u64() != Some(crate::entities::FORMAT_VERSION) {
                 return Err(Fault::new(
                     connectrpc::ErrorCode::InvalidArgument,
                     8,
@@ -71,12 +99,23 @@ impl Server {
                 ));
             }
             if let Some(out) = crate::control::deletion_pull(&mut tx, &principal, &q).await? {
+                record_sync_contact(&mut tx, &principal).await?;
                 tx.commit().await?;
                 return Ok(out);
             }
         }
         let output = match service {
-            "LaneService" => {
+            "CaptureService" => {
+                crate::capture::dispatch(
+                    &mut tx,
+                    &principal,
+                    method,
+                    &q,
+                    self.config.max_item_bytes,
+                )
+                .await?
+            }
+            "LaneService" | "PlanningService" => {
                 crate::entities::dispatch(
                     &mut tx,
                     &principal,
@@ -107,6 +146,9 @@ impl Server {
             }
             _ => return Err(Fault::invalid("unknown service")),
         };
+        if service == "SyncService" && method == "PullChanges" {
+            record_sync_contact(&mut tx, &principal).await?;
+        }
         tx.commit().await?;
         Ok(output)
     }
@@ -141,7 +183,7 @@ impl Server {
                 self.config.max_item_bytes,
             )
             .await?;
-            if q["formatVersion"].as_u64() != Some(1) {
+            if q["formatVersion"].as_u64() != Some(crate::entities::FORMAT_VERSION) {
                 return Err(Fault::new(
                     connectrpc::ErrorCode::FailedPrecondition,
                     8,
@@ -158,6 +200,7 @@ impl Server {
             if string(q, "deviceId") != p.device_id || p.device_id.is_empty() {
                 return Err(Fault::denied());
             }
+            record_sync_contact(&mut tx, p).await?;
             tx.commit().await?;
             return Ok(json!({"results":[],"repositoryMappings":[]}));
         }
@@ -167,8 +210,11 @@ impl Server {
             let mut tx = self.db.begin().await?;
             account_lock(&mut tx, &p.account_id).await?;
             self.auth.authorize(&mut tx, p).await?;
+            let correlation = crate::sync::rejection_correlation(&mut tx, p, &request).await?;
+            // Keep the account lock while a savepoint isolates this item's writes.
+            let mut item_tx = tx.begin().await?;
             match crate::sync::dispatch(
-                &mut tx,
+                &mut item_tx,
                 p,
                 "PushChanges",
                 &request,
@@ -177,6 +223,21 @@ impl Server {
             .await
             {
                 Ok(out) => {
+                    item_tx.commit().await?;
+                    if let Some(correlation) = &correlation
+                        && crate::sync::correction_was_accepted(&mut tx, p, correlation, &out)
+                            .await?
+                    {
+                        sqlx::query("DELETE FROM lane_sync_rejections WHERE account_id=$1 AND epoch=$2 AND device_id=$3 AND entity_id=$4 AND base_heads=$5 AND version_id<>$6")
+                            .bind(&p.account_id)
+                            .bind(&correlation.epoch)
+                            .bind(&correlation.device_id)
+                            .bind(&correlation.entity_id)
+                            .bind(&correlation.base_heads)
+                            .bind(&correlation.version_id)
+                            .execute(&mut *tx)
+                            .await?;
+                    }
                     sqlx::query(
                         "DELETE FROM lane_sync_rejections WHERE account_id=$1 AND request_id=$2",
                     )
@@ -184,6 +245,7 @@ impl Server {
                     .bind(string(&item["meta"], "requestId"))
                     .execute(&mut *tx)
                     .await?;
+                    record_sync_contact(&mut tx, p).await?;
                     tx.commit().await?;
                     if let Some(items) = out["results"].as_array() {
                         results.extend(items.iter().cloned());
@@ -193,12 +255,26 @@ impl Server {
                     }
                 }
                 Err(error) => {
-                    tx.rollback().await?;
+                    item_tx.rollback().await?;
                     let request_id = string(&item["meta"], "requestId");
                     if crate::canonical_id(request_id) {
-                        sqlx::query("INSERT INTO lane_sync_rejections(account_id,request_id,reason) VALUES($1,$2,$3) ON CONFLICT(account_id,request_id) DO UPDATE SET reason=EXCLUDED.reason").bind(&p.account_id).bind(request_id).bind(error.reason).execute(&self.db).await?;
+                        sqlx::query("INSERT INTO lane_sync_rejections(account_id,request_id,reason,epoch,device_id,entity_id,version_id,base_heads) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(account_id,request_id) DO UPDATE SET reason=EXCLUDED.reason")
+                            .bind(&p.account_id)
+                            .bind(request_id)
+                            .bind(error.reason)
+                            .bind(correlation.as_ref().map(|c| &c.epoch))
+                            .bind(correlation.as_ref().map(|c| &c.device_id))
+                            .bind(correlation.as_ref().map(|c| &c.entity_id))
+                            .bind(correlation.as_ref().map(|c| &c.version_id))
+                            .bind(correlation.as_ref().map(|c| &c.base_heads))
+                            .execute(&mut *tx)
+                            .await?;
                     }
-                    results.push(json!({"requestId":item["meta"]["requestId"],"error":crate::error::detail(&error, &crate::id(), string(&item["version"], "entityId"), vec![])}));
+                    tx.commit().await?;
+                    let correlation = crate::id();
+                    // Category only: never the rejected item's text, names or relationships.
+                    tracing::warn!(correlation_id=%correlation,operation="PushChanges",result=%crate::planning::category(&error),retryable=matches!(error.code, connectrpc::ErrorCode::Unavailable | connectrpc::ErrorCode::ResourceExhausted),"Lane synchronization item rejected");
+                    results.push(json!({"requestId":item["meta"]["requestId"],"error":crate::error::detail(&error, &correlation, string(&item["version"], "entityId"), vec![])}));
                 }
             }
         }
@@ -212,13 +288,20 @@ impl Server {
         q: Value,
     ) -> ServiceResult<R> {
         let trace = crate::id();
+        let started = std::time::Instant::now();
         match self
             .execute(ctx.headers(), service, method, q.clone(), false)
             .await
         {
             Ok(output) => {
-                if service == "LaneService"
-                    && output["result"]["result"] == "RESULT_KIND_CONFLICT"
+                if matches!(service, "LaneService" | "PlanningService") {
+                    // Content-free: never log task text, names, descriptions or relationship titles.
+                    tracing::info!(correlation_id=%trace,operation=method,result="ok",duration_ms=started.elapsed().as_millis() as u64,"Lane operation completed");
+                }
+                if matches!(
+                    service,
+                    "LaneService" | "CaptureService" | "PlanningService"
+                ) && output["result"]["result"] == "RESULT_KIND_CONFLICT"
                     && !method.starts_with("Get")
                     && !method.starts_with("List")
                 {
@@ -247,7 +330,7 @@ impl Server {
                 .with_header("cache-control", "no-store"))
             }
             Err(f) => {
-                tracing::warn!(request_id=%trace,procedure=method,code=?f.code,"Lane operation rejected");
+                tracing::warn!(request_id=%trace,correlation_id=%trace,procedure=method,operation=method,code=?f.code,result=%crate::planning::category(&f),duration_ms=started.elapsed().as_millis() as u64,"Lane operation rejected");
                 Err(crate::error::connect(f, &trace, string(&q, "id"), vec![]))
             }
         }
@@ -461,6 +544,80 @@ impl LaneService for Server {
             ctx,
             "LaneService",
             "ResolveConflict",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+}
+
+#[allow(refining_impl_trait)]
+impl PlanningService for Server {
+    async fn get_planning_item(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, GetPlanningItemRequest>,
+    ) -> ServiceResult<GetPlanningItemResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "GetPlanningItem",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn list_planning_items(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, ListPlanningItemsRequest>,
+    ) -> ServiceResult<ListPlanningItemsResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "ListPlanningItems",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn create_planning_item(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, CreatePlanningItemRequest>,
+    ) -> ServiceResult<CreatePlanningItemResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "CreatePlanningItem",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn save_planning_item(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, SavePlanningItemRequest>,
+    ) -> ServiceResult<SavePlanningItemResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "SavePlanningItem",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn delete_planning_item(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, DeletePlanningItemRequest>,
+    ) -> ServiceResult<DeletePlanningItemResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "DeletePlanningItem",
             serde_json::to_value(q.to_owned_message())
                 .map_err(|_| Fault::invalid("invalid request").connect())?,
         )
@@ -833,5 +990,121 @@ impl SyncService for Server {
             }
         };
         Ok(Response::stream(stream).with_header("cache-control", "no-store"))
+    }
+}
+
+#[allow(refining_impl_trait)]
+impl CaptureService for Server {
+    async fn create_capture_task(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, CreateCaptureTaskRequest>,
+    ) -> ServiceResult<CreateCaptureTaskResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "CreateCaptureTask",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn get_attachment(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, GetAttachmentRequest>,
+    ) -> ServiceResult<GetAttachmentResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "GetAttachment",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn list_url_connections(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, ListURLConnectionsRequest>,
+    ) -> ServiceResult<ListURLConnectionsResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "ListURLConnections",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn create_url_connection(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, CreateURLConnectionRequest>,
+    ) -> ServiceResult<CreateURLConnectionResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "CreateURLConnection",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn save_url_connection(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, SaveURLConnectionRequest>,
+    ) -> ServiceResult<SaveURLConnectionResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "SaveURLConnection",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn delete_url_connection(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, DeleteURLConnectionRequest>,
+    ) -> ServiceResult<DeleteURLConnectionResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "DeleteURLConnection",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn begin_attachment_upload(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, BeginAttachmentUploadRequest>,
+    ) -> ServiceResult<BeginAttachmentUploadResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "BeginAttachmentUpload",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn complete_attachment_upload(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, CompleteAttachmentUploadRequest>,
+    ) -> ServiceResult<CompleteAttachmentUploadResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "CompleteAttachmentUpload",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
     }
 }

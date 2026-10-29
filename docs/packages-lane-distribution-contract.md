@@ -2,7 +2,7 @@
 
 ## Scope
 
-`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. These distribution paths do not establish package publication.
+`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. The Lane release publishes downloadable binary archives and a lightweight npm launcher and six platform npm archives; npm registry publication remains separate.
 
 ## Runtime and Language
 
@@ -10,15 +10,21 @@ The installer is a small Node.js launcher/package; the product CLI is Rust. Foll
 
 ## Users and Operators
 
-Individuals install the CLI directly or through npm; agents consume the common skill and connect to user-approved MCP. Operators use deployable server/web artifacts and runbooks. Store publication, formal native distribution and production deployment remain follow-up operations.
+Individuals install the CLI directly or through npm; agents consume the common skill and connect to user-approved MCP. Operators use deployable server/web artifacts and runbooks. Store publication, formal signing/installer distribution and API runtime deployment remain follow-up operations.
+
+## Agent Skills Distribution
+
+Skills that help agents use Lane will be distributed through [delinoio/lane-skills](https://github.com/delinoio/lane-skills). This is the planned skills distribution repository; this contract does not establish that the skills have been published. The common `SKILL.md` requirements below remain applicable.
 
 ## Interfaces and Contracts
 
-`npm install -g @delinoio/lane` installs a `lane` executable launcher. Direct binary archives use `lane-<os>-<arch>` identities (`darwin`, `windows`, `linux`; Windows payload `lane.exe`, others `lane`). Include version/platform manifests, checksums, repository license and notices. The npm launcher resolves its packaged platform artifact, verifies the manifest/checksum and propagates arguments, stdio, signals and exit codes. Unsupported platforms or missing/mismatched binaries fail with a useful installation error; never fall back to unverified execution or a server-only command.
+`npm install -g @delinoio/lane` installs a `lane` executable launcher. Direct binary archives use `lane-<os>-<arch>` identities (`darwin`, `windows`, `linux`; Windows payload `lane.exe`, others `lane`). Include version/platform manifests, checksums, repository license and notices. The npm launcher declares exact-version `optionalDependencies` on `@delinoio/lane-<os>-<arch>` packages for all six supported targets. Each platform package contains only its matching executable, manifest/checksum and licenses; its npm `os` and `cpu` fields select the host (`win32` for Windows and `x64` for amd64). The launcher package contains no executables. The npm launcher resolves the installed platform package, verifies its name/version/OS/CPU and the launcher manifest/checksum and propagates arguments, stdio, signals and exit codes. Unsupported platforms or missing/mismatched binaries fail with a useful installation error; never fall back to unverified execution or a server-only command.
 
-Prepare archives and npm packages for review with reproducible build instructions and executable smoke checks. An installer download, if used, must use an immutable release version and verified checksum; never fetch a mutable latest binary during normal command execution. Do not publish a package or release merely to run packaging tests.
+Prepare archives and npm packages for review with reproducible build instructions and executable smoke checks. Keep optional dependencies enabled for npm installation. Missing platform packages fail with a reinstall instruction; do not download or compile a fallback during installation or normal command execution. Publish matching platform packages before the launcher; packaging tests do not publish them. Do not publish a package or release merely to run packaging tests.
 
 The common `SKILL.md` must explain Lane task/proposal/progress distinctions, optional prompts, explicit save/history/restore, whole-task conflicts, deletion confirmation, local versus remote data, webhook event leases and completion, and online-only operations. It must instruct agents to read and manage user work through MCP without pretending that Lane executes agents. Preserve full management tools; omit decision-item features and mini-app implementations.
+
+The skill and the CLI `--help` output must describe the task planning capability and its limitations: optional priority, type, labels, start/due dates, story points, milestone and cycle (unassigned by default, zero points differing from unassigned); repository-owned labels, milestones and cycles with their name, color, date and count limits; relationships (parent/subtasks, depends on/blocks, related, duplicate of) restricted to one repository, with no effect on progress or completion; that moves and deletions detach references while keeping tasks; filters (AND across fields, OR within a field, per-field unassigned) and single-key sorts with unassigned last; history without metadata restore; constraint violations and the blocked-item correction and `sync run --retry-blocked` flow; and that the explicit `data reset` is a destructive development-only procedure that agents must never run unless the user asks. The skill states that web is online-only and that Lane has no assignees, bulk edits, saved views, time tracking or external tracker integration. Help text and the skill are updated in the same change as the interface contracts.
 
 Ship connection examples:
 
@@ -26,9 +32,43 @@ Ship connection examples:
 - Remote MCP: `https://lane.api.delino.io/mcp`, browser Logto approval, full-account access, connection listing and individual revocation. Explain that this endpoint remains available when devices are off.
 - CLI local default and explicit `--remote`; human output versus `--json`; request IDs and expected versions for safe retries.
 
-User guides cover installation, repository registration/rename/moves, task/proposal management, prompt restore, conflicts, explicit Save and failure/input retention, login/sync/logout choices, device/connection management, all three deletion scopes, webhook settings/events and processing, per-device notifications and unsupported push environments. Describe `lane-dev://` versus `lane://` callback/open/repository/task links. No decision-item links are included. Public docs show supported behavior and stable public interfaces, not repository-internal contracts or operational secret paths.
+User guides cover installation, repository registration/rename/moves, task/proposal management, task planning fields, repository labels/milestones/cycles, relationships, filtering and sorting, rejected synchronization correction and the development data reset, prompt restore, conflicts, explicit Save and failure/input retention, login/sync/logout choices, device/connection management, all three deletion scopes, webhook settings/events and processing, per-device notifications and unsupported push environments. Describe `lane-dev://` versus `lane://` callback/open/repository/task links. No decision-item links are included. Public docs show supported behavior and stable public interfaces, not repository-internal contracts or operational secret paths.
 
 Native distributions retain the existing SDK, embedded production-bundle and license-notice contracts. A desktop package must make its matching `lane sync run` helper available to host supervision without assuming a globally installed npm package. Register deep-link routes by build channel; queue cold-launch routing until storage/UI listeners are ready. Formal signing/store setup is separate from unsigned build/install/behavior validation. Do not add WNS registration to Windows packaging.
+
+## Tag-based binary distribution
+
+Every changeset-selected Lane app or CLI release builds all six CLI targets and
+macOS Intel/Apple Silicon plus Windows x64 desktop archives through the
+[Lane binary publication procedure](repository-workflow-contract.md#lane-binary-publication).
+The GitHub Release includes direct CLI archives, the lightweight `@delinoio/lane` npm
+launcher and all six optional platform npm archives, desktop application archives, checksums and source/platform metadata.
+Lane CLI/npm package versions remain independent of the Lane release tag version.
+Desktop packages embed the matching verified CLI and notices. macOS packages are
+ad-hoc signed; Windows packages are unsigned portable archives. No signing
+identity, npm registry credential or store upload is required for this workflow.
+
+Assembly verifies each platform package directly before installation, including its OS/CPU metadata, source revision, executable checksum and notices. It does not add platform binaries to the launcher archive. Publication requires all targets before upload. Existing published assets must
+match byte-for-byte on retry; a mismatch fails without replacing the asset.
+Windows ARM64 CLI is cross-built; host smoke checks execute only native targets.
+These release builds do not establish native installation or GUI acceptance.
+
+## Desktop Chrome companion packaging
+
+The existing Lane desktop package includes the standalone Native Messaging relay,
+its private pinned Node 24 runtime and the original Node license. macOS packages
+also retain a patched Node 22 compatibility runtime and its license for macOS 12
+through 13.4, where the official Node 24 binary cannot run. The launcher selects
+the runtime for the host OS and connects to an already running Lane host. It must not launch
+Lane. The build records the runtime version and verified archive checksum; this
+integrity check does not replace dependency security review.
+
+The desktop installer registers the exact installed relay path for the explicitly
+configured extension IDs. An empty ID list disables registration and connection
+service. Uninstall removes only the matching registration and preserves Lane data.
+Use the [application packaging procedure](apps-lane-foundation.md#desktop-capture-packaging-and-local-validation)
+for local builds and isolated installer checks. Fixture IDs and unsigned packages
+do not establish Chrome Web Store publication or native runtime acceptance.
 
 ## Storage
 
@@ -44,7 +84,13 @@ Installer/launcher errors identify platform/version and safe failure categories,
 
 ## Build and Test
 
-Run root install, package-local checks and packed-package smoke tests from a disposable install directory. Verify archive contents, checksums, licenses, executable selection, missing/unsupported platform errors, argument/stdin/stdout/stderr/exit propagation, and local stdio MCP startup. Build macOS/Windows/Linux binaries with the matching Rust targets, C linker/native SDK and `protoc`, and record which were actually executed. The default package build requires all six target toolchains; repeated `--platform` selections produce explicitly partial validation artifacts. CI uses the Linux amd64 host subset. Full release candidates must contain all six artifacts. Native SDK build/install/behavior and accessibility acceptance remain separate on all native targets.
+Archive creation, listing and extraction use relative archive names from the output directory so GNU tar accepts Windows drive paths. Guidance link validation normalizes native path separators before looking up Markdown headings.
+
+Windows packaging and smoke checks invoke npm's JavaScript entry with Node,
+without shell parsing of paths or arguments. Resolve that entry from the installed
+`npm.cmd` location; do not execute the command shim as a native executable.
+
+Run root install, package-local checks and packed-package smoke tests from a disposable install directory. Use an isolated loopback npm registry serving only local candidate archives to test normal platform selection without public publication or a pre-populated cache. Verify that installation retains only the host platform package and that omitting optional dependencies produces an actionable error. Verify the published help text and common skill describe the planning commands, MCP tools and limitations above. Verify archive contents, checksums, licenses, executable selection, missing/unsupported platform errors, argument/stdin/stdout/stderr/exit propagation, and local stdio MCP startup. Build macOS/Windows/Linux binaries with the matching Rust targets, C linker/native SDK and `protoc`, and record which were actually executed. The default package build requires all six target toolchains; repeated `--platform` selections produce explicitly partial validation artifacts. CI uses the Linux amd64 host subset. Full release candidates must contain all six artifacts. Native SDK build/install/behavior and accessibility acceptance remain separate on all native targets.
 
 Keep existing PR/main/affected CI platform restrictions and default affected manual validation. Do not add macOS PR runners or a full manual CI mode. Produce reviewable web/API/MCP deployment outputs, provider configuration instructions, mocked tests, dashboards/alerts and runbooks through their owning domains. Do not claim real Logto/push/email delivery, production deployment, store publication or formal release from artifact tests.
 
@@ -64,3 +110,13 @@ Change CLI/app/server/project contracts and public user guides together when ins
 - [Application](apps-lane-foundation.md)
 - [Local store](apps-lane-local-store-contract.md)
 - [Repository license](repository-license-contract.md)
+
+## RealQA integration
+
+The [RealQA contract](apps-lane-realqa-contract.md) extends this domain with durable
+final-PNG attachments, authorized retrieval and synchronized URL-to-repository
+rules. Preserve existing account routing, whole-task conflicts, request replay,
+history, task moves and deletion precedence. Native saves commit locally before
+optional image upload. Pending synchronization must not be reported as failed
+local saving. Unsupported schema/format versions must be refused before writes.
+These requirements do not establish implementation or release acceptance.

@@ -6,7 +6,7 @@ Provide reusable shadcn/ui primitives and theme tokens for every application.
 
 ## Project ID
 
-`ui`. The npm workspace is `@delino/ui`.
+`ui`. The npm workspace is `@packages/ui`.
 
 ## Domain Ownership Map
 

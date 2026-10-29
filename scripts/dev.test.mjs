@@ -437,7 +437,7 @@ test(
       [
         fileURLToPath(new URL("./dev.mjs", import.meta.url)),
         "--ui=stream",
-        "--filter=@delinoio/delcore-api",
+        "--filter=@servers/delcore-api",
       ],
       {
         env: {
@@ -458,7 +458,7 @@ test(
       "--concurrency=20",
       "--continue=dependencies-successful",
       "--ui=stream",
-      "--filter=@delinoio/delcore-api",
+      "--filter=@servers/delcore-api",
     ]);
     assert.equal(
       captured.cwd,
@@ -543,7 +543,7 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
   );
   for (const service of ["delcore", "delitools", "devbase", "git-tracker"]) {
     assert.ok(
-      config.tasks[`@delinoio/${service}-api#dev`].passThroughEnv.includes(
+      config.tasks[`@servers/${service}-api#dev`].passThroughEnv.includes(
         "CARGO_TARGET_DIR",
       ),
     );
@@ -634,7 +634,7 @@ test("Perfine Compose database and Turbo handoff remain service-owned", async ()
   const config = JSON.parse(
     readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
   );
-  const task = config.tasks["@delinoio/perfine-api#dev"];
+  const task = config.tasks["@servers/perfine-api#dev"];
   for (const key of [
     "SPACE_STORAGE_QUOTA_BYTES",
     "SINGLE_UPLOAD_LIMIT_BYTES",
@@ -670,7 +670,7 @@ test("Lane development keeps its database and provider configuration API-local",
   const config = JSON.parse(
     readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
   );
-  const task = config.tasks["lane-api#dev"];
+  const task = config.tasks["@servers/lane-api#dev"];
   assert.deepEqual(task.dependsOn, ["//#server-build"]);
   for (const key of [
     databaseHandoff,

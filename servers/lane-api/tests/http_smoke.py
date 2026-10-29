@@ -4,7 +4,9 @@
 Requires LANE_TEST_DATABASE_URL, psql, and an already-built LANE_TEST_BINARY.
 The database must be disposable and dedicated to this test.
 """
+import base64
 import hashlib
+import hmac
 import json
 import os
 import socket
@@ -63,10 +65,15 @@ def sql(statement):
     subprocess.run(["psql", DB, "-v", "ON_ERROR_STOP=1", "-q", "-c", statement], check=True, stdout=subprocess.DEVNULL)
 
 
-def call(path, body=None, token=TOKEN, headers=None):
+def query(statement):
+    result = subprocess.run(["psql", DB, "-v", "ON_ERROR_STOP=1", "-q", "-At", "-c", statement], check=True, capture_output=True, text=True)
+    return result.stdout.strip()
+
+
+def call(path, body=None, token=TOKEN, headers=None, base=None):
     h = {"authorization": "Bearer " + token, "content-type": "application/json", "connect-protocol-version": "1"}
     h.update(headers or {})
-    request = urllib.request.Request(api + path, data=None if body is None else json.dumps(body).encode(), headers=h)
+    request = urllib.request.Request((base or api) + path, data=None if body is None else json.dumps(body).encode(), headers=h)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             data = response.read()
@@ -97,7 +104,71 @@ env = dict(os.environ, DATABASE_URL=DB, LISTEN=f"127.0.0.1:{port}", LANE_PUBLIC_
            LOGTO_ISSUER=mock_url, LANE_LOGTO_CLIENT_ID="fixture", LANE_LOGTO_CLIENT_SECRET="fixture", DELCORE_RESOURCE="fixture", DELCORE_URL=mock_url, LOGTO_TOKEN_URL=mock_url + "/token", CLIENT_ID="fixture", CLIENT_SECRET="fixture",
            LANE_WEB_RETURN_URLS=json.dumps([api + "/callback"]), LANE_OAUTH_CLIENTS=json.dumps({"fixture": {"name": "fixture", "redirect_uris": [api + "/callback"], "origin_kind": "ORIGIN_KIND_CLI", "resource": api}}),
            LANE_WEBHOOK_ENCRYPTION_KEY="CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg", LANE_WEBHOOK_BASE_URL=api,
+           LANE_R2_ENDPOINT=mock_url, LANE_R2_BUCKET="fixture", LANE_R2_ACCESS_KEY_ID="fixture-access", LANE_R2_SECRET_ACCESS_KEY="fixture-secret",
            LANE_APNS_ENABLED="false", LANE_FCM_ENABLED="false", LANE_WEB_PUSH_ENABLED="false")
+WEBHOOK_BODY = b'{"id":"c04-event-1","type":"test","occurredAt":"2026-10-25T00:00:00Z","payload":{}}'
+
+
+def deliver(url, secret, body=WEBHOOK_BODY, valid=True):
+    """POST a signed webhook to exactly the supplied URL and return status and decoded JSON."""
+    timestamp = str(int(time.time()))
+    key = base64.urlsafe_b64decode(secret + "=" * (-len(secret) % 4))
+    digest = hmac.new(key, timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+    if not valid:
+        digest = "0" * 64
+    request = urllib.request.Request(url, data=body, method="POST", headers={"content-type": "application/json", "lane-timestamp": timestamp, "lane-signature": "v1=" + digest})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        data = error.read()
+        return error.code, json.loads(data) if data and "json" in error.headers.get("content-type", "") else data.decode()
+
+
+def webhook_scenario(label, base, expected_prefix, rewrite=None):
+    """Create a receiver through Connect, then POST to the returned endpoint through the real router.
+
+    `base` is the Connect origin of the server under test, whose LANE_WEBHOOK_BASE_URL is that
+    origin plus a suffix, and `expected_prefix` is the intake base the endpoint must use.
+    `rewrite` maps the returned path to the internal route, standing in for an operator proxy.
+    """
+    receiver = identity()
+    created = call("/lane.v1.WebhookService/CreateReceiver", {"meta": {"requestId": identity()}, "id": receiver, "repositoryId": repository, "name": label}, base=base)
+    assert created[0] == 200, (label, created)
+    endpoint, secret = created[1]["endpoint"], created[1]["secret"]
+    assert endpoint == f"{base}{expected_prefix}/{receiver}", (label, endpoint)
+    assert endpoint.count("/webhooks/") <= 1, endpoint
+    target = endpoint if rewrite is None else endpoint.replace(rewrite[0], rewrite[1], 1)
+    rejected = deliver(target, secret, valid=False)
+    assert rejected[0] == 401, (label, rejected)
+    assert query(f"SELECT count(*) FROM lane_webhook_events WHERE receiver_id='{receiver}'") == "0"
+    accepted = deliver(target, secret)
+    assert accepted[0] == 200 and not accepted[1].get("alreadyReceived"), (label, accepted)
+    rows = query(f"SELECT id, state, repository_id FROM lane_webhook_events WHERE receiver_id='{receiver}'").splitlines()
+    assert len(rows) == 1 and rows[0].split("|")[1:] == ["PENDING", repository], (label, rows)
+    retried = deliver(target, secret)
+    assert retried[0] == 200 and retried[1]["alreadyReceived"] is True and retried[1]["id"] == accepted[1]["id"], (label, retried)
+    assert query(f"SELECT count(*) FROM lane_webhook_events WHERE receiver_id='{receiver}'") == "1"
+
+
+def start_server(suffix):
+    """Start another server on the same disposable database with a different webhook base URL."""
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        extra_port = listener.getsockname()[1]
+    extra = f"http://127.0.0.1:{extra_port}"
+    extra_log = log.with_name(f"{log.stem}-{extra_port}{log.suffix}").open("w")
+    extra_process = subprocess.Popen([BINARY, "serve"], env=dict(env, LISTEN=f"127.0.0.1:{extra_port}", LANE_WEBHOOK_BASE_URL=extra + suffix), stdout=extra_log, stderr=extra_log)
+    for _ in range(100):
+        assert extra_process.poll() is None, "extra server exited during startup; inspect fixture log"
+        try:
+            if call("/health/ready", base=extra)[0] == 200:
+                return extra_process, extra, extra_log
+        except OSError:
+            time.sleep(0.05)
+    raise AssertionError("extra server readiness timeout")
+
+
 subprocess.run([BINARY, "migrate"], env=env, check=True, stdout=subprocess.DEVNULL)
 subprocess.run([BINARY, "check-schema"], env=env, check=True, stdout=subprocess.DEVNULL)
 sql(f"INSERT INTO lane_accounts VALUES('{ACCOUNT}','{TENANT}','{EPOCH}'); INSERT INTO lane_devices(account_id,id,name) VALUES('{ACCOUNT}','{DEVICE}','fixture');")
@@ -126,6 +197,22 @@ with log.open("w") as output:
         first = call("/lane.v1.LaneService/CreateRepository", request)
         assert first[0] == 200, first
         assert call("/lane.v1.LaneService/CreateRepository", request)[1]["result"]["version"]["versionId"] == first[1]["result"]["version"]["versionId"]
+        # Webhook endpoints: the documented origin-only base must yield a reachable endpoint, and
+        # each explicit base keeps its configured path. Requests go through the real HTTP router.
+        webhook_scenario("origin", api, "/webhooks")
+        for label, suffix, prefix, rewrite in [
+            ("origin slash", "/", "/webhooks", None),
+            ("explicit webhooks", "/webhooks", "/webhooks", None),
+            ("explicit webhooks slash", "/webhooks/", "/webhooks", None),
+            ("custom hooks", "/hooks/", "/hooks", ("/hooks/", "/webhooks/")),
+        ]:
+            extra_process, extra_api, extra_log = start_server(suffix)
+            try:
+                webhook_scenario(label, extra_api, prefix, rewrite)
+            finally:
+                extra_process.terminate()
+                extra_process.wait(timeout=15)
+                extra_log.close()
         task = identity()
         created = call("/lane.v1.LaneService/CreateTask", {"meta": {"requestId": identity()}, "id": task, "repository": {"id": repository}, "title": "fixture"})
         assert created[0] == 200, created
@@ -138,6 +225,31 @@ with log.open("w") as output:
         assert conflict[0] == 409 and conflict[1]["code"] == "aborted", conflict
         retained = call("/lane.v1.LaneService/GetTask", {"id": task})
         assert retained[1]["result"]["result"] == "RESULT_KIND_CONFLICT"
+        # Planning: the typed PlanningService, task metadata, filters, constraint errors and a
+        # constraint-rejected synchronization item over the real HTTP adapters.
+        label = identity()
+        made = call("/lane.v1.PlanningService/CreatePlanningItem", {"meta": {"requestId": identity()}, "id": label, "item": {"label": {"repositoryId": repository, "name": "Docs", "color": "#aabbcc"}}})
+        assert made[0] == 200 and made[1]["result"]["version"]["label"]["color"] == "#AABBCC", made
+        duplicate = call("/lane.v1.PlanningService/CreatePlanningItem", {"meta": {"requestId": identity()}, "id": identity(), "item": {"label": {"repositoryId": repository, "name": "docs", "color": "#000000"}}})
+        assert duplicate[0] == 400 and duplicate[1]["code"] == "failed_precondition", duplicate
+        assert call("/lane.v1.PlanningService/GetPlanningItem", {"id": label})[1]["result"]["version"]["label"]["name"] == "Docs"
+        child = identity()
+        assert call("/lane.v1.LaneService/CreateTask", {"meta": {"requestId": identity()}, "id": child, "repository": {"id": repository}, "title": "child"})[0] == 200
+        tagged = identity()
+        planned = call("/lane.v1.LaneService/CreateTask", {"meta": {"requestId": identity()}, "id": tagged, "repository": {"id": repository}, "title": "planned", "priority": "TASK_PRIORITY_HIGH", "labelIds": [label], "storyPoints": 0, "relationshipEdits": {"addSubtaskIds": [child]}})
+        assert planned[0] == 200 and planned[1]["result"]["version"]["task"]["labelIds"] == [label], planned
+        assert [a["version"]["entityId"] for a in planned[1]["affected"]] == [child], planned
+        blocked = call("/lane.v1.LaneService/CreateTask", {"meta": {"requestId": identity()}, "id": identity(), "repository": {"id": repository}, "title": "blocked", "relationshipEdits": {"addSubtaskIds": [task]}})
+        assert blocked[0] == 400 and blocked[1]["code"] == "failed_precondition", blocked
+        listed = call("/lane.v1.LaneService/ListTasks", {"filter": {"labelIds": [label]}, "sortKey": "TASK_SORT_KEY_PRIORITY", "page": {"size": 1}})
+        assert listed[0] == 200 and [i["version"]["entityId"] for i in listed[1]["items"]] == [tagged] and not listed[1].get("nextCursor"), listed
+        wrong_kind = call("/lane.v1.PlanningService/GetPlanningItem", {"id": task})
+        assert wrong_kind[0] == 404, wrong_kind
+        pushed = call("/lane.v1.SyncService/PushChanges", {"formatVersion": 3, "epoch": EPOCH, "deviceId": DEVICE, "mutations": [{"meta": {"requestId": identity()}, "kind": "MUTATION_KIND_CREATE", "version": {"formatVersion": 3, "entityId": identity(), "kind": "ENTITY_KIND_LABEL", "versionId": identity(), "createdAt": "2026-01-01T00:00:00Z", "origin": {"kind": "ORIGIN_KIND_CLI", "deviceId": DEVICE, "deviceName": "fixture"}, "label": {"repositoryId": repository, "name": "DOCS", "color": "#000000"}}}]})
+        rejection = pushed[1]["results"][0]["error"]
+        assert pushed[0] == 200 and rejection["reason"] == "ERROR_REASON_CONSTRAINT_VIOLATION" and rejection["violation"] == "CONSTRAINT_VIOLATION_DUPLICATE_NAME" and not rejection.get("retryable"), pushed
+        assert call("/lane.v1.SyncService/PushChanges", {"formatVersion": 2, "epoch": EPOCH, "deviceId": DEVICE, "mutations": []})[0] == 400
+        assert call("/lane.v1.SyncService/GetSyncInfo", {})[1]["formatVersion"] == 3
         begin = {"meta": {"requestId": identity()}, "mode": "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL", "confirmedAccountId": ACCOUNT}
         challenge = call("/lane.v1.AccountService/BeginDataDeletion", begin)
         assert challenge[0] == 200, challenge
@@ -148,6 +260,10 @@ with log.open("w") as output:
         accept = {"accept": "application/json, text/event-stream"}
         assert call("/mcp", init, headers=accept)[0] == 401
         assert call("/mcp", init, token=MCP_TOKEN, headers=accept)[0] == 200
+        tool = call("/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "lane_list_planning_items", "arguments": {"kind": "ENTITY_KIND_LABEL"}}}, token=MCP_TOKEN, headers=accept)
+        assert tool[0] == 200 and tool[1]["result"]["isError"] is False and len(tool[1]["result"]["structuredContent"]["items"]) == 1, tool
+        refused = call("/mcp", {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lane_create_planning_item", "arguments": {"id": identity(), "meta": {"requestId": identity()}, "item": {"cycle": {"repositoryId": repository, "name": "Bad", "startDate": "2026-02-02", "endDate": "2026-02-01"}}}}}, token=MCP_TOKEN, headers=accept)
+        assert refused[1]["result"]["isError"] is True and refused[1]["result"]["structuredContent"]["error"]["violation"] == "CONSTRAINT_VIOLATION_DATE_ORDER", refused
         assert call("/lane.v1.LaneService/ListRepositories", {}, token=MCP_TOKEN)[0] == 401
         state = "TENANT_STATE_BLOCKED"
         assert call("/lane.v1.LaneService/ListRepositories", {})[0] == 403

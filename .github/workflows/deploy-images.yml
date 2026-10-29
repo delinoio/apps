@@ -1,0 +1,60 @@
+name: Publish server images
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      servers:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        server: ${{ fromJSON(inputs.servers) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - name: Sign in to GitHub Container Registry
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+      - name: Build and publish the immutable server image
+        env:
+          SERVER: ${{ matrix.server }}
+          VERSION: ${{ inputs.revision }}
+          REVISION: ${{ inputs.revision }}
+          REPOSITORY: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${OWNER}/${SERVER}:sha-${REVISION}"
+          # A release tag never moves, so a retry reuses the published image.
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "Reusing the published image for this release"
+          else
+            docker build \
+              --file "servers/${SERVER}/Dockerfile" \
+              --label "org.opencontainers.image.source=https://github.com/${REPOSITORY}" \
+              --label "org.opencontainers.image.version=${VERSION}" \
+              --label "org.opencontainers.image.revision=${REVISION}" \
+              --label "org.opencontainers.image.licenses=FSL-1.1-ALv2" \
+              --tag "$image" .
+            docker push "$image"
+          fi
+          printf 'Image: %s\n' "$image" >> "$GITHUB_STEP_SUMMARY"
+      - name: Sign out of GitHub Container Registry
+        if: always()
+        run: docker logout ghcr.io

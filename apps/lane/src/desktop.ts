@@ -13,6 +13,9 @@ export interface DesktopBridge {
   ): void;
 }
 export interface HostModule {
+  workspace?(value: string, callback: (raw: string) => void): void;
+  update?(value: string, callback: (raw: string) => void): void;
+  realqa?(value: string, callback: (raw: string) => void): void;
   copyText(value: string, callback: (raw: string) => void): void;
   openURL(value: string, callback: (raw: string) => void): void;
   cancelReauthentication(value: string, callback: (raw: string) => void): void;
@@ -59,6 +62,12 @@ export function desktopModules(bridge: DesktopBridge): {
       close: (space, callback) => call("LaneStore", "close", [space], callback),
     },
     host: {
+      workspace: (value, callback) =>
+        call("LaneHost", "workspace", [value], callback),
+      update: (value, callback) =>
+        call("LaneHost", "update", [value], callback),
+      realqa: (value, callback) =>
+        call("LaneHost", "realqa", [value], callback),
       copyText: (value, callback) =>
         call("LaneHost", "copyText", [value], callback),
       openURL: (value, callback) =>

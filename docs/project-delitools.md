@@ -6,15 +6,15 @@ Provide useful end-user tools through desktop, mobile and web applications, with
 
 ## Project ID
 
-`delitools`. The npm workspace is `delitools`; the native package is `delitools-shell`.
+`delitools`. The npm workspace is `@apps/delitools`; the native package is `delitools-shell`.
 
 ## Domain Ownership Map
 
 - `apps/delitools`: shared React frontend for the web application at `https://delitools.delino.io`, CEF desktop host and Wry mobile host.
-- `.github/workflows/release-delitools.yml`: tagged Cloudflare Pages web publication. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `.github/workflows/release.yml`: changeset-selected Cloudflare Pages web publication through shared `delino-site-production`. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 - `apps/delitools/scripts/mobile-workflow.test.mjs`: fixture checks for the mobile release workflow.
-- `.github/workflows/release-delitools-mobile.yml`: signed Android internal testing and iOS TestFlight uploads.
-- `servers/delitools-api`: independent Rust API for paid translation and extraction, with PostgreSQL migrations, a usage-delivery worker and OCI packaging. The `delino` release publishes its image; see the [workflow contract](repository-workflow-contract.md#server-image-publication).
+- `.github/workflows/deploy-delitools-mobile.yml`: signed Android internal testing and iOS TestFlight uploads.
+- `servers/delitools-api`: independent Rust API for paid translation and extraction, with PostgreSQL migrations, a usage-delivery worker and OCI packaging. The unified release publishes its image when selected; see the [workflow contract](repository-workflow-contract.md#server-image-publication).
 - `protos/delitools/v1`: Connect schema, generated Go and TypeScript messages and Connect-Go bindings.
 - `examples/delitools-client`: Go consumer example.
 - `servers/crates/delino-protos` and `servers/scripts/dev-api.mjs`: shared Rust protocol crate and API development launcher; see the [server Rust workspace contract](servers-rust-workspace-contract.md).

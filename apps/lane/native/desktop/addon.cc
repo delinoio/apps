@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "async_module.h"
 #include "platform_runtime.h"
+#include "realqa.h"
 #include "../store/vendor/json/json.hpp"
 
 namespace {
 using namespace lane::desktop;
 struct State {
   std::shared_ptr<PlatformRuntime> runtime;
+  std::shared_ptr<Handler> capture;
   std::shared_ptr<Events> events = std::make_shared<Events>();
 };
 napi_value Configure(napi_env env, napi_callback_info info) {
@@ -22,7 +24,7 @@ napi_value Configure(napi_env env, napi_callback_info info) {
     napi_throw_type_error(env, nullptr, "Expected a resource directory and Lane scheme, once per process");
     return undefined;
   }
-  try { state.runtime = CreatePlatformRuntime(resources, scheme, state.events); }
+  try { state.runtime = CreatePlatformRuntime(resources, scheme, state.events); state.capture = CreateCaptureHost(state.events); }
   catch (...) { napi_throw_error(env, nullptr, "Lane native service could not start"); }
   return undefined;
 }
@@ -79,6 +81,9 @@ NAPI_MODULE_INIT() {
   napi_set_named_property(env, exports, "store", store);
   napi_set_named_property(env, exports, "host", host);
   Export(env, exports, bind(2), "control", 2);
+  Export(env, exports, std::make_shared<Handler>([state](const auto& method, const auto& args) {
+    return state->capture ? (*state->capture)(method, args) : std::string(kUnavailable);
+  }), "capture", 1);
   napi_value testing;
 #ifdef LANE_NATIVE_TESTING
   napi_get_boolean(env, true, &testing);

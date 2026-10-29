@@ -24,32 +24,65 @@ Mutating invocations accept `--request-id <uuid>` for reliable retries and print
 
 ### Command surface and typed mapping
 
-| Commands                                                     | Typed operation / behavior                                                                                               |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `repository list/get/create/edit/delete`                     | LaneService repository methods; URL registration/rename rules apply                                                      |
-| `task list/get/create/edit/delete`                           | LaneService task methods; create accepts a repository ID or URL, title and optional description/prompt/progress/proposal |
-| `task progress`, `task accept`, `task reject`                | SetProgress / SetProposal with unchanged separate state                                                                  |
-| `task move`                                                  | SaveTask whole snapshot with new repository ID and expected version                                                      |
-| `task history`, `task prompt-history`, `task restore-prompt` | ListHistory / RestorePrompt; source version belongs to the same task                                                     |
-| `conflict list/get/resolve`                                  | Read heads/alternatives and ResolveConflict; resolution creates a new version                                            |
-| `sync connect/status/run/disconnect`                         | Browser approval, durable outbox status, background loop, KEEP_LOCAL/REMOVE_LOCAL choice                                 |
-| `login`, `logout`                                            | Browser connection approval; logout requires retained-local-data choice                                                  |
-| `device list/disconnect`                                     | AccountService; explicit remote target                                                                                   |
-| `connection list/revoke`                                     | AccountService; explicit remote target                                                                                   |
-| `notification get/set`                                       | Per-device preferences, not account-wide settings                                                                        |
-| `receiver list/create/edit/rotate-key/delete`                | WebhookService receiving settings; online-only                                                                           |
-| `event list/get/delete/claim/renew/release/complete/reopen`  | WebhookService; local list/get reads retained cached data; other operations online-only                                  |
-| `data remove-local`                                          | Remove only selected local space through coordinated handle shutdown                                                     |
-| `data delete-everywhere`, `data clear-server`                | AccountService deletion modes, explicit remote/account confirmation and reauthentication                                 |
-| `mcp serve`                                                  | Local stdio MCP; default local store                                                                                     |
+| Commands                                                            | Typed operation / behavior                                                                                                                                                            |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repository list/get/create/edit/delete`                            | LaneService repository methods; URL registration/rename rules apply                                                                                                                   |
+| `task list/get/create/edit/delete`                                  | LaneService task methods; create accepts a repository ID or URL, title and optional description/prompt/progress/proposal and planning fields; list adds planning filters and one sort |
+| `task progress`, `task accept`, `task reject`                       | SetProgress / SetProposal with unchanged separate state                                                                                                                               |
+| `task move`                                                         | SaveTask whole snapshot with new repository ID and expected version                                                                                                                   |
+| `task history`, `task prompt-history`, `task restore-prompt`        | ListHistory / RestorePrompt; source version belongs to the same task                                                                                                                  |
+| `conflict list/get/resolve`                                         | Read heads/alternatives and ResolveConflict; resolution creates a new version; `--kind` also accepts `label`, `milestone`, `cycle`                                                    |
+| `label`, `milestone`, `cycle` `list/get/create/edit/delete/history` | PlanningService methods and ListHistory for repository-owned planning items                                                                                                           |
+| `sync connect/status/run/disconnect`                                | Browser approval, durable outbox status, background loop, KEEP_LOCAL/REMOVE_LOCAL choice                                                                                              |
+| `login`, `logout`                                                   | Browser connection approval; logout requires retained-local-data choice                                                                                                               |
+| `device list/disconnect`                                            | AccountService; explicit remote target                                                                                                                                                |
+| `connection list/revoke`                                            | AccountService; explicit remote target                                                                                                                                                |
+| `notification get/set`                                              | Per-device preferences, not account-wide settings                                                                                                                                     |
+| `receiver list/create/edit/rotate-key/delete`                       | WebhookService receiving settings; online-only                                                                                                                                        |
+| `event list/get/delete/claim/renew/release/complete/reopen`         | WebhookService; local list/get reads retained cached data; other operations online-only                                                                                               |
+| `data remove-local`                                                 | Remove only selected local space through coordinated handle shutdown                                                                                                                  |
+| `data reset`                                                        | Explicit local development reset of one space; see below                                                                                                                              |
+| `data delete-everywhere`, `data clear-server`                       | AccountService deletion modes, explicit remote/account confirmation and reauthentication                                                                                              |
+| `mcp serve`                                                         | Local stdio MCP; default local store                                                                                                                                                  |
 
-Names are public command groups; help must spell out required arguments and local/online distinctions. `task list` supports all repositories or one repository, progress/proposal filters and title/description substring search. Prompt input may use a literal or stdin; reading source text is not a database import/export feature. Explicit task edits save immediately as one command/version. Shared CLI execution continues when the app window is closed.
+Names are public command groups; help must spell out required arguments and local/online distinctions. `task list` supports all repositories or one repository, progress/proposal filters, the planning filters and sort below, and title/description substring search. Prompt input may use a literal or stdin; reading source text is not a database import/export feature. Explicit task edits save immediately as one command/version. Shared CLI execution continues when the app window is closed.
 
 `sync run` owns a bounded-retry loop and the per-space ownership lease from the local-store contract. It releases ownership on clean exit; crashes leave durable outbox data and an expiring owner record. Persist acknowledgments/cursors before removing pending work. Desktop host supervision uses the same executable, not a second queue implementation. Mobile hosts implement the protocol within their own lifecycle. Do not promise background execution while the OS suspends an app.
 
+### Task planning commands
+
+`task create` and `task edit` accept the following planning options in addition to existing options. Omitting an option leaves the field unchanged on edit and unassigned on create. The values `none` and `--clear-*` clear a field. Invalid values are rejected before storage with a field-specific message; server and store constraint failures return `CONSTRAINT_VIOLATION` with the named violation.
+
+- `--priority none|urgent|high|normal|low`, `--type none|bug|feature|improvement|documentation|maintenance`.
+- `--label-id UUID` (repeatable, replaces the set) and `--clear-labels`.
+- `--start-date YYYY-MM-DD|none`, `--due-date YYYY-MM-DD|none`, `--story-points N|none` (0 differs from `none`).
+- `--milestone-id UUID|none`, `--cycle-id UUID|none`.
+- `--parent-id UUID|none`, `--duplicate-of UUID|none`.
+- `--depends-on UUID` (repeatable, replaces the set) with `--clear-depends-on`; `--related UUID` (repeatable, replaces the set) with `--clear-related`.
+- `--add-subtask UUID`, `--remove-subtask UUID`, `--add-blocks UUID` and `--remove-blocks UUID` (repeatable) edit other tasks' stored fields through RelationshipEdits in the same atomic operation; the result lists the affected tasks.
+
+`task list` accepts, in addition to the existing options:
+
+- `--completed none|last-24-hours|last-7-days|last-30-days|all`. A duration also requires `--completed-cutoff <UTC RFC 3339 timestamp>` at microsecond precision. Reuse that exact cutoff with `--cursor` on later pages. Omit both flags to keep the previous result set. `--request-json` and local MCP accept the same typed `CompletedFilter` as remote calls.
+- `--priority V` (repeatable) with `--priority-unassigned`; `--type V` with `--type-unassigned`; `--label-id UUID` with `--unlabeled`.
+- `--start-from D`, `--start-to D`, `--start-unassigned`; `--due-from D`, `--due-to D`, `--due-unassigned`; `--points-min N`, `--points-max N`, `--points-unassigned`.
+- `--milestone-id UUID` with `--no-milestone`; `--cycle-id UUID` with `--no-cycle`.
+- `--relationship parent|subtasks|depends-on|blocks|related|duplicate-of` (repeatable) with `--no-relationships`.
+- `--sort priority|type|start-date|due-date|story-points|milestone-name|cycle-start-date` and `--direction asc|desc`.
+
+Filter fields combine with AND, selected values within a field with OR, and an unassigned flag adds that field's unassigned case. Unassigned values sort last in both directions, ties break by task ID, and pages continue consistently through `--cursor`. The semantics are identical to the [protocol contract](protos-lane-v1-contract.md#task-list-filtering-and-sorting).
+
+For a completed duration, the local store follows its existing first-head sort projection's immutable parent graph. It uses the unique entry into the exact Done or Canceled state, even when the parent is outside a displayed history page. If missing or divergent ancestry prevents a unique entry, the entry is UNKNOWN and passes duration selections. Future entries pass the inclusive cutoff. `none` hides terminal tasks; `all` and omission keep them. The completed predicate runs before sorting and pagination, combines with every other filter, and binds the selection and cutoff to the cursor. The existing conflict result and head selection remain unchanged. Filtering does not write task versions or change the local format.
+
+`label create --repository-id UUID --name N --color #RRGGBB [--description D]`, `milestone create --repository-id UUID --name N [--description D] [--target-date D] [--completed true|false]` and `cycle create --repository-id UUID --name N --start-date D --end-date D [--description D]` create items. `list` accepts `--repository-id UUID` and the usual paging options, and `get ID` reads one item. `edit ID --expected-version UUID` replaces the supplied fields and cannot change an item's kind or repository. `delete ID` is itself confirmation and detaches the item from tasks while keeping the tasks. `history ID [--page-size N --cursor T]` shows before/after values, time and origin; there is no restore command. `conflict list/get --kind label|milestone|cycle` reads planning-item conflicts and `conflict resolve` submits the complete expected head set. All of these accept `--request-id` and `--request-json`, and `--remote` for server data. `label create` and `label edit` read `--color` as the `#RRGGBB` label color; the terminal option keeps its `auto` and `never` values (`--color=never`) and both can appear in one invocation.
+
+### Development data reset
+
+`lane --space UUID data reset --confirm-development-reset` resets only that existing local space under the explicit pre-release exception: Lane is not deployed, development data may be discarded, and there is no compatibility or data-preserving migration. Opening a store of an unsupported version fails with `UNSUPPORTED_FORMAT` and names this command; the CLI never resets or migrates silently. The command rejects `--remote`, an omitted `--space`, a missing confirmation flag and any request payload (`--request-json`). It requires exclusive access: if the app, another CLI or a sync worker holds the space, it fails with retryable `STORAGE_BUSY` and changes nothing. The remaining procedure and account-space behavior are in the [local-store contract](apps-lane-local-store-contract.md#development-data-reset).
+
 ### MCP surface
 
-`lane mcp serve` implements stdio MCP. Do not print banners or logs on stdout. Use explicit JSON schemas derived from typed messages. Tool names are `lane_<snake_case_method>` for LaneService, AccountService and WebhookService methods, for example `lane_create_task`, `lane_resolve_conflict`, `lane_claim_event` and `lane_complete_event`. Also expose `lane_get_local_status`, `lane_connect_sync`, `lane_disconnect_sync`, `lane_remove_device_data`, `lane_get_notification_preferences` and `lane_set_notification_preferences` for local device management. Local conflict listing can use the typed list response's alternatives; a separate untyped mutation is not allowed.
+`lane mcp serve` implements stdio MCP. Do not print banners or logs on stdout. Use explicit JSON schemas derived from typed messages. Tool names are `lane_<snake_case_method>` for LaneService, CaptureService, AccountService and WebhookService methods, for example `lane_create_task`, `lane_resolve_conflict`, `lane_claim_event` and `lane_complete_event`. The planning service adds `lane_get_planning_item`, `lane_list_planning_items`, `lane_create_planning_item`, `lane_save_planning_item` and `lane_delete_planning_item`; extended task tools expose every planning field, filter, sort and relationship edit in their schemas. Local and remote MCP tool lists have identical shapes for these tools, and an untyped planning mutation is not allowed. There is no MCP tool for the development reset. Also expose `lane_get_local_status`, `lane_connect_sync`, `lane_disconnect_sync`, `lane_remove_device_data`, `lane_get_notification_preferences` and `lane_set_notification_preferences` for local device management. Local conflict listing can use the typed list response's alternatives; a separate untyped mutation is not allowed.
 
 MCP arguments omit Origin; the adapter sets MCP and its real device/account connection identity. A new proposed task through MCP can notify; the same operation through CLI uses CLI origin and cannot notify. Tool descriptions identify online-only functions and explicit irreversible deletion semantics. Task/repository deletion invocation is confirmation. Remote account deletion still requires a human browser reauthentication flow and account confirmation; an agent cannot supply a fabricated proof.
 
@@ -65,11 +98,11 @@ Use browser login approval with PKCE/state and correct OAuth audiences. Do not a
 
 ## Logging
 
-Use structured stderr/file metadata with correlation IDs. Exclude task/prompt/webhook content, secrets and token values. Apply the combined native/CLI 100 MiB and 30-day log limits and no-upload rule. Failure output must distinguish local save failure, pending sync rejection, auth failure and unavailable dependency.
+Use structured stderr/file metadata with correlation IDs, operation, result category and duration. Exclude task/prompt/webhook content, label/milestone/cycle names and descriptions, secrets and token values. Apply the combined native/CLI 100 MiB and 30-day log limits and no-upload rule. Failure output must distinguish local save failure, pending sync rejection, auth failure and unavailable dependency.
 
 ## Build and Test
 
-At implementation run root Cargo tests and Clippy for the Lane package and CLI builds for macOS, Windows and Linux. Run shared protocol vectors, human/JSON output tests, stdio MCP framing/schema tests, SQLite concurrency and native cross-process compatibility tests. Exercise local CLI/MCP with no account, no server and no app window. Test explicit remote targeting, request retries, whole-task conflicts, event completion atomicity, account deletion proof and revocation with mocked services.
+At implementation run root Cargo tests and Clippy for the Lane package and CLI builds for macOS, Windows and Linux. Run shared protocol vectors, human/JSON output tests, stdio MCP framing/schema tests, SQLite concurrency and native cross-process compatibility tests. Exercise local CLI/MCP with no account, no server and no app window. Test every planning option, filter, sort and paging boundary, relationship edits with affected tasks, `data reset` rejections and exclusive-handle behavior, blocked-item correction and `--retry-blocked`. Test explicit remote targeting, request retries, whole-task conflicts, event completion atomicity, account deletion proof and revocation with mocked services.
 
 Cross-compilation alone does not establish executable installation or native app behavior on that OS. Record exact runtime/platform checks separately. Preserve root Rust/frontend checks when those sources also change.
 
@@ -187,3 +220,53 @@ reconnecting an existing account space also pins its current account identity.
 `sync run --retry-blocked` explicitly retries items previously rejected by the
 server. Their original request IDs and immutable versions remain unchanged. It
 does not confirm an epoch change or clear account-deletion state.
+
+When the server rejects a pushed task or planning item with `CONSTRAINT_VIOLATION`
+(for example a combined cycle, a second parent or a duplicate name created on
+another device), the accepted server state is kept and the local version stays
+blocked with reason `CONSTRAINT_VIOLATION:<VIOLATION>`. `sync status` and the
+local MCP status tool list the item and reason. Correct the local data with an
+ordinary edit (a new expected version and request ID), then run
+`sync run --retry-blocked`. The CLI never reports a blocked item as synchronized
+and never discards it. The ordinary edit of an entity whose head is an
+unsynchronized chain containing a rejected version replaces that chain: the new version takes the
+chain's parents and upload position, so the server never needs the rejected parent, and the
+rejected immutable versions stay in local history. Uploads are ordered by creation; a pending
+version is held back while an earlier version of the same entity is blocked or while it refers to
+an entity whose creation was rejected, and resumes after correction or `--retry-blocked`.
+
+## RealQA integration
+
+The [RealQA contract](apps-lane-realqa-contract.md) extends this domain with durable
+final-PNG attachments, authorized retrieval and synchronized URL-to-repository
+rules. Preserve existing account routing, whole-task conflicts, request replay,
+history, task moves and deletion precedence. Native saves commit locally before
+optional image upload. Pending synchronization must not be reported as failed
+local saving. Unsupported schema/format versions must be refused before writes.
+These requirements do not establish implementation or release acceptance.
+
+### RealQA CLI and MCP operations
+
+- `capture create --repository-id UUID --title TEXT --images-json JSON_ARRAY`
+  accepts final PNGs as typed `CapturedImage` values (base64 `png` and a `capture`
+  manifest). `--description` is optional. `--request-json -` accepts the complete
+  request without placing image bytes in shell arguments. Local saving is atomic.
+- `attachment get --task-id UUID --attachment-id UUID` reads an authorized image.
+  Local results include base64 PNG bytes or `WAITING_FOR_SYNC`; remote results
+  include a short-lived signed download URL. Deleted owners return `DELETED`.
+  Do not persist signed URLs or send Lane authorization headers to object storage.
+- `url-rule list/create/edit/delete` manages URL-to-repository rules. Creation and
+  editing take `--prefix URL --repository-id UUID`; edits also require the rule ID
+  and `--expected-version UUID`. `conflict list/get --kind url-rule` reads rule
+  conflicts; `conflict resolve` submits the complete expected head set.
+- The earlier `data migrate` command no longer exists. An unsupported local
+  store is refused and recovered only through `data reset`, described above.
+
+MCP discovery includes the CaptureService request schemas and attachment/rule
+operations. Upload preparation/completion are online-only. The local sync worker
+negotiates the current format (3), publishes manifests before signed uploads, and validates
+image digests, sizes and dimensions before storing downloads. A failed image
+transfer preserves local bytes and does not stop unrelated transfers. Account
+epoch changes require renewed explicit approval and re-upload retained images;
+standalone import copies required historical images and rules into the approved
+account space without relabeling data already assigned to another account.

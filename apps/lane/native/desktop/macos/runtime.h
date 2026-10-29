@@ -17,4 +17,11 @@
 - (void)stopWithCompletion:(dispatch_block_t)completion;
 - (void)receivePush:(NSDictionary*)payload;
 - (void)registerPushToken:(NSData*)token;
+#ifdef LANE_NATIVE_TESTING
+// Native fixtures replace the wall clock and shorten the registration retry
+// delay; production builds always use the system clock and 30 seconds.
+- (void)setPushClock:(NSDate* (^)(void))clock retryDelay:(NSTimeInterval)delay;
+// Waits until no APNs registration helper call is outstanding.
+- (BOOL)waitForPushIdle:(NSTimeInterval)timeout;
+#endif
 @end

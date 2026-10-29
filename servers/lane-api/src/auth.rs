@@ -186,7 +186,12 @@ impl Auth {
 
     fn validate_approval(&self, request: &Value) -> Result<()> {
         match string(request, "kind") {
-            "web" => self.registered_redirect("__web", string(request, "return_to")),
+            "web" => {
+                self.registered_redirect("__web", string(request, "return_to"))?;
+                // The saved navigation intent is revalidated with the callback so a
+                // persisted flow can never produce an unrecognized destination.
+                web_route_from_request(request).map(|_| ())
+            }
             "oauth" => {
                 let client_id = string(request, "client_id");
                 self.registered_redirect(client_id, string(request, "redirect_uri"))?;
@@ -693,6 +698,100 @@ fn with_cookie(mut response: Response, name: &str, value: &str, max_age: i64) ->
     );
     response
 }
+/// Kinds of post-login web destination. The query key doubles as the key the web
+/// host already reads from its page URL, so route restoration needs no new parser.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WebRouteKind {
+    Task,
+    Repository,
+}
+impl WebRouteKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            WebRouteKind::Task => "task",
+            WebRouteKind::Repository => "repository",
+        }
+    }
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "task" => Some(WebRouteKind::Task),
+            "repository" => Some(WebRouteKind::Repository),
+            _ => None,
+        }
+    }
+}
+/// Strictly typed navigation intent carried through one web authentication flow. The
+/// optional account is a navigation guard only; it never selects the signed-in identity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WebRoute {
+    kind: WebRouteKind,
+    id: String,
+    account: Option<String>,
+}
+impl WebRoute {
+    fn to_json(&self) -> Value {
+        match &self.account {
+            Some(account) => json!({"kind":self.kind.as_str(),"id":self.id,"account":account}),
+            None => json!({"kind":self.kind.as_str(),"id":self.id}),
+        }
+    }
+}
+/// Parses the optional `task`, `repository` and `account` login parameters. Present values
+/// must be canonical entity identifiers, task and repository are mutually exclusive, and an
+/// account hint requires a destination. Other query parameters are never consulted.
+fn parse_web_route(q: &HashMap<String, String>) -> Result<Option<WebRoute>> {
+    let (task, repository, account) = (q.get("task"), q.get("repository"), q.get("account"));
+    let (kind, id) = match (task, repository) {
+        (Some(_), Some(_)) => return Err(Fault::invalid("conflicting navigation routes")),
+        (Some(id), None) => (WebRouteKind::Task, id),
+        (None, Some(id)) => (WebRouteKind::Repository, id),
+        (None, None) => {
+            return if account.is_some() {
+                Err(Fault::invalid("account requires a navigation route"))
+            } else {
+                Ok(None)
+            };
+        }
+    };
+    if !canonical_id(id) || account.is_some_and(|a| !canonical_id(a)) {
+        return Err(Fault::invalid("invalid navigation route"));
+    }
+    Ok(Some(WebRoute {
+        kind,
+        id: id.clone(),
+        account: account.cloned(),
+    }))
+}
+/// Reads the navigation intent saved in a web flow request. Requests persisted before the
+/// field existed have none and keep plain-login behavior; malformed saved intent is denied.
+fn web_route_from_request(request: &Value) -> Result<Option<WebRoute>> {
+    let Some(route) = request.get("route") else {
+        return Ok(None);
+    };
+    let kind = WebRouteKind::parse(string(route, "kind")).ok_or_else(Fault::denied)?;
+    let id = string(route, "id");
+    let account = route.get("account").map(|_| string(route, "account"));
+    if !canonical_id(id) || account.is_some_and(|a| !canonical_id(a)) {
+        return Err(Fault::denied());
+    }
+    Ok(Some(WebRoute {
+        kind,
+        id: id.into(),
+        account: account.map(str::to_owned),
+    }))
+}
+/// Appends only the recognized route fields to an already registered, query-free callback.
+fn web_redirect(return_to: &str, route: Option<&WebRoute>) -> Result<String> {
+    let mut url = Url::parse(return_to).map_err(|_| Fault::invalid("invalid redirect URI"))?;
+    if let Some(route) = route {
+        let mut pairs = url.query_pairs_mut();
+        pairs.append_pair(route.kind.as_str(), &route.id);
+        if let Some(account) = &route.account {
+            pairs.append_pair("account", account);
+        }
+    }
+    Ok(url.into())
+}
 fn redirect_query(base: &str, key: &str, value: &str, state: Option<&str>) -> Result<Response> {
     let mut url = Url::parse(base).map_err(|_| Fault::invalid("invalid redirect URI"))?;
     url.query_pairs_mut().append_pair(key, value);
@@ -800,11 +899,14 @@ async fn web_login(
         .get("return_to")
         .filter(|v| a.config.return_urls.contains(v))
         .ok_or_else(|| Fault::invalid("unregistered return URL"))?;
-    a.start_flow(
-        json!({"kind":"web","return_to":url,"device_id":id(),"device_name":"Lane web"}),
-        false,
-    )
-    .await
+    // Invalid or conflicting navigation fields fail before any flow row exists.
+    let route = parse_web_route(&q)?;
+    let mut request =
+        json!({"kind":"web","return_to":url,"device_id":id(),"device_name":"Lane web"});
+    if let Some(route) = route {
+        request["route"] = route.to_json();
+    }
+    a.start_flow(request, false).await
 }
 impl Auth {
     async fn start_flow(&self, request: Value, reauth: bool) -> HttpResult {
@@ -929,8 +1031,14 @@ impl Auth {
             let token = self
                 .credential(db, &p.session_id, "cookie", REFRESH_SECONDS)
                 .await?;
+            // The session keeps the query-free registered callback; only this one redirect
+            // carries the validated destination.
+            let location = web_redirect(
+                string(request, "return_to"),
+                web_route_from_request(request)?.as_ref(),
+            )?;
             Ok(with_cookie(
-                Redirect::to(string(request, "return_to")).into_response(),
+                Redirect::to(&location).into_response(),
                 COOKIE,
                 &token,
                 REFRESH_SECONDS,
@@ -1054,7 +1162,10 @@ async fn callback(
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         response.headers_mut().insert(
             header::REFERRER_POLICY,
-            HeaderValue::from_static("no-referrer"),
+            // Origin-only: the same-origin consent POST keeps a serializable API Origin
+            // (`no-referrer` would make browsers send `Origin: null`), while the callback path
+            // and query never appear in Referer.
+            HeaderValue::from_static("strict-origin"),
         );
         response
     } else {
@@ -2005,6 +2116,1028 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
         );
         assert!(a.authenticate(&headers).await.is_err());
         assert!(!m.calls.lock().unwrap().is_empty());
+        pool.close().await;
+        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        admin.close().await;
+    }
+
+    // ---- Assembled-router Origin policy and API-hosted consent (issue: consent through Origin policy) ----
+    const API_ORIGIN: &str = "https://lane.api.example.test";
+    const WEB_ORIGIN: &str = "https://lane.example.test";
+    const CLI_REDIRECT: &str = "http://127.0.0.1:46326/callback";
+
+    /// The complete production router, built from the fixture Auth with distinct API and web origins.
+    fn assembled_router(pool: PgPool, auth: Auth) -> Router {
+        let server = Arc::new(crate::Server {
+            db: pool.clone(),
+            auth: Arc::new(auth),
+            config: Arc::new(crate::config::Config {
+                listen: "127.0.0.1:0".into(),
+                public_url: API_ORIGIN.into(),
+                web_origin: WEB_ORIGIN.into(),
+                metrics_token: "synthetic-metrics-token-at-least-32-characters".into(),
+                max_item_bytes: 4096,
+                max_webhook_bytes: 4096,
+                requests_per_minute: 1000,
+                webhook_requests_per_minute: 1000,
+            }),
+            metrics: Arc::default(),
+            push: Arc::new(crate::push::Push::from_env(pool).unwrap()),
+            webhooks: Arc::new(
+                crate::webhooks::WebhookConfig::new(
+                    &URL_SAFE_NO_PAD.encode([7; 32]),
+                    "https://lane.api.example.test/hooks",
+                    1024,
+                )
+                .unwrap(),
+            ),
+        });
+        crate::http::router(server)
+    }
+    fn http_request(
+        method: &str,
+        uri: &str,
+        headers: &[(&str, &str)],
+        body: Option<String>,
+    ) -> axum::http::Request<axum::body::Body> {
+        let mut builder = axum::http::Request::builder().method(method).uri(uri);
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        builder
+            .body(axum::body::Body::from(body.unwrap_or_default()))
+            .unwrap()
+    }
+    async fn send(app: &Router, request: axum::http::Request<axum::body::Body>) -> Response {
+        use tower::ServiceExt;
+        app.clone().oneshot(request).await.unwrap()
+    }
+    async fn text(response: Response) -> String {
+        String::from_utf8(
+            axum::body::to_bytes(response.into_body(), 1 << 20)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn router_origin_policy_keeps_api_origin_out_of_every_route_but_consent_post() {
+        let (authority, _, url) = mock_authority().await;
+        // The pool is never used: every request below is answered by the Origin policy itself.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused")
+            .unwrap();
+        let app = assembled_router(pool.clone(), fixture_auth(pool, authority, &url));
+        let api = [("origin", API_ORIGIN)];
+        for (method, uri) in [
+            ("POST", "/lane.v1.LaneService/ListTasks"),
+            ("POST", "/lane.v1.SyncService/GetSyncInfo"),
+            ("POST", "/mcp"),
+            ("OPTIONS", "/mcp"),
+            ("POST", "/auth/refresh"),
+            ("POST", "/auth/logout"),
+            ("POST", "/oauth/token"),
+            ("POST", "/oauth/revoke"),
+            ("GET", "/auth/session"),
+            ("GET", "/health/live"),
+            // The exception is exact in method and path.
+            ("GET", "/oauth/consent"),
+            ("OPTIONS", "/oauth/consent"),
+            ("PUT", "/oauth/consent"),
+            ("POST", "/oauth/consent/"),
+            ("POST", "/oauth/consent/extra"),
+        ] {
+            let response = send(&app, http_request(method, uri, &api, None)).await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {uri}");
+            assert!(
+                response
+                    .headers()
+                    .get("access-control-allow-origin")
+                    .is_none(),
+                "{method} {uri}"
+            );
+        }
+        // Hostile and opaque origins are rejected everywhere, including the consent POST.
+        for origin in [
+            "https://attacker.example",
+            "null",
+            "https://lane.api.example.test.attacker.example",
+        ] {
+            for uri in ["/oauth/consent", "/mcp", "/auth/refresh"] {
+                let response =
+                    send(&app, http_request("POST", uri, &[("origin", origin)], None)).await;
+                assert_eq!(response.status(), StatusCode::FORBIDDEN, "{origin} {uri}");
+            }
+        }
+        // Configured frontend CORS stays credentialed for the web origin only.
+        let response = send(
+            &app,
+            http_request("OPTIONS", "/oauth/consent", &[("origin", WEB_ORIGIN)], None),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            WEB_ORIGIN
+        );
+        assert_eq!(
+            response.headers()["access-control-allow-credentials"],
+            "true"
+        );
+        let response = send(
+            &app,
+            http_request("GET", "/health/live", &[("origin", WEB_ORIGIN)], None),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            WEB_ORIGIN
+        );
+        // Absent-Origin clients keep their previous behavior.
+        let response = send(&app, http_request("GET", "/health/live", &[], None)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            WEB_ORIGIN
+        );
+        let response = send(&app, http_request("OPTIONS", "/mcp", &[], None)).await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    /// Minimal browser fixture for the rendered consent page. It parses the form, derives the
+    /// `Origin` and `Referer` headers from the page's Referrer-Policy as Fetch specifies for a
+    /// same-origin form POST navigation, and submits the pressed button. It is not a real browser.
+    struct ConsentPage {
+        url: String,
+        policy: String,
+        csp: String,
+        html: String,
+        cookie: String,
+    }
+    impl ConsentPage {
+        fn tag_attribute(tag: &str, name: &str) -> Option<String> {
+            Some(
+                tag.split(&format!("{name}=\""))
+                    .nth(1)?
+                    .split('"')
+                    .next()?
+                    .to_owned(),
+            )
+        }
+        fn hidden_consent_token(&self) -> String {
+            self.html
+                .split('<')
+                .filter(|tag| tag.starts_with("input "))
+                .find(|tag| Self::tag_attribute(tag, "name").as_deref() == Some("consent"))
+                .and_then(|tag| Self::tag_attribute(tag, "value"))
+                .expect("hidden consent input")
+        }
+        fn submit_with(
+            &self,
+            decision: &str,
+            cookie: Option<&str>,
+            token: Option<&str>,
+        ) -> axum::http::Request<axum::body::Body> {
+            let tags: Vec<&str> = self.html.split('<').collect();
+            let form = tags
+                .iter()
+                .find(|tag| tag.starts_with("form "))
+                .expect("form");
+            assert_eq!(Self::tag_attribute(form, "method").as_deref(), Some("post"));
+            let action = Self::tag_attribute(form, "action").unwrap();
+            assert!(
+                tags.iter().filter(|tag| tag.starts_with("button ")).any(
+                    |tag| Self::tag_attribute(tag, "name").as_deref() == Some("decision")
+                        && Self::tag_attribute(tag, "value").as_deref() == Some(decision)
+                ),
+                "the rendered page must contain a {decision} button"
+            );
+            let mut body = url::form_urlencoded::Serializer::new(String::new());
+            if let Some(token) = token {
+                body.append_pair("consent", token);
+            }
+            body.append_pair("decision", decision);
+            let page = Url::parse(&self.url).unwrap();
+            let origin = page.origin().ascii_serialization();
+            let (origin_header, referer) = match self.policy.as_str() {
+                // Fetch serializes the Origin of a non-GET navigation as `null` for no-referrer.
+                "no-referrer" => ("null".to_owned(), None),
+                "strict-origin" | "origin" | "same-origin" | "strict-origin-when-cross-origin" => {
+                    // Origin-only policies strip path and query from Referer.
+                    (origin.clone(), Some(format!("{origin}/")))
+                }
+                other => panic!("unsupported fixture referrer policy {other}"),
+            };
+            let mut builder = axum::http::Request::builder()
+                .method("POST")
+                .uri(page.join(&action).unwrap().path())
+                .header("origin", origin_header)
+                .header("content-type", "application/x-www-form-urlencoded");
+            if let Some(referer) = referer {
+                builder = builder.header("referer", referer);
+            }
+            if let Some(cookie) = cookie {
+                builder = builder.header("cookie", cookie);
+            }
+            builder.body(axum::body::Body::from(body.finish())).unwrap()
+        }
+        fn submit(&self, decision: &str) -> axum::http::Request<axum::body::Body> {
+            self.submit_with(
+                decision,
+                Some(&self.cookie),
+                Some(&self.hidden_consent_token()),
+            )
+        }
+    }
+
+    /// Authorize, log in through the mocked identity provider and render the consent page.
+    async fn consent_page(
+        app: &Router,
+        m: &Mock,
+        issuer: &str,
+        account: &str,
+        tenant: &str,
+        verifier: &str,
+        state: &str,
+    ) -> ConsentPage {
+        let authorize = format!(
+            "/oauth/authorize?{}",
+            url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("client_id", "lane-cli")
+                .append_pair("response_type", "code")
+                .append_pair("code_challenge", &pkce(verifier))
+                .append_pair("code_challenge_method", "S256")
+                .append_pair("state", state)
+                .append_pair("redirect_uri", CLI_REDIRECT)
+                .finish()
+        );
+        let start = send(app, http_request("GET", &authorize, &[], None)).await;
+        assert!(start.status().is_redirection(), "{}", start.status());
+        let cookie = start.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let location = Url::parse(start.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        let query: HashMap<String, String> = location
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        let claims = json!({"iss":issuer,"aud":"browser","sub":"logto-subject","exp":Utc::now().timestamp()+60,"nonce":query["nonce"]});
+        *m.oidc_tokens.lock().unwrap() = json!({"id_token":sign_claims(claims),"access_token":sign_claims(json!({"iss":issuer,"aud":"delcore","sub":"logto-subject","exp":Utc::now().timestamp()+60}))});
+        *m.pages.lock().unwrap() = vec![
+            json!({"userId":account,"tenants":[{"id":tenant,"ownerId":account,"personal":true}]}),
+        ];
+        let callback_uri = format!(
+            "/auth/callback?{}",
+            url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("state", &query["state"])
+                .append_pair("code", "logto-code")
+                .finish()
+        );
+        let page = send(
+            app,
+            http_request("GET", &callback_uri, &[("cookie", &cookie)], None),
+        )
+        .await;
+        assert_eq!(page.status(), StatusCode::OK);
+        let header_text =
+            |name: header::HeaderName| page.headers()[name].to_str().unwrap().to_owned();
+        let policy = header_text(header::REFERRER_POLICY);
+        let csp = header_text(header::CONTENT_SECURITY_POLICY);
+        ConsentPage {
+            url: format!("{API_ORIGIN}{callback_uri}"),
+            policy,
+            csp,
+            html: text(page).await,
+            cookie,
+        }
+    }
+    async fn grant_counts(pool: &PgPool) -> (i64, i64, i64) {
+        let count = |sql: &'static str| async move {
+            sqlx::query_scalar::<_, i64>(sql)
+                .fetch_one(pool)
+                .await
+                .unwrap()
+        };
+        (
+            count("SELECT count(*) FROM lane_auth_codes").await,
+            count("SELECT count(*) FROM lane_sessions").await,
+            count("SELECT count(*) FROM lane_auth_consents WHERE consumed_at IS NULL").await,
+        )
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable TEST_DATABASE_URL; uses an isolated schema and mocked identity/authorization providers"]
+    async fn postgres_assembled_router_completes_api_hosted_consent_with_distinct_origins() {
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+        let admin = PgPool::connect(&url).await.unwrap();
+        let schema = format!("lane_consent_{}", id().replace('-', ""));
+        sqlx::query(&format!("CREATE SCHEMA {schema}"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        let search = schema.clone();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .after_connect(move |c, _| {
+                let search = search.clone();
+                Box::pin(async move {
+                    sqlx::query(&format!("SET search_path TO {search}"))
+                        .execute(c)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect(&url)
+            .await
+            .unwrap();
+        sqlx::raw_sql(concat!(
+            include_str!("../migrations/00001_auth.sql"),
+            "\n",
+            include_str!("../migrations/00004_push.sql")
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let (authority, m, issuer) = mock_authority().await;
+        let app = assembled_router(pool.clone(), fixture_auth(pool.clone(), authority, &issuer));
+        let (account, tenant) = (id(), id());
+
+        // Approve: hostile and opaque origins and a wrong browser binding never consume the token.
+        let verifier = random_token();
+        let page = consent_page(
+            &app,
+            &m,
+            &issuer,
+            &account,
+            &tenant,
+            &verifier,
+            "approve-state",
+        )
+        .await;
+        // The page restricts form submission and exposes only its origin through Referer.
+        assert_eq!(page.policy, "strict-origin");
+        assert!(page.csp.contains("form-action 'self'"), "{}", page.csp);
+        assert!(page.url.contains("code=logto-code"));
+        let token = page.hidden_consent_token();
+        let before = grant_counts(&pool).await;
+        assert_eq!(before, (0, 0, 1));
+        for origin in ["https://attacker.example", "null"] {
+            let mut request = page.submit("approve");
+            request
+                .headers_mut()
+                .insert("origin", HeaderValue::from_static(origin));
+            assert_eq!(
+                send(&app, request).await.status(),
+                StatusCode::FORBIDDEN,
+                "{origin}"
+            );
+            assert_eq!(
+                grant_counts(&pool).await,
+                before,
+                "{origin} must not consume consent"
+            );
+        }
+        // The fixture derives the emitted Origin and Referer from the page headers.
+        let request = page.submit("approve");
+        assert_eq!(request.headers()["origin"], API_ORIGIN);
+        assert_eq!(request.headers()["referer"], format!("{API_ORIGIN}/"));
+        for secret in ["code=", "state=", "/auth/callback", "logto-code"] {
+            assert!(
+                !request.headers()["referer"]
+                    .to_str()
+                    .unwrap()
+                    .contains(secret)
+            );
+        }
+        // Binding failures at the permitted Origin fail without a grant or consumption.
+        for (label, cookie, consent) in [
+            ("missing cookie", None, Some(token.as_str())),
+            (
+                "wrong cookie",
+                Some("__Host-lane_flow=wrong"),
+                Some(token.as_str()),
+            ),
+            ("missing token", Some(page.cookie.as_str()), None),
+            ("wrong token", Some(page.cookie.as_str()), Some("wrong")),
+        ] {
+            let response = send(&app, page.submit_with("approve", cookie, consent)).await;
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{label}");
+            assert_eq!(grant_counts(&pool).await, before, "{label}");
+        }
+        let response = send(&app, page.submit("approve")).await;
+        assert!(response.status().is_redirection(), "{}", response.status());
+        assert!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .is_none()
+        );
+        let redirect = Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        assert!(redirect.as_str().starts_with(CLI_REDIRECT));
+        let query: HashMap<String, String> = redirect
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        assert_eq!(query["state"], "approve-state");
+        assert_eq!(grant_counts(&pool).await, (1, 1, 0));
+        // Replay of the consumed token fails and issues nothing.
+        let replay = send(&app, page.submit("approve")).await;
+        assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(grant_counts(&pool).await, (1, 1, 0));
+        // The code redeems once with the original verifier only.
+        let exchange = |verifier: String| {
+            http_request(
+                "POST",
+                "/oauth/token",
+                &[("content-type", "application/x-www-form-urlencoded")],
+                Some(
+                    url::form_urlencoded::Serializer::new(String::new())
+                        .append_pair("grant_type", "authorization_code")
+                        .append_pair("client_id", "lane-cli")
+                        .append_pair("redirect_uri", CLI_REDIRECT)
+                        .append_pair("code", &query["code"])
+                        .append_pair("code_verifier", &verifier)
+                        .finish(),
+                ),
+            )
+        };
+        assert!(
+            !send(&app, exchange(random_token()))
+                .await
+                .status()
+                .is_success()
+        );
+        let redeemed = send(&app, exchange(verifier.clone())).await;
+        assert_eq!(redeemed.status(), StatusCode::OK);
+        assert!(!send(&app, exchange(verifier)).await.status().is_success());
+
+        // Cancel: the registered redirect carries access_denied and the original state; no grant.
+        let page = consent_page(
+            &app,
+            &m,
+            &issuer,
+            &account,
+            &tenant,
+            &random_token(),
+            "deny-state",
+        )
+        .await;
+        let before = grant_counts(&pool).await;
+        assert_eq!(before, (1, 1, 1));
+        let response = send(&app, page.submit("deny")).await;
+        assert!(response.status().is_redirection(), "{}", response.status());
+        let redirect = Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        assert!(redirect.as_str().starts_with(CLI_REDIRECT));
+        let query: HashMap<String, String> = redirect
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        assert_eq!(query["error"], "access_denied");
+        assert_eq!(query["state"], "deny-state");
+        assert!(!query.contains_key("code"));
+        assert_eq!(grant_counts(&pool).await, (1, 1, 0));
+
+        // Expired consent fails without a grant.
+        let page = consent_page(
+            &app,
+            &m,
+            &issuer,
+            &account,
+            &tenant,
+            &random_token(),
+            "expired-state",
+        )
+        .await;
+        sqlx::query("UPDATE lane_auth_consents SET expires_at=clock_timestamp()-interval '1 second' WHERE consumed_at IS NULL")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let response = send(&app, page.submit("approve")).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(grant_counts(&pool).await, (1, 1, 0));
+
+        pool.close().await;
+        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        admin.close().await;
+    }
+    const TASK_ID: &str = "019a0000-0000-7000-8000-000000000001";
+    const OTHER_ID: &str = "019a0000-0000-7000-8000-000000000002";
+    const WEB_CALLBACK: &str = "https://lane.example.test/callback";
+
+    fn query(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn web_route_query_is_strictly_typed() {
+        assert_eq!(parse_web_route(&query(&[])).unwrap(), None);
+        // Unknown parameters are never consulted and cannot become destinations.
+        assert_eq!(
+            parse_web_route(&query(&[
+                ("next", "https://evil.example"),
+                ("redirect", "/x")
+            ]))
+            .unwrap(),
+            None
+        );
+        let task = parse_web_route(&query(&[("task", TASK_ID), ("account", OTHER_ID)]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(task.kind, WebRouteKind::Task);
+        assert_eq!(task.account.as_deref(), Some(OTHER_ID));
+        let repository = parse_web_route(&query(&[("repository", TASK_ID)]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(repository.kind, WebRouteKind::Repository);
+        assert_eq!(repository.account, None);
+        for invalid in [
+            // Conflicting route kinds.
+            query(&[("task", TASK_ID), ("repository", OTHER_ID)]),
+            // Account hint without a destination.
+            query(&[("account", OTHER_ID)]),
+            // Malformed, empty, uppercase and non-v7 identifiers.
+            query(&[("task", "not-a-uuid")]),
+            query(&[("task", "")]),
+            query(&[("repository", &TASK_ID.to_uppercase())]),
+            query(&[("task", "00000000-0000-4000-8000-000000000001")]),
+            query(&[("task", TASK_ID), ("account", "../x")]),
+            query(&[("task", TASK_ID), ("account", "")]),
+        ] {
+            let error = parse_web_route(&invalid).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidArgument, "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn web_redirect_appends_only_recognized_fields_to_the_registered_callback() {
+        assert_eq!(web_redirect(WEB_CALLBACK, None).unwrap(), WEB_CALLBACK);
+        let route = WebRoute {
+            kind: WebRouteKind::Task,
+            id: TASK_ID.into(),
+            account: Some(OTHER_ID.into()),
+        };
+        assert_eq!(
+            web_redirect(WEB_CALLBACK, Some(&route)).unwrap(),
+            format!("{WEB_CALLBACK}?task={TASK_ID}&account={OTHER_ID}")
+        );
+        let repository = WebRoute {
+            kind: WebRouteKind::Repository,
+            id: TASK_ID.into(),
+            account: None,
+        };
+        assert_eq!(
+            web_redirect(WEB_CALLBACK, Some(&repository)).unwrap(),
+            format!("{WEB_CALLBACK}?repository={TASK_ID}")
+        );
+        // Saved intent round-trips through the flow request JSON.
+        let request = json!({"kind":"web","return_to":WEB_CALLBACK,"route":route.to_json()});
+        assert_eq!(web_route_from_request(&request).unwrap(), Some(route));
+        // Requests persisted before the field existed keep plain-login behavior.
+        assert_eq!(
+            web_route_from_request(&json!({"kind":"web","return_to":WEB_CALLBACK})).unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_web_approval_revalidates_saved_navigation_intent() {
+        let (authority, _, url) = mock_authority().await;
+        let a = fixture_auth(
+            sqlx::postgres::PgPoolOptions::new()
+                .connect_lazy("postgres://localhost/unused")
+                .unwrap(),
+            authority,
+            &url,
+        );
+        let valid = json!({"kind":"web","return_to":WEB_CALLBACK,"route":{"kind":"task","id":TASK_ID,"account":OTHER_ID}});
+        assert!(a.validate_approval(&valid).is_ok());
+        for route in [
+            json!({"kind":"external","id":TASK_ID}),
+            json!({"kind":"task","id":"https://evil.example"}),
+            json!({"kind":"task","id":TASK_ID,"account":"x"}),
+            json!({"kind":"task"}),
+        ] {
+            let request = json!({"kind":"web","return_to":WEB_CALLBACK,"route":route});
+            assert_eq!(
+                a.validate_approval(&request).unwrap_err().code,
+                ErrorCode::PermissionDenied
+            );
+        }
+        // Intent never relaxes exact registration of the callback.
+        let mut moved = valid.clone();
+        moved["return_to"] = json!("https://lane.example.test/callback?next=evil");
+        assert!(a.validate_approval(&moved).is_err());
+    }
+
+    async fn disposable_pool(url: &str) -> (PgPool, PgPool, String) {
+        let admin = PgPool::connect(url).await.unwrap();
+        let schema = format!("lane_auth_{}", id().replace('-', ""));
+        sqlx::query(&format!("CREATE SCHEMA {schema}"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        let search = schema.clone();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .after_connect(move |c, _| {
+                let search = search.clone();
+                Box::pin(async move {
+                    sqlx::query(&format!("SET search_path TO {search}"))
+                        .execute(c)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect(url)
+            .await
+            .unwrap();
+        sqlx::raw_sql(concat!(
+            include_str!("../migrations/00001_auth.sql"),
+            "\n",
+            include_str!("../migrations/00004_push.sql")
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        (admin, pool, schema)
+    }
+
+    struct WebFlow {
+        state: String,
+        cookie: String,
+        authorization: Url,
+    }
+
+    /// Starts `/auth/login`, mirroring the host's sign-in link, and captures the flow binding.
+    async fn begin_web_login(
+        a: &Arc<Auth>,
+        pairs: &[(&str, &str)],
+    ) -> std::result::Result<WebFlow, HttpFault> {
+        let start = web_login(State(a.clone()), Query(query(pairs))).await?;
+        let authorization =
+            Url::parse(start.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        let state = authorization
+            .query_pairs()
+            .find(|(k, _)| k == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        let cookie = start.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        Ok(WebFlow {
+            state,
+            cookie,
+            authorization,
+        })
+    }
+
+    /// Completes the mocked Logto/Delcore callback for `account`, as the approved login.
+    async fn finish_web_login(
+        a: &Arc<Auth>,
+        m: &Mock,
+        flow: &WebFlow,
+        account: &str,
+        tenant: &str,
+    ) -> HttpResult {
+        let nonce = flow
+            .authorization
+            .query_pairs()
+            .find(|(k, _)| k == "nonce")
+            .unwrap()
+            .1
+            .into_owned();
+        let claims = json!({"iss":a.config.issuer,"aud":"browser","sub":"logto-subject","exp":Utc::now().timestamp()+60,"nonce":nonce});
+        *m.oidc_tokens.lock().unwrap() = json!({"id_token":sign_claims(claims),"access_token":sign_claims(json!({"iss":a.config.issuer,"aud":"delcore","sub":"logto-subject","exp":Utc::now().timestamp()+60}))});
+        *m.pages.lock().unwrap() = vec![
+            json!({"userId":account,"tenants":[{"id":tenant,"ownerId":account,"personal":true}]}),
+        ];
+        let mut browser = HeaderMap::new();
+        browser.insert(header::COOKIE, HeaderValue::from_str(&flow.cookie).unwrap());
+        callback(
+            State(a.clone()),
+            browser,
+            Query(query(&[("state", &flow.state), ("code", "logto-code")])),
+        )
+        .await
+    }
+
+    fn location(response: &Response) -> String {
+        response.headers()[header::LOCATION]
+            .to_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    async fn flow_count(pool: &PgPool) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM lane_auth_flows")
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable TEST_DATABASE_URL; uses an isolated schema and mocked Logto and Delcore"]
+    async fn postgres_web_login_restores_typed_navigation_within_its_own_flow() {
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+        let (admin, pool, schema) = disposable_pool(&url).await;
+        let (authority, m, mock_url) = mock_authority().await;
+        let a = Arc::new(fixture_auth(pool.clone(), authority, &mock_url));
+        let account = id();
+        let other = id();
+        let tenant = id();
+        let repository = "019a0000-0000-7000-8000-000000000003";
+
+        // Scenario: task with the original account hint survives the full login.
+        let flow = begin_web_login(
+            &a,
+            &[
+                ("return_to", WEB_CALLBACK),
+                ("task", TASK_ID),
+                ("account", &account),
+            ],
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.0));
+        // The provider redirect_uri stays the query-free API callback.
+        let redirect_uri = flow
+            .authorization
+            .query_pairs()
+            .find(|(k, _)| k == "redirect_uri")
+            .unwrap()
+            .1
+            .into_owned();
+        assert_eq!(redirect_uri, "https://lane.api.example.test/auth/callback");
+        let response = finish_web_login(&a, &m, &flow, &account, &tenant)
+            .await
+            .unwrap_or_else(|e| panic!("{}", e.0));
+        assert_eq!(
+            location(&response),
+            format!("{WEB_CALLBACK}?task={TASK_ID}&account={account}")
+        );
+        let stored: String = sqlx::query_scalar(
+            "SELECT redirect_uri FROM lane_sessions WHERE account_id=$1 AND client_id='__web'",
+        )
+        .bind(&account)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            stored, WEB_CALLBACK,
+            "session redirect_uri stays query-free"
+        );
+
+        // Replay of the consumed flow is rejected and never re-delivers the intent.
+        assert!(
+            finish_web_login(&a, &m, &flow, &account, &tenant)
+                .await
+                .is_err()
+        );
+
+        // Scenario: repository, first without and then with a matching account hint.
+        for pairs in [
+            vec![("return_to", WEB_CALLBACK), ("repository", repository)],
+            vec![
+                ("return_to", WEB_CALLBACK),
+                ("repository", repository),
+                ("account", account.as_str()),
+            ],
+        ] {
+            let flow = begin_web_login(&a, &pairs)
+                .await
+                .unwrap_or_else(|e| panic!("{}", e.0));
+            let response = finish_web_login(&a, &m, &flow, &account, &tenant)
+                .await
+                .unwrap_or_else(|e| panic!("{}", e.0));
+            let mut expected = format!("{WEB_CALLBACK}?repository={repository}");
+            if pairs.len() == 3 {
+                expected.push_str(&format!("&account={account}"));
+            }
+            assert_eq!(location(&response), expected);
+        }
+
+        // Scenario: a different authenticated account keeps the original hint in the
+        // returned route (the host rejects the mismatch) and receives its own session.
+        let flow = begin_web_login(
+            &a,
+            &[
+                ("return_to", WEB_CALLBACK),
+                ("task", TASK_ID),
+                ("account", &account),
+            ],
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.0));
+        let response = finish_web_login(&a, &m, &flow, &other, &id())
+            .await
+            .unwrap_or_else(|e| panic!("{}", e.0));
+        assert_eq!(
+            location(&response),
+            format!("{WEB_CALLBACK}?task={TASK_ID}&account={account}")
+        );
+        let authenticated: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM lane_sessions WHERE account_id=$1")
+                .bind(&other)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(authenticated, 1);
+
+        // Scenario: plain login, extra parameters and legacy request JSON without intent.
+        for pairs in [
+            vec![("return_to", WEB_CALLBACK)],
+            vec![
+                ("return_to", WEB_CALLBACK),
+                ("next", "https://evil.example/"),
+                ("redirect", "https://evil.example/"),
+                ("redirect_uri", "https://evil.example/"),
+            ],
+        ] {
+            let flow = begin_web_login(&a, &pairs)
+                .await
+                .unwrap_or_else(|e| panic!("{}", e.0));
+            let response = finish_web_login(&a, &m, &flow, &account, &tenant)
+                .await
+                .unwrap_or_else(|e| panic!("{}", e.0));
+            assert_eq!(location(&response), WEB_CALLBACK);
+        }
+        let start = a
+            .start_flow(json!({"kind":"web","return_to":WEB_CALLBACK,"device_id":id(),"device_name":"Lane web"}), false)
+            .await
+            .unwrap_or_else(|e| panic!("{}", e.0));
+        let legacy = WebFlow {
+            state: Url::parse(start.headers()[header::LOCATION].to_str().unwrap())
+                .unwrap()
+                .query_pairs()
+                .find(|(k, _)| k == "state")
+                .unwrap()
+                .1
+                .into_owned(),
+            cookie: start.headers()[header::SET_COOKIE]
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_owned(),
+            authorization: Url::parse(start.headers()[header::LOCATION].to_str().unwrap()).unwrap(),
+        };
+        let response = finish_web_login(&a, &m, &legacy, &account, &tenant)
+            .await
+            .unwrap_or_else(|e| panic!("{}", e.0));
+        assert_eq!(location(&response), WEB_CALLBACK);
+
+        // Scenario: invalid or unregistered input never creates a flow.
+        let before = flow_count(&pool).await;
+        for pairs in [
+            vec![("return_to", "https://evil.example/callback")],
+            vec![("return_to", "https://lane.example.test/other")],
+            vec![("return_to", "https://lane.example.test/callback?task=x")],
+            vec![("return_to", "https://lane.example.test/callback#task")],
+            vec![],
+            vec![("return_to", WEB_CALLBACK), ("task", "nope")],
+            vec![
+                ("return_to", WEB_CALLBACK),
+                ("task", TASK_ID),
+                ("repository", repository),
+            ],
+            vec![("return_to", WEB_CALLBACK), ("account", &account)],
+            vec![
+                ("return_to", WEB_CALLBACK),
+                ("task", TASK_ID),
+                ("account", "nope"),
+            ],
+        ] {
+            let error = begin_web_login(&a, &pairs).await.err().expect("rejected");
+            assert_eq!(error.0.code, ErrorCode::InvalidArgument, "{pairs:?}");
+        }
+        assert_eq!(flow_count(&pool).await, before);
+
+        // Scenario: browser binding mismatch, expiry and registration changes reject the flow.
+        let flow = begin_web_login(&a, &[("return_to", WEB_CALLBACK), ("task", TASK_ID)])
+            .await
+            .unwrap_or_else(|e| panic!("{}", e.0));
+        let wrong_browser = WebFlow {
+            state: flow.state.clone(),
+            cookie: format!("{}=wrong", flow.cookie.split('=').next().unwrap()),
+            authorization: flow.authorization.clone(),
+        };
+        assert!(
+            finish_web_login(&a, &m, &wrong_browser, &account, &tenant)
+                .await
+                .is_err()
+        );
+        let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM lane_sessions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        // Another flow cannot recover this flow's intent.
+        let unrelated = begin_web_login(
+            &a,
+            &[("return_to", WEB_CALLBACK), ("repository", repository)],
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.0));
+        let response = finish_web_login(&a, &m, &unrelated, &account, &tenant)
+            .await
+            .unwrap_or_else(|e| panic!("{}", e.0));
+        assert_eq!(
+            location(&response),
+            format!("{WEB_CALLBACK}?repository={repository}")
+        );
+        sqlx::query("UPDATE lane_auth_flows SET expires_at=clock_timestamp()-interval '1 second'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            finish_web_login(&a, &m, &flow, &account, &tenant)
+                .await
+                .is_err()
+        );
+        let fresh = begin_web_login(&a, &[("return_to", WEB_CALLBACK), ("task", TASK_ID)])
+            .await
+            .unwrap_or_else(|e| panic!("{}", e.0));
+        let (changed_authority, changed_mock, changed_url) = mock_authority().await;
+        let mut changed = fixture_auth(pool.clone(), changed_authority, &changed_url);
+        changed.config.return_urls = vec!["https://lane.example.test/moved".into()];
+        let changed = Arc::new(changed);
+        let error = finish_web_login(&changed, &changed_mock, &fresh, &account, &tenant)
+            .await
+            .unwrap_err();
+        assert_eq!(error.0.code, ErrorCode::PermissionDenied);
+        let after: i64 = sqlx::query_scalar("SELECT count(*) FROM lane_sessions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            after,
+            sessions + 1,
+            "only the unrelated flow created a session"
+        );
+
+        // Scenario: reauthentication after a route-bearing login uses the base callback only.
+        let flow = begin_web_login(
+            &a,
+            &[
+                ("return_to", WEB_CALLBACK),
+                ("task", TASK_ID),
+                ("account", &account),
+            ],
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.0));
+        let response = finish_web_login(&a, &m, &flow, &account, &tenant)
+            .await
+            .unwrap_or_else(|e| panic!("{}", e.0));
+        let session_id: String = sqlx::query_scalar("SELECT id FROM lane_sessions WHERE account_id=$1 AND client_id='__web' ORDER BY created_at DESC LIMIT 1")
+            .bind(&account)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(location(&response).contains("task="));
+        let challenge = id();
+        sqlx::query("INSERT INTO lane_reauth_challenges(id,account_id,session_id,mode,created_at,expires_at) VALUES($1,$2,$3,'DATA_DELETION_MODE_DELETE_EVERYWHERE',clock_timestamp()-interval '3 seconds',clock_timestamp()+interval '5 minutes')")
+            .bind(&challenge)
+            .bind(&account)
+            .bind(&session_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let response = reauth_callback_fixture(
+            a.clone(),
+            &m,
+            &challenge,
+            &account,
+            &tenant,
+            Utc::now().timestamp(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.0));
+        assert_eq!(
+            location(&response),
+            format!("{WEB_CALLBACK}?reauth_challenge={challenge}")
+        );
+
         pool.close().await;
         sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
             .execute(&admin)

@@ -20,6 +20,10 @@ enum EntityKind {
   ENTITY_KIND_UNSPECIFIED = 0;
   ENTITY_KIND_REPOSITORY = 1;
   ENTITY_KIND_TASK = 2;
+  ENTITY_KIND_URL_CONNECTION = 3;
+  ENTITY_KIND_LABEL = 4;
+  ENTITY_KIND_MILESTONE = 5;
+  ENTITY_KIND_CYCLE = 6;
 }
 
 enum Progress {
@@ -75,6 +79,7 @@ enum ErrorReason {
   ERROR_REASON_RATE_LIMITED = 16;
   ERROR_REASON_STALE_EPOCH = 17;
   ERROR_REASON_LEASE_INVALID = 18;
+  ERROR_REASON_CONSTRAINT_VIOLATION = 19; // ErrorDetail.violation names the broken rule
 }
 
 enum PushProvider {
@@ -127,6 +132,95 @@ enum EntityKindOrRemoteKind {
   ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT = 5;
 }
 
+// UNSPECIFIED is a valid stored value for the task metadata enums: it means unassigned.
+enum TaskPriority {
+  TASK_PRIORITY_UNSPECIFIED = 0;
+  TASK_PRIORITY_URGENT = 1;
+  TASK_PRIORITY_HIGH = 2;
+  TASK_PRIORITY_NORMAL = 3;
+  TASK_PRIORITY_LOW = 4;
+}
+
+enum TaskType {
+  TASK_TYPE_UNSPECIFIED = 0;
+  TASK_TYPE_BUG = 1;
+  TASK_TYPE_FEATURE = 2;
+  TASK_TYPE_IMPROVEMENT = 3;
+  TASK_TYPE_DOCUMENTATION = 4;
+  TASK_TYPE_MAINTENANCE = 5;
+}
+
+enum ConstraintViolation {
+  CONSTRAINT_VIOLATION_UNSPECIFIED = 0;
+  CONSTRAINT_VIOLATION_PARENT_CYCLE = 1;
+  CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE = 2;
+  CONSTRAINT_VIOLATION_DUPLICATE_CYCLE = 3;
+  CONSTRAINT_VIOLATION_SELF_LINK = 4;
+  CONSTRAINT_VIOLATION_CROSS_REPOSITORY = 5;
+  CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND = 6;
+  CONSTRAINT_VIOLATION_DUPLICATE_NAME = 7;
+  CONSTRAINT_VIOLATION_LABEL_LIMIT = 8;
+  CONSTRAINT_VIOLATION_DATE_ORDER = 9;
+  CONSTRAINT_VIOLATION_FIELD_RANGE = 10;
+}
+
+// Relationship views. SUBTASKS and BLOCKS are derived inverses of PARENT and DEPENDS_ON.
+enum RelationshipKind {
+  RELATIONSHIP_KIND_UNSPECIFIED = 0;
+  RELATIONSHIP_KIND_PARENT = 1;
+  RELATIONSHIP_KIND_SUBTASKS = 2;
+  RELATIONSHIP_KIND_DEPENDS_ON = 3;
+  RELATIONSHIP_KIND_BLOCKS = 4;
+  RELATIONSHIP_KIND_RELATED = 5;
+  RELATIONSHIP_KIND_DUPLICATE_OF = 6;
+}
+
+// UNSPECIFIED sorts by task ID. Unassigned values always sort last in both directions.
+enum TaskSortKey {
+  TASK_SORT_KEY_UNSPECIFIED = 0;
+  TASK_SORT_KEY_PRIORITY = 1;
+  TASK_SORT_KEY_TYPE = 2;
+  TASK_SORT_KEY_START_DATE = 3;
+  TASK_SORT_KEY_DUE_DATE = 4;
+  TASK_SORT_KEY_STORY_POINTS = 5;
+  TASK_SORT_KEY_MILESTONE_NAME = 6;
+  TASK_SORT_KEY_CYCLE_START_DATE = 7;
+}
+
+enum SortDirection {
+  SORT_DIRECTION_UNSPECIFIED = 0; // ascending
+  SORT_DIRECTION_ASCENDING = 1;
+  SORT_DIRECTION_DESCENDING = 2;
+}
+
+// A missing CompletedFilter preserves the existing unfiltered ListTasks behavior.
+enum CompletedSelection {
+  COMPLETED_SELECTION_UNSPECIFIED = 0;
+  COMPLETED_SELECTION_NONE = 1;
+  COMPLETED_SELECTION_LAST_24_HOURS = 2;
+  COMPLETED_SELECTION_LAST_7_DAYS = 3;
+  COMPLETED_SELECTION_LAST_30_DAYS = 4;
+  COMPLETED_SELECTION_ALL = 5;
+}
+
+// TerminalEntry is an evaluation result derived from immutable task versions.
+// It is never stored in a Task or EntityVersion.
+enum TerminalEntryKind {
+  TERMINAL_ENTRY_KIND_UNSPECIFIED = 0;
+  TERMINAL_ENTRY_KIND_KNOWN = 1;
+  TERMINAL_ENTRY_KIND_UNKNOWN = 2;
+}
+
+message TerminalEntry {
+  TerminalEntryKind kind = 1;
+  google.protobuf.Timestamp entered_at = 2; // present only for KNOWN
+}
+
+message CompletedFilter {
+  CompletedSelection selection = 1;
+  google.protobuf.Timestamp cutoff = 2; // required only for duration selections
+}
+
 message Origin {
   OriginKind kind = 1; // APP=1, CLI=2, MCP=3
   string device_id = 2;
@@ -144,11 +238,44 @@ message Task {
   optional string prompt = 4; // absent differs from present empty Markdown
   Progress progress = 5; // TODO=1, IN_PROGRESS=2, BLOCKED=3, DONE=4, CANCELED=5
   Proposal proposal = 6; // REGULAR=1, PENDING=2, ACCEPTED=3, REJECTED=4
+  repeated CaptureReference captures = 7;
+  TaskPriority priority = 8; // UNSPECIFIED = unassigned
+  TaskType type = 9; // UNSPECIFIED = unassigned
+  repeated string label_ids = 10; // sorted unique, at most 100, all labels of repository_id
+  optional string start_date = 11; // YYYY-MM-DD calendar date without time or zone
+  optional string due_date = 12;
+  optional uint32 story_points = 13; // 0..2147483647; absent differs from 0
+  optional string milestone_id = 14;
+  optional string cycle_id = 15;
+  optional string parent_task_id = 16;
+  repeated string depends_on_task_ids = 17; // sorted unique
+  repeated string related_task_ids = 18; // sorted unique; stored on both endpoints
+  optional string duplicate_of_task_id = 19;
+}
+message Label {
+  string repository_id = 1;
+  string name = 2; // trimmed, 1..100 scalar values, unique per repository ignoring case
+  string color = 3; // #RRGGBB, stored upper-case
+  string description = 4; // at most 4000 scalar values
+}
+message Milestone {
+  string repository_id = 1;
+  string name = 2;
+  string description = 3;
+  optional string target_date = 4; // YYYY-MM-DD
+  bool completed = 5;
+}
+message Cycle {
+  string repository_id = 1;
+  string name = 2;
+  string description = 3;
+  string start_date = 4; // YYYY-MM-DD, not after end_date
+  string end_date = 5;
 }
 message EntityVersion {
-  uint32 format_version = 1; // exactly 1
+  uint32 format_version = 1; // 1 to 3; written as 3. Missing newer fields mean unassigned or empty
   string entity_id = 2;
-  EntityKind kind = 3; // REPOSITORY=1, TASK=2
+  EntityKind kind = 3; // REPOSITORY=1, TASK=2, URL_CONNECTION=3, LABEL=4, MILESTONE=5, CYCLE=6
   string version_id = 4;
   repeated string parent_version_ids = 5;
   google.protobuf.Timestamp created_at = 6;
@@ -158,6 +285,10 @@ message EntityVersion {
   oneof body {
     Repository repository = 10;
     Task task = 11;
+    URLConnection url_connection = 12;
+    Label label = 13;
+    Milestone milestone = 14;
+    Cycle cycle = 15;
   }
 }
 message MutationMeta {
@@ -207,6 +338,7 @@ message ErrorDetail {
   string entity_id = 3;
   repeated string current_head_ids = 4;
   bool retryable = 5;
+  ConstraintViolation violation = 6; // set when reason is CONSTRAINT_VIOLATION
 }
 
 message Device {
@@ -325,12 +457,47 @@ message GetTaskResponse {
   EntityResult result = 1;
 }
 
+// Inclusive bounds; from <= to. Without include_unassigned a range excludes unassigned tasks.
+message DateRange {
+  optional string from = 1;
+  optional string to = 2;
+  bool include_unassigned = 3;
+}
+message PointRange {
+  optional uint32 min = 1;
+  optional uint32 max = 2;
+  bool include_unassigned = 3;
+}
+// Fields combine with AND. Selected values within a field combine with OR, and the
+// include flag adds the unassigned case. A field without selection or flag does not restrict.
+message TaskFilter {
+  repeated TaskPriority priorities = 1;
+  bool include_unassigned_priority = 2;
+  repeated TaskType types = 3;
+  bool include_unassigned_type = 4;
+  repeated string label_ids = 5; // any selected label
+  bool include_unlabeled = 6;
+  DateRange start_date = 7;
+  DateRange due_date = 8;
+  PointRange story_points = 9;
+  repeated string milestone_ids = 10;
+  bool include_no_milestone = 11;
+  repeated string cycle_ids = 12;
+  bool include_no_cycle = 13;
+  repeated RelationshipKind relationships = 14; // has any of these kinds
+  bool include_no_relationships = 15; // or has none of any kind
+}
+
 message ListTasksRequest {
   Page page = 1;
   optional string repository_id = 2;
   repeated Progress progress = 3;
   repeated Proposal proposal = 4;
   string search = 5;
+  TaskFilter filter = 6;
+  TaskSortKey sort_key = 7;
+  SortDirection sort_direction = 8;
+  CompletedFilter completed = 9;
 }
 
 message ListTasksResponse {
@@ -347,11 +514,33 @@ message CreateTaskRequest {
   optional string prompt = 6;
   Progress progress = 7;
   Proposal proposal = 8;
+  TaskPriority priority = 9;
+  TaskType type = 10;
+  repeated string label_ids = 11;
+  optional string start_date = 12;
+  optional string due_date = 13;
+  optional uint32 story_points = 14;
+  optional string milestone_id = 15;
+  optional string cycle_id = 16;
+  optional string parent_task_id = 17;
+  repeated string depends_on_task_ids = 18;
+  repeated string related_task_ids = 19;
+  optional string duplicate_of_task_id = 20;
+  RelationshipEdits relationship_edits = 21;
+}
+
+// Edits to other tasks' stored fields that are inverse views of this task's relationships.
+message RelationshipEdits {
+  repeated string add_subtask_ids = 1; // sets parent_task_id on each
+  repeated string remove_subtask_ids = 2;
+  repeated string add_blocked_task_ids = 3; // adds this task to depends_on_task_ids of each
+  repeated string remove_blocked_task_ids = 4;
 }
 
 message CreateTaskResponse {
   EntityResult result = 1;
   EntityResult repository = 2;
+  repeated EntityResult affected = 3; // other tasks changed by relationship_edits
 }
 
 message SaveTaskRequest {
@@ -359,10 +548,12 @@ message SaveTaskRequest {
   string id = 2;
   string expected_version_id = 3;
   Task task = 4;
+  RelationshipEdits relationship_edits = 5;
 }
 
 message SaveTaskResponse {
   EntityResult result = 1;
+  repeated EntityResult affected = 2; // other tasks changed in the same transaction
 }
 
 message SetProgressRequest {
@@ -735,4 +926,169 @@ service SyncService {
   rpc PushChanges(PushChangesRequest) returns (PushChangesResponse);
   rpc PullChanges(PullChangesRequest) returns (PullChangesResponse);
   rpc WatchChanges(WatchChangesRequest) returns (stream WatchChangesResponse);
+}
+
+// Final image content is immutable; editable metadata belongs to the task version.
+message CaptureReference {
+  string attachment_id = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  string sha256 = 4;
+  uint64 byte_size = 5;
+  optional string page_url = 6;
+  optional string page_title = 7;
+  optional string css_selector = 8;
+}
+message CapturedImage {
+  CaptureReference capture = 1;
+  bytes png = 2;
+}
+message CreateCaptureTaskRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string repository_id = 3;
+  string title = 4;
+  string description = 5;
+  repeated CapturedImage images = 6;
+}
+message CreateCaptureTaskResponse {
+  EntityResult result = 1;
+}
+enum AttachmentState {
+  ATTACHMENT_STATE_UNSPECIFIED = 0;
+  ATTACHMENT_STATE_AVAILABLE = 1;
+  ATTACHMENT_STATE_WAITING_FOR_SYNC = 2;
+  ATTACHMENT_STATE_DELETED = 3;
+}
+message GetAttachmentRequest {
+  string task_id = 1;
+  string attachment_id = 2;
+}
+message GetAttachmentResponse {
+  AttachmentState state = 1;
+  bytes png = 2;
+  string download_url = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+// Uploads target temporary private objects. Completion validates and publishes immutable bytes.
+message BeginAttachmentUploadRequest {
+  string task_id = 1;
+  string attachment_id = 2;
+  string epoch = 3;
+}
+message BeginAttachmentUploadResponse {
+  string upload_id = 1;
+  string upload_url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  map<string, string> headers = 4;
+  AttachmentState state = 5;
+}
+message CompleteAttachmentUploadRequest {
+  string task_id = 1;
+  string attachment_id = 2;
+  string upload_id = 3;
+  string epoch = 4;
+}
+message CompleteAttachmentUploadResponse {
+  AttachmentState state = 1;
+}
+message URLConnection {
+  string prefix = 1;
+  string repository_id = 2;
+}
+message ListURLConnectionsRequest {
+  Page page = 1;
+}
+message ListURLConnectionsResponse {
+  repeated EntityResult items = 1;
+  string next_cursor = 2;
+}
+message CreateURLConnectionRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  URLConnection connection = 3;
+}
+message CreateURLConnectionResponse {
+  EntityResult result = 1;
+}
+message SaveURLConnectionRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string expected_version_id = 3;
+  URLConnection connection = 4;
+}
+message SaveURLConnectionResponse {
+  EntityResult result = 1;
+}
+message DeleteURLConnectionRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+}
+message DeleteURLConnectionResponse {
+  EntityResult result = 1;
+}
+service CaptureService {
+  rpc BeginAttachmentUpload(BeginAttachmentUploadRequest) returns (BeginAttachmentUploadResponse);
+  rpc CompleteAttachmentUpload(CompleteAttachmentUploadRequest) returns (CompleteAttachmentUploadResponse);
+  rpc CreateCaptureTask(CreateCaptureTaskRequest) returns (CreateCaptureTaskResponse);
+  rpc GetAttachment(GetAttachmentRequest) returns (GetAttachmentResponse);
+  rpc ListURLConnections(ListURLConnectionsRequest) returns (ListURLConnectionsResponse);
+  rpc CreateURLConnection(CreateURLConnectionRequest) returns (CreateURLConnectionResponse);
+  rpc SaveURLConnection(SaveURLConnectionRequest) returns (SaveURLConnectionResponse);
+  rpc DeleteURLConnection(DeleteURLConnectionRequest) returns (DeleteURLConnectionResponse);
+}
+
+// Repository planning items. Kind and repository_id are immutable after creation.
+message PlanningBody {
+  oneof body {
+    Label label = 1;
+    Milestone milestone = 2;
+    Cycle cycle = 3;
+  }
+}
+message GetPlanningItemRequest {
+  string id = 1;
+}
+message GetPlanningItemResponse {
+  EntityResult result = 1;
+}
+message ListPlanningItemsRequest {
+  Page page = 1;
+  optional string repository_id = 2;
+  EntityKind kind = 3; // UNSPECIFIED lists labels, milestones and cycles
+}
+message ListPlanningItemsResponse {
+  repeated EntityResult items = 1;
+  string next_cursor = 2;
+}
+message CreatePlanningItemRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  PlanningBody item = 3;
+}
+message CreatePlanningItemResponse {
+  EntityResult result = 1;
+}
+message SavePlanningItemRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string expected_version_id = 3;
+  PlanningBody item = 4;
+}
+message SavePlanningItemResponse {
+  EntityResult result = 1;
+}
+message DeletePlanningItemRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+}
+message DeletePlanningItemResponse {
+  EntityResult result = 1;
+}
+service PlanningService {
+  rpc GetPlanningItem(GetPlanningItemRequest) returns (GetPlanningItemResponse);
+  rpc ListPlanningItems(ListPlanningItemsRequest) returns (ListPlanningItemsResponse);
+  rpc CreatePlanningItem(CreatePlanningItemRequest) returns (CreatePlanningItemResponse);
+  rpc SavePlanningItem(SavePlanningItemRequest) returns (SavePlanningItemResponse);
+  rpc DeletePlanningItem(DeletePlanningItemRequest) returns (DeletePlanningItemResponse);
 }

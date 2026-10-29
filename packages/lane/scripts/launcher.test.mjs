@@ -10,10 +10,19 @@ import {
   writeFileSync,
   rmSync,
   symlinkSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { platformKey, verifiedExecutable } from "../bin/verify.mjs";
+import {
+  platformKey,
+  verifiedExecutable,
+  platforms,
+  platformPackage,
+} from "../bin/verify.mjs";
+import { installCandidate } from "./packed-install.mjs";
 function fixture(t) {
   const root = mkdtempSync(resolve(tmpdir(), "lane-launcher-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -27,15 +36,30 @@ function fixture(t) {
       version: "0.1.0",
       type: "module",
       bin: { lane: "bin/lane.mjs" },
+      files: ["bin", "manifest.json"],
+      optionalDependencies: Object.fromEntries(
+        platforms.map((key) => [platformPackage(key).name, "0.1.0"]),
+      ),
     }),
   );
   const key = platformKey();
-  const path = `artifacts/lane-${key}/${key.startsWith("windows") ? "lane.exe" : "lane"}`;
+  const path = key.startsWith("windows") ? "lane.exe" : "lane";
+  const platformRoot = resolve(root, "node_modules", platformPackage(key).name);
   const bytes = Buffer.from(
     '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2))+"\\n");process.stderr.write("fixture stderr\\n");if(process.argv.includes("wait")){process.on("SIGTERM",()=>{process.stderr.write("terminated\\n");process.exit(23)});setInterval(()=>{},1000)}else{process.stdin.pipe(process.stdout);process.stdin.on("end",()=>{process.exitCode=7})}\n',
   );
-  mkdirSync(resolve(root, "artifacts", `lane-${key}`), { recursive: true });
-  writeFileSync(resolve(root, path), bytes, { mode: 0o755 });
+  mkdirSync(platformRoot, { recursive: true });
+  const info = platformPackage(key);
+  writeFileSync(
+    resolve(platformRoot, "package.json"),
+    JSON.stringify({
+      name: info.name,
+      version: "0.1.0",
+      os: [info.os],
+      cpu: [info.cpu],
+    }),
+  );
+  writeFileSync(resolve(platformRoot, path), bytes, { mode: 0o755 });
   const manifest = {
     schemaVersion: 1,
     sourceRevision: "a".repeat(40),
@@ -54,11 +78,18 @@ function fixture(t) {
   const save = () =>
     writeFileSync(resolve(root, "manifest.json"), JSON.stringify(manifest));
   save();
-  return { root, key, manifest, save, file: resolve(root, path) };
+  return {
+    root,
+    key,
+    manifest,
+    save,
+    file: resolve(platformRoot, path),
+    platformRoot,
+  };
 }
 test("manifest rejects unsupported, absent, wrong version/platform, traversal and checksum corruption", (t) => {
   const f = fixture(t);
-  assert.equal(verifiedExecutable(f.root), f.file);
+  assert.equal(verifiedExecutable(f.root), realpathSync(f.file));
   assert.throws(() => platformKey("freebsd", "x64"), /unsupported/);
   assert.throws(
     () => verifiedExecutable(f.root, "linux-riscv64"),
@@ -141,33 +172,66 @@ test(
   },
 );
 test(
-  "packed fixture installs offline and launches from a disposable directory",
+  "packed candidates install only the host binary and fail clearly when optional dependencies are omitted",
   { skip: process.platform === "win32" },
-  (t) => {
+  async (t) => {
     const f = fixture(t);
-    const packed = spawnSync("npm", ["pack", "--ignore-scripts", "--json"], {
-      cwd: f.root,
-      encoding: "utf8",
-    });
-    assert.equal(packed.status, 0, packed.stderr);
-    const install = resolve(f.root, "install");
-    mkdirSync(install);
-    const filename = JSON.parse(packed.stdout)[0].filename;
-    const result = spawnSync(
-      "npm",
-      [
-        "install",
-        "--offline",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        "--prefix",
-        install,
-        resolve(f.root, filename),
-      ],
-      { encoding: "utf8" },
+    const pack = (cwd) => {
+      const result = spawnSync(
+        "npm",
+        ["pack", "--ignore-scripts", "--pack-destination", f.root, "--json"],
+        { cwd, encoding: "utf8" },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout)[0];
+    };
+    for (const key of platforms) {
+      f.manifest.artifacts[key] = {
+        ...f.manifest.artifacts[f.key],
+        platform: key,
+        path: key.startsWith("windows") ? "lane.exe" : "lane",
+      };
+    }
+    f.save();
+    const entry = pack(f.root);
+    assert.ok(
+      entry.files.every(
+        ({ path }) =>
+          path === "package.json" ||
+          path === "manifest.json" ||
+          path.startsWith("bin/"),
+      ),
     );
-    assert.equal(result.status, 0, result.stderr);
+    for (const key of platforms) {
+      const info = platformPackage(key);
+      const dir = resolve(f.root, "candidates", key);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        resolve(dir, "package.json"),
+        JSON.stringify({
+          name: info.name,
+          version: "0.1.0",
+          os: [info.os],
+          cpu: [info.cpu],
+        }),
+      );
+      cpSync(
+        f.file,
+        resolve(dir, key.startsWith("windows") ? "lane.exe" : "lane"),
+      );
+      pack(dir);
+    }
+    const install = resolve(f.root, "install");
+    await installCandidate({
+      dist: f.root,
+      version: "0.1.0",
+      keys: platforms,
+      prefix: install,
+    });
+    assert.deepEqual(
+      readdirSync(resolve(install, "node_modules/@delinoio")).sort(),
+      ["lane", `lane-${f.key}`].sort(),
+    );
     const run = spawnSync(
       process.execPath,
       [
@@ -176,8 +240,62 @@ test(
       ],
       { input: "", encoding: "utf8" },
     );
-    assert.equal(run.status, 7);
+    assert.equal(run.status, 7, run.stderr);
     assert.match(run.stdout, /--version/);
+    for (const key of platforms.filter((key) => key !== f.key)) {
+      const prefix = resolve(f.root, `install-${key}`);
+      await installCandidate({
+        dist: f.root,
+        version: "0.1.0",
+        keys: platforms,
+        prefix,
+        targetKey: key,
+      });
+      assert.deepEqual(
+        readdirSync(resolve(prefix, "node_modules/@delinoio")).sort(),
+        ["lane", `lane-${key}`].sort(),
+      );
+      assert.deepEqual(
+        readFileSync(
+          verifiedExecutable(
+            resolve(prefix, "node_modules/@delinoio/lane"),
+            key,
+          ),
+        ),
+        readFileSync(f.file),
+      );
+    }
+    const globalPrefix = resolve(f.root, "global");
+    await installCandidate({
+      dist: f.root,
+      version: "0.1.0",
+      keys: platforms,
+      prefix: globalPrefix,
+      global: true,
+    });
+    const globalRun = spawnSync(
+      resolve(globalPrefix, "bin/lane"),
+      ["--version"],
+      { input: "", encoding: "utf8" },
+    );
+    assert.equal(globalRun.status, 7, globalRun.stderr);
+    assert.match(globalRun.stdout, /--version/);
+    const omitted = mkdtempSync(resolve(tmpdir(), "lane-omitted-"));
+    t.after(() => rmSync(omitted, { recursive: true, force: true }));
+    await installCandidate({
+      dist: f.root,
+      version: "0.1.0",
+      keys: platforms,
+      prefix: omitted,
+      omitOptional: true,
+    });
+    const failure = spawnSync(
+      process.execPath,
+      [resolve(omitted, "node_modules/@delinoio/lane/bin/lane.mjs")],
+      { encoding: "utf8" },
+    );
+    assert.equal(failure.status, 1);
+    assert.match(failure.stderr, /optional dependencies enabled/);
   },
 );
 
@@ -208,3 +326,30 @@ test(
     }
   },
 );
+
+test("rejects mismatched platform metadata and dependency versions", (t) => {
+  const f = fixture(t);
+  const path = resolve(f.platformRoot, "package.json");
+  const metadata = JSON.parse(readFileSync(path));
+  for (const [field, value] of [
+    ["name", "wrong"],
+    ["version", "0.2.0"],
+    ["os", ["freebsd"]],
+    ["cpu", ["riscv64"]],
+  ]) {
+    writeFileSync(path, JSON.stringify({ ...metadata, [field]: value }));
+    assert.throws(
+      () => verifiedExecutable(f.root),
+      /platform package mismatch/,
+    );
+  }
+  writeFileSync(path, JSON.stringify(metadata));
+  const pkgPath = resolve(f.root, "package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath));
+  pkg.optionalDependencies[platformPackage(f.key).name] = "^0.1.0";
+  writeFileSync(pkgPath, JSON.stringify(pkg));
+  assert.throws(
+    () => verifiedExecutable(f.root),
+    /invalid optional dependency/,
+  );
+});

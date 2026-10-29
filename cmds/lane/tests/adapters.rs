@@ -385,7 +385,7 @@ fn standalone_import_and_sync_once_preserve_versions_and_drain_outbox() {
     let (endpoint, worker) = http_server(3, move |request| {
         let body: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
         if request.starts_with("POST /lane.v1.SyncService/GetSyncInfo ") {
-            json!({"formatVersion":1,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
+            json!({"formatVersion":3,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
         } else if request.starts_with("POST /lane.v1.SyncService/PushChanges ") {
             let mutations = body["mutations"].as_array().unwrap();
             assert_eq!(mutations.len(), 2);
@@ -477,4 +477,389 @@ fn remote_cancellation_interrupts_stalled_body() {
     );
     assert!(start.elapsed() < std::time::Duration::from_secs(1));
     server.join().unwrap();
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The route audit keeps every local and online command check together."
+)]
+fn realqa_cli_local_routes_and_mcp_discovery() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runtime = Runtime::new(
+        Some(dir.path().to_path_buf()),
+        Auth::default(),
+        "ORIGIN_KIND_CLI",
+    );
+    let opt = Options::default();
+    let repo = runtime
+        .invoke(
+            &opt,
+            "CreateRepository",
+            json!({"url":"https://example.com/app"}),
+        )
+        .unwrap();
+    let args = [
+        "--json",
+        "url-rule",
+        "create",
+        "--prefix",
+        "https://example.com/app",
+        "--repository-id",
+        repo["result"]["version"]["entityId"].as_str().unwrap(),
+    ]
+    .map(str::to_owned);
+    let mut output = vec![];
+    assert_eq!(
+        cli::run(
+            &args,
+            &mut runtime,
+            &mut Cursor::new(""),
+            &mut output,
+            &mut vec![]
+        ),
+        0
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap()["ok"],
+        true
+    );
+    for method in [
+        "CreateCaptureTask",
+        "GetAttachment",
+        "ListURLConnections",
+        "CreateURLConnection",
+        "SaveURLConnection",
+        "DeleteURLConnection",
+    ] {
+        let tool = lane::mcp::tools()
+            .into_iter()
+            .find(|(name, _)| name == method)
+            .unwrap()
+            .1;
+        assert!(
+            !tool["description"]
+                .as_str()
+                .unwrap()
+                .contains("Online-only")
+        );
+    }
+    for args in [
+        vec!["data", "reset"],
+        vec![
+            "data",
+            "reset",
+            "--space",
+            "invalid",
+            "--confirm-development-reset",
+        ],
+        vec![
+            "data",
+            "reset",
+            "--space",
+            "01900100-0000-7000-8000-000000000001",
+        ],
+        vec![
+            "data",
+            "reset",
+            "--space",
+            "01900100-0000-7000-8000-000000000001",
+            "--confirm-development-reset",
+            "--request-json",
+            "{\"x\":1}",
+        ],
+        vec!["data", "reset", "--remote", "--confirm-development-reset"],
+        vec![
+            "data",
+            "migrate",
+            "--space",
+            "01900100-0000-7000-8000-000000000001",
+        ],
+    ] {
+        assert_eq!(
+            cli::run(
+                &args.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+                &mut runtime,
+                &mut Cursor::new(""),
+                &mut vec![],
+                &mut vec![]
+            ),
+            2
+        );
+    }
+}
+
+#[test]
+fn attachment_sync_uses_epoch_bound_upload_and_validates_download() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let dir = tempfile::tempdir().unwrap();
+    let source = lane::store::Store::open(dir.path(), "", false).unwrap();
+    let mut runtime = Runtime::new(
+        Some(dir.path().to_path_buf()),
+        Auth::default(),
+        "ORIGIN_KIND_CLI",
+    );
+    let repo = runtime
+        .invoke(
+            &Options::default(),
+            "CreateRepository",
+            json!({"url":"https://example.com/capture"}),
+        )
+        .unwrap()["result"]["version"]["entityId"]
+        .clone();
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+    let bytes = STANDARD.decode(png).unwrap();
+    let attachment = protocol::id();
+    let version = runtime.invoke(&Options::default(),"CreateCaptureTask",json!({"repositoryId":repo,"title":"Test","images":[{"capture":{"attachmentId":attachment,"width":1,"height":1,"byteSize":bytes.len().to_string(),"sha256":protocol::hash(&bytes)},"png":png}]})).unwrap()["result"]["version"].clone();
+    drop(runtime);
+    let account = protocol::id();
+    let epoch = protocol::id();
+    let dest = source.select_account("issuer", &account, "tenant").unwrap();
+    lane::syncclient::import(&source, &dest).unwrap();
+    let server_account = account.clone();
+    let (endpoint, worker) = http_server(7, move |request| {
+        let q: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        if request.contains("/GetSyncInfo ") {
+            json!({"formatVersion":3,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
+        } else if request.contains("/PushChanges ") {
+            assert_eq!(q["formatVersion"], 3);
+            json!({"results":q["mutations"].as_array().unwrap().iter().map(|m|json!({"requestId":m["meta"]["requestId"],"result":{"result":"RESULT_KIND_APPLIED","version":m["version"]}})).collect::<Vec<_>>()})
+        } else if request.contains("/PullChanges ") {
+            assert_eq!(q["formatVersion"], 3);
+            json!({"changes":[],"nextCursor":"page-1","hasMore":false})
+        } else if request.contains("/BeginAttachmentUpload ") {
+            assert_eq!(q["epoch"], epoch);
+            assert_eq!(q["attachmentId"], attachment);
+            json!({"state":"ATTACHMENT_STATE_AVAILABLE"})
+        } else {
+            assert!(request.contains("/GetAttachment "));
+            assert_eq!(q["attachmentId"], attachment);
+            json!({"state":"ATTACHMENT_STATE_AVAILABLE","png":png})
+        }
+    });
+    let auth = Auth {
+        vault: Arc::new(MemoryVault::default()),
+        credential_lock_root: Some(dir.path().join("credential-locks")),
+        ..Auth::default()
+    };
+    auth.save(&dest,&json!({"endpoint":endpoint,"access_token":"access","refresh_token":"refresh","issuer":"issuer","account_id":account,"tenant_id":"tenant","device_id":source.device,"session_id":"session","expires_at":(chrono::Utc::now()+chrono::Duration::hours(1)).to_rfc3339()})).unwrap();
+    dest.set_enabled(true).unwrap();
+    lane::syncclient::run(&auth, &dest, "", true, false).unwrap();
+    dest.with(true, |c| {
+        assert_eq!(
+            c.query_row::<i64, _, _>("SELECT synchronized FROM attachments", [], |r| r.get(0))?,
+            1
+        );
+        c.execute("UPDATE attachments SET png_base64=NULL", [])?;
+        Ok(())
+    })
+    .unwrap();
+    lane::syncclient::run(&auth, &dest, "", true, false).unwrap();
+    worker.join().unwrap();
+    assert_eq!(dest.invoke("GetAttachment",&json!({"taskId":version["entityId"],"attachmentId":version["task"]["captures"][0]["attachmentId"]})).unwrap()["png"],png);
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The scenario records one complete rejection, hold-back, correction and retry flow."
+)]
+fn constraint_rejection_blocks_items_until_corrected_and_retried() {
+    use std::sync::atomic::AtomicUsize;
+    let dir = tempfile::tempdir().unwrap();
+    let source = lane::store::Store::open(dir.path(), "", false).unwrap();
+    let call = |store: &lane::store::Store, method: &str, request: Value| -> Value {
+        let mut q = protocol::request(method, &request).unwrap();
+        protocol::attribute(
+            protocol::method(method).unwrap().input(),
+            &mut q,
+            &json!({"kind":"ORIGIN_KIND_CLI","deviceId":store.device,"deviceName":"Lane","accountId":store.identity().unwrap().account}),
+            &mut vec![],
+        )
+        .unwrap();
+        store.invoke(method, &q).unwrap()
+    };
+    let repo = call(
+        &source,
+        "CreateRepository",
+        json!({"url":"https://example.com/blocked"}),
+    )["result"]["version"]["entityId"]
+        .clone();
+    let label = call(
+        &source,
+        "CreatePlanningItem",
+        json!({"item":{"label":{"repositoryId":repo,"name":"Docs","color":"#112233"}}}),
+    )["result"]["version"]
+        .clone();
+    let label_id = label["entityId"].clone();
+    let first = call(
+        &source,
+        "CreateTask",
+        json!({"repository":{"id":repo},"title":"First","labelIds":[label_id]}),
+    )["result"]["version"]
+        .clone();
+    let account = protocol::id();
+    let epoch = protocol::id();
+    let dest = source.select_account("issuer", &account, "tenant").unwrap();
+    lane::syncclient::import(&source, &dest).unwrap();
+
+    let phase = Arc::new(AtomicUsize::new(0));
+    let pushes = Arc::new(Mutex::new(Vec::<Vec<Value>>::new()));
+    let (server_phase, server_pushes, server_account) =
+        (phase.clone(), pushes.clone(), account.clone());
+    let (endpoint, worker) = http_server(11, move |request| {
+        let body: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(
+            body.get("formatVersion").map_or(3, |v| v.as_i64().unwrap()),
+            3
+        );
+        if request.contains("/GetSyncInfo ") {
+            json!({"formatVersion":3,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
+        } else if request.contains("/PushChanges ") {
+            let mutations = body["mutations"].as_array().unwrap().clone();
+            let first_phase = server_phase.load(Ordering::SeqCst) == 0;
+            server_pushes.lock().unwrap().push(mutations.clone());
+            json!({"results":mutations.iter().map(|m| {
+                let version = &m["version"];
+                let id = &m["meta"]["requestId"];
+                // The first push rejects the label (a duplicate name created elsewhere) and,
+                // because the server never accepted it, the task that references it.
+                let rejection = match version["kind"].as_str().unwrap() {
+                    "ENTITY_KIND_LABEL" if first_phase => Some("CONSTRAINT_VIOLATION_DUPLICATE_NAME"),
+                    "ENTITY_KIND_TASK" if first_phase => Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"),
+                    _ => None,
+                };
+                rejection.map_or_else(
+                    || json!({"requestId":id,"result":{"result":"RESULT_KIND_APPLIED","version":version}}),
+                    |violation| json!({"requestId":id,"error":{"reason":"ERROR_REASON_CONSTRAINT_VIOLATION","violation":violation,"entityId":version["entityId"],"retryable":false}}),
+                )
+            }).collect::<Vec<_>>()})
+        } else {
+            assert!(request.contains("/PullChanges "));
+            json!({"changes":[],"nextCursor":"cursor","hasMore":false})
+        }
+    });
+    let auth = Auth {
+        vault: Arc::new(MemoryVault::default()),
+        credential_lock_root: Some(dir.path().join("credential-locks")),
+        ..Auth::default()
+    };
+    auth.save(&dest,&json!({"endpoint":endpoint,"access_token":"access","refresh_token":"refresh","issuer":"issuer","account_id":account,"tenant_id":"tenant","device_id":source.device,"session_id":"session","expires_at":(chrono::Utc::now()+chrono::Duration::hours(1)).to_rfc3339()})).unwrap();
+    dest.set_enabled(true).unwrap();
+
+    // First run: the rejected items stay local, blocked with the named violation.
+    lane::syncclient::run(&auth, &dest, "", true, false).unwrap();
+    let blocked = |store: &lane::store::Store| -> Vec<(String, i64, Option<String>)> {
+        store
+            .with(false, |c| {
+                let mut stmt = c.prepare(
+                    "SELECT entity_id,state,error_reason FROM outbox ORDER BY created_at_us,rowid",
+                )?;
+                Ok(stmt
+                    .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                    .collect::<std::result::Result<Vec<_>, _>>()?)
+            })
+            .unwrap()
+    };
+    let rows = blocked(&dest);
+    assert_eq!(
+        rows.iter()
+            .map(|r| (r.1, r.2.as_deref()))
+            .collect::<Vec<_>>(),
+        vec![
+            (2, Some("CONSTRAINT_VIOLATION:DUPLICATE_NAME")),
+            (2, Some("CONSTRAINT_VIOLATION:REFERENCE_NOT_FOUND")),
+        ]
+    );
+    let status = dest.invoke("GetLocalStatus", &json!({})).unwrap();
+    assert_eq!(status["itemErrors"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        status["itemErrors"][0]["reason"],
+        "CONSTRAINT_VIOLATION:DUPLICATE_NAME"
+    );
+    assert_eq!(status["pendingItemCount"], "2");
+    // The local data is neither discarded nor reported as synchronized.
+    assert_eq!(
+        call(&dest, "GetPlanningItem", json!({"id":label_id}))["result"]["version"]["label"]["name"],
+        "Docs"
+    );
+    assert_eq!(
+        call(&dest, "GetTask", json!({"id":first["entityId"]}))["result"]["version"]["task"]["title"],
+        "First"
+    );
+
+    // A new task that references the rejected label is held back instead of racing ahead.
+    phase.store(1, Ordering::SeqCst);
+    let second = call(
+        &dest,
+        "CreateTask",
+        json!({"repository":{"id":repo},"title":"Second","labelIds":[label_id]}),
+    )["result"]["version"]
+        .clone();
+    lane::syncclient::run(&auth, &dest, "", true, false).unwrap();
+    assert_eq!(
+        pushes.lock().unwrap().len(),
+        1,
+        "nothing was uploaded while the label is blocked"
+    );
+    // Correct the label with an ordinary edit.
+    let renamed = call(
+        &dest,
+        "SavePlanningItem",
+        json!({"id":label_id,"expectedVersionId":label["versionId"],
+        "item":{"label":{"repositoryId":repo,"name":"Docs 2","color":"#112233"}}}),
+    )["result"]["version"]
+        .clone();
+    assert_eq!(
+        renamed["parentVersionIds"],
+        json!([]),
+        "the rejected version is superseded, not stranded as a parent"
+    );
+    let rows = blocked(&dest);
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    assert_eq!(
+        rows[0].0,
+        label_id.as_str().unwrap(),
+        "the corrected label keeps its upload position"
+    );
+    assert_eq!(rows[0].1, 1);
+
+    // Without --retry-blocked the corrected label and its dependent task are uploaded in
+    // causal order; the still-blocked task stays blocked and is never reported as synchronized.
+    lane::syncclient::run(&auth, &dest, "", true, false).unwrap();
+    {
+        let pushes = pushes.lock().unwrap();
+        let sent: Vec<&str> = pushes[1]
+            .iter()
+            .map(|m| m["version"]["versionId"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            sent,
+            vec![
+                renamed["versionId"].as_str().unwrap(),
+                second["versionId"].as_str().unwrap()
+            ]
+        );
+        assert_eq!(pushes[1][0]["kind"], "MUTATION_KIND_CREATE");
+        assert_eq!(pushes[1][0]["version"]["label"]["name"], "Docs 2");
+    }
+    assert_eq!(
+        blocked(&dest).iter().map(|r| r.1).collect::<Vec<_>>(),
+        vec![2],
+        "only the first task remains blocked"
+    );
+    // retry-blocked resends it and the server now accepts it.
+    lane::syncclient::run(&auth, &dest, "", true, true).unwrap();
+    worker.join().unwrap();
+    let pushes = pushes.lock().unwrap();
+    assert_eq!(pushes.len(), 3);
+    assert_eq!(pushes[2][0]["version"]["versionId"], first["versionId"]);
+    assert_eq!(
+        pushes[2][0]["meta"]["requestId"], first["versionId"],
+        "original request ID is preserved"
+    );
+    assert!(
+        blocked(&dest).is_empty(),
+        "everything acknowledged and removed"
+    );
 }

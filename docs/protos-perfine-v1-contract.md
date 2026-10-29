@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Protobuf and Connect RPC. Generate server Rust bindings through the existing server protocol crate into Cargo output. Keep Go consumers in the root `github.com/delinoio/apps` module and TypeScript exports in `@delino/protos`; do not duplicate generated source in apps or servers.
+Protobuf and Connect RPC. Generate server Rust bindings through the existing server protocol crate into Cargo output. Keep Go consumers in the root `github.com/delinoio/apps` module and TypeScript exports in `@repo/protos`; do not duplicate generated source in apps or servers.
 
 ## Users and Operators
 
@@ -57,7 +57,7 @@ Update the project index and affected owning contracts together when ownership, 
 
 ## Canonical RPC surface
 
-The package is `perfine.v1` in `protos/perfine/v1/perfine.proto`. Go exports use `github.com/delinoio/apps/protos/perfine/v1` and `perfinev1connect`; TypeScript consumers import `@delino/protos/perfine/v1/perfine_pb`. The server generator exports `delino_protocol::perfine::v1` through its generated include file. Root Buf generation includes this schema alongside the other repository protocols.
+The package is `perfine.v1` in `protos/perfine/v1/perfine.proto`. Go exports use `github.com/delinoio/apps/protos/perfine/v1` and `perfinev1connect`; TypeScript consumers import `@repo/protos/perfine/v1/perfine_pb`. The server generator exports `delino_protocol::perfine::v1` through its generated include file. Root Buf generation includes this schema alongside the other repository protocols.
 
 - `AccessService.GetAuthorization` reports the caller's current independent grants. It does not grant authority to subsequent requests.
 - `ConnectionService` lists and reads connections, connects or reconnects repositories, disconnects repositories, and changes raw-artifact consent with an expected revision. Connect requires both management and GitHub repository administrator authority. Reconnect in the same space reuses the connection and history. Connecting in another space creates a new connection without transferring retained history.

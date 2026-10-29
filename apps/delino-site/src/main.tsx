@@ -1,5 +1,5 @@
-import { Label } from "@delino/ui/components/label";
-import { NativeSelect } from "@delino/ui/components/native-select";
+import { Label } from "@packages/ui/components/label";
+import { NativeSelect } from "@packages/ui/components/native-select";
 import { createRoot } from "react-dom/client";
 import registry from "../i18n/locales.json";
 import type source from "../i18n/messages/en.json";

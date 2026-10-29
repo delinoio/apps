@@ -11,10 +11,10 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@delino/ui/components",
-    "ui": "@delino/ui/components",
-    "utils": "@delino/ui/lib/utils",
-    "lib": "@delino/ui/lib",
-    "hooks": "@delino/ui/hooks"
+    "components": "@packages/ui/components",
+    "ui": "@packages/ui/components",
+    "utils": "@packages/ui/lib/utils",
+    "lib": "@packages/ui/lib",
+    "hooks": "@packages/ui/hooks"
   }
 }

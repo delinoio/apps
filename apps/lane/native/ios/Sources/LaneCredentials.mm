@@ -81,7 +81,7 @@ NSString *LaneUUID7(void) {
     url:[self endpoint:@"/oauth/token"]];
   if (![token[@"device_id"] isEqual:pending[@"device"]] || ![token[@"access_token"] isKindOfClass:NSString.class] || [Text(token[@"token_type"]) caseInsensitiveCompare:@"Bearer"] != NSOrderedSame || Number(token[@"expires_in"]) <= 0) return nil;
   NSDictionary *info = [_transport callService:@"lane.v1.SyncService" method:@"GetSyncInfo" request:@{} token:token[@"access_token"]];
-  if (Number(info[@"formatVersion"]) != 1 || !Text(info[@"accountId"]).length || !Text(info[@"tenantId"]).length || !Text(info[@"epoch"]).length ||
+  if (Number(info[@"formatVersion"]) != 3 || !Text(info[@"accountId"]).length || !Text(info[@"tenantId"]).length || !Text(info[@"epoch"]).length ||
       ![info[@"accountId"] isEqual:token[@"account_id"]] || ![info[@"tenantId"] isEqual:token[@"tenant_id"]] ||
       ([pending[@"account"] length] && ![pending[@"account"] isEqual:info[@"accountId"]])) return nil;
   NSURL *issuer = [NSURL URLWithString:Text(token[@"issuer"])];
@@ -116,6 +116,14 @@ NSString *LaneUUID7(void) {
 }
 - (NSString *)lastAccessTokenForSpace:(NSString *)space {
   @synchronized (self) { return [self read:space][@"access_token"]; }
+}
+- (NSDictionary *)identityForSpace:(NSString *)space {
+  @synchronized (self) {
+    NSDictionary *credential = [self read:space];
+    NSMutableDictionary *identity = [credential[@"identity"] mutableCopy];
+    if (identity) identity[@"sessionId"] = credential[@"session_id"] ?: @"";
+    return identity;
+  }
 }
 - (NSString *)deviceForSpace:(NSString *)space {
   @synchronized (self) { return [self read:space][@"device_id"]; }

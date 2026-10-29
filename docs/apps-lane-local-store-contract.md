@@ -22,11 +22,24 @@ Register the `LaneStore` bridge before constructing the Lynx view. Calls origina
 
 The module exports:
 
-- `open(requestJson, callback)`: input `{"formatVersion":1,"spaceId":""}`; empty space ID selects the registry's active space. Output includes `spaceId`, `deviceId`, `schemaVersion:1`, `formatVersion:1`, and `sequence` as a decimal string. The callback uses the same success/error envelope as `invoke`, with these fields inside `response` and `sequence` also at envelope level. Opening an explicit space requires it to exist; do not create a new empty store because lookup failed.
+- `open(requestJson, callback)`: input `{"formatVersion":3,"spaceId":""}`; empty space ID selects the registry's active space. Output includes `spaceId`, `deviceId`, `schemaVersion:3`, `formatVersion:3`, and `sequence` as a decimal string. The callback uses the same success/error envelope as `invoke`, with these fields inside `response` and `sequence` also at envelope level. Opening an explicit space requires it to exist; do not create a new empty store because lookup failed. A store of any other schema or format version fails with `UNSUPPORTED_FORMAT` and a message naming the explicit development reset; `open` never resets or migrates it.
 - `invoke(method, requestJson, callback)`: method is the exact LaneService method name or local operation below. The request is ProtoJSON for that method plus an outer `{"spaceId":"…","request":{…}}` routing wrapper. Responses are `{"ok":true,"response":{…},"sequence":"…"}` or `{"ok":false,"error":{"reason":"…","message":"…","correlationId":"…","retryable":false}}`. Never expose SQL, file paths, arbitrary method evaluation or raw OS errors to JavaScript.
 - `close(spaceId, callback)`: releases that view's subscription/handle, not another process's database or a background worker. It does not log out or delete data.
 
-Invoke methods include all local LaneService methods, `GetLocalStatus`, `GetNotificationPreferences`, `SetNotificationPreferences`, `ConnectSync`, `DisconnectSync`, and `RemoveDeviceData`. `GetLocalStatus` has an empty request and returns `spaceId`, `deviceId`, `accountId`, `syncEnabled`, `connected`, `reconnectRequired`, optional `syncErrorReason`, decimal-string `pendingItemCount`, `itemErrors` entries with `requestId`, `entityId` and `reason`, optional Timestamp `lastSyncAt`, and `notificationPreferences` with `enabled`, `content` and `permission`. `SetNotificationPreferences` accepts `bool enabled=1, NotificationContent content=2` (DETAIL=1 default, GENERIC=2). Enabling requests OS permission; denial remains visible. `GetNotificationPreferences` takes an empty request and returns `bool enabled=1, NotificationContent content=2, NotificationPermission permission=3` (NOT_REQUESTED=1, GRANTED=2, DENIED=3, UNSUPPORTED=4). `ConnectSync` accepts `string account_id=1` (empty for first approval) and returns `string authorization_url=1, string challenge_id=2`; credentials return only to the native callback handler. Successful approval selects/creates the account space and returns the selection through a settings invalidation. `DisconnectSync` accepts `LocalRetention retention=1` (KEEP_LOCAL=1, REMOVE_LOCAL=2); `RemoveDeviceData` takes an empty request for the pinned selected space. Both return `bool completed=1`; explicit connection/removal UI owns confirmation, not SQL initialization. Connection/removal operations follow the CLI/server contracts; server-only management dispatches typed RPCs and returns ONLINE_REQUIRED when offline, never queues a lease or account deletion.
+On Android, each Activity session releases each native handle it acquired, even when another session has the same space open. Repeated close or destruction does not release another session's handle. Each successful sync worker bootstrap open also owns one handle. The worker releases the returned space after its work stops, including when a queued open completes after its waiter is interrupted. Background push and synchronization consumers acquire an explicit space handle before status reads and release it after their scoped work. A failed open releases nothing. UI, worker and background-consumer releases run on the serial store executor; reset remains busy while any owner lives.
+
+On desktop, the main process counts successful `open` results for each main or
+composer window session and each returned space. An explicit `close` releases only
+a reference owned by that session. When the window closes, the main process
+releases its remaining references, including successful opens whose callbacks
+complete after the session retires. It serializes these releases with accepted
+opens and closes so one reference is released once. A failed release retains the
+reference and emits a result-category diagnostic without a space ID or content.
+Other live windows, synchronization workers and processes keep their own
+references. The native service and enabled synchronization continue after a view
+closes.
+
+Invoke methods include all local LaneService and PlanningService methods, `GetLocalStatus`, `GetNotificationPreferences`, `SetNotificationPreferences`, `ConnectSync`, `DisconnectSync`, and `RemoveDeviceData`. `ResetDevelopmentData` is the explicit development reset below; it accepts `bool confirmed=1` and returns `bool completed=1` for the pinned selected space, and hosts reject any request whose `confirmed` is not true. `GetLocalStatus` has an empty request and returns `spaceId`, `deviceId`, `accountId`, `syncEnabled`, `connected`, `reconnectRequired`, optional `syncErrorReason`, decimal-string `pendingItemCount`, `itemErrors` entries with `requestId`, `entityId` and `reason`, optional Timestamp `lastSyncAt`, and `notificationPreferences` with `enabled`, `content` and `permission`. `SetNotificationPreferences` accepts `bool enabled=1, NotificationContent content=2` (DETAIL=1 default, GENERIC=2). Enabling requests OS permission; denial remains visible. `GetNotificationPreferences` takes an empty request and returns `bool enabled=1, NotificationContent content=2, NotificationPermission permission=3` (NOT_REQUESTED=1, GRANTED=2, DENIED=3, UNSUPPORTED=4). `ConnectSync` accepts `string account_id=1` (empty for first approval) and returns `string authorization_url=1, string challenge_id=2`; credentials return only to the native callback handler. Successful approval selects/creates the account space and returns the selection through a settings invalidation. `DisconnectSync` accepts `LocalRetention retention=1` (KEEP_LOCAL=1, REMOVE_LOCAL=2); `RemoveDeviceData` takes an empty request for the pinned selected space. Both return `bool completed=1`; hosts accept the numeric `retention` values Settings sends and the ProtoJSON names, leave validation to the store, and must not let post-commit host bookkeeping (such as releasing the removed space's watcher) replace the completed store response, so the Windows host classifies `retention` by JSON value type instead of reading it as a string; explicit connection/removal UI owns confirmation, not SQL initialization. Connection/removal operations follow the CLI/server contracts; server-only management dispatches typed RPCs and returns ONLINE_REQUIRED when offline, never queues a lease or account deletion.
 
 `LaneHost` provides the OS-only `copyText(text, callback)` and `openURL(url, callback)` helpers. Both accept strings and return a JSON-string envelope with `ok` and, on failure, a safe typed `error`. `openURL` accepts HTTPS URLs without credentials; authentication callback URLs enter through the native OS handler, never this method. `ConnectSync` opens its authorization URL through the native host. No credential is returned to JavaScript.
 
@@ -40,7 +53,7 @@ An old-epoch `STALE_EPOCH` probe sets `store_meta.reconnect_required=1` and `Get
 
 Validated OS navigation links are queued until the view opens storage, then emitted as `lane.openRoute` with one `{kind: "open" | "repository" | "task", id?: "<UUID v7>", spaceId?: "<UUID v7>"}` argument. Local notification taps include their pinned existing `spaceId`; public links omit it. Consumers close/open that space explicitly before navigation and must not reinterpret the task ID in an unrelated current account. Subscribe before `open` to receive cold-start routes. Authentication callback failures emit `lane.hostError` with a safe reason/message; callbacks do not act as authorization until native state and PKCE validation succeeds.
 
-Emit global event `lane.storeChanged` with one argument `{"spaceId":"…","sequence":"<decimal>"}` after committed changes. Consumers invalidate and reread typed queries; they retain unsaved editor input and indicate a remote/external change. Do not put content or credentials in events. Coalescing multiple commits is allowed; the monotonic sequence prevents lost invalidations. On resume/focus, compare sequence again before relying on cached reads.
+Emit global event `lane.storeChanged` with one argument `{"spaceId":"…","sequence":"<decimal>"}` after committed changes. Consumers invalidate and reread typed queries; they retain unsaved editor input and indicate a remote/external change. Do not put content or credentials in events. Coalescing multiple commits is allowed; the monotonic sequence prevents lost invalidations. On resume/focus, compare sequence again before relying on cached reads. `NativeAdapter.subscribe` keeps an independent accepted sequence per subscription: every active subscriber receives exactly one callback per event newer than its baseline for the open space, regardless of registration order, and one subscriber's acceptance never consumes an event for another. The baseline is the opened store's sequence. A subscription registered before `open`, or one that survives close/reopen or a data-space switch, is rebased to the new open store's sequence on its next event. Other-space, malformed, duplicate and older events notify nobody; compare decimal sequences exactly beyond JavaScript's safe integer range.
 
 Android registers a `LynxModule` on `LynxViewBuilder` before `build`, exports `@LynxMethod` callbacks, and uses `sendGlobalEvent`. iOS registers `NSObject<LynxModule>` on `LynxConfig` before view construction and dispatches through `sendGlobalEvent:withParams:`. Desktop loads the C++/Objective-C++ storage and OS service as a standard Node-API v8 module in the Lynxtron main process. ReactLynx uses `NativeModules.bridge.call("lane.native", {module, method, args}, callback)`; the main process permits only the existing `LaneStore` and `LaneHost` methods and string arguments. Host lifecycle controls are private to the main process. Native work uses Node asynchronous work and completes on the originating Node environment. Thread-safe native event queues are drained by the main process, which sends each event through `LynxWindow.sendGlobalEvent(name, ...arguments)`. No filesystem, SQL, process or credential capability is exposed to the renderer. Keep database work off the OS UI thread; marshal callbacks through the platform's supported runtime dispatch, never invoke NAPI values on arbitrary worker threads. Database ownership outlives individual views.
 
@@ -76,14 +89,14 @@ Every physical store and observer connection holds a shared lifetime lease on `r
 
 ## Storage
 
-### Schema version 1
+### Schema version 3
 
-Each `lane.sqlite` has `application_id=1279348293`, `user_version=1`. UUIDs are lowercase text; times are UTC Unix microseconds in signed 64-bit INTEGER; ProtoJSON is UTF-8 TEXT. `envelope_json` stores EntityVersion; `request_json` stores SyncMutation. Every language reads the same columns:
+Each `lane.sqlite` has `application_id=1279348293`, `user_version=3`. UUIDs are lowercase text; times are UTC Unix microseconds in signed 64-bit INTEGER; ProtoJSON is UTF-8 TEXT. `envelope_json` stores EntityVersion; `request_json` stores SyncMutation. Every language reads the same columns:
 
 ```sql
 CREATE TABLE store_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE entities (
-  id TEXT PRIMARY KEY, kind INTEGER NOT NULL CHECK(kind IN (1,2)),
+  id TEXT PRIMARY KEY, kind INTEGER NOT NULL CHECK(kind IN (1,2,3,4,5,6)),
   repository_id TEXT, normalized_url TEXT,
   deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0,1))
 );
@@ -123,25 +136,66 @@ CREATE TABLE notification_receipts (
   proposal_id TEXT NOT NULL, device_id TEXT NOT NULL,
   state INTEGER NOT NULL, PRIMARY KEY(proposal_id,device_id)
 );
+CREATE TABLE attachments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES entities(id),
+  sha256 TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  byte_size INTEGER NOT NULL,
+  png_base64 TEXT,
+  synchronized INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX attachment_owner ON attachments(task_id);
+
+-- Retain only immutable identities after owner deletion; never image content.
+CREATE TABLE attachment_identities (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  byte_size INTEGER NOT NULL
+);
+
 ```
 
-`store_meta` contains `space_id`, `device_id`, `format_version=1`, `account_epoch`, `pull_cursor`, `notification_enabled` (0/1), `notification_content` (DETAIL/GENERIC), and `sync_owner`/`sync_owner_expires_at_us`. No token or webhook signing key belongs here. `outbox.state` is PENDING=1 or BLOCKED=2; successful acknowledgments remove the row after durable local apply. `change_kind` is ENTITY=1, REMOTE_OBJECT=2, SETTINGS=3, SYNC_STATUS=4. `remote_objects.kind` is RECEIVER=1, EVENT=2, PROCESSING=3; this table is a read cache, not an offline mutation queue. `notification_receipts.state` is PENDING=1, DELIVERED=2, CANCELED=3. Repository mappings resolve immutable original repository references without rewriting historical snapshots or fingerprints. Tombstones and receipts do not expire while they are needed to prevent replay.
+`store_meta` contains `space_id`, `device_id`, `format_version=3`, `account_epoch`, `pull_cursor`, `notification_enabled` (0/1), `notification_content` (DETAIL/GENERIC), and `sync_owner`/`sync_owner_expires_at_us`. No token or webhook signing key belongs here. `outbox.state` is PENDING=1 or BLOCKED=2; successful acknowledgments remove the row after durable local apply. A server rejection of a constraint violation keeps the row BLOCKED with `error_reason` `CONSTRAINT_VIOLATION:<VIOLATION>` (for example `CONSTRAINT_VIOLATION:PARENT_CYCLE`), preserves the local version and surfaces the item in `GetLocalStatus.itemErrors`. `change_kind` is ENTITY=1, REMOTE_OBJECT=2, SETTINGS=3, SYNC_STATUS=4. `remote_objects.kind` is RECEIVER=1, EVENT=2, PROCESSING=3; this table is a read cache, not an offline mutation queue. `notification_receipts.state` is PENDING=1, DELIVERED=2, CANCELED=3. Repository mappings resolve immutable original repository references without rewriting historical snapshots or fingerprints. Tombstones and receipts do not expire while they are needed to prevent replay.
+
+Entity kinds are REPOSITORY=1, TASK=2, URL_CONNECTION=3, LABEL=4, MILESTONE=5 and CYCLE=6. Labels, milestones and cycles reuse the `entities`, `versions`, `heads`, `receipts`, `outbox` and `changes` tables and store their owning repository in `entities.repository_id`; schema version 3 adds no table. Task planning fields and relationship IDs live in the immutable task envelope and are not projected into columns.
 
 `entities` is a query projection, not the authoritative version body. Repository URL lookup uses the current accepted head; conflict alternatives reserve their candidate URLs through domain validation, not extra duplicate entity rows. A conflict is multiple rows in `heads`. Before changing a URL, check current and conflict-candidate URLs under the write lock. Task repository projection follows the accepted head until resolution; reads return all alternatives so the UI never treats the projection as resolution. Validate head/entity linkage in every write; a version for another entity cannot be a head. Deletion clears URL/body projections, removes previous versions/heads, installs only its bodyless deletion version and removes associated event caches, histories and unsent notification content.
 
+Native `ListTasks` accepts the optional typed `CompletedFilter` defined by the [Lane protocol](protos-lane-v1-contract.md#completed-task-selection). When the filter is omitted, the result set remains unchanged. For a duration selection, the native store follows immutable parent version IDs through the complete local history. It compares transition version identities across all current heads and returns an unknown entry when no unique transition is established. The completed predicate runs with the other filters before sorting and pagination. The opaque cursor binds the selection, absolute cutoff, account and space. This read adds no stored timestamp or schema change, and it keeps the existing selected head and conflict alternatives.
+
 ### Transactions and observation
 
-Enable `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=FULL` and `busy_timeout=5000` on every physical connection as applicable. Use local disks, not network shares or file-sync services. Use parameterized SQL. Native and Rust writers use `BEGIN IMMEDIATE`; re-read expected heads, deleted state, receipt and URL uniqueness **inside** that transaction. Commit entity projection, immutable snapshot/history, head set, request receipt, durable outbox mutation, notification receipt and one `changes` row atomically. Local-only work retains sufficient versions for later initial synchronization; no server is required for commit. Roll back everything on disk-full, I/O, constraint or validation failure. Surface STORAGE_BUSY after the bounded busy wait; the user can retry with the same request ID. Do not retry partial statements outside their original transaction.
+Enable `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=FULL` and `busy_timeout=5000` on every physical connection as applicable. Use local disks, not network shares or file-sync services. Use parameterized SQL. Native and Rust writers use `BEGIN IMMEDIATE`; re-read expected heads, deleted state, receipt and URL uniqueness **inside** that transaction. Planning writes validate inside the same transaction, after re-reading current heads: every referenced label, milestone, cycle and related task is a live entity of the task's repository; relationship graphs (parent, dependency, duplicate-of) have no self-link or cycle, using the union of every head's references for a conflicted task; label counts stay within 100; and a planning item's trimmed name is unique ignoring case within its repository and kind among live items. Explicit relationship removal targets must be live tasks in the same repository, even when the link is absent. A deleted task named as an explicit removal target returns `NOT_FOUND` or `DELETED`; other invalid endpoints return the named reference constraint, and live cross-repository tasks return the cross-repository constraint. A move, task deletion or planning-item deletion writes the required cleanup versions for other tasks in that same transaction, each with the actor's origin; relationship edits to other tasks (subtasks, blocks, symmetric related links) do likewise. A rejected write rolls back everything. Constraint violations return `CONSTRAINT_VIOLATION` with the named violation; a deleted explicit removal target returns `NOT_FOUND` or `DELETED`. Commit entity projection, immutable snapshot/history, head set, request receipt, durable outbox mutation, notification receipt and one `changes` row atomically. Local-only work retains sufficient versions for later initial synchronization; no server is required for commit. Roll back everything on disk-full, I/O, constraint or validation failure. Surface STORAGE_BUSY after the bounded busy wait; the user can retry with the same request ID. Do not retry partial statements outside their original transaction.
 
-Read in short consistent transactions. Close cursors promptly. Poll `MAX(changes.sequence)` on a dedicated observer at 500 ms while the view is active, then immediately on foreground/resume; coalesce invalidations. The query works across Android pools because it reads committed table state. A dedicated persistent connection may use `PRAGMA data_version` as an optimization, but only compare values from that same physical connection. SQLite update hooks alone do not observe other processes. A rollback emits no invalidation; own commits can trigger immediate sequence reads. Keep the sequence monotonic and do not prune/reset it in version 1.
+Read in short consistent transactions. Close cursors promptly. Poll `MAX(changes.sequence)` on a dedicated observer at 500 ms while the view is active, then immediately on foreground/resume; coalesce invalidations. The query works across Android pools because it reads committed table state. A dedicated persistent connection may use `PRAGMA data_version` as an optimization, but only compare values from that same physical connection. SQLite update hooks alone do not observe other processes. A rollback emits no invalidation; own commits can trigger immediate sequence reads. Keep the sequence monotonic within a database and do not prune it; only the explicit development reset below starts a new database with a new sequence.
 
 Only one background sync owner per space may drain the outbox at a time. Acquire/renew an expiring owner record in a short write transaction; never hold a SQLite lock across network calls. Requests remain idempotent if an owner crashes or a lease expires. Desktop embeds the matching distribution CLI artifact as `helpers/lane` or `helpers/lane.exe` under the packaged Lynxtron application resource directory (`Contents/Resources/app` on macOS, `resources/app` on Windows) (avoiding the case-insensitive host/helper name collision on either platform) and supervises `lane --space <uuid> sync run`. It sends termination only on explicit exit/disconnection, not window closure, and retries failed starts with a bounded delay. Missing helper binaries leave local operations available and report the dependency failure; no global npm executable is assumed. Desktop uses the Rust CLI `sync run` worker supervised by the host; CLI users may run the same worker without the app. Mobile host scheduling runs the same wire protocol at platform-permitted opportunities. Closing the desktop window releases rendering, not an enabled worker. App/CLI writes remain possible when the worker is unavailable.
 
-### Compatibility and migrations
+### Compatibility and development reset
 
-Before any write, check application ID, schema version and format version. Unknown nonempty databases fail with UNSUPPORTED_FORMAT and an update instruction; never replace them or treat them as empty. Creation is allowed only for a missing/empty file selected by the registry. Version 1 has no automatic migration from unrelated data. Future local migrations require an exclusive schema transaction, all writers checking compatibility at transaction entry, and a reviewed forward-migration path. Do not let an old long-lived process write after another process upgrades the schema.
+Before any write, check application ID, schema version and format version. Only schema 3 with format 3 is supported. Any other nonempty database, including an earlier schema, fails with UNSUPPORTED_FORMAT and an instruction that names the explicit reset procedure below; never replace it, migrate it or treat it as empty. Creation is allowed only for a missing/empty file selected by the registry. All writers check compatibility at transaction entry so an old long-lived process cannot write after the file is replaced.
+
+Lane is not deployed and development data may be discarded, so this pre-release exception provides no backward compatibility, no data-preserving migration and no old-client support. The earlier `data migrate` command, `Store::migrate` operation and `migrate-1-to-2.sql` script are removed. A store is never reset implicitly.
+
+#### Development data reset
+
+`lane --space <uuid> data reset --confirm-development-reset` and the native `Store::reset(spaceId)` operation reset only the selected existing local space. The CLI rejects `--remote`, an omitted `--space`, a missing confirmation flag and request payloads. Desktop and mobile hosts expose the same operation as the `ResetDevelopmentData` bridge method, used by a Settings "Reset development data" confirmation that requires the user to type the displayed confirmation text; cancelling or mismatched text changes nothing.
+
+The recovery view for an unsupported format uses the same confirmation. Its copy, focus, pending and failure presentation follow the [application reset specification](apps-lane-foundation.md#pre-release-data-reset). Presentation does not change the selected-space or lifetime-lease safeguards below.
+
+1. Validate registry routing and the pinned space. Take the exclusive lifetime lease on `root/locks/<spaceId>.handles.lock`, waiting at most five seconds. Open handles or running workers of any process make it fail with retryable `STORAGE_BUSY` and no change; close the app window's handles and stop `sync run` first.
+2. While holding the lease, remove the space's database, WAL and shared-memory files and its attachment content through the existing secure-removal path, then create an empty schema 3 database at the same path with `user_version=3`, `format_version=3`, the same `space_id` and the registry's `device_id`, a fresh change sequence and no pending outbox or receipts. Do not write the permanent `unavailable` marker and never unlink the rendezvous lock file.
+3. A standalone space keeps its standalone registry identity. An account space keeps its account binding but clears local data and sets `reconnect_required=1`; synchronization stays stopped until the user confirms reconnection exactly as for an epoch change (`sync connect --confirm-epoch-change`). Reset never contacts the server, deletes server data or signs out.
+4. An interrupted reset is repeated by running the same command; a partially removed space is never opened as valid data. After success, hosts close and reopen the space's handles and discard cached reads. Reset is for disposable development data only and never runs automatically.
 
 Logical deletion removes content immediately in connected stores and redacts retained receipt/outbox responses; retain only required identities/fingerprints. Use secure deletion and coordinated checkpointing to reduce residual SQLite content without claiming forensic erasure of storage media. A failure must not report success. No user-facing backup/export/trash feature is introduced.
+
+The macOS host retains the latest APNs token in memory and reconciles `RegisterPush` per space against the store's current status (`syncEnabled`, enabled notification preferences and the space's device), as described in the [notification requirements](apps-lane-foundation.md#notifications). It never persists the token, registers a space under another account's identity, or requests permission again.
 
 Remote APNs and FCM messages are data-only wake hints with `type=lane.proposal`, `proposalId` and the authenticated registration's `accountId`. APNs uses `content-available:1`, background push type and priority 5; FCM uses HIGH priority without a notification payload. The native host selects that retained account, synchronizes, then claims eligible local notification receipts and applies current preferences before OS display. Never fall back to another active account. Apple background wakes can be delayed or omitted; the next permitted synchronization checks pending proposals. This does not guarantee immediate notification delivery while suspended.
 
@@ -151,13 +205,21 @@ Use per-user directory permissions (0700 and 0600 files on POSIX; user ACLs on W
 
 ## Logging
 
-Use structured local logs without content/secrets. Native and CLI share the root log retention budget: 30 days and combined 100 MiB, deleting oldest files when either bound is reached. Serialize append and rotation across processes using the retained `root/logs/.rotation.lock`: POSIX `flock(LOCK_EX)` or Windows `LockFileEx` exclusive byte zero, length one. Never remove the lock file during pruning. No automatic upload. Diagnostic errors expose categories, not user filesystem paths or SQL parameter values.
+Use structured local logs without content/secrets. Planning, relationship and reset operations log the operation, correlation ID, result category and duration only; never task content or label/milestone/cycle names and descriptions. Native and CLI share the root log retention budget: 30 days and combined 100 MiB, deleting oldest files when either bound is reached. Serialize append and rotation across processes using the retained `root/logs/.rotation.lock`: POSIX `flock(LOCK_EX)` or Windows `LockFileEx` exclusive byte zero, length one. Never remove the lock file during pruning. The macOS desktop host writes UTC daily buckets named `native-macos-YYYYMMDD.log`, never appends to an earlier date and expires a bucket when its UTC bucket start plus 30 days is reached, independent of modification time (the conservative daily rule can discard the final part of a bucket less than one day early but never retains a record past 30 days). Under the same lock, before its first bucket append, it removes the legacy timestamp-less `native-macos.log` instead of renaming or copying it; then it prunes by age and by the combined 100 MiB budget (oldest modification time first, with room reserved for the new event) and appends. Failed retirement or pruning leaves the old file in place and never relabels its records as current. Other files keep modification-time expiry. No automatic upload. Diagnostic errors expose categories, not user filesystem paths or SQL parameter values.
 
 ## Build and Test
 
-Run the common protocol vectors in native and Rust CLI adapters. Test both writer directions against the same physical file, concurrent saves, crash/rollback/disk-full behavior, close/reopen, unsupported schema refusal, account routing and commit-only observation in a running app. Test task/history/outbox/sequence atomicity. Check runtime SQLite source IDs and the WAL fix on all targets.
+Run the common protocol vectors in native and Rust CLI adapters. Test both writer directions against the same physical file, concurrent saves, crash/rollback/disk-full behavior, close/reopen, unsupported schema refusal naming the reset command, the explicit reset (rejections, active-handle `STORAGE_BUSY`, same-space initialization and scope isolation, account-space reconnect requirement, restart and new-format persistence), planning validation/cleanup atomicity with rollback, account routing and commit-only observation in a running app. Test task/history/outbox/sequence atomicity. Check runtime SQLite source IDs and the WAL fix on all targets.
 
 Run app-local `pnpm test` for frontend changes and the existing platform build commands. Native build/install/behavior gates apply separately to macOS, Windows, iOS and Android. Cross-compiling a CLI or compiling a Lynx bundle does not prove native behavior. Preserve existing CI exclusions for macOS PR/main/affected runs; store/provider acceptance is separate.
+
+The native CMake build verifies vendored dependency bytes against
+`native/store/dependencies.json`. Vendored text uses LF checkout bytes so
+Windows Git CRLF conversion cannot change those hashes; exact-path LFS rules
+retain their binary checkout behavior. MSVC compiles the store and its tests
+with UTF-8 source/execution encoding so Unicode validation does not depend on
+the host code page. Build the native store tests with `LANE_STORE_TESTS=ON`
+and run their CTest entry separately from the desktop renderer tests.
 
 ## Dependencies and Integrations
 
@@ -173,3 +235,38 @@ Change this contract and protocol/CLI/app contracts together for schema, path, c
 - [Repository defaults](repository-defaults.md)
 - [SQLite committed-change observation](https://sqlite.org/pragma.html#pragma_data_version)
 - [SQLite WAL](https://sqlite.org/wal.html)
+
+## RealQA integration
+
+The [RealQA contract](apps-lane-realqa-contract.md) extends this domain with durable
+final-PNG attachments, authorized retrieval and synchronized URL-to-repository
+rules. Preserve existing account routing, whole-task conflicts, request replay,
+history, task moves and deletion precedence. Native saves commit locally before
+optional image upload. Pending synchronization must not be reported as failed
+local saving. Unsupported schema/format versions must be refused before writes.
+These requirements do not establish implementation or release acceptance.
+
+### RealQA schema 2
+
+RealQA introduced data-store schema and format version 2, which the current schema 3 retains; the registry remains
+version 1. Schema 2 added entity kind 3 for URL connections and an `attachments`
+table keyed by attachment UUID, with owning task, SHA-256, dimensions, byte size,
+optional final PNG bytes encoded as base64, and synchronization state. Empty
+image bytes mean synchronization is pending, not an empty image. Attachment
+content is immutable. Per-image browser metadata remains in the versioned task.
+
+Save the task, final images, receipt, outbox and change notification in one
+transaction. Retain images after removal from the current prompt while history
+can reference them; delete them with their owning task. A task move changes no
+attachment ownership. Repository deletion cascades its current tasks and URL
+connections. Retrieval requires a matching task and attachment in the pinned
+space. Unsupported schema writers must stop before any mutation.
+
+All native and Rust adapters must support the current schema before distribution.
+Do not silently initialize, migrate or replace an existing earlier-version store;
+refuse it and name the explicit development reset. Historical envelopes of format 1 and 2 remain
+readable without rewriting immutable versions; new envelopes use format 3.
+Synchronization negotiation must prevent older clients from dropping capture references,
+URL connections or planning fields.
+
+Attachment deletion retains `attachment_identities` rows containing only immutable IDs, owner IDs, dimensions, byte counts and SHA-256 digests. Reusing an attachment ID for another owner or content is rejected even after deletion and account-space imports. Local physical removal deletes these records with the space. No image bytes or browser metadata belong in the identity table.

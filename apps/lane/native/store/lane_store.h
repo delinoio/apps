@@ -29,6 +29,13 @@ public:
   Store &operator=(const Store &) = delete;
   std::string open(std::string requestJson);
   std::string invoke(std::string method, std::string requestJson);
+  // Explicit development reset of one existing local space: the
+  // `ResetDevelopmentData` bridge method after its typed confirmation. Waits at
+  // most five seconds for the exclusive lifetime lease (open handles or sync
+  // workers of any process fail with STORAGE_BUSY and no change), securely
+  // removes the space database and attachments and creates an empty schema 3
+  // store with the same space ID. Never implicit; never contacts the server.
+  std::string reset(std::string spaceId);
   std::string close(std::string spaceId);
   std::string poll();
   void setHostHooks(HostHooks hooks);
@@ -45,8 +52,15 @@ public:
                           int seconds = 60);
   std::string pendingSync(std::string spaceId, std::string owner);
   // Applies a PushChangesResponse and/or PullChangesResponse atomically.
-  // Input: {formatVersion:1,epoch,owner,push?:{...},pull?:{...}}.
+  // Input: {formatVersion:3,epoch,owner,push?:{...},pull?:{...}}.
   std::string applySync(std::string spaceId, std::string responseJson);
+  // Native-only verified download cache. Returns a GetAttachment envelope.
+  std::string cacheAttachment(std::string spaceId, std::string taskId,
+                              std::string attachmentId, std::string pngBase64);
+  // Mark bytes accepted by the server only under the same sync lease/epoch.
+  std::string acknowledgeAttachment(std::string spaceId, std::string owner,
+                                    std::string epoch, std::string taskId,
+                                    std::string attachmentId);
   // Pending local MCP proposals, filtered again at dispatch time. Host delivers
   // with proposalId/deviceId as the OS dedupe identity, then acknowledges.
   std::string pendingNotifications(std::string spaceId);

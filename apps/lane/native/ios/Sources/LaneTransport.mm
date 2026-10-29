@@ -33,6 +33,7 @@ NSDictionary *LaneConnectFailure(NSData *body, NSInteger status) {
   NSDictionary *json = LaneJSON([[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding]);
   NSString *reason = status == 401 ? @"UNAUTHENTICATED" : status == 403 ? @"FORBIDDEN" : status == 429 ? @"RATE_LIMITED" : status == 413 ? @"ITEM_TOO_LARGE" : @"DEPENDENCY_UNAVAILABLE";
   NSMutableDictionary *error = [LaneJSON(LaneFailure(reason, status >= 500 || status == 429))[@"error"] mutableCopy];
+  error[@"httpStatus"] = @(status);
   if (![json[@"details"] isKindOfClass:NSArray.class]) return @{@"ok": @NO, @"error": error};
   for (id item in json[@"details"]) {
     if (![item isKindOfClass:NSDictionary.class] || ![item[@"type"] isEqual:@"lane.v1.ErrorDetail"] || ![item[@"value"] isKindOfClass:NSString.class]) continue;
@@ -87,6 +88,9 @@ NSDictionary *LaneConnectFailure(NSData *body, NSInteger status) {
   completion(nil);
 }
 - (NSDictionary *)perform:(NSMutableURLRequest *)request {
+  return [self perform:request attachment:NO];
+}
+- (NSDictionary *)perform:(NSMutableURLRequest *)request attachment:(BOOL)attachment {
   if (![request.URL.scheme.lowercaseString isEqualToString:@"https"] || !request.URL.host.length || request.URL.user || request.URL.password)
     return LaneJSON(LaneFailure(@"INVALID_INPUT", NO));
   dispatch_semaphore_t done = dispatch_semaphore_create(0);
@@ -111,8 +115,12 @@ NSDictionary *LaneConnectFailure(NSData *body, NSInteger status) {
   @synchronized (self) { [_tasks removeObject:task]; }
   if (failure) return LaneJSON(LaneFailure(@"ONLINE_REQUIRED", YES));
   if (status < 200 || status >= 300) {
+    // R2 denial can mean an expired signature. Renew GetAttachment on retry;
+    // only the authenticated API can report a durable account permission error.
+    if (attachment) return LaneJSON(LaneFailure(@"DEPENDENCY_UNAVAILABLE", YES));
     return LaneConnectFailure(body, status);
   }
+  if (attachment) return @{@"png": [body base64EncodedStringWithOptions:0] ?: @""};
   NSDictionary *json = LaneJSON([[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding]);
   return json ?: LaneJSON(LaneFailure(@"DEPENDENCY_UNAVAILABLE", YES));
 }
@@ -128,6 +136,13 @@ NSDictionary *LaneConnectFailure(NSData *body, NSInteger status) {
   [http setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
   http.HTTPBody = [LaneEncode(request) dataUsingEncoding:NSUTF8StringEncoding];
   return [self perform:http];
+}
+- (NSDictionary *)attachment:(NSURL *)url {
+  if (!url || url.fragment) return LaneJSON(LaneFailure(@"INVALID_INPUT", NO));
+  // An ephemeral session and a new request keep signed R2 access separate from
+  // Lane credentials. The delegate refuses redirects on this request too.
+  NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:25];
+  return [self perform:request attachment:YES];
 }
 - (NSDictionary *)getJSON:(NSURL *)url { return url ? [self perform:[NSMutableURLRequest requestWithURL:url]] : LaneJSON(LaneFailure(@"DEPENDENCY_UNAVAILABLE", NO)); }
 - (NSDictionary *)postForm:(NSDictionary *)form url:(NSURL *)url {

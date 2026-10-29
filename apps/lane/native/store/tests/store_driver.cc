@@ -13,9 +13,23 @@ int main(int argc, char **argv) {
       auto m = q.value("method", "");
       std::string out;
       if (m == "open")
-        out = store.open(q.value("request", nlohmann::json{{"formatVersion", 1},
+        out = store.open(q.value("request", nlohmann::json{{"formatVersion", 3},
                                                            {"spaceId", ""}})
                              .dump());
+      else if (m == "reset")
+        out = store.reset(q.at("spaceId"));
+      else if (m == "approveAccount")
+        out = store.approveAccount(q.at("request").dump(), q.value("merge",false));
+      else if (m == "acquireSync")
+        out = store.acquireSync(q.at("spaceId"),q.at("owner"));
+      else if (m == "applySync")
+        out = store.applySync(q.at("spaceId"),q.at("request").dump());
+      else if (m == "pendingSync")
+        out = store.pendingSync(q.at("spaceId"),q.at("owner"));
+      else if (m == "acknowledgeAttachment")
+        out = store.acknowledgeAttachment(q.at("spaceId"),q.at("owner"),q.at("epoch"),q.at("taskId"),q.at("attachmentId"));
+      else if (m == "cacheAttachment")
+        out = store.cacheAttachment(q.at("spaceId"),q.at("taskId"),q.at("attachmentId"),q.at("png"));
       else if (m == "close")
         out = store.close(q.at("spaceId"));
       else if (m == "poll")

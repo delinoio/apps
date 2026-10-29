@@ -1,0 +1,340 @@
+// SPDX-License-Identifier: Apache-2.0
+// Fixture bridge verifies the shared ReactLynx UI, not OS capture or rasterization.
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { chromium } from "playwright";
+const evidence = "/tmp/realqa-412-ui-evidence";
+await mkdir(evidence, { recursive: true });
+const server = spawn(process.execPath, ["tests/preview.mjs"], {
+  env: { ...process.env, LANE_PREVIEW_PORT: "46414" },
+  stdio: ["ignore", "pipe", "inherit"],
+});
+await new Promise((resolve, reject) => {
+  server.stdout.once("data", resolve);
+  server.once("exit", (code) => reject(new Error(`Preview exited ${code}`)));
+});
+const browser = await chromium.launch({
+  channel: process.env.LANE_BROWSER_CHANNEL || "chrome",
+  headless: true,
+});
+const page = await browser.newPage({ viewport: { width: 1200, height: 840 } });
+const errors = [];
+page.on("pageerror", (e) => errors.push(e.message));
+const base = "http://127.0.0.1:46414";
+await page.route("**/test-bridge.js", (route) =>
+  route.fulfill({
+    contentType: "application/javascript",
+    body: `export default (_modules,call)=>({call(channel,request,callback){call('bridge',request).then(callback);}});`,
+  }),
+);
+await page.route("**/host.js", async (route) => {
+  const response = await route.fetch();
+  let body = await readFile(new URL("../web/host.js", import.meta.url), "utf8");
+  body = body.replace(
+    /view\.nativeModulesMap = \{[\s\S]*?\};/,
+    `view.nativeModulesMap={bridge:new URL('/test-bridge.js',location.href).href};`,
+  );
+  body = body.replace(
+    "view.onNativeModulesCall = async (name, data, moduleName) => {",
+    `let fixtureDraft;
+let windowKind='main';let savedCount=0;let attempts=[];let failOnce=true;const operations=[];const storeCalls=[];
+const fixtureId='019a196d-0000-7000-8000-000000000001';
+const state=()=>({window:windowKind,draft:fixtureDraft,shortcuts:{},permission:'granted',chrome:{state:'disconnected',pending:[],connections:[]}});
+const emit=()=>view.sendGlobalEvent('lane.realqa.changed',[{}]);
+window.fixtureState=()=>({draft:fixtureDraft,savedCount,attempts,operations,storeCalls});
+view.onNativeModulesCall = async (name, data, moduleName) => {
+if(moduleName==='bridge') {
+ const {module,method,args}=data;
+ if(module==='LaneStore'){
+ if(method==='open'){const spaceId=JSON.parse(args[0]).spaceId||'fixture-space';storeCalls.push({method:'open',spaceId});if(spaceId==='unavailable-space')return JSON.stringify({ok:false,error:{reason:'NOT_FOUND',message:'Synthetic unavailable space'}});return JSON.stringify({ok:true,response:{spaceId,deviceId:'fixture-device',schemaVersion:3,formatVersion:3,sequence:'0'}});}
+ if(method==='close')return JSON.stringify({ok:true,response:{}});
+ const wrapper=JSON.parse(args[1]);storeCalls.push({method:args[0],spaceId:wrapper.spaceId});const input=wrapper.request;let response={};
+ if(args[0]==='GetLocalStatus')response={syncEnabled:false,pendingItemCount:'0',connected:false};
+ else if(args[0]==='ListURLConnections'||args[0]==='ListPlanningItems')response={items:[]};
+ else if(args[0]==='CreateCaptureTask') {attempts.push(input);if(failOnce){failOnce=false;return JSON.stringify({ok:false,error:{reason:'STORAGE_FULL',message:'Synthetic storage failure'}});}savedCount++;response={result:{result:'RESULT_KIND_APPLIED',version:{entityId:input.id,versionId:fixtureId,kind:'ENTITY_KIND_TASK',task:{repositoryId:input.repositoryId,title:input.title}}}};}
+ else response=await online.invoke('lane.v1.LaneService',args[0],input);
+ return JSON.stringify({ok:true,response});
+ }
+ const request=JSON.parse(args[0]);operations.push(request);let value={};
+ if(request.op==='state')value=state();
+ else if(request.op==='sources')value={sources:[{id:'monitor',name:'Test monitor',width:480,height:240}]};
+ else if(request.op==='capture') {const response=await online.invoke('lane.v1.CaptureService','GetAttachment',{});fixtureDraft={id:fixtureId,requestId:'019a196d-0000-7000-8000-000000000009',repositoryId:'',title:'',description:'',images:[{id:'019a196d-0000-7000-8000-000000000011',png:response.png,width:480,height:240,layers:[],metadata:{pageUrl:'https://example.test/app',pageTitle:'Sample page',cssSelector:'main > button'},canUndo:false,canRedo:false,sha256:'a'.repeat(64)}]};windowKind='composer';emit();}
+ else if(request.op==='updateDraft'){if(request.imageId)fixtureDraft.images[0].metadata=request.metadata;else for(const key of ['title','description','repositoryId'])if(key in request)fixtureDraft[key]=request[key];emit();}
+ else if(request.op==='edit'){fixtureDraft.images[0].layers=request.layers;fixtureDraft.images[0].canUndo=true;emit();}
+ else if(request.op==='export')value=fixtureDraft;
+ else if(request.op==='complete'){fixtureDraft=null;windowKind='main';emit();view.sendGlobalEvent('lane.realqa.saved',[{taskId:request.taskId,spaceId:request.spaceId}]);}
+ return JSON.stringify({ok:true,value});
+}`,
+  );
+  await route.fulfill({ response, body });
+});
+const button = (name) => page.getByRole("button", { name, exact: true });
+try {
+  await page.goto(base);
+  await button("New tab").click();
+  await button("RealQA").click();
+  await button("Full screen").waitFor();
+  await button("Full screen").click();
+  await button("Test monitor · 480 × 240").click();
+  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  await page.waitForTimeout(150);
+  const initialLayout = await page.locator("lynx-view").evaluate((view) => {
+    const root = view.shadowRoot;
+    const rect = (selector) => {
+      const r = root.querySelector(selector).getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom };
+    };
+    const input = root
+      .querySelector(".composer-form x-input")
+      ?.shadowRoot?.querySelector("input");
+    return {
+      header: rect(".composer-header"),
+      repository: rect(".composer-form .label"),
+      scroll: rect(".composer-scroll"),
+      titleFocused: input === input?.getRootNode().activeElement,
+    };
+  });
+  assert.ok(initialLayout.titleFocused, "Title must retain initial autofocus");
+  assert.equal(
+    await button("Pixel coordinates").getAttribute("data-expanded"),
+    "false",
+  );
+  assert.equal(
+    await page.getByRole("textbox", { name: "Annotation color" }).count(),
+    0,
+  );
+  await button("Add capture").click();
+  const captureMenu = page.getByRole("dialog", { name: "Add capture" });
+  await captureMenu.waitFor();
+  assert.deepEqual(await captureMenu.getByRole("button").allTextContents(), [
+    "Close",
+    "Full screen",
+    "Window",
+    "Region",
+    "Chrome element",
+  ]);
+  await page.keyboard.press("Escape");
+  await captureMenu.waitFor({ state: "hidden" });
+  assert.equal(
+    await page
+      .getByRole("dialog", { name: "Discard unsaved captures?" })
+      .count(),
+    0,
+  );
+  assert.ok(
+    initialLayout.repository.top >= initialLayout.header.bottom,
+    JSON.stringify(initialLayout),
+  );
+  await page.getByText("Enter a title.", { exact: true }).waitFor();
+  await page
+    .getByText(
+      "Select a repository. A deleted or conflicted repository must be reselected.",
+      { exact: true },
+    )
+    .waitFor();
+  assert.equal(
+    await button("Save to Lane").getAttribute("aria-disabled"),
+    "true",
+  );
+  assert.equal(
+    (await page.evaluate(() => window.fixtureState())).attempts.length,
+    0,
+  );
+  await page
+    .getByRole("textbox", { name: "Title", exact: true })
+    .fill("Synthetic capture task");
+  await page
+    .getByRole("textbox", { name: "Description", exact: true })
+    .fill("Synthetic problem description");
+  await button("github.com/delinoio/apps").click();
+  await button("Remove CSS selector").click();
+  await button("Pixel coordinates").click();
+  await page.getByRole("textbox", { name: "x", exact: true }).waitFor();
+  assert.equal(
+    await button("Pixel coordinates").getAttribute("data-expanded"),
+    "true",
+  );
+  await page.getByRole("textbox", { name: "x", exact: true }).fill("31");
+  await button("Pixel coordinates").click();
+  await page
+    .getByRole("textbox", { name: "x", exact: true })
+    .waitFor({ state: "hidden" });
+  await button("Pixel coordinates").click();
+  await page.getByRole("textbox", { name: "x", exact: true }).waitFor();
+  assert.equal(
+    await page.getByRole("textbox", { name: "x", exact: true }).inputValue(),
+    "31",
+  );
+  await button("Text").click();
+  await page.getByRole("textbox", { name: "Annotation text" }).waitFor();
+  await button("Arrow").click();
+  await page
+    .getByRole("textbox", { name: "Points (x,y pairs separated by spaces)" })
+    .fill("1,2,3");
+  await button("Apply tool").click();
+  await page
+    .getByText("Enter points as x,y pairs separated by spaces.")
+    .waitFor();
+  assert.equal(
+    (await page.evaluate(() => window.fixtureState())).draft.images[0].layers
+      .length,
+    0,
+  );
+  await page
+    .getByRole("textbox", { name: "Points (x,y pairs separated by spaces)" })
+    .fill("0,0 100,100");
+  await button("Opaque cover").click();
+  await page.getByRole("textbox", { name: "Annotation color" }).fill("#bad");
+  await button("Apply tool").click();
+  await page
+    .getByText("Enter a six-digit hex color, such as #075AFF.")
+    .waitFor();
+  assert.equal(
+    (await page.evaluate(() => window.fixtureState())).draft.images[0].layers
+      .length,
+    0,
+  );
+  await page.getByRole("textbox", { name: "Annotation color" }).fill("#075AFF");
+  await button("Opaque cover").click();
+  await button("Apply tool").click();
+  await page.waitForFunction(
+    () => window.fixtureState().draft.images[0].layers.length === 1,
+  );
+  assert.equal(
+    await button("Move layer 1 up").getAttribute("aria-disabled"),
+    "true",
+  );
+  assert.equal(
+    await button("Move layer 1 down").getAttribute("aria-disabled"),
+    "true",
+  );
+  await page.getByText("Selected capture ID:", { exact: false }).waitFor();
+  await page.locator(".editor-tools").scrollIntoViewIfNeeded();
+  const repositoryLabel = await page
+    .locator(".composer-form .label")
+    .first()
+    .boundingBox();
+  const header = await page.locator(".composer-header").boundingBox();
+  assert.ok(
+    repositoryLabel.y >= header.y + header.height - 1,
+    JSON.stringify({ repositoryLabel, header }),
+  );
+  await page.setViewportSize({ width: 900, height: 840 });
+  const editorAt900 = await page.locator(".composer-editor").boundingBox();
+  const formAt900 = await page.locator(".composer-form").boundingBox();
+  assert.ok(
+    formAt900.x > editorAt900.x + editorAt900.width,
+    JSON.stringify({ editorAt900, formAt900 }),
+  );
+  await page.setViewportSize({ width: 360, height: 844 });
+  await page.locator(".composer-form").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(150);
+  const form = await page.locator(".composer-form").boundingBox();
+  assert.ok(form.x + form.width <= 360.5, JSON.stringify(form));
+  const columns = await page.locator(".composer-columns").boundingBox();
+  assert.ok(columns.x + columns.width <= 360.5, JSON.stringify(columns));
+  await page.setViewportSize({ width: 1200, height: 840 });
+  await button("Save to Lane").click();
+  await page.getByText("Synthetic storage failure", { exact: false }).waitFor();
+  assert.equal(
+    await page
+      .getByRole("textbox", { name: "Title", exact: true })
+      .inputValue(),
+    "Synthetic capture task",
+  );
+  await button("Retry").click();
+  await page.getByRole("dialog", { name: "Saved to Lane" }).waitFor();
+  const result = await page.evaluate(() => window.fixtureState());
+  assert.equal(result.savedCount, 1);
+  assert.equal(result.attempts.length, 2);
+  assert.deepEqual(result.attempts[0], result.attempts[1]);
+  assert.equal(result.attempts[1].images[0].capture.cssSelector, undefined);
+  assert.equal(result.attempts[1].description, "Synthetic problem description");
+  assert.ok(result.operations.some((op) => op.op === "saveFailed"));
+  await page
+    .locator("lynx-view")
+    .evaluate((view) =>
+      view.sendGlobalEvent("lane.openRoute", [
+        { kind: "open", spaceId: "different-space" },
+      ]),
+    );
+  await page.waitForFunction(() =>
+    window
+      .fixtureState()
+      .storeCalls.some(
+        (call) => call.method === "open" && call.spaceId === "different-space",
+      ),
+  );
+  await button("Open in Lane").click();
+  await page.waitForFunction(() =>
+    window
+      .fixtureState()
+      .storeCalls.some(
+        (call) => call.method === "GetTask" && call.spaceId === "fixture-space",
+      ),
+  );
+  const routeCalls = (await page.evaluate(() => window.fixtureState()))
+    .storeCalls;
+  const lastOpen = routeCalls.filter((call) => call.method === "open").at(-1);
+  assert.equal(lastOpen.spaceId, "fixture-space");
+  await page
+    .locator("lynx-view")
+    .evaluate((view) =>
+      view.sendGlobalEvent("lane.realqa.saved", [
+        { taskId: "saved-task", spaceId: "unavailable-space" },
+      ]),
+    );
+  await button("Open in Lane").click();
+  await page
+    .getByText("Synthetic unavailable space", { exact: false })
+    .waitFor();
+  const afterRefusal = (await page.evaluate(() => window.fixtureState()))
+    .storeCalls;
+  const refusedIndex = afterRefusal.findLastIndex(
+    (call) => call.method === "open" && call.spaceId === "unavailable-space",
+  );
+  assert.ok(refusedIndex >= 0);
+  assert.equal(
+    afterRefusal
+      .slice(refusedIndex + 1)
+      .some((call) => call.method === "GetTask"),
+    false,
+  );
+  await page
+    .locator("lynx-view")
+    .evaluate((view) =>
+      view.sendGlobalEvent("lane.realqa.saved", [{ taskId: "saved-task" }]),
+    );
+  await button("Open in Lane").click();
+  await page
+    .getByText("The saved task's data space is missing.", { exact: false })
+    .waitFor();
+  assert.equal(
+    (await page.evaluate(() => window.fixtureState())).storeCalls.filter(
+      (call) => call.method === "open",
+    ).length,
+    afterRefusal.filter((call) => call.method === "open").length,
+  );
+  assert.deepEqual(errors, []);
+  await writeFile(
+    `${evidence}/composer-result.json`,
+    JSON.stringify(
+      {
+        result: "passed",
+        fixture: true,
+        initialLayout,
+        repositoryLabel,
+        savedCount: result.savedCount,
+        retries: result.attempts.length,
+        errors,
+      },
+      null,
+      2,
+    ),
+  );
+  console.log("Composer fixture checks passed");
+} finally {
+  await browser.close();
+  server.kill();
+}

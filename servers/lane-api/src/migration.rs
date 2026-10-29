@@ -15,6 +15,18 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00005_limits",
         include_str!("../migrations/00005_limits.sql"),
     ),
+    (
+        "00006_captures",
+        include_str!("../migrations/00006_captures.sql"),
+    ),
+    (
+        "00007_planning",
+        include_str!("../migrations/00007_planning.sql"),
+    ),
+    (
+        "00008_sync_rejections",
+        include_str!("../migrations/00008_sync_rejections.sql"),
+    ),
 ];
 pub async fn migrate(db: &PgPool) -> anyhow::Result<()> {
     let mut tx = db.begin().await?;
@@ -41,6 +53,11 @@ pub async fn migrate(db: &PgPool) -> anyhow::Result<()> {
             .await?;
     }
     tx.commit().await?;
+    // Data repair, not schema: idempotent and per account. A failure leaves committed schema in
+    // place; rerunning `migrate` resumes the cleanup.
+    crate::webhooks::cleanup_deleted_repository_resources(db)
+        .await
+        .map_err(|e| anyhow::anyhow!("webhook cleanup failed: {}", e.message))?;
     Ok(())
 }
 pub async fn check(db: &PgPool) -> anyhow::Result<()> {

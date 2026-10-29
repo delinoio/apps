@@ -33,6 +33,9 @@ bool IsID(NSString* value) {
   NSRegularExpression* pattern = [NSRegularExpression regularExpressionWithPattern:@"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" options:0 error:nil];
   return [pattern numberOfMatchesInString:value options:0 range:NSMakeRange(0,value.length)] == 1;
 }
+// Matches the synchronization worker's failure delay so a failing helper is
+// never retried on the 500 ms observation cadence.
+constexpr NSTimeInterval kPushRetryDelaySeconds = 30;
 NSString* Scheme() { return [[NSBundle mainBundle] objectForInfoDictionaryKey:@"LaneURLScheme"] ?: @"lane-dev"; }
 std::string Failure(NSString* reason, NSString* message) {
   return JSON(@{@"ok":@NO,@"error":@{@"reason":reason,@"message":message,@"correlationId":Text(UUID()),@"retryable":@NO}});
@@ -47,8 +50,19 @@ std::string Failure(NSString* reason, NSString* message) {
   NSMutableDictionary<NSString*, NSDate*>* _retryAfter;
   NSMutableDictionary<NSString*, NSString*>* _workerStates;
   NSMutableSet<NSString*>* _spaces;
+  // APNs registration state. Queue-confined and memory-only: the latest token is
+  // never written to disk or logs. _pushStates holds one record per eligible
+  // space; _pushInFlight serializes helper calls per space across state resets.
+  NSString* _pushToken;
+  NSMutableDictionary<NSString*, NSMutableDictionary*>* _pushStates;
+  NSMutableSet<NSString*>* _pushInFlight;
+  NSUInteger _pushAttempts;
+  NSTimeInterval _pushRetryDelay;
+  NSDate* (^_clock)(void);
   NSMutableArray<NSDictionary*>* _routes;
   NSString* _currentSpace;
+  // The space whose handle this host opened for itself in ensureStore.
+  NSString* _hostSpace;
   NSString* _authorizationSpace;
   NSDictionary* _reauthentication;
   std::string _claimant;
@@ -65,6 +79,7 @@ std::string Failure(NSString* reason, NSString* message) {
     _queue = dispatch_queue_create("io.delino.lane.storage", DISPATCH_QUEUE_SERIAL);
     _workers = [NSMutableDictionary new]; _retryAfter = [NSMutableDictionary new]; _workerStates = [NSMutableDictionary new];
     _spaces = [NSMutableSet new]; _routes = [NSMutableArray new]; _claimant = UUID();
+    _pushStates = [NSMutableDictionary new]; _pushInFlight = [NSMutableSet new]; _pushRetryDelay = kPushRetryDelaySeconds;
     _timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _queue);
     dispatch_source_set_timer(_timer, dispatch_time(DISPATCH_TIME_NOW, 0), 500*NSEC_PER_MSEC, 50*NSEC_PER_MSEC);
     __weak LaneRuntime* weak = self;
@@ -159,9 +174,10 @@ std::string Failure(NSString* reason, NSString* message) {
     [host helper:@[@"--json", @"--space", Text(space), @"sync", @"disconnect", @"--retention", @"keep-local"] input:nil];
   };
   _store->setHostHooks(std::move(hooks));
-  NSDictionary* opened = Parse(_store->open(R"({"formatVersion":1,"spaceId":""})"));
+  NSDictionary* opened = Parse(_store->open(R"({"formatVersion":3,"spaceId":""})"));
   if ([opened[@"ok"] boolValue]) {
     _currentSpace = opened[@"response"][@"spaceId"];
+    _hostSpace = _currentSpace;
     [_spaces addObject:_currentSpace];
   }
 }
@@ -247,8 +263,30 @@ std::string Failure(NSString* reason, NSString* message) {
           if (host->_currentSpace && ![host->_currentSpace isEqual:route[@"spaceId"]]) [host cancelReauthentication:nil];
           if (args.at(0) == "DisconnectSync" || args.at(0) == "RemoveDeviceData" || args.at(0) == "ConnectSync")
             [host cancelReauthentication:nil];
+          NSString* releasedHostSpace = nil;
+          if (args.at(0) == "ResetDevelopmentData") {
+            // The explicit development reset needs the exclusive space lease:
+            // stop this host's `lane sync run` helper and release the handle
+            // the host opened for itself first. The store still fails with
+            // STORAGE_BUSY while a renderer view or another process holds one.
+            [host cancelReauthentication:nil];
+            NSString* target = route[@"spaceId"];
+            if ([target isKindOfClass:NSString.class] && target.length) [host stopWorker:target];
+            else for (NSString* space in [host->_workers.allKeys copy]) [host stopWorker:space];
+            BOOL targeted = [target isKindOfClass:NSString.class] && target.length;
+            if (host->_hostSpace && (!targeted || [host->_hostSpace isEqual:target])) {
+              host->_store->close(host->_hostSpace.UTF8String);
+              releasedHostSpace = host->_hostSpace;
+              host->_hostSpace = nil;
+            }
+          }
           host->_currentSpace = route[@"spaceId"];
           response = host->_store->invoke(args.at(0), args.at(1));
+          if (releasedHostSpace) {
+            // Restore the host's own handle whether the reset succeeded or was refused.
+            NSDictionary* reopened = Parse(host->_store->open(JSON(@{@"formatVersion":@3,@"spaceId":releasedHostSpace})));
+            if ([reopened[@"ok"] boolValue]) host->_hostSpace = releasedHostSpace;
+          }
         }
         [host tick];
       } catch (...) { response = Failure(@"ERROR_REASON_DEPENDENCY_UNAVAILABLE", @"Native service is unavailable. Local data is retained."); }
@@ -294,9 +332,10 @@ std::string Failure(NSString* reason, NSString* message) {
       }
       for (NSString* space in [_spaces copy]) {
         NSDictionary* status = Parse(_store->invoke("GetLocalStatus", JSON(@{@"spaceId":space,@"request":@{}})));
-        if (![status[@"ok"] boolValue]) { [self stopWorker:space]; [_spaces removeObject:space]; continue; }
+        if (![status[@"ok"] boolValue]) { [self stopWorker:space]; [_spaces removeObject:space]; [_pushStates removeObjectForKey:space]; continue; }
         NSDictionary* value = status[@"response"];
         if ([value[@"syncEnabled"] boolValue]) [self startWorker:space]; else [self stopWorker:space];
+        [self reconcilePush:space status:value];
         if ([value[@"notificationPreferences"][@"enabled"] boolValue]) [self deliverNotifications:space];
       }
     } catch (...) { LaneLog("lane_native_poll_failed"); }
@@ -394,6 +433,9 @@ std::string Failure(NSString* reason, NSString* message) {
         NSDictionary* result = [self helper:@[@"--json",@"--space",authorizationSpace,@"sync",@"callback",url.absoluteString] input:nil];
         self->_authorizationSpace = nil;
         if (IsID(result[@"spaceId"])) {
+          // A verified reconnection is the recovery point for a registration that
+          // stopped on an authentication failure.
+          [self resetPushRetry:result[@"spaceId"]];
           [self emit:@"lane.storeChanged" arguments:@[@{@"spaceId":result[@"spaceId"],@"sequence":result[@"sequence"] ?: @"0"}]];
           [self->_routes addObject:@{@"kind":@"open",@"spaceId":result[@"spaceId"]}];
           [self flushRoutes];
@@ -418,7 +460,7 @@ std::string Failure(NSString* reason, NSString* message) {
       [self ensureStore];
       // A notification pins its account space. Never reinterpret its task ID
       // in the active space, which may belong to a different retained account.
-      NSDictionary* opened = Parse(self->_store->open(JSON(@{@"formatVersion":@1,@"spaceId":space})));
+      NSDictionary* opened = Parse(self->_store->open(JSON(@{@"formatVersion":@3,@"spaceId":space})));
       if (![opened[@"ok"] boolValue]) return;
       self->_store->close(space.UTF8String);
       [self->_routes addObject:@{@"kind":@"task",@"id":task,@"spaceId":space}];
@@ -452,21 +494,112 @@ std::string Failure(NSString* reason, NSString* message) {
 - (void)registerPushToken:(NSData*)token {
   // Register only after explicit notification enablement. Credentials remain in
   // the helper's Keychain. A missing helper/provider leaves local use available.
+  // The runtime keeps only the latest token, in memory, so registration can be
+  // reconciled when a disconnected account reconnects or a helper call recovers.
+  if (!token.length) return;
   NSMutableString* hex = [NSMutableString new];
   const unsigned char* bytes = static_cast<const unsigned char*>(token.bytes);
   for (NSUInteger i=0;i<token.length;++i) [hex appendFormat:@"%02x",bytes[i]];
   dispatch_async(_queue, ^{
-    for (NSString* space in self->_spaces) {
-      try {
-        NSDictionary* status = Parse(self->_store->invoke("GetLocalStatus",JSON(@{@"spaceId":space,@"request":@{}})))[@"response"];
-        if (![status[@"syncEnabled"] boolValue]) continue;
-        NSDictionary* preferences = status[@"notificationPreferences"];
-        NSDictionary* request = @{@"meta":@{@"requestId":Text(UUID())},@"deviceId":status[@"deviceId"],@"provider":@"PUSH_PROVIDER_APNS",@"endpoint":hex,@"enabled":preferences[@"enabled"] ?: @NO,@"content":preferences[@"content"] ?: @"NOTIFICATION_CONTENT_DETAIL"};
-        [self helper:@[@"--remote",@"--json",@"--expected-space",space,@"rpc",@"RegisterPush",@"--request-json",@"-"] input:Text(JSON(request))];
-      } catch (...) { LaneLog("lane_push_registration_unavailable"); }
+    if (self->_stopped) return;
+    // A replacement supersedes every older endpoint, and a fresh OS callback is
+    // an explicit opportunity to retry immediately.
+    self->_pushToken = hex;
+    for (NSMutableDictionary* state in self->_pushStates.allValues) {
+      [state removeObjectForKey:@"retryAfter"]; [state removeObjectForKey:@"blocked"];
     }
+    [self tick];
   });
 }
+- (NSDate*)now { return _clock ? _clock() : [NSDate date]; }
+- (void)resetPushRetry:(NSString*)space {
+  NSMutableDictionary* state = _pushStates[space];
+  [state removeObjectForKey:@"retryAfter"];
+  [state removeObjectForKey:@"blocked"];
+  // Discard an outstanding attempt's identity: finishPush ignores a result whose
+  // identity no longer matches, so a late authentication failure from before this
+  // reconnection cannot block the space again. The space stays in _pushInFlight
+  // until that call returns, and the next observation registers afresh.
+  [state removeObjectForKey:@"attempt"]; [state removeObjectForKey:@"attemptToken"]; [state removeObjectForKey:@"attemptDevice"];
+}
+// Brings one space's APNs registration in line with the latest token. Runs on
+// _queue from tick with that space's current status. A space registers only
+// while it is synchronized and has notifications enabled; every other state
+// drops its record, so reconnecting later registers again for the exact device
+// the space is authenticated as. Success is recorded only after the helper
+// acknowledges the registration.
+- (void)reconcilePush:(NSString*)space status:(NSDictionary*)status {
+  NSDictionary* preferences = status[@"notificationPreferences"];
+  NSString* device = status[@"deviceId"];
+  BOOL eligible = _pushToken && [status[@"syncEnabled"] boolValue] && ![status[@"reconnectRequired"] boolValue] &&
+    [preferences[@"enabled"] boolValue] && IsID(device);
+  if (!eligible) { [_pushStates removeObjectForKey:space]; return; }
+  NSMutableDictionary* state = _pushStates[space];
+  if (!state) { state = [NSMutableDictionary new]; _pushStates[space] = state; }
+  if ([_pushInFlight containsObject:space] || state[@"blocked"]) return;
+  if ([state[@"registeredToken"] isEqualToString:_pushToken] && [state[@"registeredDevice"] isEqualToString:device]) return;
+  if ([state[@"retryAfter"] timeIntervalSinceDate:[self now]] > 0) return;
+  NSString* token = _pushToken;
+  NSNumber* attempt = @(++_pushAttempts);
+  state[@"attempt"] = attempt; state[@"attemptToken"] = token; state[@"attemptDevice"] = device;
+  [_pushInFlight addObject:space];
+  NSString* input = Text(JSON(@{@"meta":@{@"requestId":Text(UUID())},@"deviceId":device,@"provider":@"PUSH_PROVIDER_APNS",
+    @"endpoint":token,@"enabled":@YES,@"content":preferences[@"content"] ?: @"NOTIFICATION_CONTENT_DETAIL"}));
+  // The helper may take up to its 60-second timeout; keep the storage queue free
+  // for local work and apply the outcome back on it.
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    BOOL registered = NO, authentication = NO;
+    @try {
+      try {
+        [self helper:@[@"--remote",@"--json",@"--expected-space",space,@"rpc",@"RegisterPush",@"--request-json",@"-"] input:input];
+        registered = YES;
+      } catch (const HelperFailure& failure) {
+        NSString* reason = Parse(failure.envelope)[@"error"][@"reason"];
+        // FORBIDDEN is deliberately not an authentication failure. The helper also
+        // answers it, before any RPC, for a space that is not the registry's active
+        // selection, and a selection change is not a reconnection event, so blocking
+        // would strand that space. It retries on the delay instead.
+        authentication = [@[@"ERROR_REASON_UNAUTHENTICATED",@"ERROR_REASON_STALE_EPOCH"] containsObject:reason ?: @""];
+      } catch (...) {}
+    } @catch (NSException*) {}
+    dispatch_async(self->_queue, ^{ [self finishPush:space attempt:attempt registered:registered authentication:authentication]; });
+  });
+}
+- (void)finishPush:(NSString*)space attempt:(NSNumber*)attempt registered:(BOOL)registered authentication:(BOOL)authentication {
+  [_pushInFlight removeObject:space];
+  if (_stopped) return;
+  NSMutableDictionary* state = _pushStates[space];
+  // The record is gone or newer when the space stopped being eligible meanwhile.
+  if (!state || ![state[@"attempt"] isEqual:attempt]) return;
+  NSString* attempted = state[@"attemptToken"], *device = state[@"attemptDevice"];
+  [state removeObjectForKey:@"attempt"]; [state removeObjectForKey:@"attemptToken"]; [state removeObjectForKey:@"attemptDevice"];
+  if (registered) {
+    // Only the attempted endpoint is satisfied; a newer token stays pending.
+    state[@"registeredToken"] = attempted; state[@"registeredDevice"] = device;
+    [state removeObjectForKey:@"retryAfter"];
+    return;
+  }
+  // Fixed event names only: never log the token or helper output.
+  LaneLog("lane_push_registration_unavailable", "register_push", 0, authentication ? "authentication_required" : "retry_scheduled");
+  if (![attempted isEqualToString:_pushToken]) return; // The newer token registers on the next observation.
+  if (authentication) state[@"blocked"] = @YES; // Wait for a verified reconnection.
+  else state[@"retryAfter"] = [[self now] dateByAddingTimeInterval:_pushRetryDelay];
+}
+#ifdef LANE_NATIVE_TESTING
+- (void)setPushClock:(NSDate* (^)(void))clock retryDelay:(NSTimeInterval)delay {
+  dispatch_sync(_queue, ^{ self->_clock = [clock copy]; self->_pushRetryDelay = delay; });
+}
+- (BOOL)waitForPushIdle:(NSTimeInterval)timeout {
+  NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
+  for (;;) {
+    __block BOOL idle = NO;
+    dispatch_sync(_queue, ^{ idle = self->_pushInFlight.count == 0; });
+    if (idle) return YES;
+    if ([deadline timeIntervalSinceNow] <= 0) return NO;
+    usleep(10000);
+  }
+}
+#endif
 - (void)stop { [self stopWithCompletion:nil]; }
 - (void)stopWithCompletion:(dispatch_block_t)completion {
   // Do not wait on the storage queue from the main thread: an explicit permission
@@ -474,6 +607,7 @@ std::string Failure(NSString* reason, NSString* message) {
   dispatch_source_cancel(_timer);
   dispatch_async(_queue, ^{
     self->_stopped = YES;
+    self->_pushToken = nil; [self->_pushStates removeAllObjects];
     for (NSString* space in [self->_workers.allKeys copy]) [self stopWorker:space];
     self->_store.reset();
     if (completion) dispatch_async(dispatch_get_main_queue(), completion);
