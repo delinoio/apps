@@ -35,4 +35,4 @@ hmac = "0.12"
 percent-encoding = "2"
 
 [dev-dependencies]
-rsa = "0.9"
+rsa = "=0.9.10"

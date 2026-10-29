@@ -40,5 +40,5 @@ dotenvy = "0.15"
 prometheus = "0.14"
 
 [dev-dependencies]
-rsa = "0.9"
+rsa = "=0.9.10"
 tracing-subscriber.workspace = true

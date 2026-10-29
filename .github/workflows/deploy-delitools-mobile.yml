@@ -66,7 +66,7 @@ jobs:
             lfs: true,
           }
       - uses: ./.github/actions/setup-ci-node
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
           targets: aarch64-linux-android,armv7-linux-androideabi
@@ -96,7 +96,7 @@ jobs:
           node apps/delitools/scripts/verify-android-signing.mjs "mobile-artifacts/delitools-android.aab"
           cp LICENSE NOTICE mobile-artifacts/
           printf 'revision=%s\nbuild_number=%s\nplatform=android\n' "$RELEASE_REVISION" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: delitools-android-${{ inputs.build_number }}-${{ inputs.revision }}
           path: mobile-artifacts/
@@ -125,7 +125,7 @@ jobs:
             lfs: true,
           }
       - uses: ./.github/actions/setup-ci-node
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
           targets: aarch64-apple-ios
@@ -154,7 +154,7 @@ jobs:
           codesign --verify --deep --strict "$RUNNER_TEMP/delitools-ipa/Payload/"*.app
           cp LICENSE NOTICE mobile-artifacts/
           printf 'revision=%s\nbuild_number=%s\nplatform=ios\n' "$RELEASE_REVISION" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: delitools-ios-${{ inputs.build_number }}-${{ inputs.revision }}
           path: mobile-artifacts/

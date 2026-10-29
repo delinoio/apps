@@ -24,11 +24,11 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "ajv": "^8.12.0",
-    "ajv-errors": "^3.0.0",
-    "ajv-formats": "^2.1.1",
-    "ts-node": "^10.9.0",
-    "typescript": "^5.0.0"
+    "@types/node": "20.19.43",
+    "ajv": "8.20.0",
+    "ajv-errors": "3.0.0",
+    "ajv-formats": "2.1.1",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.3"
   }
 }

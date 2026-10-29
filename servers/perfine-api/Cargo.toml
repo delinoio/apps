@@ -31,5 +31,5 @@ flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 thiserror = "2"
 
 [dev-dependencies]
-rsa = "0.9"
+rsa = "=0.9.10"
 base64.workspace = true
