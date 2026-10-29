@@ -172,6 +172,62 @@ test("edits, undo, redo, image order and discard are memory-only", async () => {
     t.cleanup();
   }
 });
+test("the shared host owns retry identities across edits and composer lifetimes", async () => {
+  const t = setup();
+  try {
+    t.host.appendCapture(image);
+    await t.invoke({ op: "updateDraft", title: "First", repositoryId: "repo" });
+    const first = (await t.invoke({ op: "export" })).value;
+    await t.invoke({ op: "saveFailed" });
+    await t.invoke({ op: "updateDraft", title: "Revised" });
+    const revised = (await t.invoke({ op: "export" })).value;
+    assert.equal(revised.id, first.id, "one draft keeps one task identity");
+    assert.notEqual(
+      revised.requestId,
+      first.requestId,
+      "changed input needs a new receipt",
+    );
+    await t.invoke({ op: "saveFailed" });
+    // Another view has no knowledge of the previous composer's React refs.
+    const retry = JSON.parse(
+      await t.host.invoke(JSON.stringify({ op: "export" }), "main"),
+    ).value;
+    assert.deepEqual(
+      retry,
+      revised,
+      "a replacement view replays the exact exported request",
+    );
+    await t.invoke({ op: "saveFailed" });
+    await t.invoke({ op: "updateDraft", title: "Transient edit" });
+    await t.invoke({ op: "updateDraft", title: "Revised" });
+    assert.deepEqual(
+      (await t.invoke({ op: "export" })).value,
+      revised,
+      "edits reverted before export preserve the retry identity",
+    );
+    await t.invoke({ op: "saveFailed" });
+    await t.invoke({
+      op: "updateDraft",
+      imageId: revised.images[0].id,
+      metadata: { pageTitle: "Retained title" },
+    });
+    const metadata = (await t.invoke({ op: "export" })).value;
+    assert.notEqual(
+      metadata.requestId,
+      revised.requestId,
+      "retained metadata is part of the request",
+    );
+    await t.invoke({ op: "saveFailed" });
+    await t.invoke({ op: "discard" });
+    t.host.appendCapture(image);
+    await t.invoke({ op: "updateDraft", title: "First", repositoryId: "repo" });
+    const next = (await t.invoke({ op: "export" })).value;
+    assert.notEqual(next.id, first.id);
+    assert.notEqual(next.requestId, first.requestId);
+  } finally {
+    t.cleanup();
+  }
+});
 test("shortcut conflict retains prior binding, persists only device settings and restores them", async () => {
   const t = setup();
   try {

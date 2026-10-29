@@ -7,7 +7,7 @@ import {
   type EntityResult,
 } from "@repo/protos/lane/v1/lane_pb";
 import type { UI } from "./serializable";
-import { newId, type LaneAdapter } from "./adapter";
+import type { LaneAdapter } from "./adapter";
 import { Button, Choices, Dialog, Field, Notice } from "./components";
 import { RealQADialogs } from "./RealQA";
 import {
@@ -52,10 +52,6 @@ export function CaptureComposer({
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
-  const identity = useRef<
-    | { draftId?: string; taskId: string; requestId: string; key?: string }
-    | undefined
-  >(undefined);
   const image =
     draft?.images.find((i) => i.id === selected) || draft?.images[0];
   const options = repositories
@@ -179,16 +175,10 @@ export function CaptureComposer({
         throw new Error(
           "The data space changed. Your draft is retained; reopen it in the original space before saving.",
         );
-      const key = JSON.stringify(exported);
-      if (!identity.current || identity.current.draftId !== exported.id)
-        identity.current = {
-          draftId: exported.id,
-          taskId: exported.id || newId(),
-          requestId: exported.requestId || newId(),
-        };
-      if (identity.current.key && identity.current.key !== key)
-        identity.current.requestId = newId();
-      identity.current.key = key;
+      if (!exported.id || !exported.requestId)
+        throw new Error(
+          "The capture host did not provide a save identity. Update Lane and retry.",
+        );
       const images = exported.images.map((item) => {
         if (!item.sha256 || !/^[a-f0-9]{64}$/.test(item.sha256))
           throw new Error(
@@ -210,8 +200,8 @@ export function CaptureComposer({
       const response = await adapter.call(
         CaptureService.method.createCaptureTask,
         {
-          meta: { requestId: identity.current.requestId },
-          id: identity.current.taskId,
+          meta: { requestId: exported.requestId },
+          id: exported.id,
           repositoryId: exported.repositoryId,
           title: exported.title,
           description: exported.description,
@@ -228,7 +218,7 @@ export function CaptureComposer({
         );
       await realqa({
         op: "complete",
-        taskId: identity.current.taskId,
+        taskId: exported.id,
         spaceId,
       });
     } catch (e) {

@@ -62,9 +62,10 @@ export { URLConnections } from "./src/URLConnections.tsx";
 export * as runtime from "./tests/harness/lynx-react.ts";
 import { host } from "./src/realqa-host.ts";
 export { host };
-export function ComposerHost({ adapter, repositories, initial, snapshot }) {
+export function ComposerHost({ adapter, repositories, initial, snapshot, captureHost }) {
   const [draft, setDraft] = useState(initial);
   host.realqa = async (input) => {
+    if (captureHost) return captureHost(input);
     if (input.op === "updateDraft") setDraft((d) => ({ ...d, repositoryId: input.repositoryId }));
   };
   snapshot.draft = draft;

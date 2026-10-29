@@ -273,8 +273,13 @@ The host owns one memory-only draft across its floating composer and main window
 Images have UUID v7 identities, pixel dimensions, PNG previews, ordered layers,
 optional crop and literal browser metadata. Draft task and request identities are
 stable across unchanged retries. Rendering always starts from the in-memory
-original and flattens the ordered layers before applying the crop. Only exported
-final PNGs, their SHA-256 digests and retained metadata enter `CreateCaptureTask`.
+original and flattens the ordered layers before applying the crop. The host owns
+the save request identity across composer view lifetimes: a changed final save
+payload gets a new request ID at export, while an unchanged retry keeps its ID,
+including after the composer view is rebuilt. Unsaved edits reverted before
+export do not change that identity. The task identity stays fixed for the draft.
+Only exported final PNGs, their SHA-256 digests and retained metadata enter
+`CreateCaptureTask`.
 Export freezes mutations until `complete` or `saveFailed`; this prevents capture
 arrivals during saving from being discarded by a successful completion. Store
 failure retains the draft. A successful completion carries both task and space
