@@ -28,6 +28,7 @@ export class RealQA {
   shortcuts = Object.fromEntries(modes.map((mode) => [mode, ""]));
   capturePending = false;
   saving = false;
+  exportFingerprint;
   stopped = false;
   extension;
   constructor({
@@ -202,6 +203,7 @@ export class RealQA {
     await this.os({ op: "cancel" });
     await this.extension?.close();
     this.draft = null;
+    this.exportFingerprint = undefined;
     this.originals.clear();
   }
   async dispatch(request, window = "main") {
@@ -337,7 +339,7 @@ export class RealQA {
         this.changed();
         return {};
       }
-      case "export":
+      case "export": {
         if (
           !this.draft?.images.length ||
           !this.draft.title.trim() ||
@@ -346,8 +348,7 @@ export class RealQA {
           fail(
             "Select a repository, enter a title, and add at least one capture.",
           );
-        this.saving = true;
-        return {
+        const exported = {
           ...this.draft,
           images: this.draft.images.map(
             ({ id, png, width, height, metadata }) => ({
@@ -362,6 +363,27 @@ export class RealQA {
             }),
           ),
         };
+        // The draft outlives each composer view. Keep its retry receipt here so
+        // rebuilding a view cannot replay changed content under an older ID or
+        // allocate a new receipt for an unchanged save whose reply was lost.
+        const fingerprint = createHash("sha256")
+          .update(
+            JSON.stringify({
+              id: exported.id,
+              title: exported.title,
+              description: exported.description,
+              repositoryId: exported.repositoryId,
+              images: exported.images.map(({ png, ...manifest }) => manifest),
+            }),
+          )
+          .digest("hex");
+        if (this.exportFingerprint && this.exportFingerprint !== fingerprint)
+          this.draft.requestId = uuid();
+        this.exportFingerprint = fingerprint;
+        exported.requestId = this.draft.requestId;
+        this.saving = true;
+        return exported;
+      }
       case "close":
         if (this.draft) this.emit("lane.realqa.closeRequested", {});
         else this.closeComposer();
@@ -374,6 +396,7 @@ export class RealQA {
       case "discard":
         this.saving = false;
         this.draft = null;
+        this.exportFingerprint = undefined;
         this.originals.clear();
         this.closeComposer();
         this.changed();
