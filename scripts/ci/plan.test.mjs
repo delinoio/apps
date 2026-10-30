@@ -499,6 +499,34 @@ test("release records preserve selection from other changed inputs", () => {
   }
 });
 
+test("Apache namespace metadata selects no affected validators", () => {
+  const metadata = ["oss/LICENSE", "oss/NOTICE", "oss/servers/.gitkeep"];
+  for (const paths of [...metadata.map((path) => [path]), metadata]) {
+    assert.deepEqual(selectedJobs(paths), []);
+    assert.ok(Object.values(selectChecks(paths)).every((value) => !value));
+    const runtime = ["apps/devbase/src/main.tsx"];
+    assert.deepEqual(select([...paths, ...runtime]), select(runtime));
+    assert.deepEqual(
+      selectChecks([...paths, ...runtime]),
+      selectChecks(runtime),
+    );
+  }
+});
+
+test("unregistered Apache service inputs retain global validation", () => {
+  for (const path of [
+    "oss/servers/example/src/main.rs",
+    "oss/servers/example/Cargo.toml",
+    "oss/servers/example/LICENSE",
+    "oss/servers/.gitkeep.rs",
+    "oss/LICENSE.json",
+    "oss/Cargo.toml",
+  ]) {
+    assert.ok(Object.values(select([path])).every(Boolean), path);
+    assert.ok(Object.values(selectChecks([path])).every(Boolean), path);
+  }
+});
+
 test("unclassified shared paths retain global validation", () => {
   for (const path of [
     "package.json",

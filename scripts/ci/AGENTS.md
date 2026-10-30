@@ -4,6 +4,7 @@
 - This file covers `scripts/ci/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts before changing behavior, including cross-domain consumers.
 - Propagate the event's exact affected comparison to selectors, protocol checks and affected-validation evidence. Formatting checks run across all tracked supported files without change detection. Do not infer full validation from a manual event alone.
+- Keep the Apache namespace metadata exclusions limited to the exact paths in the workflow contract. Unregistered `oss/` runtime and configuration paths must retain conservative validation until owning CI coverage is added.
 - Preserve selected-job failure, cancellation and skipped-result rejection in the final result check. Keep native/account acceptance distinct from fixtures and builds.
 
 ## Owning contracts
