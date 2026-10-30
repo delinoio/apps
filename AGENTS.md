@@ -48,9 +48,9 @@
 
 ## Repository ownership and integrated development
 
-- This repository owns clients, native shells, protocols, consumer examples and server implementations. `servers/` owns runtimes, background workers, migrations and OCI packaging; `protos/` owns schemas and generated Go bindings.
+- This repository owns clients, native shells, protocols, consumer examples and server implementations. `servers/` owns FSL runtimes, background workers, migrations and OCI packaging; `oss/servers/` owns independent Apache-2.0 services; `protos/` owns schemas and generated Go bindings.
 - Read `docs/repository-boundary-contract.md` before changing a boundary. Keep project and domain contracts in root `docs/`; read scoped instructions for every affected domain.
-- Develop client, protocol and server changes in the same checkout and review. The root Go module is `github.com/delinoio/apps` for protocol consumers; Rust servers consume local schemas through the server workspace protocol crate. Do not create a companion checkout, protocol dependency pin, local workspace or duplicate generated source for this integration.
+- Develop client, protocol and server changes in the same checkout and review. The root Go module is `github.com/delinoio/apps` for protocol consumers; FSL Rust servers consume local schemas through the server workspace protocol crate; Apache service bindings follow the repository boundary contract. Do not create a companion checkout, protocol dependency pin, local workspace or duplicate generated source for this integration.
 - Run applicable client, protocol and server checks. Use disposable databases and mocked providers for server integration; production credentials and live-account acceptance remain separate.
 
 ## Monorepo Structure Map
@@ -58,6 +58,7 @@
 - `.agents/skills/`: Project-local third-party agent skills managed with `npx skills`; see [agent skills](docs/repository-workflow-contract.md#project-local-agent-skills) for sources and installation.
 - `servers/`: Delcore, DevBase, Git Tracker and DeliTools services, migrations, OCI packaging and the independent server Cargo workspace; follow `servers/AGENTS.md`.
 - `servers/crates/`: shared server Rust modules under FSL-1.1-ALv2. Keep these outside the root client Cargo workspace.
+- `oss/servers/`: independent Apache-2.0 services; follow `oss/AGENTS.md` and the [repository boundary contract](docs/repository-boundary-contract.md#independent-apache-services).
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
 - `packages/lynx-ui`: Shared ReactLynx UI primitives; follow `packages/AGENTS.md` and [Lynx UI contracts](docs/project-lynx-ui.md).
 - `docs/`: Source of truth for project contracts and repository documentation.

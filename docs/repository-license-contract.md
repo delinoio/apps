@@ -13,3 +13,9 @@ Official terms: [FSL-1.1-ALv2](https://fsl.software/FSL-1.1-ALv2.template.md) an
 ## Server Rust workspace
 
 `servers/Cargo.toml` owns an independent Cargo workspace for server ports. Shared server Rust modules belong in `servers/crates/` under FSL-1.1-ALv2, separate from the Apache-2.0 client workspace and root `crates/`. See the [server Rust workspace contract](servers-rust-workspace-contract.md).
+
+## Independent Apache services
+
+Repository-owned files under `oss/`, including `oss/servers/`, use Apache-2.0 under the existing default for files outside the root `servers/` directory. `oss/LICENSE` reproduces the Apache-2.0 terms and `oss/NOTICE` identifies Delino as the copyright owner. The FSL license for the root `servers/` directory does not extend to `oss/servers/`.
+
+Apache service distributions include `oss/LICENSE` and `oss/NOTICE`, together with notices for any included components. Preserve imported third-party licenses and notices. See the [repository boundary contract](repository-boundary-contract.md#independent-apache-services) for service ownership and dependency boundaries.
