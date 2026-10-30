@@ -12,6 +12,7 @@ test("isolated projects select only their validation", () => {
     devbase: false,
     delino_site: false,
     delino_docs: false,
+    labs_site: false,
     labs_docs: false,
     delidev: false,
     delitools: true,
@@ -31,6 +32,7 @@ test("isolated projects select only their validation", () => {
     devbase: false,
     delino_site: false,
     delino_docs: false,
+    labs_site: false,
     labs_docs: false,
     delidev: false,
     delitools: false,
@@ -50,6 +52,7 @@ test("isolated projects select only their validation", () => {
     devbase: true,
     delino_site: true,
     delino_docs: true,
+    labs_site: true,
     labs_docs: true,
     delidev: true,
     delitools: true,
@@ -83,6 +86,7 @@ for (const [project, key] of [
         devbase: key === "devbase",
         delino_site: key === "delino_site",
         delino_docs: key === "delino_docs",
+        labs_site: false,
         labs_docs: false,
         delidev: false,
         delitools: false,
@@ -107,6 +111,7 @@ test("consumer examples select protocol validation without native runners", () =
     devbase: false,
     delino_site: false,
     delino_docs: false,
+    labs_site: false,
     labs_docs: false,
     delidev: false,
     delitools: false,
@@ -213,6 +218,7 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       devbase: false,
       delino_site: false,
       delino_docs: false,
+      labs_site: false,
       labs_docs: false,
       delidev: true,
       delitools: true,
@@ -236,6 +242,7 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     devbase: false,
     delino_site: false,
     delino_docs: false,
+    labs_site: false,
     labs_docs: false,
     delidev: false,
     delitools: false,
@@ -423,7 +430,7 @@ for (const [paths, expected] of [
   ],
   [
     ["scripts/localization/catalog.mjs"],
-    ["labs_docs", "delino_site", "delino_docs"],
+    ["labs_site", "labs_docs", "delino_site", "delino_docs"],
   ],
   [
     [
@@ -506,6 +513,34 @@ test("release records preserve selection from other changed inputs", () => {
     const paths = [".changeset/component-update.md", path];
     assert.deepEqual(select(paths), select([path]), path);
     assert.deepEqual(selectChecks(paths), selectChecks([path]), path);
+  }
+});
+
+test("Apache namespace metadata selects no affected validators", () => {
+  const metadata = ["oss/LICENSE", "oss/NOTICE", "oss/servers/.gitkeep"];
+  for (const paths of [...metadata.map((path) => [path]), metadata]) {
+    assert.deepEqual(selectedJobs(paths), []);
+    assert.ok(Object.values(selectChecks(paths)).every((value) => !value));
+    const runtime = ["apps/devbase/src/main.tsx"];
+    assert.deepEqual(select([...paths, ...runtime]), select(runtime));
+    assert.deepEqual(
+      selectChecks([...paths, ...runtime]),
+      selectChecks(runtime),
+    );
+  }
+});
+
+test("unregistered Apache service inputs retain global validation", () => {
+  for (const path of [
+    "oss/servers/example/src/main.rs",
+    "oss/servers/example/Cargo.toml",
+    "oss/servers/example/LICENSE",
+    "oss/servers/.gitkeep.rs",
+    "oss/LICENSE.json",
+    "oss/Cargo.toml",
+  ]) {
+    assert.ok(Object.values(select([path])).every(Boolean), path);
+    assert.ok(Object.values(selectChecks([path])).every(Boolean), path);
   }
 });
 
@@ -692,14 +727,32 @@ test("Lane domain paths select owning validators and shared store consumers", ()
   ]);
 });
 
-test("labs-docs owns its app and shared localization validation", () => {
+test("labs-site owns its app and shared localization validation", () => {
   for (const path of [
-    "apps/labs-docs/index.html",
-    "docs/project-labs-docs.md",
-    "docs/apps-labs-docs-foundation.md",
-    "docs/apps-labs-localization-contract.md",
+    "apps/labs-site/index.html",
+    "docs/project-labs-site.md",
+    "docs/apps-labs-site-foundation.md",
   ])
-    assert.deepEqual(selectedJobs([path]), ["labs_docs"]);
-  assert.equal(select(["scripts/localization/catalog.mjs"]).labs_docs, true);
-  assert.equal(select(["AGENTS.md"]).labs_docs, false);
+    assert.deepEqual(selectedJobs([path]), ["labs_site"]);
+  assert.equal(select(["scripts/localization/catalog.mjs"]).labs_site, true);
+  assert.equal(select(["AGENTS.md"]).labs_site, false);
+});
+
+for (const [app, owner] of [["labs-docs", "labs_docs"]]) {
+  test(`${app} owns its app and localization validation`, () => {
+    for (const path of [
+      `apps/${app}/rspress.config.ts`,
+      `docs/project-${app}.md`,
+      `docs/apps-${app}-foundation.md`,
+    ])
+      assert.deepEqual(selectedJobs([path]), [owner]);
+    assert.equal(select(["scripts/localization/catalog.mjs"])[owner], true);
+    assert.equal(select(["AGENTS.md"])[owner], false);
+  });
+}
+test("shared Labs localization contract selects both static apps", () => {
+  assert.deepEqual(selectedJobs(["docs/apps-labs-localization-contract.md"]), [
+    "labs_site",
+    "labs_docs",
+  ]);
 });

@@ -24,6 +24,7 @@
     "test:tooling": "node --test scripts/*.test.mjs scripts/localization/*.test.mjs scripts/ci/*.test.mjs scripts/release/*.test.mjs apps/delitools/scripts/mobile-workflow.test.mjs",
     "server-build": "node servers/scripts/build-rust.mjs",
     "changeset": "go run ./tools/changeset",
+    "dev:labs-site": "pnpm --filter @apps/labs-site dev",
     "dev:labs-docs": "pnpm --filter @apps/labs-docs dev"
   },
   "devDependencies": {

@@ -54,6 +54,9 @@ function classifyShared(paths) {
       // the conservative shared-path fallback; record validation always runs
       // in check-formatting.
       !/^\.changeset\/[^/]+\.md$/u.test(path) &&
+      // Namespace metadata has no runtime consumers. Keep this list exact so
+      // future Apache service code retains fallback until its CI is registered.
+      !/^oss\/(?:LICENSE|NOTICE|servers\/\.gitkeep)$/u.test(path) &&
       !/^(crates\/perfine-core\/|cmds\/(?:perfine|lane)\/|packages\/(?:perfine|lane)\/)/u.test(
         path,
       ) &&
@@ -149,6 +152,14 @@ export function select(paths, lockfiles) {
       shared.frontend ||
       paths.some((path) =>
         /^(apps\/devbase\/|docs\/(?:project-devbase|apps-devbase))/u.test(path),
+      ),
+    labs_site:
+      repositoryShared ||
+      shared.localization ||
+      paths.some((path) =>
+        /^(apps\/labs-site\/|docs\/(?:project-labs-site|apps-labs-site-foundation|apps-labs-localization-contract)\.md$)/u.test(
+          path,
+        ),
       ),
     labs_docs:
       repositoryShared ||

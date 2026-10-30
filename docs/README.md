@@ -8,7 +8,8 @@
 
 See the [repository boundary contract](repository-boundary-contract.md) for client/server directory ownership, contribution requirements and development in one checkout.
 
-- [Server Rust workspace](servers-rust-workspace-contract.md) defines server Cargo ownership, shared modules and incremental adoption.
+- [Server Rust workspace](servers-rust-workspace-contract.md) defines FSL server Cargo ownership, shared modules and incremental adoption.
+- [Independent Apache services](repository-boundary-contract.md#independent-apache-services) defines the `oss/servers/` namespace and its separation from the FSL server workspace.
 
 ## Repository Defaults
 
@@ -133,6 +134,12 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Rust CLI and local MCP](cmds-lane-cli-contract.md)
 - [API, remote MCP and operations](servers-lane-api-contract.md)
 - [Distribution and common skill](packages-lane-distribution-contract.md)
+
+### labs-site
+
+- [Project index](project-labs-site.md)
+- [Application foundation](apps-labs-site-foundation.md)
+- [Labs localization](apps-labs-localization-contract.md)
 
 ### labs-docs
 

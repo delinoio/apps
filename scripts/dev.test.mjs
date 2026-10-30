@@ -582,6 +582,7 @@ test("root, service-local and Portless Delcore development share the catalog-app
     ["apps/delidev", "delidev", 46311],
     ["apps/delitools", "delitools", 46312],
     ["apps/devbase", "devbase", 46313],
+    ["apps/labs-site", "labs-site", 46328],
     ["apps/labs-docs", "labs-docs", 46330],
     ["apps/delino-site", "delino-site", 46314],
     ["apps/delino-docs", "delino-docs", 46315],

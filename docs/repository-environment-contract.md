@@ -40,6 +40,10 @@ Lane API settings belong to `servers/lane-api` and the `/lane-api` Infisical dev
 
 Only the Lane API task receives its identity settings, required input/rate limits, `LANE_*`, `APNS_*`, `FCM_*`, `WEB_PUSH_*` and alert settings. Keep provider credentials, signing keys and webhook encryption keys out of frontend variables. The Lane frontend retains port `46325`; only `PUBLIC_*` configuration may enter its browser bundle. Follow the [Lane API contract](servers-lane-api-contract.md) for startup validation and credential ownership.
 
+## labs-site
+
+The static Labs app uses the existing Infisical/Portless development procedure at `https://labs-site.localhost`, loopback port `46328`; preview uses `46329`. No app-specific secret or environment file is required. Builds and tests run offline without Infisical or ChatGPT authentication. Cloudflare Pages account settings and custom-domain acceptance remain operator work under [the foundation](apps-labs-site-foundation.md).
+
 ## labs-docs
 
 The static Labs app uses the existing Infisical/Portless development procedure at `https://labs-docs.localhost`, loopback port `46330`; preview uses `46331`. No app-specific secret or environment file is required. Builds and tests run offline without Infisical or ChatGPT authentication. Cloudflare Pages account settings and custom-domain acceptance remain operator work under [the foundation](apps-labs-docs-foundation.md).
