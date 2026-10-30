@@ -150,6 +150,14 @@ export function select(paths, lockfiles) {
       paths.some((path) =>
         /^(apps\/devbase\/|docs\/(?:project-devbase|apps-devbase))/u.test(path),
       ),
+    labs_site:
+      repositoryShared ||
+      shared.localization ||
+      paths.some((path) =>
+        /^(apps\/labs-site\/|docs\/(?:project-labs-site|apps-labs-site-foundation|apps-labs-localization-contract)\.md$)/u.test(
+          path,
+        ),
+      ),
     delino_site:
       repositoryShared ||
       shared.frontend ||
