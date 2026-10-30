@@ -80,3 +80,5 @@ All addresses below use the loopback host `127.0.0.1`. Frontend servers fail on 
 | Delcore API          | `8080`  | `LISTEN` in `servers/delcore-api/.env.example`; explicit configuration required | [Server](servers-delcore-api-contract.md)              |
 
 Git Tracker's frontend API URL and API web-origin example point to `http://127.0.0.1:46321` and `http://127.0.0.1:46320`, respectively. Delcore's consumer example defaults to `http://127.0.0.1:8080`. Database and telemetry endpoints retain their service-specific configuration.
+
+- `labs-site` development uses loopback port `46328` and preview uses `46329`; see [the foundation](apps-labs-site-foundation.md).

@@ -426,6 +426,18 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  apps/labs-site:
+    devDependencies:
+      '@rsbuild/core':
+        specifier: 2.1.10
+        version: 2.1.10
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   apps/lane:
     dependencies:
       '@bufbuild/protobuf':
