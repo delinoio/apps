@@ -43,3 +43,7 @@ Only the Lane API task receives its identity settings, required input/rate limit
 ## labs-site
 
 The static Labs app uses the existing Infisical/Portless development procedure at `https://labs-site.localhost`, loopback port `46328`; preview uses `46329`. No app-specific secret or environment file is required. Builds and tests run offline without Infisical or ChatGPT authentication. Cloudflare Pages account settings and custom-domain acceptance remain operator work under [the foundation](apps-labs-site-foundation.md).
+
+## labs-docs
+
+The static Labs app uses the existing Infisical/Portless development procedure at `https://labs-docs.localhost`, loopback port `46330`; preview uses `46331`. No app-specific secret or environment file is required. Builds and tests run offline without Infisical or ChatGPT authentication. Cloudflare Pages account settings and custom-domain acceptance remain operator work under [the foundation](apps-labs-docs-foundation.md).

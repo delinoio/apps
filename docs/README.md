@@ -140,3 +140,10 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Project index](project-labs-site.md)
 - [Application foundation](apps-labs-site-foundation.md)
 - [Labs localization](apps-labs-localization-contract.md)
+
+### labs-docs
+
+- [Project index](project-labs-docs.md)
+- [Application foundation](apps-labs-docs-foundation.md)
+- [Labs localization](apps-labs-localization-contract.md)
+- [TaiRouter public guides](apps-tairouter-docs-contract.md)

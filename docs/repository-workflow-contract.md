@@ -376,3 +376,7 @@ record deletion remain separate from this workflow.
 ## labs-site development and validation
 
 `apps/labs-site` uses the existing localization CLI and offline fixtures. Run root `pnpm dev:labs-site` or app-local `pnpm dev` through Infisical and Portless at `https://labs-site.localhost`, fixed loopback port `46328`; preview uses `46329`. The affected planner selects `labs_site` for app, owning project/foundation and shared Labs localization contract changes, and shared localization changes. `labs-site-frontend` runs the complete app test on Ubuntu and is required by `ci-result` only when selected. Manual validation remains affected-only. The app retains its dedicated Cloudflare Pages project and canonical domain; CI validates without deploying. See [the foundation](apps-labs-site-foundation.md).
+
+## labs-docs development and validation
+
+`apps/labs-docs` uses the existing localization CLI and offline fixtures. Run root `pnpm dev:labs-docs` or app-local `pnpm dev` through Infisical and Portless at `https://labs-docs.localhost`, fixed loopback port `46330`; preview uses `46331`. The affected planner selects `labs_docs` for app, owning project/foundation and shared Labs localization contract changes, and shared localization changes. `labs-docs-frontend` runs the complete app test on Ubuntu and is required by `ci-result` only when selected. Manual validation remains affected-only. The app retains its dedicated Cloudflare Pages project and canonical domain; CI validates without deploying. See [the foundation](apps-labs-docs-foundation.md).
