@@ -133,3 +133,10 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Rust CLI and local MCP](cmds-lane-cli-contract.md)
 - [API, remote MCP and operations](servers-lane-api-contract.md)
 - [Distribution and common skill](packages-lane-distribution-contract.md)
+
+### labs-docs
+
+- [Project index](project-labs-docs.md)
+- [Application foundation](apps-labs-docs-foundation.md)
+- [Labs localization](apps-labs-localization-contract.md)
+- [TaiRouter public guides](apps-tairouter-docs-contract.md)

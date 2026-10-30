@@ -65,6 +65,7 @@
 - `apps/devbase`: DevBase web application; its API server lives in `servers/devbase-api`.
 - `apps/delino-site`: Delino web application.
 - `apps/delino-docs`: Public documentation app for Delino services.
+- `apps/labs-docs`: Delino Labs documentation; follow [the foundation](docs/apps-labs-docs-foundation.md).
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
 - `servers/delitools-api`: DeliTools translation and extraction API; its protocol is `protos/delitools/v1`.

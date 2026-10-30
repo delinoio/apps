@@ -6,3 +6,5 @@
 - Test authentication and generation with fixtures; record real ChatGPT account acceptance separately.
 
 - Keep translated coverage as the default. Use exact source-only declarations and registered section markers only for English-only requirements in owning product contracts; follow the localization contract. Do not bypass discovery, freshness checks or protected syntax validation.
+
+- `labs-docs` also consumes this shared tooling. Follow [Labs localization](../../docs/apps-labs-localization-contract.md).

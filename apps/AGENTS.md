@@ -34,3 +34,5 @@
 - Lane ownership: [project](../docs/project-lane.md); [application foundation](../docs/apps-lane-foundation.md).
 
 - `apps/lane-chrome-extension` owns the RealQA Chrome companion and store materials. Read the [RealQA contract](../docs/apps-lane-realqa-contract.md); native installation and messaging integration remain in the existing Lane desktop host.
+
+- `labs-docs` ownership and development: [project](../docs/project-labs-docs.md), [foundation](../docs/apps-labs-docs-foundation.md). Use app-local `pnpm dev` with Infisical and Portless; keep ports `46330` (development) and `46331` (preview).

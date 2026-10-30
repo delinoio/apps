@@ -12,6 +12,7 @@ test("isolated projects select only their validation", () => {
     devbase: false,
     delino_site: false,
     delino_docs: false,
+    labs_docs: false,
     delidev: false,
     delitools: true,
     perfine_api: false,
@@ -30,6 +31,7 @@ test("isolated projects select only their validation", () => {
     devbase: false,
     delino_site: false,
     delino_docs: false,
+    labs_docs: false,
     delidev: false,
     delitools: false,
     perfine_api: true,
@@ -48,6 +50,7 @@ test("isolated projects select only their validation", () => {
     devbase: true,
     delino_site: true,
     delino_docs: true,
+    labs_docs: true,
     delidev: true,
     delitools: true,
     perfine_api: true,
@@ -80,6 +83,7 @@ for (const [project, key] of [
         devbase: key === "devbase",
         delino_site: key === "delino_site",
         delino_docs: key === "delino_docs",
+        labs_docs: false,
         delidev: false,
         delitools: false,
         perfine_api: false,
@@ -103,6 +107,7 @@ test("consumer examples select protocol validation without native runners", () =
     devbase: false,
     delino_site: false,
     delino_docs: false,
+    labs_docs: false,
     delidev: false,
     delitools: false,
     perfine_api: false,
@@ -208,6 +213,7 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       devbase: false,
       delino_site: false,
       delino_docs: false,
+      labs_docs: false,
       delidev: true,
       delitools: true,
       perfine_api: false,
@@ -230,6 +236,7 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     devbase: false,
     delino_site: false,
     delino_docs: false,
+    labs_docs: false,
     delidev: false,
     delitools: false,
     perfine_api: false,
@@ -414,7 +421,10 @@ for (const [paths, expected] of [
       "protocol",
     ],
   ],
-  [["scripts/localization/catalog.mjs"], ["delino_site", "delino_docs"]],
+  [
+    ["scripts/localization/catalog.mjs"],
+    ["labs_docs", "delino_site", "delino_docs"],
+  ],
   [
     [
       "packages/ui/src/styles/globals.css",
@@ -680,4 +690,16 @@ test("Lane domain paths select owning validators and shared store consumers", ()
       database: "lane_api_test",
     },
   ]);
+});
+
+test("labs-docs owns its app and shared localization validation", () => {
+  for (const path of [
+    "apps/labs-docs/index.html",
+    "docs/project-labs-docs.md",
+    "docs/apps-labs-docs-foundation.md",
+    "docs/apps-labs-localization-contract.md",
+  ])
+    assert.deepEqual(selectedJobs([path]), ["labs_docs"]);
+  assert.equal(select(["scripts/localization/catalog.mjs"]).labs_docs, true);
+  assert.equal(select(["AGENTS.md"]).labs_docs, false);
 });
