@@ -2,17 +2,17 @@
 
 Static Rspress documentation for `https://docs.labs.delino.io`.
 
-Use Node.js 24 and pnpm 10.26.2. From the repository root:
+Use Node.js 24 and pnpm 12.14.0. From the repository root:
 
 ```sh
 pnpm install
 pnpm dev:labs-docs
-pnpm --filter labs-docs test
-pnpm --filter labs-docs build
-pnpm --filter labs-docs preview
+pnpm --filter @apps/labs-docs test
+pnpm --filter @apps/labs-docs build
+pnpm --filter @apps/labs-docs preview
 ```
 
-Development binds to `127.0.0.1:46303`; preview binds to `127.0.0.1:46304`. Port conflicts fail. Edit English pages in `docs/en/`; the production output is `doc_build/`.
+Development uses Infisical and Portless at `https://labs-docs.localhost` with app port `46330`; preview binds to `127.0.0.1:46331`. Port conflicts fail. Edit English pages in `docs/en/`; the production output is `doc_build/`.
 
 See the [project index](../../docs/project-labs-docs.md) and [app contract](../../docs/apps-labs-docs-foundation.md) for route ownership, validation and Cloudflare Pages settings. Hosting and DNS provisioning are separate operator steps.
 
