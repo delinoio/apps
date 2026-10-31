@@ -6,6 +6,10 @@ This repository owns FSL server runtimes, background workers, migrations, server
 
 The Delcore protocol is `protos/delcore/v1`, with Go import path `github.com/delinoio/apps/protos/delcore/v1` and Connect bindings in `delcorev1connect`. Git Tracker uses `protos/gittracker/v1`, DevBase uses `protos/devbase/v1` and DeliTools uses `protos/delitools/v1`. Go consumers and protocol tests consume these packages directly through the root `github.com/delinoio/apps` Go module. FSL Rust servers consume the local FSL-1.1-ALv2 `servers/crates/delino-protos` package, whose build script generates bindings from these same schemas. Keep canonical schemas and checked-in Go/TypeScript bindings in `protos/`. Generate Rust bindings only into Cargo output; do not check generated Rust source into `servers/`.
 
+## Deployment boundary
+
+Private operator automation owns server rollout, infrastructure, deployment-specific monitoring settings and deployment evidence. This repository retains server runtime source, explicit migrations, OCI packaging, safe configuration examples, reusable monitoring assets and their validation, image publication and frontend/distribution publication. The release dispatch interface and authentication requirements are defined in the [workflow contract](repository-workflow-contract.md#project-release-preparation) and [environment contract](repository-environment-contract.md). Do not identify private deployment repositories in public source, documentation or review records.
+
 ## Contribution boundary
 
 Client, protocol and server contributions use one checkout, branch and review. No separate private repository access, companion checkout, `DELINO_APPS_DIR`, `client:setup`, protocol dependency pin or local `go.work` is required. Do not commit absolute paths or local `replace` directives.
