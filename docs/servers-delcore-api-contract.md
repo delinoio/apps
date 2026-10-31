@@ -149,7 +149,7 @@ The official API server base URL is `https://delcore.api.delino.io`.
 - Provide structured `log/slog` logs, Prometheus metrics, OpenTelemetry traces, health/readiness checks, audit records, and operational recovery APIs.
 - Include safe correlation IDs and bounded error categories. Exclude secrets, tokens, sensitive payloads, and unbounded identity labels from telemetry.
 - Expose signals for payment mismatches, settlement delay, delivery failures, retry exhaustion, and durable job backlog.
-- Support explicit migrations and backup-before-update procedures. Roll back through a compatible image or documented backup recovery; do not claim arbitrary schema downgrade support.
+- Support explicit migrations and backup-before-update procedures. Follow the common [service migration and recovery policy](repository-workflow-contract.md#service-migration-and-recovery): deploy a corrected image and, if state needs correction, a new forward migration. Do not roll back to a previous image or write or apply reverse migrations. Preserve documented backup recovery procedures.
 - Feature flags are not applicable because this is a new independent, pre-release service; the [pre-release transition](#pre-release-transition) covers the catalog and event metering change. Authorization, billing checks, tenant blocking, and recovery controls remain independently enforced.
 - Include a threat model and automated security tests. External security certification or audit is not a completion requirement.
 

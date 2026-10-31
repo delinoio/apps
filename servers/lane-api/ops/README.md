@@ -50,7 +50,7 @@ Metrics must use bounded operational labels. `lane_api_requests_total{outcome="s
 
 1. Check liveness, readiness, exporter reachability and the current deployment revision. Use safe correlation IDs and structured error categories to distinguish process, network, DB and Delcore failures.
 2. Restore private connectivity and database availability. Verify schema compatibility and configured credentials without printing them. Do not recreate an existing database or apply down migrations as a recovery shortcut.
-3. If a binary regression caused the failure, roll back only to a version compatible with the current schema. Otherwise deploy a corrected forward version after explicit migration review. Recheck schema, readiness and representative mocked/read-only operations before traffic recovery.
+3. If a binary regression caused the failure, deploy a corrected forward version. If schema or persisted state needs correction, apply a new forward migration after explicit review. Do not roll back to a previous image or binary, even if it supports the current schema. Do not write or apply down migrations. Recheck schema, readiness and representative mocked/read-only operations before traffic recovery.
 4. Preserve local clients' pending changes. Confirm sufficient healthy observations and alert recovery; do not manually erase incident state to manufacture recovery.
 
 Expire server logs after 30 days using the deployment log collector's retention policy. Log only operation/result/duration and correlation metadata. Never log tokens, receiver secrets, task/prompt content or webhook bodies. Monitoring does not override content retention: prompts/history/events remain until explicit owning deletion.
