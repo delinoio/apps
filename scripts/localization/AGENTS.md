@@ -7,7 +7,4 @@
 
 - Keep translated coverage as the default. Use exact source-only declarations and registered section markers only for English-only requirements in owning product contracts; follow the localization contract. Do not bypass discovery, freshness checks or protected syntax validation.
 
-- `labs-site` also consumes this shared tooling. Follow [Labs localization](../../docs/apps-labs-localization-contract.md).
-- `labs-docs` also consumes this shared tooling. Follow [Labs localization](../../docs/apps-labs-localization-contract.md).
-
 - `delino-console` consumes this tooling under the shared Delino localization contract and [its web contract](../../docs/apps-delino-console-web-contract.md).

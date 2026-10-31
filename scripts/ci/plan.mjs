@@ -153,22 +153,6 @@ export function select(paths, lockfiles) {
       paths.some((path) =>
         /^(apps\/devbase\/|docs\/(?:project-devbase|apps-devbase))/u.test(path),
       ),
-    labs_site:
-      repositoryShared ||
-      shared.localization ||
-      paths.some((path) =>
-        /^(apps\/labs-site\/|docs\/(?:project-labs-site|apps-labs-site-foundation|apps-labs-localization-contract)\.md$)/u.test(
-          path,
-        ),
-      ),
-    labs_docs:
-      repositoryShared ||
-      shared.localization ||
-      paths.some((path) =>
-        /^(apps\/labs-docs\/|docs\/(?:project-labs-docs|apps-labs-docs-foundation|apps-labs-localization-contract)\.md$)/u.test(
-          path,
-        ),
-      ),
     delino_console:
       repositoryShared ||
       shared.localization ||
