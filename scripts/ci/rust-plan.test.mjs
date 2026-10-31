@@ -162,11 +162,10 @@ test("Perfine core selects its root CLI reverse dependency", () => {
   );
 });
 
-test("Perfine contracts and distribution select available core and CLI consumers only", () => {
+test("Perfine protocols and distribution select available core and CLI consumers only", () => {
   for (const path of [
     "actions/perfine/src/main.ts",
     "packages/perfine/package.json",
-    "docs/crates-perfine-adapters-contract.md",
     "protos/perfine/v1/perfine.proto",
   ]) {
     const result = selectRust(base, [path], (command) =>
@@ -185,12 +184,11 @@ test("Perfine contracts and distribution select available core and CLI consumers
   }
 });
 
-test("Lane contracts, schemas and packages select the root Rust CLI", () => {
+test("Lane schemas and packages select the root Rust CLI", () => {
   for (const path of [
     "packages/lane/scripts/build.mjs",
     "protos/lane/v1/lane.proto",
     "apps/lane/native/store/schema.sql",
-    "docs/cmds-lane-cli-contract.md",
   ]) {
     const result = selectRust(base, [path], (command) =>
       command === "list"
@@ -202,5 +200,26 @@ test("Lane contracts, schemas and packages select the root Rust CLI", () => {
         : { merge_base: base, packages: [] },
     );
     assert.deepEqual(result, { rust_clippy: ["lane"], rust_test: ["lane"] });
+  }
+});
+
+test("internal documentation skips Rust allocation without cargo-mono", () => {
+  for (const path of [
+    "docs/project-perfine.md",
+    "docs/cmds-lane-cli-contract.md",
+    "docs/apps-lane-local-store-contract.md",
+    "servers/lane-api/ops/README.md",
+    "README.md",
+  ]) {
+    assert.deepEqual(
+      selectRust(base, [path], () => {
+        assert.fail("internal documentation must not invoke cargo-mono");
+      }),
+      { rust_clippy: [], rust_test: [] },
+    );
+    assert.deepEqual(
+      planner([path, "crates/core/src/lib.rs"], ["core"], ["core", "app"]),
+      { rust_clippy: ["core"], rust_test: ["core", "app"] },
+    );
   }
 });

@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isInstructionPath } from "./plan.mjs";
+import { isValidationExcludedPath } from "./plan.mjs";
 
 export function selectRust(
   base,
@@ -18,7 +18,7 @@ export function selectRust(
       }),
     ),
 ) {
-  const relevant = paths.filter((path) => !isInstructionPath(path));
+  const relevant = paths.filter((path) => !isValidationExcludedPath(path));
   if (paths.length && !relevant.length)
     return { rust_clippy: [], rust_test: [] };
   paths = relevant;
@@ -35,26 +35,24 @@ export function selectRust(
       ),
     );
   const all = global ? run("list").packages.map((pkg) => pkg.name) : null;
-  // Distribution and contract changes can affect CLI behavior without touching
+  // Distribution changes can affect CLI behavior without touching
   // a Cargo package. The independent hosted workspace is selected by plan.mjs.
-  const perfineContract = paths.some((path) =>
-    /^(actions\/perfine\/|packages\/perfine\/|protos\/perfine\/|docs\/(?:project-perfine|cmds-perfine|crates-perfine|packages-perfine|protos-perfine))/u.test(
-      path,
-    ),
+  const perfineConsumer = paths.some((path) =>
+    /^(actions\/perfine\/|packages\/perfine\/|protos\/perfine\/)/u.test(path),
   );
-  const laneContract = paths.some((path) =>
-    /^(packages\/lane\/|protos\/lane\/|apps\/lane\/native\/store\/|docs\/(?:project-lane|cmds-lane|packages-lane|protos-lane|apps-lane-local-store))/u.test(
+  const laneConsumer = paths.some((path) =>
+    /^(packages\/lane\/|protos\/lane\/|apps\/lane\/native\/store\/)/u.test(
       path,
     ),
   );
   const consumers =
-    !global && (perfineContract || laneContract)
+    !global && (perfineConsumer || laneConsumer)
       ? run("list")
           .packages.map((pkg) => pkg.name)
           .filter(
             (name) =>
-              (perfineContract && ["perfine-core", "perfine"].includes(name)) ||
-              (laneContract && name === "lane"),
+              (perfineConsumer && ["perfine-core", "perfine"].includes(name)) ||
+              (laneConsumer && name === "lane"),
           )
       : [];
   return {

@@ -636,6 +636,7 @@ test("shared checks allocate independent jobs from planner outputs", () => {
     .join("\n");
   for (const paths of [
     ["AGENTS.md", "servers/AGENTS.md"],
+    ["docs/servers-delcore-api-contract.md", "servers/lane-api/ops/README.md"],
     ["packages/ui/src/components/button.tsx"],
     ["scripts/localization/catalog.mjs"],
     ["go.mod"],
