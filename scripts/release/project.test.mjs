@@ -127,23 +127,31 @@ test("Internal notes never enter public release notes", () => {
     { packages: ["@apps/devbase"], note: "User note" },
   ]);
 });
-test("Release graph enforces image publication, mock dependency order, and per-component success", () => {
+test("Release graph separates image preparation from authorized component publication", () => {
   const workflow = (name) => yaml.load(read(`.github/workflows/${name}.yml`));
   const release = workflow("release"),
-    component = workflow("deploy-component"),
-    servers = workflow("deploy-servers");
-  assert.deepEqual(Object.keys(release.on), ["workflow_dispatch"]);
-  assert.equal(release.on.workflow_dispatch, null);
+    component = workflow("deploy-component");
+  assert.deepEqual(Object.keys(release.on), ["repository_dispatch"]);
+  assert.deepEqual(release.on.repository_dispatch.types, [
+    "release-prepare",
+    "release-publish",
+  ]);
+  for (const job of [release.jobs.prepare, release.jobs["publish-plan"]]) {
+    assert.match(job.if, /RELEASE_DISPATCH_ACTOR_ID/);
+    assert.match(job.if, /sender.type == 'Bot'/);
+  }
+  assert.match(release.jobs.prepare.if, /release-prepare/);
+  assert.match(release.jobs["publish-plan"].if, /release-publish/);
+  assert.equal(release.jobs.servers, undefined);
   assert.equal(
     component.jobs.mobile.with.build_number,
     "${{ format('{0}', github.run_number) }}",
   );
   assert.equal(component.jobs.mobile.with.platform, "all");
   assert.equal(component.jobs.mobile.with.publish, false);
-  assert.deepEqual(release.jobs.servers.needs, ["prepare", "images"]);
-  assert.deepEqual(release.jobs.components.needs, ["prepare", "servers"]);
+  assert.equal(release.jobs.images.needs, "prepare");
+  assert.equal(release.jobs.components.needs, "publish-plan");
   assert.equal(release.jobs.components.strategy["fail-fast"], false);
-  assert.equal(servers.jobs.dependents.needs, "delcore");
   assert.deepEqual(component.jobs.complete.needs, [
     "status",
     "web",
@@ -157,7 +165,6 @@ test("Release graph enforces image publication, mock dependency order, and per-c
     "deploy-component",
     "deploy-web",
     "deploy-images",
-    "deploy-servers",
     "deploy-lane",
     "deploy-perfine",
     "deploy-delitools-mobile",

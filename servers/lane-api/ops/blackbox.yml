@@ -1,9 +1,0 @@
-# SPDX-License-Identifier: FSL-1.1-ALv2
-modules:
-  lane_http:
-    prober: http
-    timeout: 5s
-    http:
-      method: GET
-      valid_status_codes: [200]
-      follow_redirects: false

@@ -48,3 +48,5 @@
 - Perfine ownership: [project](../docs/project-perfine.md); [api contract](../docs/servers-perfine-api-contract.md).
 
 - `servers/lane-api` owns the Lane Rust API, remote MCP, webhook intake, persistence and workers. Read the [Lane project](../docs/project-lane.md) and [Lane API contract](../docs/servers-lane-api-contract.md); its explicit member is registered in the server Cargo workspace.
+
+- Server infrastructure, runtime rollout and monitoring configuration belong to private operator automation. Keep server source, migrations, safe examples and OCI packaging here. Public release automation accepts authenticated preparation/publication dispatches under the [workflow contract](../docs/repository-workflow-contract.md#project-release-preparation); never name private deployment repositories in public source or review records.

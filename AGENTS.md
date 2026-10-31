@@ -54,6 +54,8 @@
 - Develop client, protocol and server changes in the same checkout and review. The root Go module is `github.com/delinoio/apps` for protocol consumers; FSL Rust servers consume local schemas through the server workspace protocol crate; Apache service bindings follow the repository boundary contract. Do not create a companion checkout, protocol dependency pin, local workspace or duplicate generated source for this integration.
 - Run applicable client, protocol and server checks. Use disposable databases and mocked providers for server integration; production credentials and live-account acceptance remain separate.
 
+- Server infrastructure, runtime rollout and monitoring configuration belong to private operator automation. Keep server source, migrations, safe examples and OCI packaging here. Public release automation accepts authenticated preparation/publication dispatches under the [workflow contract](docs/repository-workflow-contract.md#project-release-preparation); never name private deployment repositories in public source or review records.
+
 ## Monorepo Structure Map
 
 - `.agents/skills/`: Project-local third-party agent skills managed with `npx skills`; see [agent skills](docs/repository-workflow-contract.md#project-local-agent-skills) for sources and installation.
