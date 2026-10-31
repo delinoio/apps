@@ -5,6 +5,7 @@
 - Read the owning contracts before changing behavior, including cross-domain consumers.
 - Propagate the event's exact affected comparison to selectors, protocol checks and affected-validation evidence. Formatting checks run across all tracked supported files without change detection. Do not infer full validation from a manual event alone.
 - Keep the Apache namespace metadata exclusions limited to the exact paths in the workflow contract. Unregistered `oss/` runtime and configuration paths must retain conservative validation until owning CI coverage is added.
+- Apply the workflow contract's internal Markdown exclusions in both project and root Rust selection before allocating validation jobs. Keep public application documentation eligible for its owning checks and preserve selection from mixed runtime changes.
 - Preserve selected-job failure, cancellation and skipped-result rejection in the final result check. Keep native/account acceptance distinct from fixtures and builds.
 
 ## Owning contracts

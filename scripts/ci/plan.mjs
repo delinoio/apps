@@ -7,8 +7,15 @@ import { lockfilePaths } from "./lockfile-paths.mjs";
 export const isInstructionPath = (path) =>
   /(?:^|\/)(?:AGENTS|CLAUDE)\.md$/u.test(path);
 
+// Internal contracts and server runbooks are prose, not runtime build inputs.
+// Keep application documentation eligible: public docs can be compiled content.
+export const isValidationExcludedPath = (path) =>
+  isInstructionPath(path) ||
+  /^docs\/.*\.md$/u.test(path) ||
+  /^(?:README\.md|servers\/(?:.*\/)?README\.md)$/u.test(path);
+
 function affectedPaths(paths, { baseLockfile, headLockfile } = {}) {
-  paths = paths.filter((path) => !isInstructionPath(path));
+  paths = paths.filter((path) => !isValidationExcludedPath(path));
   if (paths.includes("pnpm-lock.yaml")) {
     const affected = lockfilePaths(baseLockfile, headLockfile);
     // Unknown ownership must retain global validation instead of skipping jobs.
@@ -31,8 +38,7 @@ function affectedPaths(paths, { baseLockfile, headLockfile } = {}) {
 function classifyShared(paths) {
   const sharedPatterns = {
     frontend: /^packages\/ui\//u,
-    lynxUi:
-      /^(packages\/lynx-ui\/|docs\/(?:project-lynx-ui|packages-lynx-ui-contract)\.md$)/u,
+    lynxUi: /^packages\/lynx-ui\//u,
     native:
       /^(Cargo\.(toml|lock)$|prebuilt-dependencies\.lock\.json$|scripts\/(?:tauri-cli|prebuilt-dependencies|archive)(?:\.test)?\.mjs$)/u,
     rust: /^(rust-toolchain(?:\.toml)?$|\.cargo\/)/u,
@@ -100,11 +106,7 @@ export function select(paths, lockfiles) {
       repositoryShared ||
       shared.protocol ||
       serverShared ||
-      paths.some((path) =>
-        /^(servers\/delcore-api\/|protos\/|docs\/(?:project-delcore|servers-delcore|protos-delcore-v1-contract\.md$))/u.test(
-          path,
-        ),
-      ),
+      paths.some((path) => /^(servers\/delcore-api\/|protos\/)/u.test(path)),
     delitools_api:
       serverRust ||
       shared.rust ||
@@ -112,9 +114,7 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       serverShared ||
       paths.some((path) =>
-        /^(servers\/delitools-api\/|protos\/|examples\/delitools|docs\/(?:project-delitools|servers-delitools|protos-delitools-v1-contract\.md$))/u.test(
-          path,
-        ),
+        /^(servers\/delitools-api\/|protos\/|examples\/delitools)/u.test(path),
       ),
     devbase_api:
       serverRust ||
@@ -123,9 +123,7 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       serverShared ||
       paths.some((path) =>
-        /^(servers\/devbase-api\/|protos\/|examples\/devbase|docs\/(?:project-devbase|servers-devbase|protos-devbase-v1-contract\.md$))/u.test(
-          path,
-        ),
+        /^(servers\/devbase-api\/|protos\/|examples\/devbase)/u.test(path),
       ),
     git_tracker_api:
       serverRust ||
@@ -134,91 +132,65 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       serverShared ||
       paths.some((path) =>
-        /^(servers\/git-tracker-api\/|protos\/|docs\/(?:project-git-tracker|servers-git-tracker|protos-git-tracker-v1-contract\.md$))/u.test(
-          path,
-        ),
+        /^(servers\/git-tracker-api\/|protos\/)/u.test(path),
       ),
     git_tracker:
       repositoryShared ||
       shared.frontend ||
       shared.protocol ||
       paths.some((path) =>
-        /^(apps\/git-tracker\/|actions\/git-tracker\/|protos\/|docs\/.*git-tracker)/u.test(
-          path,
-        ),
+        /^(apps\/git-tracker\/|actions\/git-tracker\/|protos\/)/u.test(path),
       ),
     devbase:
       repositoryShared ||
       shared.frontend ||
-      paths.some((path) =>
-        /^(apps\/devbase\/|docs\/(?:project-devbase|apps-devbase))/u.test(path),
-      ),
+      paths.some((path) => /^apps\/devbase\//u.test(path)),
     delino_console:
       repositoryShared ||
       shared.localization ||
-      paths.some((path) =>
-        /^(apps\/delino-console\/|docs\/(?:project-delino-console|apps-delino-console-web-contract|apps-delino-site-localization-contract)\.md$)/u.test(
-          path,
-        ),
-      ),
+      paths.some((path) => /^apps\/delino-console\//u.test(path)),
     delino_site:
       repositoryShared ||
       shared.frontend ||
       shared.localization ||
-      paths.some((path) =>
-        /^(apps\/delino-site\/|docs\/.*delino-site)/u.test(path),
-      ),
+      paths.some((path) => /^apps\/delino-site\//u.test(path)),
     delino_docs:
       repositoryShared ||
       shared.frontend ||
       shared.localization ||
-      paths.some((path) =>
-        /^(apps\/delino-docs\/|docs\/.*delino-docs)/u.test(path),
-      ),
+      paths.some((path) => /^apps\/delino-docs\//u.test(path)),
     delidev:
       repositoryShared ||
       shared.frontend ||
       shared.native ||
       shared.rust ||
-      paths.some((path) => /^(apps\/delidev\/|docs\/.*delidev)/u.test(path)),
+      paths.some((path) => /^apps\/delidev\//u.test(path)),
     delitools:
       repositoryShared ||
       shared.frontend ||
       shared.native ||
       shared.rust ||
-      paths.some((path) =>
-        /^(apps\/delitools\/|docs\/(?:project-delitools|apps-delitools))/u.test(
-          path,
-        ),
-      ),
+      paths.some((path) => /^apps\/delitools\//u.test(path)),
     perfine_api:
       serverRust ||
       shared.rust ||
       repositoryShared ||
       shared.protocol ||
       serverShared ||
-      paths.some((path) =>
-        /^(servers\/perfine-api\/|protos\/|docs\/(?:project-perfine|servers-perfine|protos-perfine))/u.test(
-          path,
-        ),
-      ),
+      paths.some((path) => /^(servers\/perfine-api\/|protos\/)/u.test(path)),
     lane_api:
       serverRust ||
       shared.rust ||
       repositoryShared ||
       shared.protocol ||
       serverShared ||
-      paths.some((path) =>
-        /^(servers\/lane-api\/|protos\/|docs\/(?:project-lane|servers-lane|protos-lane))/u.test(
-          path,
-        ),
-      ),
+      paths.some((path) => /^(servers\/lane-api\/|protos\/)/u.test(path)),
     lane_cli:
       repositoryShared ||
       shared.rust ||
       shared.protocol ||
       paths.some((path) =>
-        /^(Cargo\.(toml|lock)$|cmds\/lane\/|packages\/lane\/|apps\/lane\/native\/store\/|protos\/lane\/|docs\/(?:project-lane|cmds-lane|packages-lane|protos-lane|apps-lane-local-store))/u.test(
+        /^(Cargo\.(toml|lock)$|cmds\/lane\/|packages\/lane\/|apps\/lane\/native\/store\/|protos\/lane\/)/u.test(
           path,
         ),
       ),
@@ -227,15 +199,13 @@ export function select(paths, lockfiles) {
       shared.lynxUi ||
       shared.protocol ||
       paths.some((path) =>
-        /^(apps\/(?:lane|lane-chrome-extension)\/|protos\/lane\/|docs\/(?:project-lane|apps-lane|protos-lane))/u.test(
-          path,
-        ),
+        /^(apps\/(?:lane|lane-chrome-extension)\/|protos\/lane\/)/u.test(path),
       ),
     perfine_fixtures:
       repositoryShared ||
       shared.rust ||
       paths.some((path) =>
-        /^(crates\/perfine-core\/|cmds\/perfine\/|Cargo\.(toml|lock)$|docs\/(?:project-perfine|crates-perfine|cmds-perfine))/u.test(
+        /^(crates\/perfine-core\/|cmds\/perfine\/|Cargo\.(toml|lock)$)/u.test(
           path,
         ),
       ),
@@ -243,11 +213,7 @@ export function select(paths, lockfiles) {
       repositoryShared ||
       shared.protocol ||
       shared.go ||
-      paths.some((path) =>
-        /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1|delitools-v1|protos-perfine|project-perfine|protos-lane|project-lane))/u.test(
-          path,
-        ),
-      ),
+      paths.some((path) => /^(protos\/|examples\/)/u.test(path)),
   };
 }
 

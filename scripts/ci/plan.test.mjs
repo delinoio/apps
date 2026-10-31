@@ -71,13 +71,11 @@ for (const [project, key] of [
     for (const path of [
       `apps/${project}/src/main.tsx`,
       `apps/${project}/docs/services/index.md`,
-      `docs/project-${project}.md`,
-      `docs/apps-${project}-web-contract.md`,
     ]) {
       assert.deepEqual(select([path]), {
         delcore_api: false,
         delitools_api: false,
-        devbase_api: key === "devbase" && path === "docs/project-devbase.md",
+        devbase_api: false,
         git_tracker_api: false,
         git_tracker: false,
         devbase: key === "devbase",
@@ -123,7 +121,6 @@ test("Git Tracker clients and Action avoid unrelated runners", () => {
   for (const path of [
     "apps/git-tracker/src/main.tsx",
     "actions/git-tracker/main.mjs",
-    "docs/project-git-tracker.md",
   ]) {
     const selection = select([path]);
     assert.equal(selection.git_tracker, true);
@@ -138,10 +135,7 @@ for (const [service, key] of [
   ["git-tracker-api", "git_tracker_api"],
 ]) {
   test(`${service} changes select only the owning server`, () => {
-    for (const path of [
-      `servers/${service}/src/main.rs`,
-      `docs/servers-${service}-contract.md`,
-    ]) {
+    for (const path of [`servers/${service}/src/main.rs`]) {
       const selection = select([path]);
       assert.equal(selection[key], true);
       for (const other of [
@@ -173,32 +167,6 @@ test("server-wide license and helpers select every server", () => {
     assert.equal(selection.delitools_api, true);
     assert.equal(selection.devbase_api, true);
     assert.equal(selection.git_tracker_api, true);
-  }
-});
-
-test("protocol contract changes select their owning server", () => {
-  for (const [path, owner, other] of [
-    ["docs/protos-delcore-v1-contract.md", "delcore_api", "git_tracker_api"],
-    ["docs/protos-devbase-v1-contract.md", "devbase_api", "delcore_api"],
-    ["docs/protos-delitools-v1-contract.md", "delitools_api", "delcore_api"],
-    [
-      "docs/protos-git-tracker-v1-contract.md",
-      "git_tracker_api",
-      "delcore_api",
-    ],
-  ]) {
-    const selection = select([path]);
-    assert.equal(selection[owner], true, path);
-    assert.equal(selection[other], false, path);
-    for (const frontend of [
-      "devbase",
-      "delino_site",
-      "delino_docs",
-      "delidev",
-      "delitools",
-    ]) {
-      assert.equal(selection[frontend], false, `${path}: ${frontend}`);
-    }
   }
 });
 
@@ -562,7 +530,6 @@ test("shared validation checks select only affected check categories", () => {
     [["apps/devbase/src/main.tsx"], [false, false, false]],
     [["packages/ui/src/components/button.tsx"], [false, true, false]],
     [["packages/lynx-ui/src/components/button.tsx"], [false, true, false]],
-    [["docs/packages-lynx-ui-contract.md"], [false, true, false]],
     [["scripts/localization/catalog.mjs"], [true, false, false]],
     [["servers/scripts/dev-api.mjs"], [true, false, false]],
     [["apps/delitools/scripts/mobile-workflow.test.mjs"], [true, false, false]],
@@ -581,12 +548,10 @@ test("shared validation checks select only affected check categories", () => {
     );
 });
 
-test("DeliTools server, consumer example and contracts select the server without the frontend", () => {
+test("DeliTools server and consumer example select the server without the frontend", () => {
   for (const path of [
     "servers/delitools-api/src/lib.rs",
     "examples/delitools-client/main.go",
-    "docs/servers-delitools-api-contract.md",
-    "docs/protos-delitools-v1-contract.md",
   ]) {
     const selection = select([path]);
     assert.equal(selection.delitools_api, true, path);
@@ -594,15 +559,6 @@ test("DeliTools server, consumer example and contracts select the server without
     assert.equal(selection.devbase_api, false, path);
     assert.equal(selection.delcore_api, false, path);
   }
-  // The project index and the application contract keep selecting the frontend.
-  assert.equal(select(["docs/project-delitools.md"]).delitools, true);
-  assert.equal(select(["docs/project-delitools.md"]).delitools_api, true);
-  assert.equal(select(["docs/apps-delitools-foundation.md"]).delitools, true);
-  assert.equal(
-    select(["docs/apps-delitools-foundation.md"]).delitools_api,
-    false,
-  );
-  assert.equal(select(["docs/protos-delitools-v1-contract.md"]).protocol, true);
 });
 
 test("DeliTools server validation uses its own disposable database", () => {
@@ -626,12 +582,6 @@ test("Perfine ownership selects explicit consumers without unknown-path fallback
     ["packages/perfine/package.json", []],
     ["actions/perfine/src/main.ts", []],
     ["servers/perfine-api/src/main.rs", ["perfine_api"]],
-    ["docs/crates-perfine-adapters-contract.md", ["perfine_fixtures"]],
-    ["docs/protos-perfine-v1-contract.md", ["perfine_api", "protocol"]],
-    [
-      "docs/project-perfine.md",
-      ["perfine_api", "perfine_fixtures", "protocol"],
-    ],
   ])
     assert.deepEqual(selectedJobs([path]), expected, path);
   for (const path of ["protos/perfine/v1/perfine.proto", "buf.gen.yaml"])
@@ -680,26 +630,11 @@ for (const path of [
   "apps/lane-chrome-extension/manifest.json",
   "apps/lane-chrome-extension/tests/capture.test.mjs",
   "apps/lane/native/desktop/main.mjs",
-  "docs/apps-lane-foundation.md",
 ]) {
   test(`Lane paths select only Lane: ${path}`, () => {
     assert.deepEqual(selectedJobs([path]), ["lane"]);
   });
 }
-
-test("Lane project and protocol contracts select all Lane consumers", () => {
-  for (const path of [
-    "docs/project-lane.md",
-    "docs/protos-lane-v1-contract.md",
-  ]) {
-    assert.deepEqual(selectedJobs([path]), [
-      "lane_api",
-      "lane_cli",
-      "lane",
-      "protocol",
-    ]);
-  }
-});
 
 test("Lane domain paths select owning validators and shared store consumers", () => {
   for (const [path, expected] of [
@@ -721,11 +656,7 @@ test("Lane domain paths select owning validators and shared store consumers", ()
 });
 
 test("Delino Console owns its routes and translation validation", () => {
-  for (const path of [
-    "apps/delino-console/src/main.tsx",
-    "docs/project-delino-console.md",
-    "docs/apps-delino-console-web-contract.md",
-  ]) {
+  for (const path of ["apps/delino-console/src/main.tsx"]) {
     assert.deepEqual(
       Object.entries(select([path]))
         .filter(([, selected]) => selected)
@@ -733,10 +664,57 @@ test("Delino Console owns its routes and translation validation", () => {
       ["delino_console"],
     );
   }
-  for (const path of [
-    "scripts/localization/catalog.mjs",
-    "docs/apps-delino-site-localization-contract.md",
-  ]) {
+  for (const path of ["scripts/localization/catalog.mjs"]) {
     assert.equal(select([path]).delino_console, true);
   }
+});
+
+const recoveryPolicyPaths = [
+  "AGENTS.md",
+  "docs/apps-lane-foundation.md",
+  "docs/repository-workflow-contract.md",
+  "docs/servers-delcore-api-contract.md",
+  "docs/servers-lane-api-contract.md",
+  "docs/servers-perfine-api-contract.md",
+  "servers/lane-api/ops/README.md",
+];
+
+test("internal documentation changes allocate no affected jobs", () => {
+  const docs = [
+    ...recoveryPolicyPaths,
+    "README.md",
+    "docs/project-perfine.md",
+    "docs/protos-lane-v1-contract.md",
+    "docs/packages-lynx-ui-contract.md",
+    "servers/delcore-api/README.md",
+  ];
+  for (const paths of [...docs.map((path) => [path]), recoveryPolicyPaths]) {
+    assert.deepEqual(selectedJobs(paths), [], paths.join(", "));
+    assert.deepEqual(selectRustServers(select(paths)), []);
+    assert.ok(Object.values(selectChecks(paths)).every((value) => !value));
+    for (const runtime of [
+      "apps/lane/src/App.tsx",
+      "servers/lane-api/src/lib.rs",
+      "protos/lane/v1/lane.proto",
+      "scripts/ci/plan.mjs",
+      "oss/servers/example/src/main.rs",
+    ]) {
+      assert.deepEqual(select([...paths, runtime]), select([runtime]));
+      assert.deepEqual(
+        selectChecks([...paths, runtime]),
+        selectChecks([runtime]),
+      );
+    }
+  }
+});
+
+test("application documentation and non-Markdown inputs keep owning validation", () => {
+  for (const [path, owner] of [
+    ["apps/delino-docs/docs/en/index.md", "delino_docs"],
+    ["apps/delino-site/docs/services/index.md", "delino_site"],
+    ["servers/lane-api/ops/alerts.yml", "lane_api"],
+    ["servers/lane-api/ops/check.sh", "lane_api"],
+    ["servers/lane-api/ops/README.md.rs", "lane_api"],
+  ])
+    assert.equal(select([path])[owner], true, path);
 });
