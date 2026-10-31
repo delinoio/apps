@@ -296,7 +296,6 @@ Image publication completes the preparation phase. Server runtime deployment and
 
 All services support fix-forward recovery only under the common [service migration and recovery policy](#service-migration-and-recovery). Git Tracker's initial schema migration is not repeatable. Make GHCR images readable by the deployment target using public visibility or target-held registry credentials, and pin deployed images by digest. GHCR package creation and visibility have not been exercised against a real account; record the first real release as platform acceptance evidence. Dispatch receipt only confirms event acceptance; inspect the matching public workflow result before recording publication success.
 
-
 ## Lane binary publication
 
 `release.yml` calls the reusable `deploy-lane.yml` for selected Lane app or CLI changes after immutable release-commit/main ancestry validation. It builds CLI binaries for Linux amd64/arm64, macOS
