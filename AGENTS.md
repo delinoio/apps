@@ -38,6 +38,7 @@
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
 - Do not guess; rather search for the web.
+- All services must use fix-forward recovery: deploy a corrected version and, when state needs correction, apply a new forward migration. Do not roll back to previous images or binaries, and do not write or apply reverse migrations. Follow [service migration and recovery](docs/repository-workflow-contract.md#service-migration-and-recovery); service contracts own the concrete commands and backup procedures.
 - Follow `docs/repository-dependency-security-contract.md` for dependency security updates, validation evidence, and unresolved upstream constraints. Keep unresolved advisories visible; a fixed runtime pin or an unavailable patch is not a vulnerability fix.
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
 - Prefer React Query for frontend server-state management when it is available.

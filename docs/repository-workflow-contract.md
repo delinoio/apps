@@ -282,13 +282,19 @@ The pinned Wrangler action and CLI upload the exact candidate retained as an art
 
 Jobs record source identity and upload outcomes and remove generated frontend `dist` even after failure. Actual Cloudflare deployment, domain routing and account configuration require a real platform run; local fixtures and builds do not establish those outcomes.
 
+## Service migration and recovery
+
+All services use fix-forward recovery, including services under `servers/` and independent services under `oss/servers/`. Correct a service defect by deploying a corrected version. If schema or persisted state needs correction, apply a new forward migration. Do not roll back to a previous image or binary, even when it is compatible with the current schema. Do not write or apply reverse migrations.
+
+Service contracts own migration commands, schema checks, backup and restore procedures, and recovery verification. These service-specific procedures must follow the common fix-forward policy. Preserve documented backup recovery and disposable development reset procedures; neither permits deployment of a previous service version or reverse migrations. Database transaction rollback remains valid and is separate from deployment recovery.
+
 ## Server image publication
 
 `deploy-images.yml` publishes all selected server images in parallel with `fail-fast: false`. Images use `ghcr.io/<owner>/<server>:sha-<release-commit>`. Dockerfiles belong to `servers/delcore-api`, `servers/devbase-api`, `servers/git-tracker-api`, `servers/delitools-api`, `servers/perfine-api` and `servers/lane-api`. Only image jobs hold `packages: write`; they use `GITHUB_TOKEN` and retain repository, source revision, version identity and FSL-1.1-ALv2 labels. Retries reuse an existing immutable image for the same commit.
 
 After image publication succeeds, `deploy-servers.yml` performs **mock deployment only**: Delcore first, then the selected dependent APIs. Logs and summaries explicitly identify the mock; no service, readiness probe or migration is changed. Frontend deployment waits for this mock sequence. This preserves the orchestration boundary until a real runtime deployment adapter and readiness contract replace it. Image publication and mock success are not runtime acceptance.
 
-Operators still deploy images and apply explicit migrations under server contracts. Git Tracker's initial schema migration is not repeatable. DeliTools supports fix-forward only, with no previous-image rollback or reverse migrations; follow its [operator procedures](servers-delitools-api-contract.md#operator-procedures). Make GHCR images readable by the deployment target using public visibility or target-held registry credentials. GHCR package creation and visibility have not been exercised against a real account; record the first real release as platform acceptance evidence.
+Operators still deploy images and apply explicit migrations under server contracts and the common [service migration and recovery policy](#service-migration-and-recovery). All services support fix-forward recovery only. Git Tracker's initial schema migration is not repeatable. Make GHCR images readable by the deployment target using public visibility or target-held registry credentials. GHCR package creation and visibility have not been exercised against a real account; record the first real release as platform acceptance evidence.
 
 ## Lane binary publication
 
