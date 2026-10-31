@@ -1,4 +1,5 @@
 name: Release
+run-name: ${{ github.event.action }} ${{ github.event.client_payload.request_id || github.event.client_payload.revision }}
 on:
   repository_dispatch:
     types: [release-prepare, release-publish]
@@ -22,6 +23,11 @@ jobs:
       components: ${{ steps.source.outputs.components }}
       servers: ${{ steps.source.outputs.servers }}
     steps:
+      - name: Validate the preparation request identity
+        env:
+          RELEASE_REQUEST_ID: ${{ github.event.client_payload.request_id }}
+        run: |
+          [[ "$RELEASE_REQUEST_ID" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]
       - name: Create release bot token
         id: bot
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -74,6 +80,28 @@ jobs:
       - name: Commit changeset consumption and push the release source
         id: source
         run: node "scripts/release/prepare.mjs"
+      - name: Write preparation receipt
+        env:
+          RELEASE_REVISION: ${{ steps.source.outputs.revision }}
+          RELEASE_REQUEST_ID: ${{ github.event.client_payload.request_id }}
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import { writeFileSync } from 'node:fs';
+          assert.match(process.env.RELEASE_REQUEST_ID, /^[a-f0-9-]{36}$/);
+          writeFileSync(process.env.RUNNER_TEMP + '/release-preparation.json', JSON.stringify({
+            request_id: process.env.RELEASE_REQUEST_ID,
+            revision: process.env.RELEASE_REVISION,
+            prepare_run_id: process.env.GITHUB_RUN_ID,
+          }));
+          JS
+      - name: Preserve preparation receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-preparation
+          path: ${{ runner.temp }}/release-preparation.json
+          if-no-files-found: error
+          retention-days: 30
 
   images:
     needs: prepare

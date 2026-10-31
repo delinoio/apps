@@ -143,6 +143,17 @@ test("Release graph separates image preparation from authorized component public
   assert.match(release.jobs.prepare.if, /release-prepare/);
   assert.match(release.jobs["publish-plan"].if, /release-publish/);
   assert.equal(release.jobs.servers, undefined);
+  assert.match(release["run-name"], /client_payload.request_id/);
+  const receipt = release.jobs.prepare.steps.find(
+    (step) => step.name === "Preserve preparation receipt",
+  );
+  assert.equal(receipt.with.name, "release-preparation");
+  assert.equal(receipt.with["if-no-files-found"], "error");
+  assert.equal(
+    release.jobs.prepare.steps[0].name,
+    "Validate the preparation request identity",
+  );
+
   assert.equal(
     component.jobs.mobile.with.build_number,
     "${{ format('{0}', github.run_number) }}",
