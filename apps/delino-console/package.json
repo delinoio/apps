@@ -1,0 +1,33 @@
+{
+  "name": "@apps/delino-console",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name delino-console --app-port 46332 rsbuild dev",
+    "build": "pnpm i18n:check && rsbuild build && cp \"../../LICENSE\" \"../../NOTICE\" \"dist/\"",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm i18n:check && pnpm typecheck && pnpm build && node scripts/validate-routes.mjs",
+    "ci:checks": "pnpm test",
+    "i18n:check": "node ../../scripts/localization/cli.mjs check",
+    "i18n:translate": "node ../../scripts/localization/cli.mjs translate",
+    "i18n:login": "node ../../scripts/localization/cli.mjs login",
+    "i18n:logout": "node ../../scripts/localization/cli.mjs logout",
+    "i18n:models": "node ../../scripts/localization/cli.mjs models",
+    "i18n:profiles": "node ../../scripts/localization/cli.mjs profiles",
+    "preview": "rsbuild preview --host 127.0.0.1 --port 46333"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "2.1.10",
+    "@rsbuild/plugin-react": "2.0.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  }
+}

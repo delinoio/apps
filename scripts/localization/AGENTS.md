@@ -9,3 +9,5 @@
 
 - `labs-site` also consumes this shared tooling. Follow [Labs localization](../../docs/apps-labs-localization-contract.md).
 - `labs-docs` also consumes this shared tooling. Follow [Labs localization](../../docs/apps-labs-localization-contract.md).
+
+- `delino-console` consumes this tooling under the shared Delino localization contract and [its web contract](../../docs/apps-delino-console-web-contract.md).

@@ -37,3 +37,5 @@
 
 - `labs-site` ownership and development: [project](../docs/project-labs-site.md), [foundation](../docs/apps-labs-site-foundation.md). Use app-local `pnpm dev` with Infisical and Portless; keep ports `46328` (development) and `46329` (preview).
 - `labs-docs` ownership and development: [project](../docs/project-labs-docs.md), [foundation](../docs/apps-labs-docs-foundation.md). Use app-local `pnpm dev` with Infisical and Portless; keep ports `46330` (development) and `46331` (preview).
+
+- `delino-console` ownership: [project](../docs/project-delino-console.md) and [web contract](../docs/apps-delino-console-web-contract.md). Use the shared localization CLI; development uses Infisical and Portless with fixed loopback port `46332` and preview port `46333`.

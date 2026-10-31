@@ -169,6 +169,14 @@ export function select(paths, lockfiles) {
           path,
         ),
       ),
+    delino_console:
+      repositoryShared ||
+      shared.localization ||
+      paths.some((path) =>
+        /^(apps\/delino-console\/|docs\/(?:project-delino-console|apps-delino-console-web-contract|apps-delino-site-localization-contract)\.md$)/u.test(
+          path,
+        ),
+      ),
     delino_site:
       repositoryShared ||
       shared.frontend ||

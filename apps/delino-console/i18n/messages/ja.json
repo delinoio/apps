@@ -1,0 +1,11 @@
+{
+  "common.language": "言語",
+  "common.skipContent": "本文へスキップ",
+  "console.title": "Delino Console",
+  "console.description": "Delino Consoleを準備しています。",
+  "console.preparing": "コンソールを準備しています。",
+  "console.loading": "読み込み中…",
+  "console.loadFailed": "ページを読み込めませんでした。",
+  "console.reload": "再読み込み",
+  "console.noScript": "Delino Consoleを使用するには、JavaScriptを有効にしてください。"
+}

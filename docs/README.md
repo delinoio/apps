@@ -80,6 +80,12 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Web application](apps-delino-site-web-contract.md)
 - [Shared Delino localization](apps-delino-site-localization-contract.md)
 
+### delino-console
+
+- [Project index](project-delino-console.md)
+- [Web application](apps-delino-console-web-contract.md)
+- [Shared Delino localization](apps-delino-site-localization-contract.md)
+
 ### delino-docs
 
 - [Project index](project-delino-docs.md)
