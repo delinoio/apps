@@ -1,0 +1,11 @@
+{
+  "common.language": "언어",
+  "common.skipContent": "본문으로 건너뛰기",
+  "console.title": "Delino Console",
+  "console.description": "Delino Console을 준비하고 있습니다.",
+  "console.preparing": "콘솔을 준비하고 있습니다.",
+  "console.loading": "불러오는 중…",
+  "console.loadFailed": "페이지를 불러오지 못했습니다.",
+  "console.reload": "새로고침",
+  "console.noScript": "Delino Console을 사용하려면 JavaScript를 활성화하세요."
+}

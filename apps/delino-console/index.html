@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="<%= lang %>">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="<%= messages["console.description"] %>" />
+    <link rel="canonical" href="<%= canonical %>" />
+    <%= alternates %>
+    <link rel="alternate" hreflang="x-default" href="https://console.delino.io/" />
+    <title><%= messages["console.title"] %></title>
+  </head>
+  <body>
+    <div id="root"><main><p role="status"><%= messages["console.loading"] %></p></main></div>
+    <main id="locale-error" hidden aria-labelledby="error-title">
+      <h1 id="error-title" tabindex="-1"><%= messages["console.loadFailed"] %></h1>
+      <button id="reload" type="button"><%= messages["console.reload"] %></button>
+    </main>
+    <noscript><p><%= messages["console.noScript"] %></p></noscript>
+  </body>
+</html>

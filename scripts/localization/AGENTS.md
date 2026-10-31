@@ -6,3 +6,5 @@
 - Test authentication and generation with fixtures; record real ChatGPT account acceptance separately.
 
 - Keep translated coverage as the default. Use exact source-only declarations and registered section markers only for English-only requirements in owning product contracts; follow the localization contract. Do not bypass discovery, freshness checks or protected syntax validation.
+
+- `delino-console` consumes this tooling under the shared Delino localization contract and [its web contract](../../docs/apps-delino-console-web-contract.md).

@@ -1,0 +1,11 @@
+{
+  "common.language": "语言",
+  "common.skipContent": "跳转到正文",
+  "console.title": "Delino Console",
+  "console.description": "Delino Console 正在准备中。",
+  "console.preparing": "你的控制台正在准备中。",
+  "console.loading": "正在加载…",
+  "console.loadFailed": "无法加载此页面。",
+  "console.reload": "重新加载",
+  "console.noScript": "请启用 JavaScript 以使用 Delino Console。"
+}

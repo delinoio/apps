@@ -1,0 +1,11 @@
+{
+  "common.language": "Language",
+  "common.skipContent": "Skip to content",
+  "console.title": "Delino Console",
+  "console.description": "Delino Console is getting ready.",
+  "console.preparing": "Your console is getting ready.",
+  "console.loading": "Loading…",
+  "console.loadFailed": "This page could not load.",
+  "console.reload": "Reload",
+  "console.noScript": "Enable JavaScript to use Delino Console."
+}

@@ -372,3 +372,7 @@ component identities. Public changelog previews select explicitly authored publi
 notes only. The unconditional formatting job validates records, runs CLI tests
 and vet, and checks Go formatting in this directory. Release preparation and
 record deletion remain separate from this workflow.
+
+## delino-console development and validation
+
+`apps/delino-console` participates in root Turborepo development and localization commands. App-local `pnpm dev` uses Infisical and Portless at `https://delino-console.localhost`, fixed loopback port `46332`; preview uses `46333`. The affected planner selects `delino_console` for app, owning project/web contract, shared Delino localization contract and localization tooling changes. `delino-console-frontend` runs the app test on Ubuntu, preserves validation evidence and is required by `ci-result` only when selected. Manual validation remains affected-only. Builds target Cloudflare Pages at `https://console.delino.io`; production upload automation and account/domain acceptance are outside the scaffold. See [the web contract](apps-delino-console-web-contract.md).

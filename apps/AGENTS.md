@@ -34,3 +34,5 @@
 - Lane ownership: [project](../docs/project-lane.md); [application foundation](../docs/apps-lane-foundation.md).
 
 - `apps/lane-chrome-extension` owns the RealQA Chrome companion and store materials. Read the [RealQA contract](../docs/apps-lane-realqa-contract.md); native installation and messaging integration remain in the existing Lane desktop host.
+
+- `delino-console` ownership: [project](../docs/project-delino-console.md) and [web contract](../docs/apps-delino-console-web-contract.md). Use the shared localization CLI; development uses Infisical and Portless with fixed loopback port `46332` and preview port `46333`.

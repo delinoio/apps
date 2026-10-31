@@ -65,6 +65,7 @@
 - `.release/`: Main-only release preparation commits the consumed changeset plan here; follow the release procedure in `docs/repository-workflow-contract.md`.
 - `apps/devbase`: DevBase web application; its API server lives in `servers/devbase-api`.
 - `apps/delino-site`: Delino web application.
+- `apps/delino-console`: Delino Console web application; follow [the project index](docs/project-delino-console.md).
 - `apps/delino-docs`: Public documentation app for Delino services.
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
