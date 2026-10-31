@@ -8,7 +8,7 @@ The Delcore protocol is `protos/delcore/v1`, with Go import path `github.com/del
 
 ## Deployment boundary
 
-Private operator automation owns server rollout, infrastructure, monitoring assets and deployment evidence. This repository retains server runtime source, explicit migrations, OCI packaging, safe configuration examples, image publication and frontend/distribution publication. The release dispatch interface and authentication requirements are defined in the [workflow contract](repository-workflow-contract.md#project-release-preparation) and [environment contract](repository-environment-contract.md). Do not identify private deployment repositories in public source, documentation or review records.
+Private operator automation owns server rollout, infrastructure, deployment-specific monitoring settings and deployment evidence. This repository retains server runtime source, explicit migrations, OCI packaging, safe configuration examples, reusable monitoring assets and their validation, image publication and frontend/distribution publication. The release dispatch interface and authentication requirements are defined in the [workflow contract](repository-workflow-contract.md#project-release-preparation) and [environment contract](repository-environment-contract.md). Do not identify private deployment repositories in public source, documentation or review records.
 
 ## Contribution boundary
 

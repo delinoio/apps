@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Thresholds, windows and durations are operator-configurable. Initial values are operational triggers, not SLOs.
+groups:
+  - name: lane-recording
+    interval: 30s
+    rules:
+      - record: lane:api_samples:5m
+        expr: sum by (service) (increase(lane_api_requests_total[5m]))
+      - record: lane:api_errors:ratio5m
+        expr: sum by (service) (increase(lane_api_requests_total{outcome=~"server_error|timeout"}[5m])) / lane:api_samples:5m
+      - record: lane:api_latency:p95_5m
+        expr: histogram_quantile(0.95, sum by (service, le) (rate(lane_api_request_duration_seconds_bucket[5m])))
+      - record: lane:push_samples:15m
+        expr: sum by (service) (max by (service, result) (increase(lane_push_attempts_total[15m])))
+      - record: lane:push_transient:ratio15m
+        expr: max by (service) (increase(lane_push_attempts_total{result="transient_failure"}[15m])) / lane:push_samples:15m

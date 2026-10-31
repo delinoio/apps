@@ -12,7 +12,7 @@ Provide repository-scoped task and prompt management for individuals and their e
 
 The main-only `.github/workflows/release.yml` selects Lane web and binary publication from changesets and calls reusable deployment workflows. Follow the [release procedure](repository-workflow-contract.md#project-release-preparation) for commit identity, independent success tags and recovery.
 
-Private operator automation owns monitoring assets and deployment configuration; this checkout owns runtime observability interfaces and their server contract.
+Private operator automation owns deployment configuration and deployment-specific monitoring settings. This checkout owns runtime observability interfaces, reusable monitoring assets and their validation under `servers/lane-api/ops/`.
 
 Existing paths retain their build ownership:
 
@@ -31,7 +31,7 @@ Additional component ownership:
 - `cmds/lane`: Rust CLI entry point and local stdio MCP.
 - `cmds/lane/src`: Rust local store, domain rules, synchronization and CLI/MCP adapters in the root Cargo workspace.
 - `protos/lane/v1`: canonical schemas, checked-in Go/TypeScript bindings and shared cross-language fixtures. Rust generation runs independently in `servers/crates/delino-protos` and `cmds/lane` Cargo output from the same canonical schema.
-- `servers/lane-api`: Rust Connect API, remote MCP, webhook intake, PostgreSQL migrations, push workers, OCI packaging in the independent server workspace.
+- `servers/lane-api`: Rust Connect API, remote MCP, webhook intake, PostgreSQL migrations, push workers, OCI packaging and operator assets in the independent server workspace.
 - `packages/lane`: npm executable launcher and generated platform-specific optional binary packages, common agent `SKILL.md`, installation and MCP connection guides.
 
 ## Domain Contract Documents

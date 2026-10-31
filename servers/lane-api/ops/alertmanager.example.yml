@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Replace reserved example addresses and mount the SMTP password before starting.
+global:
+  smtp_smarthost: smtp.example.invalid:587
+  smtp_from: lane-alerts@example.invalid
+  smtp_auth_username: lane-alerts@example.invalid
+  smtp_auth_password_file: /run/secrets/lane_smtp_password
+  smtp_require_tls: true
+route:
+  receiver: lane-email
+  group_by: ["..."]
+  group_wait: 0s
+  group_interval: 30s
+  repeat_interval: 1h
+receivers:
+  - name: lane-email
+    email_configs:
+      - to: oncall@example.invalid
+        send_resolved: true

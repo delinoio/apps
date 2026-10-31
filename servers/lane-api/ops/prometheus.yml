@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Mount this directory at /etc/lane-monitoring; change internal targets for your deployment.
+global:
+  scrape_interval: 30s
+  scrape_timeout: 5s
+  evaluation_interval: 30s
+rule_files:
+  - /etc/lane-monitoring/alerts.yml
+  - /etc/lane-monitoring/recording.yml
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+scrape_configs:
+  - job_name: lane-api
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/lane_metrics_token
+    static_configs:
+      - targets: ["lane-api:46326"]
+        labels:
+          service: lane
+  - job_name: lane-health
+    # Allow exporter response overhead without shortening its five-second probe.
+    scrape_timeout: 6s
+    metrics_path: /probe
+    params:
+      module: [lane_http]
+    static_configs:
+      - targets: ["http://lane-api:46326/health/live"]
+        labels:
+          service: lane
+          component: service
+      - targets: ["http://lane-api:46326/health/ready"]
+        labels:
+          service: lane
+          component: database
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

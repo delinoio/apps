@@ -292,7 +292,7 @@ Service contracts own migration commands, schema checks, backup and restore proc
 
 `deploy-images.yml` publishes all selected server images in parallel with `fail-fast: false`. Images use `ghcr.io/<owner>/<server>:sha-<release-commit>`. Dockerfiles belong to `servers/delcore-api`, `servers/devbase-api`, `servers/git-tracker-api`, `servers/delitools-api`, `servers/perfine-api` and `servers/lane-api`. Only image jobs hold `packages: write`; they use `GITHUB_TOKEN` and retain repository, source revision, version identity and FSL-1.1-ALv2 labels. Retries reuse an existing immutable image for the same commit.
 
-Image publication completes the preparation phase. Server runtime deployment and monitoring configuration are maintained in private operator automation, outside this repository. Server code, migrations, Dockerfiles and safe service configuration examples remain here. Operators apply explicit migrations and verify the deployed revision and readiness under the owning server contracts before authorizing component publication. There is no server mock deployment workflow.
+Image publication completes the preparation phase. Server runtime deployment and deployment-specific monitoring settings are maintained in private operator automation, outside this repository. Server code, migrations, Dockerfiles, safe service configuration examples and reusable monitoring assets with their validation remain here. Operators apply explicit migrations and verify the deployed revision and readiness under the owning server contracts before authorizing component publication. There is no server mock deployment workflow.
 
 All services support fix-forward recovery only under the common [service migration and recovery policy](#service-migration-and-recovery). Git Tracker's initial schema migration is not repeatable. Make GHCR images readable by the deployment target using public visibility or target-held registry credentials, and pin deployed images by digest. GHCR package creation and visibility have not been exercised against a real account; record the first real release as platform acceptance evidence. Dispatch receipt only confirms event acceptance; inspect the matching public workflow result before recording publication success.
 
@@ -360,7 +360,7 @@ commands and prerequisites belong to the [Lane contract](apps-lane-foundation.md
 
 ## Lane development and validation
 
-Lane monitoring configuration, rule fixtures and their validation belong to private operator automation. Its CI runs disposable Prometheus, Alertmanager and blackbox tool containers plus the Node routing/probe tests. Public Lane API CI retains runtime and database integration checks; monitoring fixtures do not establish service rollout or live-provider acceptance.
+The affected Lane API test job also runs `servers/lane-api/ops/check.sh` with disposable Prometheus and Alertmanager tool containers plus the Node routing/probe tests. This validates monitoring configuration and simulated alert behavior without starting the service or contacting providers.
 
 Lane participates in root development through its existing `lane` frontend route and the `lane-api` Rust service route. The API uses fixed loopback port `46326`; the frontend keeps `46325`. Root Compose includes `lane-postgres`, with loopback port `${LANE_POSTGRES_PORT:-55437}`, database/user `lane` and disposable password `local-lane`. Its named `lane-postgres-data` volume is independent of other services. These values are local development defaults only.
 

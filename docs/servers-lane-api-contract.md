@@ -2,7 +2,7 @@
 
 ## Scope
 
-`servers/lane-api` owns the Rust API, optional remote MCP endpoint, webhook intake, PostgreSQL state/migrations, synchronization, push workers, OCI artifacts. Private operator automation owns monitoring configuration, dashboards, rule fixtures and runbooks; runtime metrics and operational requirements remain defined here. It belongs to the independent server Cargo workspace and uses FSL-1.1-ALv2. This contract defines required behavior, not a deployed service. The [application contract](apps-lane-foundation.md) retains the full product scope.
+`servers/lane-api` owns the Rust API, optional remote MCP endpoint, webhook intake, PostgreSQL state/migrations, synchronization, push workers, OCI artifacts and reusable operator assets under `servers/lane-api/ops/`, including monitoring configuration, dashboards, rule fixtures, validation and runbooks. Private operator automation owns deployment-specific monitoring settings; runtime metrics and operational requirements remain defined here. It belongs to the independent server Cargo workspace and uses FSL-1.1-ALv2. This contract defines required behavior, not a deployed service. The [application contract](apps-lane-foundation.md) retains the full product scope.
 
 ## Runtime and Language
 

@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Monitoring only. Join an existing private network containing lane-api:46326.
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      [
+        "--config.file=/etc/lane-monitoring/prometheus.yml",
+        "--storage.tsdb.path=/prometheus",
+      ]
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - .:/etc/lane-monitoring:ro
+      - prometheus-data:/prometheus
+    secrets: [lane_metrics_token]
+    networks: [lane]
+  blackbox:
+    image: prom/blackbox-exporter:v0.29.1
+    command: ["--config.file=/etc/lane-monitoring/blackbox.yml"]
+    volumes: [".:/etc/lane-monitoring:ro"]
+    networks: [lane]
+  alertmanager:
+    image: prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
+    command:
+      [
+        "--config.file=/etc/alertmanager/alertmanager.yml",
+        "--storage.path=/alertmanager",
+        "--data.retention=120h",
+      ]
+    ports: ["127.0.0.1:9093:9093"]
+    volumes:
+      - ${LANE_ALERTMANAGER_CONFIG:?Set an operator-prepared absolute config path}:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    secrets: [lane_smtp_password]
+    networks: [lane]
+secrets:
+  lane_metrics_token:
+    file: ${LANE_METRICS_TOKEN_FILE:?Set an absolute secret file path}
+  lane_smtp_password:
+    file: ${LANE_SMTP_PASSWORD_FILE:?Set an absolute secret file path}
+networks:
+  lane:
+    external: true
+    name: ${LANE_MONITORING_NETWORK:?Set an existing private network name}
+volumes:
+  prometheus-data:
+  alertmanager-data:
