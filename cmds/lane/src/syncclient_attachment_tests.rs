@@ -367,6 +367,57 @@ fn content_waiting_on_another_device_or_task_push_is_pending_not_failed() {
     assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), 0));
 }
 #[test]
+fn pulled_attachment_in_the_default_state_is_downloaded() {
+    for answer in ["waiting", "available"] {
+        let f = Fixture::new(1, false);
+        // Model the pull path: `store::sync::insert_version` inserts the manifest
+        // without bytes or a synchronization state.
+        f.store
+            .with(true, |db| {
+                let row: (String, String, i64, i64, i64) = db.query_row(
+                    "SELECT task_id,sha256,width,height,byte_size FROM attachments",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                )?;
+                db.execute("DELETE FROM attachments", [])?;
+                db.execute(
+                    "INSERT INTO attachments(id,task_id,sha256,width,height,byte_size) VALUES(?,?,?,?,?,?)",
+                    params![f.attachments[0], row.0, row.1, row.2, row.3, row.4],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(f.state(&f.attachments[0]), (None, 0));
+        let client = object_client().unwrap();
+        let rpc = |method: &str, _: &Value| {
+            assert_eq!(method, "GetAttachment");
+            if answer == "waiting" {
+                Ok(json!({"state":"ATTACHMENT_STATE_WAITING_FOR_SYNC"}))
+            } else {
+                Ok(access("downloadUrl", &f.attachments[0]))
+            }
+        };
+        let object = |builder: reqwest::RequestBuilder, _| {
+            assert_ne!(answer, "waiting", "Waiting content has no object access");
+            let request = builder.build().unwrap();
+            assert_eq!(request.method(), reqwest::Method::GET);
+            Ok(response(200, STANDARD.decode(PNG).unwrap()))
+        };
+        f.run(&AttachmentIo {
+            client: &client,
+            rpc: &rpc,
+            object: &object,
+        })
+        .unwrap();
+        if answer == "waiting" {
+            assert_eq!(f.state(&f.attachments[0]), (None, 0));
+            assert_eq!(status(&f)["pendingItemCount"], "1");
+        } else {
+            assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), 1));
+        }
+    }
+}
+#[test]
 fn signed_get_validates_exact_size_digest_and_status_before_cache() {
     let original = STANDARD.decode(PNG).unwrap();
     let mut bad_hash = original.clone();

@@ -883,8 +883,10 @@ fn attachments_with_io(
 ) -> Result<()> {
     // Uploads wait until the owning task's creation is accepted; the server has no
     // attachment manifest before that, and a blocked creation must not fail the cycle.
+    // Every row without local bytes is a download candidate: a pulled attachment
+    // keeps the default PENDING state until its content is cached.
     let pending = s.with(false, |c| {
-        let mut stmt = c.prepare("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE e.deleted=0 AND ((a.synchronized=0 AND a.png_base64 IS NOT NULL AND NOT EXISTS(SELECT 1 FROM outbox o WHERE o.entity_id=a.task_id AND json_extract(o.request_json,'$.kind')='MUTATION_KIND_CREATE')) OR (a.synchronized=1 AND a.png_base64 IS NULL)) ORDER BY a.id")?;
+        let mut stmt = c.prepare("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE e.deleted=0 AND ((a.synchronized=0 AND a.png_base64 IS NOT NULL AND NOT EXISTS(SELECT 1 FROM outbox o WHERE o.entity_id=a.task_id AND json_extract(o.request_json,'$.kind')='MUTATION_KIND_CREATE')) OR a.png_base64 IS NULL) ORDER BY a.id")?;
         let items = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,i64>(5)?,r.get::<_,Option<String>>(6)?)))?.collect::<std::result::Result<Vec<_>,_>>()?;
         Ok(items)
     })?;
