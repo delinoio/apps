@@ -98,6 +98,10 @@ type VerifiedToken struct {
 	// ClientID is the client_id claim of an access token, when present.
 	ClientID string
 	Claims   map[string]any
+	// Digest is the SHA-256 digest of the raw token. The MCP OAuth broker
+	// binds issued access tokens to their grant by digest; the raw token is
+	// never kept.
+	Digest []byte
 }
 
 // VerifyAccessToken verifies the signature, issuer and expiry of a Logto
@@ -118,7 +122,12 @@ func (l *Logto) VerifyAccessToken(ctx context.Context, raw, audience string) (*V
 	if !slices.Contains(tok.Audience, audience) {
 		return nil, errors.New("verify access token: audience mismatch")
 	}
-	return toVerified(tok)
+	out, err := toVerified(tok)
+	if err != nil {
+		return nil, err
+	}
+	out.Digest = Digest(raw)
+	return out, nil
 }
 
 // VerifyIDToken verifies an ID token for the configured client and nonce.
@@ -228,6 +237,36 @@ func (l *Logto) token(ctx context.Context, form url.Values) (*TokenResponse, err
 		return nil, fmt.Errorf("%w: malformed token response", ErrLogtoUnavailable)
 	}
 	return &tr, nil
+}
+
+// RevokeRefreshToken revokes a refresh token at the Logto revocation
+// endpoint (RFC 7009). It is a no-op when Logto publishes no revocation
+// endpoint.
+func (l *Logto) RevokeRefreshToken(ctx context.Context, refreshToken string) error {
+	_, meta, err := l.discover(ctx)
+	if err != nil {
+		return err
+	}
+	if meta.RevocationEndpoint == "" {
+		return nil
+	}
+	form := url.Values{"token": {refreshToken}, "token_type_hint": {"refresh_token"}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, meta.RevocationEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(url.QueryEscape(l.clientID), url.QueryEscape(l.clientSecret))
+	resp, err := l.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: revocation request: %v", ErrLogtoUnavailable, err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("logto: revocation endpoint status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // MFAEvidence reports whether verified token claims carry MFA evidence: the

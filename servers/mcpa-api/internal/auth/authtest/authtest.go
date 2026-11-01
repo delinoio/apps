@@ -29,6 +29,8 @@ type Provider struct {
 	TokenHandler func(form url.Values) (int, any)
 	// TokenRequests records token endpoint forms.
 	TokenRequests []url.Values
+	// RevokedTokens records tokens sent to the revocation endpoint.
+	RevokedTokens []string
 }
 
 // New starts a provider and stops it at test cleanup.
@@ -47,6 +49,7 @@ func New(t testing.TB) *Provider {
 			"authorization_endpoint":                base + "/auth",
 			"token_endpoint":                        base + "/token",
 			"end_session_endpoint":                  base + "/session/end",
+			"revocation_endpoint":                   base + "/token/revocation",
 			"jwks_uri":                              base + "/jwks",
 			"id_token_signing_alg_values_supported": []string{"ES256"},
 		})
@@ -69,6 +72,16 @@ func New(t testing.TB) *Provider {
 		}
 		status, body := h(r.PostForm)
 		writeJSON(w, status, body)
+	})
+	mux.HandleFunc("POST /token/revocation", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+			return
+		}
+		p.mu.Lock()
+		p.RevokedTokens = append(p.RevokedTokens, r.PostForm.Get("token"))
+		p.mu.Unlock()
+		w.WriteHeader(http.StatusOK)
 	})
 	p.Server = httptest.NewServer(mux)
 	t.Cleanup(p.Server.Close)
@@ -96,6 +109,13 @@ func (p *Provider) Sign(t testing.TB, claims map[string]any) string {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// Revoked returns a copy of the revoked tokens.
+func (p *Provider) Revoked() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.RevokedTokens...)
 }
 
 // SetTokenHandler replaces the token endpoint behavior.
