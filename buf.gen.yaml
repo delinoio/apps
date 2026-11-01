@@ -28,3 +28,4 @@ inputs:
       - protos/gittracker/v1
       - protos/perfine/v1
       - protos/lane/v1
+      - protos/mcpa/v1
