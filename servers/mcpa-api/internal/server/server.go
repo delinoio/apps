@@ -41,6 +41,10 @@ type Mount struct {
 	Pattern string
 	Handler http.Handler
 	Surface obs.Surface
+	// SelfMetered marks a handler that counts its own requests in the shared
+	// mcpa_http_requests_total counter, such as the data-plane engine, so
+	// the wrapper does not count them twice.
+	SelfMetered bool
 }
 
 // Readiness reports whether the API can serve. It returns nil when ready.
@@ -80,7 +84,7 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /metrics", s.wrap(obs.SurfaceInternal, s.metricsHandler()))
 
 	for _, m := range cfg.Mounts {
-		mux.Handle(m.Pattern, s.wrap(m.Surface, m.Handler))
+		mux.Handle(m.Pattern, s.wrapMount(m))
 	}
 	return mux
 }
@@ -133,6 +137,14 @@ func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 // only the surface, method and status: paths can contain resource IDs and
 // query strings can contain call keys.
 func (s *server) wrap(surface obs.Surface, next http.Handler) http.Handler {
+	return s.instrument(surface, true, next)
+}
+
+func (s *server) wrapMount(m Mount) http.Handler {
+	return s.instrument(m.Surface, !m.SelfMetered, m.Handler)
+}
+
+func (s *server) instrument(surface obs.Surface, count bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		traceID := apperr.NewTraceID()
 		ctx := apperr.WithTraceID(r.Context(), traceID)
@@ -152,7 +164,7 @@ func (s *server) wrap(surface obs.Surface, next http.Handler) http.Handler {
 		if status >= 500 {
 			span.SetStatus(codes.Error, http.StatusText(status))
 		}
-		if surface != obs.SurfaceInternal && s.cfg.Metrics != nil {
+		if count && surface != obs.SurfaceInternal && s.cfg.Metrics != nil {
 			s.cfg.Metrics.HTTPRequests.WithLabelValues(string(surface), obs.CodeClass(status)).Inc()
 		}
 	})
