@@ -914,6 +914,44 @@ describe("OAuth connection", () => {
     ).toBeTruthy();
   });
 
+  it("ignores a hidden base URL after switching providers", async () => {
+    const registerApiKeyCredential = rs.fn(() => ({
+      credential: { id: "cred-1", name: "Prod" },
+    }));
+    renderApp({
+      path: resourcePath("credentials"),
+      service: { ...baseService(), registerApiKeyCredential },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Add API key" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Provider"), {
+      target: { value: String(Provider.OPENAI_COMPATIBLE) },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Base URL"), {
+      target: { value: "not a url" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Provider"), {
+      target: { value: String(Provider.CODEX) },
+    });
+    expect(within(dialog).queryByLabelText("Base URL")).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText("Name"), {
+      target: { value: "Prod" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("API key"), {
+      target: { value: "sk-openai" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add API key" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(registerApiKeyCredential).toHaveBeenCalledTimes(1);
+    const [request] = registerApiKeyCredential.mock.calls[0] as unknown as [
+      { provider: Provider; baseUrl: string },
+    ];
+    expect(request.provider).toBe(Provider.CODEX);
+    expect(request.baseUrl).toBe("");
+  });
+
   it("drops the API key from the mutation cache after registration", async () => {
     const registerApiKeyCredential = rs.fn(() => ({
       credential: { id: "cred-1", name: "Prod" },

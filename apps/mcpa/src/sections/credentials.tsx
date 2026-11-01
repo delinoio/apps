@@ -469,7 +469,7 @@ function ApiKeyDialog({
       baseUrl:
         compatible && !baseUrl.trim()
           ? "Enter the service's base URL."
-          : baseUrl.trim() && !isHttpUrl(baseUrl)
+          : allowsBaseUrl && baseUrl.trim() && !isHttpUrl(baseUrl)
             ? "Enter a URL starting with https://."
             : undefined,
       models:
