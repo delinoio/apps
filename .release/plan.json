@@ -1,30 +1,266 @@
 {
   "schema": 1,
-  "runId": "40470874265",
-  "base": "6403d55a337060401a2a9c68f3794515e29d1cbe",
+  "runId": "41264720720",
+  "base": "563c1f8c9389ba9c163acdce563a00421135b5f3",
   "versions": {
-    "delino": "0.2.1",
-    "delitools": "0.2.1",
-    "devbase": "0.2.1",
-    "lane": "0.3.0",
-    "perfine": "0.2.2"
+    "delino": "0.2.2",
+    "delitools": "0.2.2",
+    "devbase": "0.2.2",
+    "lane": "0.4.0",
+    "perfine": "0.2.3"
   },
   "components": [
+    {
+      "component": "delino",
+      "apps": ["git-tracker"],
+      "binaries": false,
+      "mobile": false,
+      "version": "0.2.2",
+      "tag": "delino@v0.2.2"
+    },
+    {
+      "component": "delitools",
+      "apps": [],
+      "binaries": false,
+      "mobile": false,
+      "version": "0.2.2",
+      "tag": "delitools@v0.2.2"
+    },
+    {
+      "component": "devbase",
+      "apps": [],
+      "binaries": false,
+      "mobile": false,
+      "version": "0.2.2",
+      "tag": "devbase@v0.2.2"
+    },
     {
       "component": "lane",
       "apps": ["lane"],
       "binaries": true,
       "mobile": false,
-      "version": "0.3.0",
-      "tag": "lane@v0.3.0"
+      "version": "0.4.0",
+      "tag": "lane@v0.4.0"
+    },
+    {
+      "component": "perfine",
+      "apps": [],
+      "binaries": false,
+      "mobile": false,
+      "version": "0.2.3",
+      "tag": "perfine@v0.2.3"
     }
   ],
-  "servers": ["delcore-api", "lane-api"],
-  "records": ["lane-windows-fixture-paths", "lane-workspace-tabs"],
+  "servers": [
+    "delcore-api",
+    "delitools-api",
+    "devbase-api",
+    "git-tracker-api",
+    "lane-api",
+    "perfine-api"
+  ],
+  "records": [
+    "desktop-tab-shortcuts",
+    "group-realqa-settings",
+    "keep-url-connection-drafts",
+    "lane-all-tasks-display",
+    "lane-android-store-handle-ownership",
+    "lane-capture-only-prompt-history",
+    "lane-capture-retry-identity",
+    "lane-command-menu-layout",
+    "lane-completed-filter-cli",
+    "lane-completed-filter-contract",
+    "lane-conflict-resolution-cards",
+    "lane-desktop-view-handles",
+    "lane-events-presentation",
+    "lane-history-dialogs",
+    "lane-https-markdown-images",
+    "lane-inactive-panel-clipping",
+    "lane-ios-oversized-upload",
+    "lane-mcp-faults",
+    "lane-native-completed-list",
+    "lane-pace-placeholder",
+    "lane-path-routes",
+    "lane-planning-panels",
+    "lane-planning-parent-history",
+    "lane-planning-replay",
+    "lane-proposals-list",
+    "lane-repository-directory",
+    "lane-repository-task-list",
+    "lane-reset-recovery",
+    "lane-reuse-navigation-tab",
+    "lane-saved-capture-stack",
+    "lane-server-completed-list",
+    "lane-settings-presentation",
+    "lane-shared-vertical-tabs",
+    "lane-sync-rejection-lock",
+    "lane-sync-rejection-retirement",
+    "lane-tab-state",
+    "lane-task-editor-controls",
+    "lane-task-editor-layout",
+    "lane-web-connection-gate",
+    "lane-windows-archive-extractor",
+    "realqa-composer-layout",
+    "remove-labs-apps",
+    "reserve-lane-palette-shortcut",
+    "validate-lane-removal-targets"
+  ],
   "publicNotes": [
     {
       "packages": ["@apps/lane"],
-      "note": "Open tasks and pages in tabs, each with its own sidebar, filters and unsaved input. Switch between tasks without losing drafts, and use the tab menu to find or close an open view."
+      "note": "Lane desktop now supports keyboard shortcuts to open, close, reopen, select, and reorder workspace tabs. RealQA capture assignments cannot replace those shortcuts."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "RealQA now shows four equally prominent capture options and clearer shortcut, URL connection and Chrome settings. Loading and synchronization states remain visible while you manage URL connections."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "URL connection fields stay locked while a save is pending. Changes accepted just before Save remain in the editor instead of being lost when the earlier save finishes."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "All tasks now offers a dense List and a Board. Use Display Options to show completed tasks from the last 24 hours, 7 days, 30 days or all time. New All tasks panes start with completed tasks hidden."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Android data space reset works after all Lane windows and sync work for that space have closed."
+    },
+    {
+      "packages": ["@servers/lane-api"],
+      "note": "Tasks created with captures and no prompt now stay in full history without appearing in prompt history."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Capture-save retries can recover the saved task after a lost response, including when the composer reopens."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "The Lane navigation menu now has larger results and a clearer selection. Long destination names and keyboard hints wrap on narrow screens."
+    },
+    {
+      "packages": ["@delinoio/lane"],
+      "note": "Lane CLI and local MCP task lists can now filter completed tasks by a fixed UTC cutoff. CLI duration queries require `--completed-cutoff`; reuse the same value when loading another page."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "When a task has conflicting versions, you can compare every version side by side or in a stacked view on a narrow screen. The selected version and your editable resolution are clearly labeled, and your edits remain available if saving fails."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Closing a Lane desktop window now releases its local data handles so a development data reset can proceed after all other owners release theirs."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "The Events page now shows receiving settings and retained events in a clearer layout, with readable processing states and distinct loading, empty, and error messages."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Task history and prompt versions now show clearer version details, loading and retry states, and prompt restoration feedback."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "HTTPS images in task descriptions and prompts load on Android and iOS."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Fix text from inactive tabs overlapping the current page in the desktop app."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Oversized items no longer stop other Lane changes from syncing on iOS. Correct a blocked item and retry it to upload that item."
+    },
+    {
+      "packages": ["@servers/lane-api"],
+      "note": "Remote MCP errors now report Lane's documented numeric reasons for authentication and tool failures."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Pace's Coming soon view now has a compact layout and a clearer Back to Lane\nbutton. Your open Lane tabs, drafts and task-list scroll position stay in place\nwhen you return."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Lane web screens now have their own URLs. Refresh, Back and Forward return to the addressed screen, and clicking between open tabs keeps their input without reloading the page."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Repository labels, milestones and cycles now show their key details in clearer lists. On wide screens, each list sits beside its editor; on narrow screens, the panels stack."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Label, milestone, and cycle history now shows changes against each version’s parent."
+    },
+    {
+      "packages": ["@servers/lane-api"],
+      "note": "Lane API retries of task conflict resolution and webhook event completion now replay the original result when planning IDs are reordered or repeated."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Proposals now show disposition and progress separately. Search, filters, and sorting are easier to scan, and pending proposals still include tasks marked Done or Canceled."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Repositories now appear in clear rows with their URL and actions. Add and Edit use a focused form, and loading or refresh failures are easier to recognize and retry."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Repository task lists now show a clearer repository heading, compact filters and sort controls, and easier-to-scan task rows."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Native recovery now puts data preservation guidance first and explains exactly what an explicit development reset removes."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Opening tasks, repositories, and pages reuses the current tab. Unsaved changes require confirmation before leaving."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Saved captures in task prompts now appear as clearly separated cards with easier-to-read details."
+    },
+    {
+      "packages": ["@servers/lane-api"],
+      "note": "Lane API and remote MCP task lists support completed-item filters, including rolling time windows, with stable pagination."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Settings now groups device, synchronization, notification, and data controls in one scrolling page. Device and connection lists show when they are loading or unavailable, and each data removal action explains its scope."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Lane, Pace and RealQA now share vertical tabs on the left. Open New tab to choose\na mini-app, and switch between open tasks and mini-apps from the same tab list."
+    },
+    {
+      "packages": ["@servers/lane-api"],
+      "note": "Account clearing now prevents rejected synchronization items from reappearing after the operation completes."
+    },
+    {
+      "packages": ["@servers/lane-api"],
+      "note": "Lane now clears a pending synchronization failure after the corrected change is accepted. Older failures without enough information remain until their original request succeeds or account data is cleared."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Choose task fields from dropdowns, search and remove labels, and add relationships from one menu in the task editor."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "On wide task editors, view properties and relationships beside the task text. On narrower editors, edit selected values from compact chips above the description."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "The Lane web sign-in page now shows clearer connection status and separate sign-in and retry actions. Retry stays available after a connection failure."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "The desktop capture composer now gives the image editor and task details clearer space. Open Pixel coordinates when you need manual editing, and use Add capture to choose a capture mode."
+    },
+    {
+      "packages": ["@apps/lane"],
+      "note": "Capture shortcuts cannot replace Lane’s command palette shortcut. If a new shortcut conflicts, your previous capture shortcut stays active."
+    },
+    {
+      "packages": ["@apps/lane", "@delinoio/lane", "@servers/lane-api"],
+      "note": "Task relationship edits now report an error when a removal names a deleted or invalid task."
     }
   ]
 }
