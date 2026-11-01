@@ -811,7 +811,9 @@ value leaves Chrome registration and the connection service disabled; it does
 not produce a placeholder store listing.
 
 Windows builds require Node 24, CMake, Visual Studio with the MSVC C++ desktop
-toolchain, and a Windows 10/11 SDK containing `Windows.winmd`. Keep the Windows
+toolchain, and a Windows 10/11 SDK containing `Windows.winmd`. Native shortcut
+fixture tests load that MSVC toolchain through `vswhere` and `vcvarsall.bat`
+when no Visual Studio developer environment is active. Keep the Windows
 `SystemRoot` environment intact. SDK NuGet and relay
 Node ZIP extraction uses `SystemRoot/System32/tar.exe` explicitly, because Git
 Bash can put GNU tar ahead of the Windows ZIP-capable bsdtar on `PATH`.
