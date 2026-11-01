@@ -99,6 +99,8 @@ targets:
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
       - sdk: Security.framework
+      # Links AppIntents so Xcode extracts the widget configuration intent metadata.
+      - sdk: AppIntents.framework
     info:
       path: Generated/Widgets-Info.plist
       properties:

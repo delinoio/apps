@@ -1,0 +1,22 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Cross-platform decoder and card tests; run with `dotnet test` on any .NET 8 host. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- The collector client is Windows-only at run time; tests cover its HTTP parsing. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Provider\Snapshots.cs" />
+    <Compile Include="..\Provider\WidgetCard.cs" />
+    <Compile Include="..\Provider\CollectorClient.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+</Project>

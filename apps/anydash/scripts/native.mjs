@@ -3,9 +3,10 @@
 // builds are unsigned; signing and store credentials stay in the protected
 // release environments. Desktop builds use scripts/desktop.mjs.
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { png } from "./icons.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const [platform, action] = process.argv.slice(2);
@@ -105,9 +106,24 @@ try {
       "macosx",
       "generic/platform=macOS",
     );
+  } else if (platform === "windows-widgets" && action === "build") {
+    if (process.platform !== "win32" || process.arch !== "x64")
+      throw new Error("The Widgets Board provider packages on Windows x64.");
+    const cwd = join(root, "native/widgets/windows/Provider");
+    // Package images come from the AnyDash mark; no image binaries are committed.
+    mkdirSync(join(cwd, "Assets"), { recursive: true });
+    for (const [name, size] of [
+      ["StoreLogo.png", 50],
+      ["Square44x44Logo.png", 44],
+      ["Square150x150Logo.png", 150],
+      ["WidgetIcon.png", 48],
+      ["WidgetScreenshot.png", 300],
+    ])
+      writeFileSync(join(cwd, "Assets", name), png(size));
+    run("dotnet", ["build", "-c", "Release", "-p:Platform=x64"], cwd);
   } else
     throw new Error(
-      "Expected android build, ios init|build or macos-widgets build; use scripts/desktop.mjs for desktop",
+      "Expected android build, ios init|build, macos-widgets build or windows-widgets build; use scripts/desktop.mjs for desktop",
     );
   console.info(
     JSON.stringify({ event: "anydash_native_complete", platform, action }),

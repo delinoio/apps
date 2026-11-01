@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: Apache-2.0
+# Separate macOS widget host: Lynxtron packaging cannot embed a WidgetKit
+# extension. Generate with xcodegen; the project and Generated/ are not committed.
+name: AnyDashWidgets
+options:
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  AnyDashWidgetHost:
+    type: application
+    platform: macOS
+    sources:
+      - path: Host
+    dependencies:
+      - target: AnyDashMacWidgets
+    info:
+      path: Generated/Host-Info.plist
+      properties:
+        CFBundleDisplayName: AnyDash Widgets
+        LSUIElement: true
+        LSMinimumSystemVersion: "14.0"
+    entitlements:
+      path: Generated/Host.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.delino.anydash.widgethost
+        PRODUCT_NAME: AnyDash Widgets
+  AnyDashMacWidgets:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Widgets
+      - path: ../shared/AnyDashSnapshot.swift
+      - path: ../shared/AnyDashWidgetView.swift
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+      - sdk: AppIntents.framework
+    info:
+      path: Generated/Widgets-Info.plist
+      properties:
+        CFBundleDisplayName: AnyDash
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Generated/Widgets.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        # Widget extensions must be sandboxed. Reading the collector socket in
+        # the real home needs this exception; the collector still checks the
+        # peer user ID. Remove when the collector offers a sandbox-reachable
+        # endpoint (for example an app group directory).
+        com.apple.security.temporary-exception.files.home-relative-path.read-write:
+          - /Library/Application Support/io.delino.anydash/
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.delino.anydash.widgethost.widgets

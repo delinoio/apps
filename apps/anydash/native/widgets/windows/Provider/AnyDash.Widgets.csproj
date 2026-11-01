@@ -1,0 +1,33 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Windows Widgets Board provider for AnyDash, packaged as single-project MSIX.
+     Windows 11 x64 only, matching the desktop app that writes the snapshots. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
+    <RootNamespace>AnyDash.Widgets</RootNamespace>
+    <AssemblyName>AnyDash.Widgets</AssemblyName>
+    <Version>0.1.0</Version>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <UseWinUI>false</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType>MSIX</WindowsPackageType>
+    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+    <GenerateAppxPackageOnBuild>true</GenerateAppxPackageOnBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The version used by the Windows App SDK widget provider walkthrough. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Unpackaged builds (WindowsPackageType=None) compile-check the provider on any host. -->
+    <AppxManifest Include="Package.appxmanifest" Condition="'$(WindowsPackageType)' != 'None'" />
+    <!-- Generated from the AnyDash mark by scripts/native.mjs; not committed. -->
+    <Content Include="Assets\*.png" />
+    <Content Include="..\..\..\licenses\**" Link="Licenses\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
