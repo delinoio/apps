@@ -22,6 +22,8 @@ type fakeStore struct {
 	codes    map[string]*fakeCode
 	handles  map[string]*fakeHandle
 	tokens   map[string]fakeToken
+	// deleteErr, when set, fails DeleteGrant like an unavailable database.
+	deleteErr error
 }
 
 type fakeCode struct {
@@ -205,6 +207,9 @@ func (f *fakeStore) deleteLocked(id uuid.UUID) {
 func (f *fakeStore) DeleteGrant(_ context.Context, id uuid.UUID) (store.MCPGrant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.deleteErr != nil {
+		return store.MCPGrant{}, f.deleteErr
+	}
 	g, ok := f.grants[id]
 	if !ok {
 		return store.MCPGrant{}, store.ErrNotFound
@@ -243,6 +248,12 @@ func (f *fakeStore) DeleteExpired(context.Context) (int64, error) {
 		}
 	}
 	return n, nil
+}
+
+func (f *fakeStore) setDeleteErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleteErr = err
 }
 
 func (f *fakeStore) grantCount() int {

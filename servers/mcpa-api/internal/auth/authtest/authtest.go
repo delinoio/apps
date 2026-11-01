@@ -31,6 +31,9 @@ type Provider struct {
 	TokenRequests []url.Values
 	// RevokedTokens records tokens sent to the revocation endpoint.
 	RevokedTokens []string
+	// revokeStatus, when set, fails revocation requests with this status
+	// without recording the token.
+	revokeStatus int
 }
 
 // New starts a provider and stops it at test cleanup.
@@ -79,8 +82,15 @@ func New(t testing.TB) *Provider {
 			return
 		}
 		p.mu.Lock()
-		p.RevokedTokens = append(p.RevokedTokens, r.PostForm.Get("token"))
+		status := p.revokeStatus
+		if status == 0 {
+			p.RevokedTokens = append(p.RevokedTokens, r.PostForm.Get("token"))
+		}
 		p.mu.Unlock()
+		if status != 0 {
+			writeJSON(w, status, map[string]string{"error": "temporarily_unavailable"})
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 	p.Server = httptest.NewServer(mux)
@@ -116,6 +126,14 @@ func (p *Provider) Revoked() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return append([]string(nil), p.RevokedTokens...)
+}
+
+// SetRevokeStatus makes the revocation endpoint fail with status; zero
+// restores success.
+func (p *Provider) SetRevokeStatus(status int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.revokeStatus = status
 }
 
 // SetTokenHandler replaces the token endpoint behavior.

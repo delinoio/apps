@@ -577,7 +577,7 @@ func (b *Broker) exchangeCode(ctx context.Context, clientID, code, redirectURI, 
 	switch {
 	case errors.Is(err, store.ErrCodeReused):
 		// A replayed code revokes everything issued from it (RFC 6749 4.1.2).
-		b.revokeGrant(ctx, c.GrantID, "authorization code reused")
+		_ = b.revokeGrant(ctx, c.GrantID, "authorization code reused")
 		return nil, newOAuthError(errInvalidGrant, "the authorization code is invalid")
 	case errors.Is(err, store.ErrNotFound):
 		return nil, newOAuthError(errInvalidGrant, "the authorization code is invalid or expired")
@@ -587,7 +587,7 @@ func (b *Broker) exchangeCode(ctx context.Context, clientID, code, redirectURI, 
 	}
 	if c.ClientID != clientID || c.RedirectURI != redirectURI || !VerifyPKCE(verifier, c.CodeChallenge) {
 		// The code is spent; its grant can never issue tokens.
-		b.revokeGrant(ctx, c.GrantID, "authorization code binding mismatch")
+		_ = b.revokeGrant(ctx, c.GrantID, "authorization code binding mismatch")
 		return nil, newOAuthError(errInvalidGrant, "the authorization code does not match this request")
 	}
 	return b.issue(ctx, c.GrantID, clientID, nil)
@@ -606,7 +606,7 @@ func (b *Broker) exchangeRefresh(ctx context.Context, clientID, handle string) (
 		b.cfg.Log.ErrorContext(ctx, "read mcp refresh handle failed", "error", err)
 		return nil, newOAuthError(errTemporarilyUnavailable, "retry later")
 	case retired:
-		b.revokeGrant(ctx, grantID, "refresh token reused")
+		_ = b.revokeGrant(ctx, grantID, "refresh token reused")
 		return nil, newOAuthError(errInvalidGrant, "the refresh token is invalid")
 	}
 	return b.issue(ctx, grantID, clientID, hash)
@@ -677,7 +677,7 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		b.cfg.Log.InfoContext(ctx, "mcp tokens issued", "grant_id", grantID, "client_id", clientID, "rotated", oldHandle != nil)
 		return resp, nil
 	case errors.Is(err, store.ErrHandleRetired):
-		b.revokeGrant(ctx, grantID, "refresh token reused")
+		_ = b.revokeGrant(ctx, grantID, "refresh token reused")
 		return nil, newOAuthError(errInvalidGrant, "the refresh token is invalid")
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, errClientMismatch):
 		return nil, newOAuthError(errInvalidGrant, "the grant is invalid or expired")
@@ -735,7 +735,12 @@ func (b *Broker) revoke(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, newOAuthError(errTemporarilyUnavailable, "retry later"))
 		return
 	}
-	b.revokeGrant(ctx, grantID, "client revocation")
+	if err := b.revokeGrant(ctx, grantID, "client revocation"); err != nil {
+		// RFC 7009 section 2.2.1: on 503 the client assumes the token still
+		// exists and retries later.
+		writeOAuthError(w, newOAuthError(errTemporarilyUnavailable, "the token was not revoked; retry later"))
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 }

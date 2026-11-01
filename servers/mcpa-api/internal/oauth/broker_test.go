@@ -810,6 +810,40 @@ func TestRevoke(t *testing.T) {
 	}
 }
 
+func TestRevokeReportsLocalDeletionFailure(t *testing.T) {
+	e := newEnv(t)
+	_, tok := e.exchange(e.code(), nil)
+	revoke := func() *httptest.ResponseRecorder {
+		return e.post(oauth.RevokePath, url.Values{"token": {tok.RefreshToken}, "client_id": {clientID}})
+	}
+	e.store.setDeleteErr(errors.New("database unavailable"))
+	rec := revoke()
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "temporarily_unavailable") {
+		t.Fatalf("failed deletion: %d %s", rec.Code, rec.Body.String())
+	}
+	if e.store.grantCount() != 1 || len(e.logto.Revoked()) != 0 {
+		t.Fatalf("grants %d, upstream revocations %v after a failed deletion", e.store.grantCount(), e.logto.Revoked())
+	}
+	// The grant still works, so the retry has something to revoke.
+	if _, err := e.resolve(tok.AccessToken); err != nil {
+		t.Fatalf("resolve before retry: %v", err)
+	}
+	e.store.setDeleteErr(nil)
+	if rec := revoke(); rec.Code != http.StatusOK || e.store.grantCount() != 0 || len(e.logto.Revoked()) != 1 {
+		t.Fatalf("retry: %d, grants %d, upstream revocations %v", rec.Code, e.store.grantCount(), e.logto.Revoked())
+	}
+}
+
+func TestRevokeSucceedsWhenUpstreamRevocationFails(t *testing.T) {
+	e := newEnv(t)
+	_, tok := e.exchange(e.code(), nil)
+	e.logto.SetRevokeStatus(http.StatusServiceUnavailable)
+	rec := e.post(oauth.RevokePath, url.Values{"token": {tok.AccessToken}, "client_id": {clientID}})
+	if rec.Code != http.StatusOK || e.store.grantCount() != 0 {
+		t.Fatalf("revoke with failing upstream: %d, grants %d", rec.Code, e.store.grantCount())
+	}
+}
+
 func TestDelcoreTokenRefreshesUnderGrant(t *testing.T) {
 	e := newEnv(t)
 	_, tok := e.exchange(e.code(), nil)

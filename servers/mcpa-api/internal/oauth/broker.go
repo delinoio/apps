@@ -288,23 +288,28 @@ func (b *Broker) refreshDelcoreToken(ctx context.Context, id uuid.UUID) (string,
 	return token, err
 }
 
-// revokeGrant deletes a grant and revokes its upstream refresh token. Upstream
-// failures are logged; the local grant is gone either way.
-func (b *Broker) revokeGrant(ctx context.Context, id uuid.UUID, reason string) {
+// revokeGrant deletes a grant and revokes its upstream refresh token. It
+// returns a failure to delete the local grant, which then stays usable; an
+// already deleted grant is not an error. Upstream revocation is best effort:
+// its failures are logged once the local grant is gone. Token endpoint
+// callers that detect reuse answer invalid_grant whatever the result, because
+// the presented code or handle is invalid either way.
+func (b *Broker) revokeGrant(ctx context.Context, id uuid.UUID, reason string) error {
 	g, err := b.cfg.Store.DeleteGrant(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
-		return
+		return nil
 	}
 	if err != nil {
-		b.cfg.Log.ErrorContext(ctx, "delete mcp grant failed", "grant_id", id, "error", err)
-		return
+		b.cfg.Log.ErrorContext(ctx, "delete mcp grant failed", "grant_id", id, "reason", reason, "error", err)
+		return fmt.Errorf("delete mcp grant: %w", err)
 	}
 	b.cfg.Log.InfoContext(ctx, "mcp grant revoked", "grant_id", id, "client_id", g.ClientID, "reason", reason)
 	t, err := b.open(g)
 	if err != nil || t.RefreshToken == "" {
-		return
+		return nil
 	}
 	b.revokeUpstream(ctx, t.RefreshToken)
+	return nil
 }
 
 func (b *Broker) revokeUpstream(ctx context.Context, refreshToken string) {
