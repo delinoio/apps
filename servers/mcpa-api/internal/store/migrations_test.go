@@ -38,7 +38,7 @@ func TestEmbeddedMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 3 || ms[len(ms)-1].Name != "mcp_oauth" {
+	if v != 4 || ms[len(ms)-1].Name != "mcp_oauth" {
 		t.Fatalf("expected version %d, last %+v", v, ms[len(ms)-1])
 	}
 }
