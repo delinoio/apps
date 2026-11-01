@@ -3,8 +3,13 @@
 package proxy
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -91,6 +96,119 @@ func TestTraceMeteringMatchesWireForm(t *testing.T) {
 	if got, want := call.requestBytes.Load(), up.read.Load(); got != want {
 		t.Fatalf("trace metered %d bytes, upstream received %d", got, want)
 	}
+}
+
+// rawUpstream accepts one connection, reads the request header block and
+// reports its size, then runs after.
+func rawUpstream(t *testing.T, after func(conn net.Conn, r *bufio.Reader)) (string, <-chan int) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	headerBytes := make(chan int, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		r := bufio.NewReader(conn)
+		n := 0
+		for {
+			line, err := r.ReadString('\n')
+			n += len(line)
+			if err != nil {
+				return
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+		headerBytes <- n
+		after(conn, r)
+	}()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		<-done
+	})
+	return "http://" + ln.Addr().String(), headerBytes
+}
+
+// blockingBody returns head and then blocks until ctx ends.
+type blockingBody struct {
+	head []byte
+	ctx  context.Context
+}
+
+func (b *blockingBody) Read(p []byte) (int, error) {
+	if len(b.head) > 0 {
+		n := copy(p, b.head)
+		b.head = b.head[n:]
+		return n, nil
+	}
+	<-b.ctx.Done()
+	return 0, b.ctx.Err()
+}
+
+// An upload that does not complete bills its request line and headers but
+// not the declared body size.
+func TestTraceMeteringBillsNoBodyOfIncompleteUploads(t *testing.T) {
+	const declared = 8 << 20
+	t.Run("client cancellation", func(t *testing.T) {
+		received := make(chan struct{})
+		base, headerBytes := rawUpstream(t, func(conn net.Conn, r *bufio.Reader) {
+			buf := make([]byte, 1024)
+			if _, err := io.ReadFull(r, buf); err == nil {
+				close(received)
+			}
+			_, _ = io.Copy(io.Discard, r)
+		})
+		call := &callState{id: "c1"}
+		ctx, cancel := context.WithCancel(withTraceMetering(withCall(context.Background(), call), call, "/v1/messages?beta=true"))
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/messages?beta=true",
+			&blockingBody{head: bytes.Repeat([]byte("x"), 1024), ctx: ctx})
+		req.ContentLength = declared
+		errs := make(chan error, 1)
+		go func() {
+			resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+			if err == nil {
+				_ = resp.Body.Close()
+			}
+			errs <- err
+		}()
+		<-received
+		cancel()
+		if err := <-errs; !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancelled upload: %v", err)
+		}
+		if got, want := call.requestBytes.Load(), int64(<-headerBytes); got != want {
+			t.Fatalf("metered %d bytes for a cancelled upload, its headers are %d bytes", got, want)
+		}
+	})
+	t.Run("provider rejection", func(t *testing.T) {
+		base, headerBytes := rawUpstream(t, func(conn net.Conn, _ *bufio.Reader) {
+			_, _ = io.WriteString(conn, "HTTP/1.1 413 Request Entity Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+			// Discard unread input so closing resets the connection, as a
+			// provider that stops reading does.
+			if tcp, ok := conn.(*net.TCPConn); ok {
+				_ = tcp.SetLinger(0)
+			}
+		})
+		call := &callState{id: "c1"}
+		ctx := withTraceMetering(withCall(context.Background(), call), call, "/v1/messages?beta=true")
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/messages?beta=true", bytes.NewReader(make([]byte, declared)))
+		resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+		if got, want := call.requestBytes.Load(), int64(<-headerBytes); got != want {
+			t.Fatalf("metered %d bytes for a rejected upload, its headers are %d bytes", got, want)
+		}
+	})
 }
 
 func TestCallFromContextResolvesSDKExecutionContext(t *testing.T) {

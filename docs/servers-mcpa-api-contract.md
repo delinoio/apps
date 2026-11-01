@@ -261,7 +261,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 
 - **Wire form.** Each segment counts the HTTP/1.1 wire form before TLS: the request line or status line; each header line, `Name: value\r\n`, from the header set at write time; the blank line; and the body bytes as written, after any content encoding. TLS, TCP, chunked transfer framing, HTTP/2 framing and header compression are excluded. The count is the same whatever protocol version the connection negotiates.
 - **Counting points.** A counting `http.RoundTripper`, installed through the SDK round-tripper provider, counts the provider segment. A counting `http.ResponseWriter` counts the customer segment.
-- **Partial calls.** Bytes already sent are billed whatever the outcome, including provider errors, client cancellation and stream interruption. Rejections after step 1 bill their customer-segment response bytes.
+- **Partial calls.** Bytes already sent are billed whatever the outcome, including provider errors, client cancellation and stream interruption. Rejections after step 1 bill their customer-segment response bytes. Requests sent by the SDK Claude client (Claude credentials and Claude-format Kimi calls) are the exception for request bodies: their body is billed only when the transport reports the whole request written. An upload that is cancelled, rejected or disconnected before it completes bills only its request line and headers.
 - **Exclusions.** Provider-reported token counts are never used. Management, console, authentication, OAuth, MCP and operational traffic is never metered.
 
 ### Checkpoints and the usage outbox
@@ -428,7 +428,7 @@ Unit tests run without external services. Integration tests use the build tag `i
 Tests cover these scenarios:
 
 - **Happy path.** Create a resource, connect a mocked OAuth credential and an API key, and issue a key. Make streaming and non-streaming calls in each of the three formats. Check usage and the estimated USD, and check that a mocked Delcore receives a matching `IngestEvent`.
-- **Byte metering.** Compressed and uncompressed bodies, chunked streams, client cancellation in mid-stream, provider disconnects and provider 4xx and 5xx responses. Management traffic is not metered.
+- **Byte metering.** Compressed and uncompressed bodies, chunked streams, client cancellation in mid-stream, interrupted uploads, provider disconnects and provider 4xx and 5xx responses. Management traffic is not metered.
 - **Crash recovery.** Kill the process during a stream. After restart, bytes up to the last checkpoint are billed exactly once, with no duplicate events.
 - **Outbox.** Delcore is unavailable for less than 30 days, then events are delivered once. Events older than 30 days are dropped without estimating. Poisoned rows are covered.
 - **Authorization.**

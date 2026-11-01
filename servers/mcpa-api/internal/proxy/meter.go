@@ -306,12 +306,24 @@ func (r *countingReadCloser) Read(p []byte) (int, error) {
 // requests the transport does not trace the request line, so fallbackURI
 // supplies the request URI the executor builds. Remove this hook when the SDK
 // Claude executor honours the context RoundTripper.
+//
+// The executor's body cannot be wrapped, and httptrace reports no body
+// progress. WroteHeaders runs before the body is sent, so the body is billed
+// only when WroteRequest reports the whole request written without an error
+// (net/http request.go Request.write; x/net http2 transport.go
+// traceWroteRequest, which also reports a body that the transport abandoned
+// after an early response). A cancelled, rejected or disconnected upload
+// therefore bills its request line and headers but none of its body, because
+// the number of body bytes that reached the provider is unknown.
 func withTraceMetering(ctx context.Context, call *callState, fallbackURI string) context.Context {
 	var (
 		mu            sync.Mutex
 		method        string
 		path          string
 		contentLength int64
+		// pendingBody is the declared body size of the request whose
+		// headers were written last, billed when its write completes.
+		pendingBody int64
 	)
 	trace := &httptrace.ClientTrace{
 		WroteHeaderField: func(name string, values []string) {
@@ -342,8 +354,17 @@ func withTraceMetering(ctx context.Context, call *callState, fallbackURI string)
 			} else {
 				call.addRequestBytes(requestLineBytes(http.MethodPost, fallbackURI))
 			}
-			call.addRequestBytes(int64(len("\r\n")) + contentLength)
+			call.addRequestBytes(int64(len("\r\n")))
+			pendingBody = contentLength
 			method, path, contentLength = "", "", 0
+		},
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			mu.Lock()
+			defer mu.Unlock()
+			if info.Err == nil {
+				call.addRequestBytes(pendingBody)
+			}
+			pendingBody = 0
 		},
 	}
 	ctx = context.WithValue(ctx, traceMeteredContextKey{}, true)
