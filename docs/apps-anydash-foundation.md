@@ -2,11 +2,11 @@
 
 ## Scope
 
-`apps/anydash` (`planned`) owns the shared ReactLynx client and its hosts: the browser host for `anydash.delino.io`, the macOS and Windows Lynxtron desktop hosts, the iOS/iPadOS and Android Lynx SDK hosts, and the native widget hosts, including separate native widget hosts when the Lynxtron packaging or a Lynx SDK host cannot embed a widget extension. This contract specifies product behavior, platforms, UX and client tests. The [protocol contract](protos-anydash-v1-contract.md) owns the interfaces; the [CLI contract](cmds-anydash-cli-contract.md) owns the collector that the desktop app embeds. Planned behavior is not a claim of implementation.
+`apps/anydash` (`implemented`) owns the shared ReactLynx client and its hosts: the browser host for `anydash.delino.io`, the macOS and Windows Lynxtron desktop hosts, the iOS/iPadOS and Android Lynx SDK hosts, and the native widget hosts, including separate native widget hosts when the Lynxtron packaging or a Lynx SDK host cannot embed a widget extension. This contract specifies product behavior, platforms, UX and client tests. The [protocol contract](protos-anydash-v1-contract.md) owns the interfaces; the [CLI contract](cmds-anydash-cli-contract.md) owns the collector that the desktop app embeds. Native acceptance stays with the release gates below.
 
 ## Runtime and Language
 
-Use Node.js 24, TypeScript, ReactLynx and Rspeedy, pinned to the versions used by the Lane application when implementation begins. Mobile hosts use the Lynx SDKs (Kotlin/Gradle on Android, Swift or Objective-C on iOS). Desktop hosts use pinned `@lynx-js/lynxtron` on macOS and Windows. The web host uses Lynx for Web, built with the Rstack toolchain, and deploys to Cloudflare Pages. Native widget hosts use the platform language the OS requires: Swift (WidgetKit) on macOS and iOS, C++/WinRT or C# in an MSIX package for the Windows Widgets Board, Kotlin on Android. TypeScript/ReactLynx and these platform languages are the UI exception to the repository language defaults. Clients use Connect RPC through `@connectrpc/connect-query` with React Query and the `@repo/protos` TypeScript bindings. Shared UI primitives come from `packages/lynx-ui` when they fit.
+Use Node.js 24, TypeScript, ReactLynx and Rspeedy, pinned to the versions used by the Lane application when implementation begins. Mobile hosts use the Lynx SDKs (Kotlin/Gradle on Android, Swift or Objective-C on iOS). Desktop hosts use pinned `@lynx-js/lynxtron` on macOS and Windows. The web host uses Lynx for Web, built with the Rstack toolchain, and deploys to Cloudflare Pages. Native widget hosts use the platform language the OS requires: Swift (WidgetKit) on macOS and iOS, C# in an MSIX package for the Windows Widgets Board, Kotlin on Android. TypeScript/ReactLynx and these platform languages are the UI exception to the repository language defaults. Clients use Connect RPC through `@connectrpc/connect-query` with React Query and the `@repo/protos` TypeScript bindings. Shared UI primitives come from `packages/lynx-ui` when they fit.
 
 ## Users and Operators
 
@@ -67,7 +67,8 @@ Solo business owners (primary), Delcore team members who view and edit shared te
 
 - Native widgets: the macOS desktop and Notification Center, the Windows Widgets Board, and the iOS and Android home screens.
 - A native widget shows a summary (`WidgetSummary`) of one in-app widget that the user selects, and its last refresh time. Tapping it opens the matching dashboard in the app. Editing happens only in the app; editing from native widgets is out of scope. A native widget refreshes on the cadence the OS allows.
-- Desktop: the desktop app's main process stays resident after the window closes and writes snapshots of the selected widgets to the collector with `PutNativeWidgetSnapshots` after each data refresh; widget hosts read them with `ListNativeWidgetSnapshots`. If the Lynxtron packaging cannot embed a macOS WidgetKit extension or a Windows Widgets Board provider, build that widget as a separate native host (for example Swift, or C++/WinRT in an MSIX package) that reads data from the local collector process.
+- Desktop: the desktop app's main process stays resident after the window closes and writes snapshots of the selected widgets to the collector with `PutNativeWidgetSnapshots` after each data refresh; widget hosts read them with `ListNativeWidgetSnapshots`. The Lynxtron packaging cannot embed a macOS WidgetKit extension or a Windows Widgets Board provider, so both are separate native hosts that read the local collector process: `native/widgets/macos` is a Swift WidgetKit extension in an interface-less containing app (macOS 14+), and `native/widgets/windows` is a C# COM server in an MSIX package (Windows 11 x64). The macOS extension is sandboxed, as WidgetKit requires, and reads the collector socket through a read-write exception for the AnyDash data directory; the collector still checks the peer user ID. Without a running collector, both keep the last snapshot they read with its time.
+- Choosing the widget: iOS 17+ and macOS use a WidgetKit configuration intent, Android uses the widget configuration activity, and Windows uses Widgets Board customization. iOS 16 shows the most recently refreshed snapshot.
 - Mobile: the app writes snapshots to the app group (iOS) or app-private storage shared with the widget provider (Android). When the OS lets the widget refresh in the background, the widget extension calls `QueryWidgetData` with the app's stored session (`CLIENT_KIND_NATIVE_WIDGET`); otherwise it shows the latest snapshot and its time.
 - `ENDED` snapshots delete displayed data and show "sharing ended".
 
@@ -113,6 +114,14 @@ Run `pnpm test` from `apps/anydash`. Required client tests:
 - Browser matrix tests.
 - Tablet layouts.
 - Onboarding: personal space blocked until a device is connected; team space without a device.
+
+Native hosts and their checks:
+
+- Desktop: `pnpm build:desktop` builds the Lynxtron app (ad-hoc signed locally) and `pnpm dev:desktop` launches it; `pnpm test` runs the desktop main-process tests (`native/desktop/desktop.test.mjs`).
+- iOS: `pnpm build:ios` generates the project with XcodeGen, installs the pinned pods and builds the app and widget extension for the simulator. Public build settings come from `PUBLIC_ANYDASH_API_URL`, `PUBLIC_ANYDASH_RESOURCE`, `PUBLIC_DELCORE_RESOURCE`, `PUBLIC_LOGTO_ENDPOINT` and `PUBLIC_ANYDASH_NATIVE_APP_ID`.
+- Android: `pnpm build:android` builds the app and App Widget with Gradle and JDK 17; run `./gradlew testDebugUnitTest` in `native/android` for the decoder and PKCE tests. The same public variables, or Gradle properties, configure the build.
+- macOS and Windows widget hosts: `pnpm build:macos-widgets` (macOS with Xcode) and `pnpm build:windows-widgets` (Windows x64 with the .NET 8 SDK).
+- `pnpm test:widgets` runs the Swift decoder and macOS collector client tests on macOS and the C# decoder and card tests where a .NET 8 SDK exists. `pnpm fixtures:widgets` regenerates the decoder fixtures from the TypeScript bindings; `pnpm test` checks that they are current.
 
 Release gates performed by the maintainer: app and native widget runs on each supported OS; aggregation from 2 or more devices and automatic collection-device failover; team permissions and share revocation. Bundle builds and fixtures do not establish native acceptance.
 

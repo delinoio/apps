@@ -365,7 +365,7 @@ commands and prerequisites belong to the [Lane contract](apps-lane-foundation.md
 
 ### AnyDash validation
 
-AnyDash app, protocol and shared Lynx UI changes select the Ubuntu `anydash-frontend` job. It runs `pnpm --filter @apps/anydash test` (TypeScript for the client and web host, the Rstest client suite and the Lynx and web bundle builds) and `test:browser`, which serves the built web host against the in-memory API in the runner's Chrome and checks every design-record state at wide, tablet and phone widths with axe-core WCAG 2.2 AA rules. It removes `apps/anydash/dist` even on failure. These checks do not establish native SDK compilation, widget extension behavior or device acceptance; native host build commands belong to the [AnyDash application foundation](apps-anydash-foundation.md).
+AnyDash app, protocol and shared Lynx UI changes select the Ubuntu `anydash-frontend` job. It runs `pnpm --filter @apps/anydash test` (TypeScript for the client and web host, the Rstest client suite, the desktop main-process and widget fixture Node tests and the Lynx and web bundle builds) and `test:browser`, which serves the built web host against the in-memory API in the runner's Chrome and checks every design-record state at wide, tablet and phone widths with axe-core WCAG 2.2 AA rules. It removes `apps/anydash/dist` even on failure. These checks do not establish native SDK compilation, widget extension behavior or device acceptance; native host build commands belong to the [AnyDash application foundation](apps-anydash-foundation.md).
 
 ## Lane development and validation
 

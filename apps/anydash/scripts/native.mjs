@@ -43,7 +43,25 @@ function requireBundle() {
 }
 
 /** Unsigned simulator or macOS build with the given workspace or project. */
-function xcodebuild(cwd, container, scheme, sdk, destination) {
+/** Public build settings for the iOS host; credentials never enter the build. */
+function iosSettings() {
+  const settings = {
+    ANYDASH_API_URL: process.env.PUBLIC_ANYDASH_API_URL,
+    ANYDASH_RESOURCE: process.env.PUBLIC_ANYDASH_RESOURCE,
+    DELCORE_RESOURCE: process.env.PUBLIC_DELCORE_RESOURCE,
+    LOGTO_ENDPOINT: process.env.PUBLIC_LOGTO_ENDPOINT,
+    LOGTO_NATIVE_APP_ID: process.env.PUBLIC_ANYDASH_NATIVE_APP_ID,
+  };
+  return Object.entries(settings)
+    .filter(([, value]) => value)
+    .map(([key, value]) => {
+      if (!/^[A-Za-z0-9:/._-]+$/.test(value))
+        throw new Error(`${key} has unsupported characters.`);
+      return `${key}=${value}`;
+    });
+}
+
+function xcodebuild(cwd, container, scheme, sdk, destination, settings = []) {
   run(
     "xcodebuild",
     [
@@ -59,6 +77,7 @@ function xcodebuild(cwd, container, scheme, sdk, destination) {
       "-derivedDataPath",
       "build",
       "CODE_SIGNING_ALLOWED=NO",
+      ...settings,
       "build",
     ],
     cwd,
@@ -93,6 +112,7 @@ try {
         "AnyDash",
         "iphonesimulator",
         "generic/platform=iOS Simulator",
+        iosSettings(),
       );
     }
   } else if (platform === "macos-widgets" && action === "build") {

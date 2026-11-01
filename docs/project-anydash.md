@@ -14,12 +14,12 @@ AnyDash ships as a web app, macOS and Windows desktop apps, iOS and Android apps
 
 Paths marked `planned` are not implemented yet. Planned paths are requirements, not evidence of implementation. Create each path skeleton and its explicit workspace membership in the change that starts its runtime implementation.
 
-- `apps/anydash` (`planned`): shared ReactLynx client, the browser host for `anydash.delino.io`, the macOS and Windows Lynxtron desktop hosts, the iOS and Android Lynx SDK hosts and the native widget hosts, including separate native widget hosts when Lynxtron packaging cannot embed a widget extension.
+- `apps/anydash` (`implemented`): shared ReactLynx client, the browser host for `anydash.delino.io`, the macOS and Windows Lynxtron desktop hosts, the iOS and Android Lynx SDK hosts and the native widget hosts, including separate native widget hosts when Lynxtron packaging cannot embed a widget extension.
   - `apps/anydash/src`: shared ReactLynx application.
   - `apps/anydash/web`: browser host using Lynx for Web, deployed to Cloudflare Pages.
   - `apps/anydash/native/desktop`: macOS and Windows Lynxtron main process and native modules.
   - `apps/anydash/native/ios` and `apps/anydash/native/android`: mobile hosts and their home screen widget extensions.
-  - `apps/anydash/native/widgets`: separate native widget hosts (for example a Swift WidgetKit extension or a C++/WinRT Widgets Board provider in an MSIX package) when the desktop packaging cannot embed them.
+  - `apps/anydash/native/widgets`: separate native widget hosts, because the Lynxtron packaging cannot embed them: `macos` (a Swift WidgetKit extension in a containing app), `windows` (a C# Widgets Board provider in an MSIX package), and `shared` with `fixtures` (the shared Swift decoder and view and the decoder fixtures generated from the TypeScript bindings).
   - `apps/anydash/scripts`: app-local build and development helpers.
 - `cmds/anydash` (`implemented`): Rust `anydash` executable, which is both the CLI and the single shared collector process with its local IPC service and provider adapters. It is a member of the root Cargo workspace and uses Apache-2.0.
 - `servers/anydash-api` (`implemented`): Rust Connect API and background worker in one process, PostgreSQL migrations, OCI packaging and reusable operator assets under `servers/anydash-api/ops/`. It is a member of the independent server Cargo workspace and uses FSL-1.1-ALv2.
