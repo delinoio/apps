@@ -352,6 +352,28 @@ describe("device approval", () => {
     await app.see(ExtraCopy.deviceApproved);
   });
 
+  it("reloads spaces after approving the first device", async () => {
+    app = await renderApp({
+      path,
+      onboarding: OnboardingState.DEVICE_REQUIRED,
+    });
+    await app.see(Copy.approveDevice);
+    const input = app.find("input.ad-code-input")[0];
+    await act(async () => {
+      input.dispatchEvent(
+        new CustomEvent("bindEvent:input", { detail: { value: "bcdf-ghjk" } }),
+      );
+    });
+    await app.tap(Copy.approve);
+    await app.see(ExtraCopy.deviceApproved);
+    expect(
+      app.host.api.calls.filter((call) => call.method === "ListSpaces").length,
+    ).toBe(2);
+    await app.tap(Copy.goToDashboards);
+    await app.see(Copy.noDashboards);
+    expect(app.text()).not.toContain(Copy.connectDevice);
+  });
+
   it("explains invalid codes", async () => {
     app = await renderApp({ path, enrollmentState: 6 });
     await app.see(Copy.codeInvalid);

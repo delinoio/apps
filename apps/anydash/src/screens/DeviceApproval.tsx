@@ -18,6 +18,7 @@ import { ProblemKind, toProblem, type Problem } from "../errors";
 import { formatCountdown } from "../format";
 import { hostCall, HostMethod } from "../host";
 import { logError } from "../log";
+import { useSession } from "../session";
 import { useNow } from "../visibility";
 
 /** Server alphabet for user codes; comparison ignores case, spaces and "-". */
@@ -125,8 +126,20 @@ export function DeviceApproval({
   const [code, setCode] = useState("");
   const [problem, setProblem] = useState<Problem>();
   const [outcome, setOutcome] = useState<"approved" | "rejected">();
+  const session = useSession();
   const approve = useMutation(DeviceService.method.approveEnrollment, {
-    onSuccess: () => setOutcome("approved"),
+    // Approval creates the first collector device, so the personal space may
+    // leave DEVICE_REQUIRED; reload spaces before returning to the dashboards.
+    onSuccess: async () => {
+      await session.reloadSpaces().catch((error) => {
+        const next = toProblem(error);
+        logError("anydash_spaces_reload_failed", {
+          kind: next.kind,
+          correlationId: next.correlationId,
+        });
+      });
+      setOutcome("approved");
+    },
     onError: (error) => {
       setProblem(toProblem(error));
       void enrollment.refetch();

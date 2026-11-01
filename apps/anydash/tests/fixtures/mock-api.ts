@@ -242,6 +242,8 @@ export class MockApi {
           throw new MockError("invalid_argument", 400, ErrorReason.ENROLLMENT_CODE_MISMATCH, { field: "user_code" });
         }
         this.enrollmentState = EnrollmentState.APPROVED;
+        // The first approved device completes personal onboarding.
+        this.personal = { ...this.personal, onboardingState: OnboardingState.READY };
         return { device: fixtures.devices()[0] };
       },
       "DeviceService/RejectEnrollment": () => {
