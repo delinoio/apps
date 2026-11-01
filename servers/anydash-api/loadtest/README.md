@@ -1,0 +1,21 @@
+# AnyDash load test
+
+`anydash-load.mjs` is the capacity gate from the [server contract](../../../docs/servers-anydash-api-contract.md#build-and-test): 1,000 concurrent active users and 5,000 collector devices with 1-minute heartbeats and local usage uploads and 5-minute external polling snapshots for 30 minutes, without errors, against a production-like deployment. The maintainer records the result in the release validation record. Mocked and load tests do not replace real-account, real-device or store acceptance.
+
+## Provision
+
+Prepare `users.json` outside the repository: an array of 1,000 objects with `accessToken` (Logto token for `https://anydash.api.delino.io`) and `delcoreAccessToken` (Logto token for the Delcore resource) of dedicated test accounts. Then run:
+
+```sh
+node servers/anydash-api/loadtest/anydash-load.mjs provision --api https://<target> --users users.json --out state.json --devices-per-user 5
+```
+
+Provisioning connects each account, enrolls five collector devices per user (5,000 devices), creates a Codex and a Vercel connection registered on every device of the user and a personal dashboard with a usage series widget. The unauthenticated enrollment limit of 10 starts per minute per client address paces enrollment at one device every 6.1 seconds, so provisioning 5,000 devices from one address takes about 8.5 hours. The state file holds device credentials with mode 0600; keep it out of the repository and delete it after the validation.
+
+## Run
+
+```sh
+node servers/anydash-api/loadtest/anydash-load.mjs run --api https://<target> --state state.json --minutes 30
+```
+
+Every user queries its dashboard data and account every 30 to 60 seconds. Every device sends a heartbeat and an upload every minute, acquires leases recommended by the heartbeat, reports a snapshot every 5 minutes for connections whose lease it holds and refreshes its device token every 50 minutes. Rejected snapshots after a lease change (`failed_precondition`) are expected and not counted as errors. The command prints progress every minute and a JSON result with per-method request and error counts, and exits non-zero when any request failed. Record the source revision, deployment, command and result; never record tokens.

@@ -55,7 +55,8 @@ impl Metrics {
                 "anydash_worker_job_runs_total",
                 "Worker job runs by outcome.",
             ),
-            &["job", "outcome"],
+            // `job` is the reserved Prometheus target label, so the worker job uses its own name.
+            &["worker_job", "outcome"],
         )
         .unwrap();
         let job_last_success = GaugeVec::new(
@@ -63,7 +64,7 @@ impl Metrics {
                 "anydash_worker_job_last_success_timestamp_seconds",
                 "Unix time of the last successful run of each worker job.",
             ),
-            &["job"],
+            &["worker_job"],
         )
         .unwrap();
         let deletion_pending = IntGauge::new(
