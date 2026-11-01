@@ -538,8 +538,10 @@ async fn supabase_projects_usage_entitlements_and_no_cost() {
 async fn cloudflare_resources_analytics_plans_and_enterprise_cost() {
     let home = tempfile::tempdir().unwrap();
     let mock = Mock::start(|r| match r.route() {
-        "/client/v4/accounts" => Reply::json(200, &json!({"success": true, "result": [{"id": "acc1", "name": "A"}]})),
-        "/client/v4/accounts/acc1/workers/scripts" => Reply::json(200, &json!({"result": [{"id": "worker-a"}]})),
+        "/client/v4/accounts" => Reply::json(200, &json!({"success": true, "result": [{"id": "acc1", "name": "A"}, {"id": "acc2", "name": "B"}]})),
+        // A second account with a Worker of the same script name.
+        "/client/v4/accounts/acc1/workers/scripts" | "/client/v4/accounts/acc2/workers/scripts" => Reply::json(200, &json!({"result": [{"id": "worker-a"}]})),
+        "/client/v4/accounts/acc2/pages/projects" | "/client/v4/accounts/acc2/subscriptions" => Reply::json(200, &json!({"result": []})),
         "/client/v4/accounts/acc1/pages/projects" => Reply::json(200, &json!({"result": [{"id": "pg1", "name": "pages", "latest_deployment": {"latest_stage": {"name": "deploy", "status": "failure"}}}]})),
         "/client/v4/accounts/acc1/subscriptions" => Reply::json(200, &json!({"result": [{"rate_plan": {"id": "workers_paid", "public_name": "Workers Paid"}}]})),
         "/client/v4/graphql" => {
@@ -549,7 +551,9 @@ async fn cloudflare_resources_analytics_plans_and_enterprise_cost() {
                 "r2": [{"sum": {"requests": 4}}], "d1": [], "kv": [{"sum": {"requests": 6}}]}]}}, "errors": null}))
         }
         // Enterprise accounts have no billable usage.
-        "/client/v4/accounts/acc1/billable-usage" => Reply::text(403, ""),
+        "/client/v4/accounts/acc1/billable-usage" | "/client/v4/accounts/acc2/billable-usage" => {
+            Reply::text(403, "")
+        }
         _ => Reply::text(404, ""),
     })
     .await;
@@ -571,17 +575,34 @@ async fn cloudflare_resources_analytics_plans_and_enterprise_cost() {
         metric(s, MetricKind::DeploymentUsageQuantity, "acc1.kv.requests").value,
         Some(V::Decimal("6".into()))
     );
-    let worker = s
-        .resources
-        .iter()
-        .find(|r| r.resource_id == "worker-a")
-        .unwrap();
-    assert_eq!(worker.status_state, MetricState::NotProvided as i32);
-    assert!(
-        worker
-            .metrics
+    let mut ids: Vec<&str> = s.resources.iter().map(|r| r.resource_id.as_str()).collect();
+    ids.sort_unstable();
+    assert_eq!(
+        ids,
+        ["acc1/worker-a", "acc2/worker-a", "pg1"],
+        "resource IDs are unique"
+    );
+    for account in ["acc1", "acc2"] {
+        let worker = s
+            .resources
             .iter()
-            .any(|m| m.dimension == "workers.requests")
+            .find(|r| r.resource_id == format!("{account}/worker-a"))
+            .unwrap();
+        assert_eq!(
+            (worker.display_name.as_str(), worker.parent_id.as_str()),
+            ("worker-a", account)
+        );
+        assert_eq!(worker.status_state, MetricState::NotProvided as i32);
+        assert!(
+            worker
+                .metrics
+                .iter()
+                .any(|m| m.dimension == "workers.requests")
+        );
+    }
+    assert!(
+        !s.metrics.iter().any(|m| m.dimension.contains("workers.")),
+        "Worker analytics attach to their resources"
     );
     assert_eq!(
         s.resources

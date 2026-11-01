@@ -15,6 +15,12 @@ use crate::{
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 const MAX_ACCOUNTS: usize = 20;
+/// The resource ID of a Workers script. Script names are unique only within an account, and
+/// one token can span several accounts, so the ID carries the account ID.
+#[must_use]
+pub fn worker_resource_id(account: &str, script: &str) -> String {
+    format!("{account}/{script}")
+}
 async fn get(ctx: &Ctx, token: &str, endpoint: &str, path: &str) -> Result<Value, Fail> {
     let request = ctx
         .http
@@ -73,7 +79,11 @@ pub fn map_analytics(
                 period,
             ),
         ];
-        match resources.iter_mut().find(|r| r.resource_id == name) {
+        let id = worker_resource_id(account, &name);
+        match resources
+            .iter_mut()
+            .find(|r| r.kind == ResourceKind::CloudflareWorkerScript as i32 && r.resource_id == id)
+        {
             Some(r) => r.metrics.extend(metrics),
             None => b.metrics.extend(metrics.map(|mut m| {
                 m.dimension = format!("{account}.{}.{name}", m.dimension);
@@ -186,7 +196,7 @@ pub async fn poll(ctx: &Ctx, token: &str, now: i64) -> Result<Snapshot, Fail> {
                 for s in v["result"].as_array().into_iter().flatten() {
                     if let Some(name) = s["id"].as_str() {
                         resources.push(ResourceObservation {
-                            resource_id: name.to_owned(),
+                            resource_id: worker_resource_id(id, name),
                             kind: ResourceKind::CloudflareWorkerScript.into(),
                             display_name: name.to_owned(),
                             parent_id: id.to_owned(),
