@@ -196,7 +196,10 @@ async fn run_locked(
             .with_label_values(&[job.name()])
             .set(time::now().timestamp() as f64);
     } else {
-        tracing::warn!(job = job.name(), error = ?outcome.as_ref().err(), "worker job failed");
+        match &outcome {
+            Err(e) => tracing::warn!(job = job.name(), error = %e, "worker job failed"),
+            Ok(_) => tracing::warn!(job = job.name(), "worker job recorded a handled failure"),
+        }
     }
     Ok(true)
 }
