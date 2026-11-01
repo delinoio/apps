@@ -23,6 +23,7 @@ import (
 
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/proxy"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
 
 // fakeProvider records requests and answers with scripted handlers.
@@ -116,18 +117,27 @@ func (t rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 var fixedNow = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
+// Test-only Google OAuth clients; real clients come from operator
+// configuration.
+var (
+	testGeminiClient      = GoogleOAuthClient{ClientID: "test-gemini-cli.example", ClientSecret: "test-gemini-cli-secret"}
+	testAntigravityClient = GoogleOAuthClient{ClientID: "test-antigravity.example", ClientSecret: "test-antigravity-secret"}
+)
+
 func testBroker(t *testing.T, f *fakeProvider) *Broker {
 	t.Helper()
 	base := f.srv.URL
 	target, _ := url.Parse(base)
 	client := &http.Client{Timeout: 5 * time.Second, Transport: rewriteTransport{target: target}}
 	return New(Options{
-		Log:              slog.New(slog.NewTextHandler(io.Discard, nil)),
-		HTTPClient:       client,
-		ClaudeHTTPClient: &http.Client{Timeout: 5 * time.Second},
-		Timeout:          5 * time.Second,
-		SetupTimeout:     10 * time.Second,
-		Now:              func() time.Time { return fixedNow },
+		Log:               slog.New(slog.NewTextHandler(io.Discard, nil)),
+		HTTPClient:        client,
+		ClaudeHTTPClient:  &http.Client{Timeout: 5 * time.Second},
+		Timeout:           5 * time.Second,
+		SetupTimeout:      10 * time.Second,
+		Now:               func() time.Time { return fixedNow },
+		GeminiCLIClient:   testGeminiClient,
+		AntigravityClient: testAntigravityClient,
 		Endpoints: Endpoints{
 			ClaudeAuthURL: base + "/claude/authorize", ClaudeTokenURL: base + "/claude/token",
 			CodexTokenURL: base + "/codex/token", CodexDeviceUserCodeURL: base + "/codex/usercode",
@@ -164,8 +174,8 @@ func TestAuthorizationURLsCarryPKCEStateAndRegisteredRedirects(t *testing.T) {
 		client   string
 	}{
 		{mcpav1.Provider_PROVIDER_CLAUDE, claudeRedirectURI, claudeClientID},
-		{mcpav1.Provider_PROVIDER_GEMINI_CLI, geminiRedirectURI, geminiClientID},
-		{mcpav1.Provider_PROVIDER_ANTIGRAVITY, antigravityRedirectURI, antigravityClientID},
+		{mcpav1.Provider_PROVIDER_GEMINI_CLI, geminiRedirectURI, testGeminiClient.ClientID},
+		{mcpav1.Provider_PROVIDER_ANTIGRAVITY, antigravityRedirectURI, testAntigravityClient.ClientID},
 	}
 	for _, tc := range cases {
 		spec := providers[tc.provider]
@@ -296,7 +306,7 @@ func TestGeminiExchangeSetsUpCodeAssistProject(t *testing.T) {
 	}
 	form := f.last("/google/token").form
 	if form.Get("grant_type") != "authorization_code" || form.Get("code") != "4/code" || form.Get("code_verifier") != "verifier-g" ||
-		form.Get("client_id") != geminiClientID || form.Get("client_secret") != geminiClientSecret || form.Get("redirect_uri") != geminiRedirectURI {
+		form.Get("client_id") != testGeminiClient.ClientID || form.Get("client_secret") != testGeminiClient.ClientSecret || form.Get("redirect_uri") != geminiRedirectURI {
 		t.Fatalf("token form %v", form)
 	}
 	onboard := f.last("/v1internal:onboardUser")
@@ -307,7 +317,7 @@ func TestGeminiExchangeSetsUpCodeAssistProject(t *testing.T) {
 		t.Fatalf("payload %+v", tok.payload)
 	}
 	inner, _ := tok.payload["token"].(map[string]any)
-	if inner["access_token"] != "ya29.access" || inner["refresh_token"] != "1//refresh" || inner["client_id"] != geminiClientID || inner["token_uri"] != googleTokenURL {
+	if inner["access_token"] != "ya29.access" || inner["refresh_token"] != "1//refresh" || inner["client_id"] != testGeminiClient.ClientID || inner["token_uri"] != googleTokenURL {
 		t.Fatalf("token object %+v", inner)
 	}
 	validate(t, mcpav1.Provider_PROVIDER_GEMINI_CLI, tok)
@@ -336,7 +346,7 @@ func TestAntigravityExchangeFetchesProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	form := f.last("/google/token").form
-	if form.Get("client_id") != antigravityClientID || form.Get("redirect_uri") != antigravityRedirectURI || form.Get("code_verifier") != "verifier-ag" {
+	if form.Get("client_id") != testAntigravityClient.ClientID || form.Get("redirect_uri") != antigravityRedirectURI || form.Get("code_verifier") != "verifier-ag" {
 		t.Fatalf("token form %v", form)
 	}
 	if tok.payload["project_id"] != "ag-project" || tok.payload["email"] != "ag@example.com" || tok.payload["type"] != "antigravity" ||
@@ -481,5 +491,23 @@ func TestBrowserTLSClientRequiresHTTPS(t *testing.T) {
 	c := NewBrowserTLSClient(time.Second)
 	if _, err := c.Get("http://127.0.0.1:1/"); err == nil {
 		t.Fatal("plain HTTP was accepted")
+	}
+}
+
+func TestUnconfiguredGoogleClientsRejectNewFlows(t *testing.T) {
+	b := New(Options{Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	for _, p := range []mcpav1.Provider{mcpav1.Provider_PROVIDER_GEMINI_CLI, mcpav1.Provider_PROVIDER_ANTIGRAVITY} {
+		if b.clientConfigured(p) {
+			t.Fatalf("%s is configured without a client", p)
+		}
+	}
+	for _, p := range []mcpav1.Provider{mcpav1.Provider_PROVIDER_CLAUDE, mcpav1.Provider_PROVIDER_CODEX, mcpav1.Provider_PROVIDER_KIMI} {
+		if !b.clientConfigured(p) {
+			t.Fatalf("%s needs no operator client", p)
+		}
+	}
+	_, err := b.StartProviderOAuth(context.Background(), nil, store.Resource{}, &mcpav1.StartProviderOAuthRequest{Provider: mcpav1.Provider_PROVIDER_GEMINI_CLI, Name: "x"})
+	if err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("unconfigured Gemini CLI start: %v", err)
 	}
 }

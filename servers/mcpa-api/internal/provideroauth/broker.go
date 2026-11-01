@@ -51,6 +51,11 @@ type Options struct {
 	ClaudeHTTPClient *http.Client
 	// Endpoints overrides provider URLs; empty fields use the defaults.
 	Endpoints Endpoints
+	// GeminiCLIClient and AntigravityClient are the Google installed-app
+	// OAuth clients of those providers. A provider whose client is not
+	// configured rejects new flows with FAILED_PRECONDITION.
+	GeminiCLIClient   GoogleOAuthClient
+	AntigravityClient GoogleOAuthClient
 	// Timeout bounds each provider request. Default 30s.
 	Timeout time.Duration
 	// SetupTimeout bounds the Gemini Code Assist project setup. Default 60s.
@@ -59,18 +64,29 @@ type Options struct {
 	Now func() time.Time
 }
 
+// GoogleOAuthClient is a Google OAuth client ID and secret supplied by
+// operator configuration.
+type GoogleOAuthClient struct {
+	ClientID     string
+	ClientSecret string
+}
+
+func (c GoogleOAuthClient) configured() bool { return c.ClientID != "" && c.ClientSecret != "" }
+
 // Broker implements service.OAuthBroker.
 type Broker struct {
-	db       *store.Store
-	keys     *crypto.Keyring
-	listener service.CredentialListener
-	log      *slog.Logger
-	http     *http.Client
-	claude   *http.Client
-	ep       Endpoints
-	timeout  time.Duration
-	setup    time.Duration
-	now      func() time.Time
+	db          *store.Store
+	keys        *crypto.Keyring
+	listener    service.CredentialListener
+	log         *slog.Logger
+	http        *http.Client
+	claude      *http.Client
+	ep          Endpoints
+	gemini      GoogleOAuthClient
+	antigravity GoogleOAuthClient
+	timeout     time.Duration
+	setup       time.Duration
+	now         func() time.Time
 }
 
 var _ service.OAuthBroker = (*Broker)(nil)
@@ -98,6 +114,7 @@ func New(o Options) *Broker {
 	return &Broker{
 		db: o.Store, keys: o.Keys, listener: o.Listener, log: o.Log.With("component", "provider_oauth"),
 		http: o.HTTPClient, claude: o.ClaudeHTTPClient, ep: o.Endpoints.withDefaults(),
+		gemini: o.GeminiCLIClient, antigravity: o.AntigravityClient,
 		timeout: o.Timeout, setup: o.SetupTimeout, now: o.Now,
 	}
 }
@@ -254,6 +271,9 @@ func (b *Broker) StartProviderOAuth(ctx context.Context, p *auth.Principal, res 
 	spec, ok := providers[req.GetProvider()]
 	if !ok {
 		return nil, apperr.InvalidInput("provider does not support OAuth accounts")
+	}
+	if !b.clientConfigured(req.GetProvider()) {
+		return nil, apperr.FailedPrecondition("OAuth accounts for this provider are not configured on this server")
 	}
 	now := b.now()
 	f := store.OAuthFlow{
@@ -600,4 +620,17 @@ func (b *Broker) GetProviderOAuthFlow(ctx context.Context, p *auth.Principal, re
 		return flowProto(f), nil
 	}
 	return b.register(ctx, p, f, *tok)
+}
+
+// clientConfigured reports whether the provider's OAuth client is available.
+// Providers with public SDK client IDs need no operator configuration.
+func (b *Broker) clientConfigured(p mcpav1.Provider) bool {
+	switch p {
+	case mcpav1.Provider_PROVIDER_GEMINI_CLI:
+		return b.gemini.configured()
+	case mcpav1.Provider_PROVIDER_ANTIGRAVITY:
+		return b.antigravity.configured()
+	default:
+		return true
+	}
 }

@@ -51,15 +51,17 @@ const (
 
 // Gemini CLI OAuth (internal/auth/gemini/gemini_auth.go) and Code Assist
 // project setup (internal/cmd/login.go).
+//
+// The Gemini CLI and Antigravity OAuth clients are Google installed-app
+// clients. Their IDs and secrets are operator configuration
+// (GoogleOAuthClient), never repository source.
 const (
-	geminiClientID     = ""
-	geminiClientSecret = ""
-	geminiRedirectURI  = "http://localhost:8085/oauth2callback"
-	geminiUserInfoURL  = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json"
-	geminiCodeAssist   = "https://cloudcode-pa.googleapis.com"
-	geminiCLIVersion   = "0.34.0"
-	googleAuthURL      = "https://accounts.google.com/o/oauth2/auth"
-	googleTokenURL     = "https://oauth2.googleapis.com/token"
+	geminiRedirectURI = "http://localhost:8085/oauth2callback"
+	geminiUserInfoURL = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json"
+	geminiCodeAssist  = "https://cloudcode-pa.googleapis.com"
+	geminiCLIVersion  = "0.34.0"
+	googleAuthURL     = "https://accounts.google.com/o/oauth2/auth"
+	googleTokenURL    = "https://oauth2.googleapis.com/token"
 )
 
 var geminiScopes = []string{
@@ -70,11 +72,9 @@ var geminiScopes = []string{
 
 // Antigravity OAuth (internal/auth/antigravity/constants.go).
 const (
-	antigravityClientID     = ""
-	antigravityClientSecret = ""
-	antigravityRedirectURI  = "http://localhost:51121/oauth-callback"
-	antigravityAuthURL      = "https://accounts.google.com/o/oauth2/v2/auth"
-	antigravityUserInfoURL  = "https://www.googleapis.com/oauth2/v2/userinfo?alt=json"
+	antigravityRedirectURI = "http://localhost:51121/oauth-callback"
+	antigravityAuthURL     = "https://accounts.google.com/o/oauth2/v2/auth"
+	antigravityUserInfoURL = "https://www.googleapis.com/oauth2/v2/userinfo?alt=json"
 )
 
 var antigravityScopes = []string{

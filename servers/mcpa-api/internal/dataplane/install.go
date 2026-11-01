@@ -45,6 +45,12 @@ func Install(a *app.App, opts InstallOptions) (*DataPlane, error) {
 	}
 	oauth := opts.OAuth
 	oauth.Store, oauth.Keys, oauth.Listener, oauth.Log = a.Store, a.Keys, dp.Sync, a.Log
+	if oauth.GeminiCLIClient == (provideroauth.GoogleOAuthClient{}) {
+		oauth.GeminiCLIClient = provideroauth.GoogleOAuthClient{ClientID: a.Config.GeminiCLIOAuthClientID, ClientSecret: a.Config.GeminiCLIOAuthClientSecret}
+	}
+	if oauth.AntigravityClient == (provideroauth.GoogleOAuthClient{}) {
+		oauth.AntigravityClient = provideroauth.GoogleOAuthClient{ClientID: a.Config.AntigravityOAuthClientID, ClientSecret: a.Config.AntigravityOAuthClientSecret}
+	}
 	if oauth.Now == nil {
 		oauth.Now = opts.Now
 	}

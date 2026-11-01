@@ -107,6 +107,14 @@ type Serve struct {
 	MFAReauthURL        string
 	OAuthClients        map[string]OAuthClient
 
+	// Google installed-app OAuth clients for the Gemini CLI and Antigravity
+	// provider OAuth flows. Optional: an unset pair disables that provider's
+	// OAuth connection. The secrets are never logged.
+	GeminiCLIOAuthClientID       string
+	GeminiCLIOAuthClientSecret   string
+	AntigravityOAuthClientID     string
+	AntigravityOAuthClientSecret string
+
 	AuthorizeCacheTTL  time.Duration
 	CheckpointInterval time.Duration
 	OutboxInterval     time.Duration
@@ -153,6 +161,18 @@ func (p *parser) required(name string) string {
 		p.fail("%s is required", name)
 	}
 	return v
+}
+
+// optionalPair reads an optional client ID and secret that must be set
+// together. The secret value is never included in an error.
+func (p *parser) optionalPair(idName, secretName string) (string, string) {
+	id := p.optional(idName)
+	secret, _ := p.lookup(secretName)
+	if (id == "") != (secret == "") {
+		p.fail("%s and %s must be set together", idName, secretName)
+		return "", ""
+	}
+	return id, secret
 }
 
 func (p *parser) secret(name string) string {
@@ -400,6 +420,8 @@ func LoadServe(lookup Lookup) (*Serve, error) {
 	if s.DelcoreResource != "" && (s.DelcoreResource == s.APIResource || s.DelcoreResource == s.MCPResource) {
 		p.fail("DELCORE_RESOURCE must differ from the mcpa API and MCP resources")
 	}
+	s.GeminiCLIOAuthClientID, s.GeminiCLIOAuthClientSecret = p.optionalPair("MCPA_GEMINI_CLI_OAUTH_CLIENT_ID", "MCPA_GEMINI_CLI_OAUTH_CLIENT_SECRET")
+	s.AntigravityOAuthClientID, s.AntigravityOAuthClientSecret = p.optionalPair("MCPA_ANTIGRAVITY_OAUTH_CLIENT_ID", "MCPA_ANTIGRAVITY_OAUTH_CLIENT_SECRET")
 	s.MFAClaim = p.optional("MCPA_MFA_CLAIM")
 	if s.MFAClaim == "" {
 		s.MFAClaim = DefaultMFAClaim

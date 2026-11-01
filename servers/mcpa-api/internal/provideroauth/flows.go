@@ -237,11 +237,11 @@ func (b *Broker) googleEmail(ctx context.Context, userInfoURL, accessToken strin
 }
 
 func geminiAuthorizationURL(b *Broker, state, challenge string) string {
-	return googleAuthorizationURL(b.ep.GoogleAuthURL, geminiClientID, geminiRedirectURI, geminiScopes, state, challenge)
+	return googleAuthorizationURL(b.ep.GoogleAuthURL, b.gemini.ClientID, geminiRedirectURI, geminiScopes, state, challenge)
 }
 
 func geminiExchange(ctx context.Context, b *Broker, code, _ string, sec flowSecret) (token, error) {
-	resp, err := b.googleExchange(ctx, "gemini token exchange", geminiClientID, geminiClientSecret, geminiRedirectURI, code, sec.CodeVerifier)
+	resp, err := b.googleExchange(ctx, "gemini token exchange", b.gemini.ClientID, b.gemini.ClientSecret, geminiRedirectURI, code, sec.CodeVerifier)
 	if err != nil {
 		return token{}, err
 	}
@@ -266,8 +266,8 @@ func geminiExchange(ctx context.Context, b *Broker, code, _ string, sec flowSecr
 		return token{}, err
 	}
 	tokenMap["token_uri"] = googleTokenURL
-	tokenMap["client_id"] = geminiClientID
-	tokenMap["client_secret"] = geminiClientSecret
+	tokenMap["client_id"] = b.gemini.ClientID
+	tokenMap["client_secret"] = b.gemini.ClientSecret
 	tokenMap["scopes"] = geminiScopes
 	tokenMap["universe_domain"] = "googleapis.com"
 	payload := map[string]any{
@@ -370,11 +370,11 @@ func (b *Broker) geminiProject(ctx context.Context, accessToken string) (string,
 }
 
 func antigravityAuthorizationURL(b *Broker, state, challenge string) string {
-	return googleAuthorizationURL(b.ep.AntigravityAuthURL, antigravityClientID, antigravityRedirectURI, antigravityScopes, state, challenge)
+	return googleAuthorizationURL(b.ep.AntigravityAuthURL, b.antigravity.ClientID, antigravityRedirectURI, antigravityScopes, state, challenge)
 }
 
 func antigravityExchange(ctx context.Context, b *Broker, code, _ string, sec flowSecret) (token, error) {
-	resp, err := b.googleExchange(ctx, "antigravity token exchange", antigravityClientID, antigravityClientSecret, antigravityRedirectURI, code, sec.CodeVerifier)
+	resp, err := b.googleExchange(ctx, "antigravity token exchange", b.antigravity.ClientID, b.antigravity.ClientSecret, antigravityRedirectURI, code, sec.CodeVerifier)
 	if err != nil {
 		return token{}, err
 	}

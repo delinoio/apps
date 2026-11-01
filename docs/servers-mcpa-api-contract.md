@@ -195,6 +195,7 @@ Every request resolves to an actor kind (`ACTOR_KIND_CONSOLE`, `ACTOR_KIND_MCP` 
   - `StartProviderOAuth` creates a `ProviderOAuthFlow` of kind `AUTHORIZATION_CODE` or `DEVICE_CODE`, as the provider requires. For `AUTHORIZATION_CODE`, the customer opens `authorization_url`, consents and submits the full final redirect URL from the browser with `CompleteProviderOAuth`. The server validates its state against the flow and exchanges the code. For `DEVICE_CODE`, the customer enters `user_code` at `verification_uri`, and `GetProviderOAuthFlow` polls the provider.
   - A completed flow creates the credential and sets `credential_id`. A failed flow sets a safe `failure_message`. A flow expires at `expire_time`.
   - PKCE verifiers, device codes and other flow secrets are encrypted at rest and are never returned.
+  - Claude, Codex and Kimi flows use the public client IDs of the pinned SDK. Gemini CLI and Antigravity flows use Google installed-app OAuth clients whose IDs and secrets come from operator configuration and never from repository source. Without a configured client, `StartProviderOAuth` for that provider returns `ERROR_REASON_FAILED_PRECONDITION`.
 - Token refresh uses a custom SDK token store that writes refreshed tokens back to PostgreSQL encrypted. The SDK file store is never used.
 - `RemoveCredential` deletes the credential and unregisters it from the in-process SDK auth state in the same operation. New calls never select it after the response. Calls already sent to the provider continue.
 - No RPC, log, metric, trace, error or audit detail ever contains a provider token or API key.
@@ -459,33 +460,35 @@ Update the [project index](project-mcpa.md), the [protocol contract](protos-mcpa
 
 Shared settings use unprefixed names; Managed CPA settings use the `MCPA_` prefix. A required value that is missing or invalid stops startup with an error that names the setting and omits its value. `servers/mcpa-api/.env.example` contains names, placeholders and safe loopback defaults only.
 
-| Name                                               | Meaning                                                                                                     |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `LISTEN`                                           | Listen address. The default is `127.0.0.1:46329`.                                                           |
-| `DATABASE_URL`                                     | PostgreSQL URL. Secret.                                                                                     |
-| `MCPA_PUBLIC_URL`                                  | Public API origin, for example `https://mcpa.api.delino.io`. Endpoint base URLs derive from it.             |
-| `WEB_ORIGIN`                                       | Console origin, for example `https://mcpa.delino.io`, used for CORS and `Origin` checks.                    |
-| `MCPA_WEB_RETURN_URLS`                             | JSON array of the exact allowed console `return_to` URLs.                                                   |
-| `MCPA_MASTER_KEYS`                                 | JSON object of key ID to base64url 32-byte master key. Secret.                                              |
-| `MCPA_ACTIVE_KEY_ID`                               | Key ID used for new encryptions.                                                                            |
-| `MCPA_SERVICE_ID`                                  | Delcore service UUID v7 of `mcpa`, used as the event `service_id`.                                          |
-| `DELCORE_URL`, `DELCORE_RESOURCE`                  | Delcore Connect base URL and Logto resource indicator.                                                      |
-| `LOGTO_TOKEN_URL`, `CLIENT_ID`, `CLIENT_SECRET`    | Machine-to-machine credentials for Delcore (client credentials). `CLIENT_SECRET` is secret.                 |
-| `LOGTO_ISSUER`                                     | Logto OIDC issuer for discovery and JWKS.                                                                   |
-| `MCPA_LOGTO_CLIENT_ID`, `MCPA_LOGTO_CLIENT_SECRET` | Logto web application used by the console BFF and the MCP broker. The secret is secret.                     |
-| `MCPA_API_RESOURCE`                                | Logto API resource (audience) for console sessions, for example `https://mcpa.api.delino.io`.               |
-| `MCPA_MCP_RESOURCE`                                | MCP-only audience, for example `https://mcpa.api.delino.io/mcp`.                                            |
-| `MCPA_MFA_CLAIM`                                   | Boolean access-token claim that carries MFA evidence. The default is `mcpa_mfa`.                            |
-| `MCPA_MFA_REAUTH_URL`                              | URL where users enroll in MFA or reauthenticate.                                                            |
-| `MCPA_OAUTH_CLIENTS`                               | JSON registry of approved MCP clients: `{"<client_id>":{"name":"...","redirect_uris":["..."]}}`.            |
-| `MCPA_AUTHORIZE_CACHE_TTL`                         | Go duration for caching allowed Delcore results, for example `30s`. Required.                               |
-| `MCPA_CHECKPOINT_INTERVAL`                         | Go duration of the metering checkpoint interval, for example `5s`. Required.                                |
-| `MCPA_OUTBOX_INTERVAL`                             | Go duration of the outbox delivery poll interval.                                                           |
-| `MCPA_METRICS_TOKEN`                               | Optional bearer token for `/metrics`. Secret.                                                               |
-| `DEPENDENCY_TIMEOUT`                               | Go duration for Delcore and database calls.                                                                 |
-| `LOG_FORMAT`                                       | `text` (default, ANSI color) or `json`.                                                                     |
-| `NO_COLOR`                                         | Any value disables ANSI color in text logs.                                                                 |
-| `OTEL_*`                                           | Standard OpenTelemetry exporter variables. Tracing is disabled when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset. |
+| Name                                                                       | Meaning                                                                                                                   |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `LISTEN`                                                                   | Listen address. The default is `127.0.0.1:46329`.                                                                         |
+| `DATABASE_URL`                                                             | PostgreSQL URL. Secret.                                                                                                   |
+| `MCPA_PUBLIC_URL`                                                          | Public API origin, for example `https://mcpa.api.delino.io`. Endpoint base URLs derive from it.                           |
+| `WEB_ORIGIN`                                                               | Console origin, for example `https://mcpa.delino.io`, used for CORS and `Origin` checks.                                  |
+| `MCPA_WEB_RETURN_URLS`                                                     | JSON array of the exact allowed console `return_to` URLs.                                                                 |
+| `MCPA_MASTER_KEYS`                                                         | JSON object of key ID to base64url 32-byte master key. Secret.                                                            |
+| `MCPA_ACTIVE_KEY_ID`                                                       | Key ID used for new encryptions.                                                                                          |
+| `MCPA_SERVICE_ID`                                                          | Delcore service UUID v7 of `mcpa`, used as the event `service_id`.                                                        |
+| `DELCORE_URL`, `DELCORE_RESOURCE`                                          | Delcore Connect base URL and Logto resource indicator.                                                                    |
+| `LOGTO_TOKEN_URL`, `CLIENT_ID`, `CLIENT_SECRET`                            | Machine-to-machine credentials for Delcore (client credentials). `CLIENT_SECRET` is secret.                               |
+| `LOGTO_ISSUER`                                                             | Logto OIDC issuer for discovery and JWKS.                                                                                 |
+| `MCPA_LOGTO_CLIENT_ID`, `MCPA_LOGTO_CLIENT_SECRET`                         | Logto web application used by the console BFF and the MCP broker. The secret is secret.                                   |
+| `MCPA_GEMINI_CLI_OAUTH_CLIENT_ID`, `MCPA_GEMINI_CLI_OAUTH_CLIENT_SECRET`   | Optional Google installed-app OAuth client for Gemini CLI account connection. Set both or neither. The secret is secret.  |
+| `MCPA_ANTIGRAVITY_OAUTH_CLIENT_ID`, `MCPA_ANTIGRAVITY_OAUTH_CLIENT_SECRET` | Optional Google installed-app OAuth client for Antigravity account connection. Set both or neither. The secret is secret. |
+| `MCPA_API_RESOURCE`                                                        | Logto API resource (audience) for console sessions, for example `https://mcpa.api.delino.io`.                             |
+| `MCPA_MCP_RESOURCE`                                                        | MCP-only audience, for example `https://mcpa.api.delino.io/mcp`.                                                          |
+| `MCPA_MFA_CLAIM`                                                           | Boolean access-token claim that carries MFA evidence. The default is `mcpa_mfa`.                                          |
+| `MCPA_MFA_REAUTH_URL`                                                      | URL where users enroll in MFA or reauthenticate.                                                                          |
+| `MCPA_OAUTH_CLIENTS`                                                       | JSON registry of approved MCP clients: `{"<client_id>":{"name":"...","redirect_uris":["..."]}}`.                          |
+| `MCPA_AUTHORIZE_CACHE_TTL`                                                 | Go duration for caching allowed Delcore results, for example `30s`. Required.                                             |
+| `MCPA_CHECKPOINT_INTERVAL`                                                 | Go duration of the metering checkpoint interval, for example `5s`. Required.                                              |
+| `MCPA_OUTBOX_INTERVAL`                                                     | Go duration of the outbox delivery poll interval.                                                                         |
+| `MCPA_METRICS_TOKEN`                                                       | Optional bearer token for `/metrics`. Secret.                                                                             |
+| `DEPENDENCY_TIMEOUT`                                                       | Go duration for Delcore and database calls.                                                                               |
+| `LOG_FORMAT`                                                               | `text` (default, ANSI color) or `json`.                                                                                   |
+| `NO_COLOR`                                                                 | Any value disables ANSI color in text logs.                                                                               |
+| `OTEL_*`                                                                   | Standard OpenTelemetry exporter variables. Tracing is disabled when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset.               |
 
 Secrets live in the operator's deployment target or the `/mcpa-api` Infisical development folder. They never live in Git, workflow files, frontend environments or logs. See the [environment contract](repository-environment-contract.md#managed-cpa-development-environment).
 
