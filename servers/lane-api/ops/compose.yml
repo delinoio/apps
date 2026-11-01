@@ -2,7 +2,7 @@
 # Monitoring only. Join an existing private network containing lane-api:46326.
 services:
   prometheus:
-    image: prom/prometheus:v3.15.1
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
     command:
       [
         "--config.file=/etc/lane-monitoring/prometheus.yml",
@@ -15,7 +15,7 @@ services:
     secrets: [lane_metrics_token]
     networks: [lane]
   blackbox:
-    image: prom/blackbox-exporter:v0.29.1
+    image: prom/blackbox-exporter:v0.29.1@sha256:ea1c7aa3ef3f307cd03e85f34abb604478ccb90b567fc690da0cd9776da76b13
     command: ["--config.file=/etc/lane-monitoring/blackbox.yml"]
     volumes: [".:/etc/lane-monitoring:ro"]
     networks: [lane]

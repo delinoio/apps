@@ -61,7 +61,7 @@ jobs:
           # Linux ARM64 has no GUI runtime; only native desktop hosts need it.
           LYNXTRON_SKIP_DOWNLOAD: ${{ matrix.desktop && '0' || '1' }}
         run: pnpm install --frozen-lockfile
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
           targets: ${{ matrix.targets }}
