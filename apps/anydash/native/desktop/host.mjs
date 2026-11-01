@@ -87,6 +87,16 @@ export class DesktopHost {
     });
   }
 
+  // Every cache write and removal reads, modifies and rewrites index.json, and
+  // the renderer issues them concurrently. Run them one at a time so no update
+  // overwrites another and every snapshot stays reachable by prefix removal.
+  #cacheQueue = Promise.resolve();
+  #serializeCache(task) {
+    const run = this.#cacheQueue.then(task);
+    this.#cacheQueue = run.catch(() => {});
+    return run;
+  }
+
   // Cache files are named by a hash so renderer keys never become paths.
   #cacheFile(key) {
     return join(
@@ -123,7 +133,9 @@ export class DesktopHost {
         return {};
       case "signOut":
         await this.auth.signOut();
-        await rm(this.cacheDirectory, { recursive: true, force: true });
+        await this.#serializeCache(() =>
+          rm(this.cacheDirectory, { recursive: true, force: true }),
+        );
         return {};
       case "rpc":
         return payload.target === "collector"
@@ -152,27 +164,30 @@ export class DesktopHost {
           return {};
         }
       }
-      case "cacheWrite": {
-        await mkdir(this.cacheDirectory, { recursive: true });
-        await writeFile(
-          this.#cacheFile(payload.key),
-          String(payload.value ?? ""),
-        );
-        const index = await this.#index();
-        index[String(payload.key)] = true;
-        await writeFile(this.#indexFile(), JSON.stringify(index));
+      case "cacheWrite":
+        await this.#serializeCache(async () => {
+          await mkdir(this.cacheDirectory, { recursive: true });
+          await writeFile(
+            this.#cacheFile(payload.key),
+            String(payload.value ?? ""),
+          );
+          const index = await this.#index();
+          index[String(payload.key)] = true;
+          await writeFile(this.#indexFile(), JSON.stringify(index));
+        });
         return {};
-      }
       case "cacheRemove": {
         const prefix = String(payload.prefix ?? "");
-        const index = await this.#index();
-        for (const key of Object.keys(index))
-          if (key.startsWith(prefix)) {
-            await rm(this.#cacheFile(key), { force: true });
-            delete index[key];
-          }
-        await mkdir(this.cacheDirectory, { recursive: true });
-        await writeFile(this.#indexFile(), JSON.stringify(index));
+        await this.#serializeCache(async () => {
+          const index = await this.#index();
+          for (const key of Object.keys(index))
+            if (key.startsWith(prefix)) {
+              await rm(this.#cacheFile(key), { force: true });
+              delete index[key];
+            }
+          await mkdir(this.cacheDirectory, { recursive: true });
+          await writeFile(this.#indexFile(), JSON.stringify(index));
+        });
         return {};
       }
       case "widgetSnapshots":

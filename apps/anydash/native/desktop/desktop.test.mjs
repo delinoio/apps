@@ -317,6 +317,31 @@ test("keeps the widget cache by user key and purges by prefix", async () => {
   }
 });
 
+test("keeps every concurrent cache write in the index", async () => {
+  const { value, cacheDirectory } = host();
+  try {
+    const keys = Array.from(
+      { length: 20 },
+      (_, index) => `anydash.v1/u/widget/${index}`,
+    );
+    await Promise.all(
+      keys.map((key) => value.call("cacheWrite", { key, value: key })),
+    );
+    await Promise.all([
+      value.call("cacheRemove", { prefix: "anydash.v1/u/" }),
+      value.call("cacheWrite", { key: "anydash.v1/v/widget/x", value: "X" }),
+    ]);
+    for (const key of keys)
+      assert.deepEqual(await value.call("cacheRead", { key }), {});
+    assert.deepEqual(
+      await value.call("cacheRead", { key: "anydash.v1/v/widget/x" }),
+      { value: "X" },
+    );
+  } finally {
+    await rm(cacheDirectory, { recursive: true, force: true });
+  }
+});
+
 test("toggles start at login on request", async () => {
   const { value } = host();
   assert.deepEqual(await value.call("autostart", {}), { enabled: false });
