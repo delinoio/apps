@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod events;
 pub mod features;
 pub mod metering_queries;
+pub mod tenant_member_roles;
 pub mod tenant_states;
 pub mod tenants;
 pub mod usage;
@@ -188,6 +189,7 @@ impl Call<'_> {
             | RemoveMember | CreateInvitation | AcceptInvitation | RevokeInvitation
             | TransferOwnership | AcceptOwnership => self.tenants(op, q).await,
             GetTenantStates => self.tenant_states(q).await,
+            GetTenantMemberRoles => self.tenant_member_roles(q).await,
             Authorize | ListLedger | CheckTenantLifecycle => self.usage(op, q).await,
             CreateApiKey | ListApiKeys | RevokeApiKey | AuthorizeApiKey => {
                 self.api_keys(op, q).await

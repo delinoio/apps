@@ -194,6 +194,7 @@ pub enum Op {
     ListJobs,
     RetryJob,
     ListAudit,
+    GetTenantMemberRoles,
 }
 impl Op {
     pub fn name(self) -> &'static str {
@@ -243,6 +244,7 @@ impl Op {
             Self::ListJobs => "ListJobs",
             Self::RetryJob => "RetryJob",
             Self::ListAudit => "ListAudit",
+            Self::GetTenantMemberRoles => "GetTenantMemberRoles",
         }
     }
     pub fn mutation(self) -> bool {
@@ -901,6 +903,14 @@ impl DelcoreService for Server {
         q: ServiceRequest<'_, ListAuditRequest>,
     ) -> ServiceResult<ListAuditResponse> {
         self.handle(ctx, Op::ListAudit, q.to_owned_message()).await
+    }
+    async fn get_tenant_member_roles(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, GetTenantMemberRolesRequest>,
+    ) -> ServiceResult<GetTenantMemberRolesResponse> {
+        self.handle(ctx, Op::GetTenantMemberRoles, q.to_owned_message())
+            .await
     }
 }
 
