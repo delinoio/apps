@@ -58,7 +58,13 @@ export interface LocalStatus {
   connected: boolean;
   pendingItemCount: string;
   lastSyncAt?: string;
-  itemErrors?: { entityId: string; reason: string }[];
+  itemErrors?: {
+    requestId?: string;
+    entityId: string;
+    // Present for a blocked capture image; `entityId` is then its task.
+    attachmentId?: string;
+    reason: string;
+  }[];
   notificationPreferences?: NotificationPreferences;
 }
 export interface LocalOperations {

@@ -376,9 +376,10 @@ export function Settings({
         )}
         {status?.syncErrorReason && <Notice>{status.syncErrorReason}</Notice>}
         {status?.itemErrors?.map((e) => (
-          <Notice key={e.entityId}>
-            {e.entityId}: {describeItemError(e.reason)} Other eligible items can
-            continue synchronizing.
+          <Notice key={`${e.entityId}:${e.attachmentId ?? e.requestId ?? ""}`}>
+            {e.attachmentId ? `Task ${e.entityId}` : e.entityId}:{" "}
+            {describeItemError(e.reason, e.attachmentId)} Other eligible items
+            can continue synchronizing.
           </Notice>
         ))}
         {adapter.mode === "native" && !!status?.itemErrors?.length && (
