@@ -78,6 +78,9 @@ export interface RealQAState {
     extensionId?: string;
     listingUrl?: string;
     message?: string;
+    // Present with the `error` state: `retry` restarts the bridge;
+    // `resetApprovals` sets aside unreadable approvals after confirmation.
+    recovery?: "retry" | "resetApprovals";
     pending?: {
       id: string;
       extensionId: string;

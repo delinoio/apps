@@ -101,6 +101,7 @@ export function RealQA({
     return () => dirty(false);
   }, [dirty, urlDirty, shortcutChanged]);
   const [disconnect, setDisconnect] = useState<string>();
+  const [resetApprovals, setResetApprovals] = useState(false);
   const { state, busy, run } = controller;
   const chrome = state?.chrome;
   const listingUrl = chromeListingUrl(state);
@@ -224,6 +225,23 @@ export function RealQA({
           <text className="muted">Approvals are local to this device.</text>
           <text>{chromeConnectionLabel(state)}</text>
           {chrome?.message && <Notice>{chrome.message}</Notice>}
+          {chrome?.recovery === "retry" && (
+            <Button
+              disabled={busy}
+              onClick={() => void run(() => realqa({ op: "chrome.retry" }))}
+            >
+              Retry Chrome connection
+            </Button>
+          )}
+          {chrome?.recovery === "resetApprovals" && (
+            <Button
+              id="realqa-reset-approvals"
+              disabled={busy}
+              onClick={() => setResetApprovals(true)}
+            >
+              Reset Chrome approvals
+            </Button>
+          )}
           {chrome?.profile && (
             <text className="realqa-long-value">Profile: {chrome.profile}</text>
           )}
@@ -363,6 +381,34 @@ export function RealQA({
               }}
             >
               Discard change
+            </Button>
+          </Dialog>
+        )}
+        {resetApprovals && (
+          <Dialog
+            className="realqa-dialog"
+            title="Reset Chrome approvals?"
+            returnFocusId="realqa-reset-approvals"
+            onClose={() => setResetApprovals(false)}
+          >
+            <text>
+              Lane cannot read its saved Chrome approvals. Resetting sets them
+              aside, and every Chrome profile must be approved again.
+            </text>
+            {controller.error && <Notice>{controller.error}</Notice>}
+            <Button focusOnShow onClick={() => setResetApprovals(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await realqa({ op: "chrome.resetApprovals" });
+                  setResetApprovals(false);
+                })
+              }
+            >
+              Reset approvals
             </Button>
           </Dialog>
         )}

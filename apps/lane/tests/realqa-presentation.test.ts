@@ -215,6 +215,51 @@ test("RealQA keeps loading neutral, mobile read-only, and identified Chrome acti
   await view.settle();
   assert.deepEqual(urls, ["https://chromewebstore.google.com/detail/example"]);
   view.unmount();
+
+  view = bundle.runtime.mount(bundle.RealQA, {
+    ...common,
+    controller: controller({
+      permission: "granted",
+      shortcuts: {},
+      chrome: {
+        state: "error",
+        message: "Another copy of Lane is using the Chrome connection.",
+        recovery: "retry",
+      },
+    }),
+  });
+  assert.ok(texts(view.tree()).includes("Error"));
+  assert.doesNotMatch(shown(), /Reset Chrome approvals/);
+  button(view.tree(), "Retry Chrome connection").props.bindtap();
+  await view.settle();
+  assert.deepEqual(calls.at(-1), { op: "chrome.retry" });
+  view.unmount();
+
+  view = bundle.runtime.mount(bundle.RealQA, {
+    ...common,
+    controller: controller({
+      permission: "granted",
+      shortcuts: {},
+      chrome: {
+        state: "error",
+        message: "Lane cannot read its saved Chrome approvals.",
+        recovery: "resetApprovals",
+      },
+    }),
+  });
+  assert.doesNotMatch(shown(), /Retry Chrome connection/);
+  const before = calls.length;
+  button(view.tree(), "Reset Chrome approvals").props.bindtap();
+  await view.settle();
+  button(view.tree(), "Cancel").props.bindtap();
+  await view.settle();
+  assert.equal(calls.length, before, "cancel keeps approvals");
+  button(view.tree(), "Reset Chrome approvals").props.bindtap();
+  await view.settle();
+  button(view.tree(), "Reset approvals").props.bindtap();
+  await view.settle();
+  assert.deepEqual(calls.at(-1), { op: "chrome.resetApprovals" });
+  view.unmount();
 });
 
 test("source choice and initial approval retain identified host operations", async () => {
