@@ -39,6 +39,9 @@ type fakeDelcore struct {
 	ingestErr func(*delcorev1.Event) error
 	events    []*delcorev1.Event
 	requests  []string
+	// attempts counts IngestEvent calls per event key, including failures
+	// and replays.
+	attempts  map[string]int
 	period    delcore.Period
 	finalized map[string]bool
 	calls     map[string]int
@@ -48,7 +51,7 @@ func newFakeDelcore(t testing.TB) *fakeDelcore {
 	t.Helper()
 	f := &fakeDelcore{
 		states: map[string]delcorev1.TenantState{}, denied: map[string][]delcorev1.BlockReason{},
-		keys: map[string][2]string{}, finalized: map[string]bool{}, calls: map[string]int{},
+		keys: map[string][2]string{}, finalized: map[string]bool{}, calls: map[string]int{}, attempts: map[string]int{},
 		period: delcore.Period{Start: time.Now().UTC().Add(-24 * time.Hour), End: time.Now().UTC().Add(29 * 24 * time.Hour)},
 	}
 	path, handler := delcorev1connect.NewDelcoreServiceHandler(f)
@@ -183,6 +186,9 @@ func (f *fakeDelcore) ListMeterAggregates(_ context.Context, req *connect.Reques
 }
 
 func (f *fakeDelcore) IngestEvent(_ context.Context, req *connect.Request[delcorev1.IngestEventRequest]) (*connect.Response[delcorev1.IngestEventResponse], error) {
+	f.mu.Lock()
+	f.attempts[req.Msg.GetEvent().GetEventKey()]++
+	f.mu.Unlock()
 	if err := f.enter("IngestEvent"); err != nil {
 		return nil, err
 	}

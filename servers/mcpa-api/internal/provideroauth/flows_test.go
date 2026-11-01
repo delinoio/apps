@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -280,10 +281,9 @@ func TestGeminiExchangeSetsUpCodeAssistProject(t *testing.T) {
 	f.handle("/v1internal:loadCodeAssist", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"allowedTiers": []any{map[string]any{"id": "free-tier", "isDefault": true}}})
 	})
-	var onboards int
+	var onboards atomic.Int64
 	f.handle("/v1internal:onboardUser", func(w http.ResponseWriter, r *http.Request) {
-		onboards++
-		if onboards == 1 {
+		if onboards.Add(1) == 1 {
 			writeJSON(w, 200, map[string]any{"done": false})
 			return
 		}
@@ -356,9 +356,9 @@ func TestCodexDeviceFlow(t *testing.T) {
 	f.handle("/codex/usercode", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"device_auth_id": "dev-auth-1", "user_code": "ABCD-EFGH", "interval": "7"})
 	})
-	approved := false
+	var approved atomic.Bool
 	f.handle("/codex/devicetoken", func(w http.ResponseWriter, r *http.Request) {
-		if !approved {
+		if !approved.Load() {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
@@ -390,7 +390,7 @@ func TestCodexDeviceFlow(t *testing.T) {
 	if err != nil || tok != nil {
 		t.Fatalf("pending poll: %v %v", tok, err)
 	}
-	approved = true
+	approved.Store(true)
 	tok, err = codexPoll(context.Background(), b, &sec)
 	if err != nil || tok == nil {
 		t.Fatalf("approved poll: %v %v", tok, err)
@@ -424,10 +424,9 @@ func TestKimiDeviceFlow(t *testing.T) {
 	})
 	answers := []map[string]any{{"error": "authorization_pending"}, {"error": "slow_down"},
 		{"access_token": "kimi-access", "refresh_token": "kimi-refresh", "token_type": "Bearer", "expires_in": 3600, "scope": "kimi-code"}}
+	var answered atomic.Int64
 	f.handle("/kimi/token", func(w http.ResponseWriter, r *http.Request) {
-		next := answers[0]
-		answers = answers[1:]
-		writeJSON(w, 200, next)
+		writeJSON(w, 200, answers[answered.Add(1)-1])
 	})
 	b := testBroker(t, f)
 	start, err := kimiStartDevice(context.Background(), b)
