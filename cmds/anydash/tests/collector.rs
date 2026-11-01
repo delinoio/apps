@@ -40,6 +40,8 @@ struct Api {
     upload: Option<ErrorReason>,
     report: Option<ErrorReason>,
     access_expires: i64,
+    /// Expiry of refreshed access tokens; 0 means one hour.
+    refreshed_expires: i64,
     refreshes: u32,
 }
 fn creds(expires: i64, n: u32) -> DeviceCredentials {
@@ -109,7 +111,14 @@ fn api(state: Arc<Mutex<Api>>) -> impl Fn(&Recorded) -> Reply + Send + Sync + 's
             "DeviceService/RefreshDeviceToken" => {
                 s.refreshes += 1;
                 Reply::proto(&RefreshDeviceTokenResponse {
-                    credentials: Some(creds(time::now() + 3600, s.refreshes)),
+                    credentials: Some(creds(
+                        if s.refreshed_expires == 0 {
+                            time::now() + 3600
+                        } else {
+                            s.refreshed_expires
+                        },
+                        s.refreshes,
+                    )),
                 })
             }
             "DeviceService/RevokeDeviceCredentials" => {
@@ -369,6 +378,42 @@ async fn access_token_is_refreshed_before_expiry_and_stored_first() {
         1
     );
     drop((core, mock));
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn logout_revokes_the_refresh_token_current_after_lease_release() {
+    let home = tempfile::tempdir().unwrap();
+    // Every access token is within the refresh margin, so each API call rotates the pair.
+    let soon = time::now() + 120;
+    let state = Arc::new(Mutex::new(Api {
+        access_expires: soon,
+        refreshed_expires: soon,
+        ..Api::default()
+    }));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    core.heartbeat(time::now()).await.unwrap();
+    assert!(core.status(true).unwrap().connections[0].lease_held);
+    mock.clear();
+    core.logout().await.unwrap();
+    assert!(
+        mock.recorded()
+            .iter()
+            .any(|r| r.route().ends_with("ReleaseLease"))
+    );
+    let refreshes = state.lock().unwrap().refreshes;
+    let revoke: RevokeDeviceCredentialsRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("RevokeDeviceCredentials"))
+            .unwrap(),
+    );
+    assert_eq!(
+        revoke.refresh_token,
+        format!("adr_{refreshes}"),
+        "the refresh token rotated by the lease release is revoked"
+    );
+    assert!(!core.logged_in().unwrap());
 }
 #[tokio::test(flavor = "multi_thread")]
 async fn refresh_token_reuse_requires_a_new_login() {

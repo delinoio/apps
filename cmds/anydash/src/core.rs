@@ -484,13 +484,23 @@ impl Core {
     /// Revoke and delete the device credentials and release leases. The device ID, the local
     /// buffer and provider credentials remain for reattachment.
     pub async fn logout(&self) -> Result<()> {
+        if self.credentials()?.is_none() {
+            return Err(Failure::local(
+                ErrorReason::NotLoggedIn,
+                "This device is not logged in.",
+            ));
+        }
+        self.release_all().await;
+        // Releasing leases can rotate the device credentials, and the server revokes only the
+        // current refresh token. Hold the refresh lock so no rotation happens between reading
+        // the current credentials, revoking them and deleting them.
+        let _guard = self.refresh.lock().await;
         let Some(creds) = self.credentials()? else {
             return Err(Failure::local(
                 ErrorReason::NotLoggedIn,
                 "This device is not logged in.",
             ));
         };
-        self.release_all().await;
         let request = RevokeDeviceCredentialsRequest {
             device_id: self.device_id()?,
             refresh_token: creds.refresh_token,
