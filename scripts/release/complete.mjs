@@ -68,7 +68,7 @@ if (process.argv[2] === "status") {
       component,
       tag: entry.tag,
       revision,
-      serverDeployment: "mock",
+      publicationAuthorization: "environment-approval",
     }),
   );
 }

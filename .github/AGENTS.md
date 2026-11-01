@@ -18,3 +18,5 @@
 - [Environment ownership](../docs/repository-environment-contract.md)
 
 - Lane CLI/distribution validation runs on Ubuntu in its affected job. Keep Lane API in the existing independent server Clippy/test matrices and require all selected Lane jobs in result aggregation; native acceptance remains separate.
+
+- Server infrastructure and runtime rollout belong to private operator automation. Keep server source, migrations, safe examples, OCI packaging and reusable monitoring assets with their validation here. Public release automation accepts authenticated preparation/publication dispatches under the [workflow contract](../docs/repository-workflow-contract.md#project-release-preparation); never name private deployment repositories in public source or review records.

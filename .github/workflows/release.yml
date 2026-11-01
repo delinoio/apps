@@ -1,6 +1,8 @@
 name: Release
+run-name: ${{ github.event.action }} ${{ github.event.client_payload.request_id || github.event.client_payload.revision }}
 on:
-  workflow_dispatch:
+  repository_dispatch:
+    types: [release-prepare, release-publish]
 permissions:
   contents: read
 concurrency:
@@ -8,7 +10,12 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    if: github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main'
+    if: >-
+      github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main' &&
+      github.event.action == 'release-prepare' &&
+      vars.RELEASE_DISPATCH_ACTOR_ID != '' &&
+      format('{0}', github.event.sender.id) == vars.RELEASE_DISPATCH_ACTOR_ID &&
+      github.event.sender.type == 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -16,6 +23,11 @@ jobs:
       components: ${{ steps.source.outputs.components }}
       servers: ${{ steps.source.outputs.servers }}
     steps:
+      - name: Validate the preparation request identity
+        env:
+          RELEASE_REQUEST_ID: ${{ github.event.client_payload.request_id }}
+        run: |
+          [[ "$RELEASE_REQUEST_ID" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]
       - name: Create release bot token
         id: bot
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -68,6 +80,28 @@ jobs:
       - name: Commit changeset consumption and push the release source
         id: source
         run: node "scripts/release/prepare.mjs"
+      - name: Write preparation receipt
+        env:
+          RELEASE_REVISION: ${{ steps.source.outputs.revision }}
+          RELEASE_REQUEST_ID: ${{ github.event.client_payload.request_id }}
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import { writeFileSync } from 'node:fs';
+          assert.match(process.env.RELEASE_REQUEST_ID, /^[a-f0-9-]{36}$/);
+          writeFileSync(process.env.RUNNER_TEMP + '/release-preparation.json', JSON.stringify({
+            request_id: process.env.RELEASE_REQUEST_ID,
+            revision: process.env.RELEASE_REVISION,
+            prepare_run_id: process.env.GITHUB_RUN_ID,
+          }));
+          JS
+      - name: Preserve preparation receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-preparation
+          path: ${{ runner.temp }}/release-preparation.json
+          if-no-files-found: error
+          retention-days: 30
 
   images:
     needs: prepare
@@ -81,26 +115,50 @@ jobs:
       servers: ${{ needs.prepare.outputs.servers }}
     secrets: inherit
 
-  servers:
-    needs: [prepare, images]
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.images.result == 'success' || needs.images.result == 'skipped') }}
-    uses: ./.github/workflows/deploy-servers.yml
-    with:
-      revision: ${{ needs.prepare.outputs.revision }}
-      servers: ${{ needs.prepare.outputs.servers }}
+  publish-plan:
+    if: >-
+      github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main' &&
+      github.event.action == 'release-publish' &&
+      vars.RELEASE_DISPATCH_ACTOR_ID != '' &&
+      format('{0}', github.event.sender.id) == vars.RELEASE_DISPATCH_ACTOR_ID &&
+      github.event.sender.type == 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      revision: ${{ steps.plan.outputs.revision }}
+      components: ${{ steps.plan.outputs.components }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Validate the prepared release before publication
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DISPATCH_ACTOR_ID: ${{ vars.RELEASE_DISPATCH_ACTOR_ID }}
+        run: node "scripts/release/dispatch.mjs"
 
   components:
-    needs: [prepare, servers]
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.servers.result == 'success' && needs.prepare.outputs.components != '[]' }}
+    needs: publish-plan
+    if: needs.publish-plan.outputs.components != '[]'
     strategy:
       fail-fast: false
       matrix:
-        component: ${{ fromJSON(needs.prepare.outputs.components) }}
+        component: ${{ fromJSON(needs.publish-plan.outputs.components) }}
     permissions:
       contents: write
       id-token: write
     uses: ./.github/workflows/deploy-component.yml
     with:
-      revision: ${{ needs.prepare.outputs.revision }}
+      revision: ${{ needs.publish-plan.outputs.revision }}
       component: ${{ toJSON(matrix.component) }}
     secrets: inherit

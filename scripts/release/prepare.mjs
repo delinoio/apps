@@ -135,6 +135,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
   appendFileSync(
     process.env.GITHUB_STEP_SUMMARY,
-    `Release source: ${plan.revision}\n\nComponents: ${plan.components.map((c) => c.tag).join(", ")}\n\nServer deployment is mocked; image publication and frontend deployment remain real.\n`,
+    `Release source: ${plan.revision}\n\nComponents: ${plan.components.map((c) => c.tag).join(", ")}\n\nPreparation publishes images only. Component publication requires a separate authorized release-publish event after operator deployment verification.\n`,
   );
 }

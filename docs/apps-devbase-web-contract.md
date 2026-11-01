@@ -38,7 +38,7 @@ Run `pnpm test` in this directory for TypeScript checks and a production build. 
 
 Cloudflare Pages builds the `@apps/devbase` workspace from the repository root with `pnpm --filter @apps/devbase build` and publishes `apps/devbase/dist`. Include repository `LICENSE` and `NOTICE` in distributions. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
 
-Production publication uses `.github/workflows/release.yml` after the unified workflow commits changeset consumption and selected versions, publishes server images and completes mock server deployment. The repository-wide `delino-site-production` environment supplies Cloudflare configuration, with optional Pages project override `CLOUDFLARE_PAGES_PROJECT_DEVBASE`. Dispatch the existing release commit SHA from main for deployment recovery. Follow the [release procedure](repository-workflow-contract.md#web-publication); local builds do not establish Cloudflare or domain acceptance.
+Production publication uses `.github/workflows/release.yml` after the unified workflow commits changeset consumption and selected versions, publishes server images and receives an authorized publication dispatch after operator deployment verification. The repository-wide `delino-site-production` environment supplies Cloudflare configuration, with optional Pages project override `CLOUDFLARE_PAGES_PROJECT_DEVBASE`. Use the prepared commit SHA and successful preparation run ID in an authorized release-publish event for publication recovery. Follow the [release procedure](repository-workflow-contract.md#web-publication); local builds do not establish Cloudflare or domain acceptance.
 
 ## Dependencies and Integrations
 

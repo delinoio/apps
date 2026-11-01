@@ -12,6 +12,8 @@ Provide repository-scoped task and prompt management for individuals and their e
 
 The main-only `.github/workflows/release.yml` selects Lane web and binary publication from changesets and calls reusable deployment workflows. Follow the [release procedure](repository-workflow-contract.md#project-release-preparation) for commit identity, independent success tags and recovery.
 
+Private operator automation owns deployment configuration and deployment-specific monitoring settings. This checkout owns runtime observability interfaces, reusable monitoring assets and their validation under `servers/lane-api/ops/`.
+
 Existing paths retain their build ownership:
 
 - `apps/lane/src`: shared ReactLynx application.
