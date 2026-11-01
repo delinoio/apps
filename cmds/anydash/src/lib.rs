@@ -6,11 +6,15 @@
     clippy::missing_panics_doc,
     reason = "These executable internals are exported only for integration tests, not as a public library API."
 )]
+pub mod api;
+pub mod connect;
 pub mod error;
 pub mod keys;
 pub mod parse;
 pub mod pb;
+pub mod providers;
 pub mod scan;
+pub mod schedule;
 pub mod settings;
 pub mod store;
 pub mod time;
