@@ -117,7 +117,9 @@ export function ErrorsView({
                       };
                       return (
                         <tr key={record.id}>
-                          <td>{formatDateTime(record.startTime)}</td>
+                          <td className="nowrap">
+                            {formatDateTime(record.startTime)}
+                          </td>
                           {!resourceId && (
                             <td>{resourceName(record.resourceId)}</td>
                           )}
@@ -164,15 +166,22 @@ export function ErrorsView({
                             {formatBytes(record.responseBytes)}
                           </td>
                           <td className="num">{String(record.latencyMs)} ms</td>
-                          <td>
-                            <span className="mono small">
-                              {record.requestId}
-                            </span>{" "}
-                            {record.requestId && (
-                              <CopyButton
-                                value={record.requestId}
-                                accessibleLabel={`Copy request ID ${record.requestId}`}
-                              />
+                          <td className="nowrap">
+                            {record.requestId ? (
+                              <>
+                                <span
+                                  className="mono small"
+                                  title={record.requestId}
+                                >
+                                  {record.requestId.slice(0, 8)}…
+                                </span>{" "}
+                                <CopyButton
+                                  value={record.requestId}
+                                  accessibleLabel={`Copy request ID ${record.requestId}`}
+                                />
+                              </>
+                            ) : (
+                              "—"
                             )}
                           </td>
                         </tr>

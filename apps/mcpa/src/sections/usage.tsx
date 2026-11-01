@@ -145,7 +145,7 @@ export function UsageView({
                       <tr
                         key={`${row.day?.seconds}-${row.resourceId}-${row.model}-${row.provider}-${row.callKeyId}-${row.status}-${index}`}
                       >
-                        <td>{formatDay(row.day)}</td>
+                        <td className="nowrap">{formatDay(row.day)}</td>
                         {!resourceId && <td>{resourceName(row.resourceId)}</td>}
                         <td className="mono">{row.model || "—"}</td>
                         <td>{providerLabel(row.provider)}</td>

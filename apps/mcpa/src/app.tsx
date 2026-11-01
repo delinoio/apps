@@ -65,11 +65,20 @@ export type AppProps = {
  * failures show the MFA screen and other failures show sign-in.
  */
 export function createQueryClient(): QueryClient {
+  // Only temporary failures can succeed when repeated.
+  const isRetryable = (error: unknown) =>
+    [ErrorKind.Unavailable, ErrorKind.Unknown].includes(
+      describeError(error).kind,
+    );
   const client: QueryClient = new QueryClient({
     queryCache: new QueryCache({ onError: (error) => handle(error) }),
     mutationCache: new MutationCache({ onError: (error) => handle(error) }),
     defaultOptions: {
-      queries: { retry: 1, staleTime: 15_000, refetchOnWindowFocus: true },
+      queries: {
+        retry: (failures, error) => failures < 1 && isRetryable(error),
+        staleTime: 15_000,
+        refetchOnWindowFocus: true,
+      },
     },
   });
   const handle = (error: unknown) => {

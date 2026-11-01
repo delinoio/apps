@@ -375,6 +375,11 @@ tr:last-child td {
   text-align: right;
   white-space: nowrap;
 }
+.nowrap,
+td.mono,
+td .mono {
+  white-space: nowrap;
+}
 .status {
   font-weight: 600;
 }
