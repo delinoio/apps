@@ -20,6 +20,8 @@ jobs:
       delitools: ${{ steps.plan.outputs.delitools }}
       lane: ${{ steps.plan.outputs.lane }}
       lane_cli: ${{ steps.plan.outputs.lane_cli }}
+      mcpa: ${{ steps.plan.outputs.mcpa }}
+      mcpa_api: ${{ steps.plan.outputs.mcpa_api }}
       devbase: ${{ steps.plan.outputs.devbase }}
       git_tracker: ${{ steps.plan.outputs.git_tracker }}
       delino_site: ${{ steps.plan.outputs.delino_site }}
@@ -78,7 +80,7 @@ jobs:
         run: |
           cargo fmt --manifest-path servers/Cargo.toml --all --check
       - id: gofmt
-        run: node scripts/ci/check-go-format.mjs protos examples tools/changeset
+        run: node scripts/ci/check-go-format.mjs protos examples tools/changeset servers/mcpa-api
       - id: changesets
         run: |
           go vet ./tools/changeset
@@ -608,6 +610,49 @@ jobs:
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist"
+  mcpa-frontend:
+    needs: changes
+    if: needs.changes.outputs.mcpa == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: frontend
+        run: pnpm --filter @apps/mcpa test
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: mcpa-frontend
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: validation-mcpa-frontend-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove generated output
+        if: ${{ always() }}
+        run: rm -rf "apps/mcpa/dist"
   rust-clippy:
     name: Rust Clippy
     needs: changes
@@ -894,6 +939,85 @@ jobs:
       - name: Remove integration database
         if: ${{ always() }}
         run: docker rm --force "$SERVICE-postgres" >/dev/null 2>&1 || true
+  mcpa-api:
+    name: Go server (mcpa-api)
+    needs: changes
+    if: needs.changes.outputs.mcpa_api == 'true'
+    runs-on: ubuntu-latest
+    env:
+      SERVICE: mcpa-api
+      DATABASE_PORT: "55438"
+      POSTGRES_USER: mcpa
+      POSTGRES_DB: mcpa_api_test
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: vet
+        run: pnpm --filter @servers/mcpa-api ci:vet
+      - id: unit
+        run: pnpm --filter @servers/mcpa-api ci:unit
+      - id: vuln
+        run: pnpm --filter @servers/mcpa-api ci:vuln
+      - name: Validate Managed CPA monitoring rules
+        id: monitoring
+        run: servers/mcpa-api/ops/check.sh
+      - name: Start integration database
+        run: |
+          # Interrupted jobs can leave this container on a persistent runner.
+          docker rm --force "$SERVICE-postgres" >/dev/null 2>&1 || true
+          docker run --detach --name "$SERVICE-postgres" -p "127.0.0.1:$DATABASE_PORT:5432" -e POSTGRES_USER -e "POSTGRES_PASSWORD=$POSTGRES_USER" -e POSTGRES_DB --health-cmd 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' --health-interval 2s --health-retries 30 postgres:17
+          for attempt in $(seq 1 60); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' "$SERVICE-postgres")" = healthy ]; then exit 0; fi
+            sleep 2
+          done
+          docker logs "$SERVICE-postgres"
+          exit 1
+        id: postgres
+      - name: PostgreSQL integration tests
+        timeout-minutes: 10
+        env:
+          TEST_DATABASE_URL: postgres://mcpa:mcpa@127.0.0.1:55438/mcpa_api_test?sslmode=disable
+        run: pnpm --filter @servers/mcpa-api ci:integration
+        id: integration
+      - name: Build the server image without publishing
+        id: oci
+        run: pnpm --filter @servers/mcpa-api ci:oci
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: mcpa-api
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: validation-mcpa-api-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove integration database
+        if: ${{ always() }}
+        run: docker rm --force "$SERVICE-postgres" >/dev/null 2>&1 || true
   perfine-profiles:
     name: Perfine fixture profiles (${{ matrix.language }}, ${{ matrix.route }})
     needs: changes
@@ -1033,6 +1157,8 @@ jobs:
       - git-tracker-clients
       - delino-site-frontend
       - delino-docs-frontend
+      - mcpa-frontend
+      - mcpa-api
       - perfine-profiles
       - perfine-adapters
       - rust-clippy
@@ -1050,7 +1176,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'lane-cli': selection.lane_cli === 'true', 'lane-frontend': selection.lane === 'true', 'perfine-profiles': selection.perfine_fixtures === 'true', 'perfine-adapters': selection.perfine_fixtures === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'lane-cli': selection.lane_cli === 'true', 'lane-frontend': selection.lane === 'true', 'perfine-profiles': selection.perfine_fixtures === 'true', 'perfine-adapters': selection.perfine_fixtures === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'mcpa-frontend': selection.mcpa === 'true', 'mcpa-api': selection.mcpa_api === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);
