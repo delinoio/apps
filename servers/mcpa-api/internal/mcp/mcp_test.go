@@ -279,9 +279,71 @@ func TestEveryRPCHasATool(t *testing.T) {
 			}
 		}
 	}
-	if !byName["list_resources"].Annotations.ReadOnlyHint || byName["delete_resource"].Annotations.DestructiveHint == nil ||
-		!*byName["delete_resource"].Annotations.DestructiveHint || byName[createResource].Annotations.ReadOnlyHint {
-		t.Fatal("annotations")
+}
+
+// TestToolAnnotations pins the MCP hints of every tool to the side effects
+// of its handler: read-only tools modify nothing, and non-destructive tools
+// only add state.
+func TestToolAnnotations(t *testing.T) {
+	type hints struct{ readOnly, destructive, idempotent bool }
+	read := hints{readOnly: true, idempotent: true}
+	add := hints{}
+	replace := hints{destructive: true}
+	remove := hints{destructive: true, idempotent: true}
+	want := map[string]hints{
+		"get_viewer":                  read,
+		"list_tenant_groups":          read,
+		createResource:                add,
+		"get_resource":                read,
+		"list_resources":              read,
+		"update_resource":             replace,
+		"delete_resource":             remove,
+		"update_routing":              replace,
+		"list_acl_entries":            read,
+		"put_acl_entry":               replace,
+		"remove_acl_entry":            remove,
+		"list_credentials":            read,
+		"register_api_key_credential": add,
+		"remove_credential":           remove,
+		"start_provider_o_auth":       add,
+		"complete_provider_o_auth":    add,
+		// Polling a device flow registers the credential when it completes.
+		"get_provider_o_auth_flow": add,
+		"issue_call_key":           add,
+		"list_call_keys":           read,
+		"revoke_call_key":          remove,
+		"get_resource_budget":      read,
+		"set_resource_budget":      replace,
+		"get_tenant_budget":        read,
+		"set_tenant_budget":        replace,
+		"get_usage":                read,
+		"list_call_records":        read,
+		"list_audit_events":        read,
+	}
+	tools, _, err := mcp.Tools(&fakeService{}, discard())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) != len(want) {
+		t.Fatalf("%d tools, %d expectations", len(tools), len(want))
+	}
+	for _, tool := range tools {
+		w, ok := want[tool.Name]
+		if !ok {
+			t.Fatalf("no expectation for %s", tool.Name)
+		}
+		a := tool.Annotations
+		// destructiveHint is meaningful only for tools that modify state.
+		if a == nil || a.OpenWorldHint == nil || (!a.ReadOnlyHint && a.DestructiveHint == nil) {
+			t.Fatalf("%s: incomplete annotations %+v", tool.Name, a)
+		}
+		got := hints{readOnly: a.ReadOnlyHint, idempotent: a.IdempotentHint}
+		if !a.ReadOnlyHint {
+			got.destructive = *a.DestructiveHint
+		}
+		if got != w || *a.OpenWorldHint {
+			t.Errorf("%s: hints %+v open world %v, want %+v", tool.Name, got, *a.OpenWorldHint, w)
+		}
 	}
 }
 
