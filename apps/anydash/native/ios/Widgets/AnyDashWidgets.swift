@@ -2,19 +2,34 @@
 // iOS home screen widgets. Snapshots come from the app group, written by the
 // app after each refresh. When the OS lets the widget refresh and the app's
 // shared access token is still valid, it calls QueryWidgetData as
-// CLIENT_KIND_NATIVE_WIDGET; otherwise it shows the latest snapshot and time.
+// CLIENT_KIND_NATIVE_WIDGET and writes the result back to the app group;
+// otherwise it shows the latest snapshot and time.
 import AppIntents
+import CryptoKit
 import Foundation
+import os
 import Security
 import SwiftUI
 import WidgetKit
 
+let widgetLog = Logger(subsystem: "io.delino.anydash.widgets", category: "refresh")
+
 enum SnapshotStore {
   static let group = "group.io.delino.anydash"
 
+  static var directory: URL? {
+    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?
+      .appendingPathComponent("snapshots", isDirectory: true)
+  }
+
+  /// The app's file name for a widget: SHA-256 hex of the widget ID plus `.pb`.
+  static func file(widgetId: String, in directory: URL) -> URL {
+    let digest = SHA256.hash(data: Data(widgetId.utf8)).map { String(format: "%02x", $0) }.joined()
+    return directory.appendingPathComponent("\(digest).pb")
+  }
+
   static func all() -> [NativeWidgetSnapshot] {
-    guard let directory = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?
-      .appendingPathComponent("snapshots", isDirectory: true),
+    guard let directory,
       let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
     else { return [] }
     return files.compactMap { file in
@@ -27,6 +42,27 @@ enum SnapshotStore {
     let snapshots = all()
     guard let widgetId else { return snapshots.first }
     return snapshots.first { $0.widgetId == widgetId }
+  }
+
+  /// Writes a widget refresh over the snapshot it started from, so both
+  /// timeline providers reload the refreshed state. An ENDED result is stored
+  /// without data and is not refreshed again, so earlier data cannot return
+  /// after a later expired token or failed request. The write is skipped when
+  /// the app removed the file (sign-out or a replaced selection) or wrote a
+  /// newer snapshot during the request; the app's state wins then.
+  static func save(_ next: NativeWidgetSnapshot, replacing previous: NativeWidgetSnapshot) {
+    guard next != previous, let directory else { return }
+    let target = file(widgetId: next.widgetId, in: directory)
+    guard let current = try? Data(contentsOf: target), (try? decodeSnapshot(Array(current))) == previous else {
+      widgetLog.info("anydash_widget_snapshot_persist_skipped reason=app_changed_snapshot")
+      return
+    }
+    do {
+      try Data(encodeSnapshot(next)).write(to: target, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+      widgetLog.info("anydash_widget_snapshot_persisted sharing_state=\(next.sharingState.rawValue, privacy: .public)")
+    } catch {
+      widgetLog.error("anydash_widget_snapshot_persist_failed error=\(String(describing: error), privacy: .public)")
+    }
   }
 }
 
@@ -69,10 +105,14 @@ enum WidgetRefresh {
       (response as? HTTPURLResponse)?.statusCode == 200,
       let decoded = try? decodeWidgetDataSummary(Array(data))
     else { return snapshot }
+    let sharingState = decoded.sharingState == .unspecified ? snapshot.sharingState : decoded.sharingState
+    // A response without a summary keeps the latest snapshot unless sharing ended.
+    if decoded.summary == nil && sharingState != .ended { return snapshot }
     var next = snapshot
-    next.sharingState = decoded.sharingState == .unspecified ? snapshot.sharingState : decoded.sharingState
-    next.summary = decoded.summary
+    next.sharingState = sharingState
+    next.summary = sharingState == .ended ? nil : decoded.summary
     next.refreshedAt = Date()
+    SnapshotStore.save(next, replacing: snapshot)
     return next
   }
 }

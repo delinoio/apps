@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Read-only decoding of the anydash.v1 messages that native widgets display:
+// Decoding of the anydash.v1 messages that native widgets display:
 // NativeWidgetSnapshot (from the collector or the app group) and WidgetData
-// (from QueryWidgetData). Field numbers follow protos/anydash/v1/anydash.proto;
-// tests decode fixtures produced by the TypeScript bindings.
+// (from QueryWidgetData), plus the NativeWidgetSnapshot encoding an iOS widget
+// uses to persist its own refresh. Field numbers follow
+// protos/anydash/v1/anydash.proto; tests decode fixtures produced by the
+// TypeScript bindings.
 import Foundation
 
 public enum SharingState: Int {
@@ -226,18 +228,90 @@ public func decodeWidgetDataSummary(_ bytes: [UInt8]) throws -> (sharingState: S
   return (state, state == .ended ? nil : summary)
 }
 
+private func encodeVarint(_ value: UInt64, into bytes: inout [UInt8]) {
+  var remaining = value
+  repeat {
+    var byte = UInt8(remaining & 0x7f)
+    remaining >>= 7
+    if remaining != 0 { byte |= 0x80 }
+    bytes.append(byte)
+  } while remaining != 0
+}
+
+private func encodeBytes(_ field: Int, _ value: [UInt8], into bytes: inout [UInt8]) {
+  bytes.append(UInt8(field << 3 | 2))
+  encodeVarint(UInt64(value.count), into: &bytes)
+  bytes.append(contentsOf: value)
+}
+
 private func encodeString(_ field: Int, _ value: String, into bytes: inout [UInt8]) {
   let utf8 = Array(value.utf8)
   guard !utf8.isEmpty else { return }
-  bytes.append(UInt8(field << 3 | 2))
-  var length = UInt64(utf8.count)
-  repeat {
-    var byte = UInt8(length & 0x7f)
-    length >>= 7
-    if length != 0 { byte |= 0x80 }
-    bytes.append(byte)
-  } while length != 0
-  bytes.append(contentsOf: utf8)
+  encodeBytes(field, utf8, into: &bytes)
+}
+
+private func encodeVarintField(_ field: Int, _ value: UInt64, into bytes: inout [UInt8]) {
+  bytes.append(UInt8(field << 3))
+  encodeVarint(value, into: &bytes)
+}
+
+/// google.protobuf.Timestamp, or a Duration of `interval` seconds.
+private func encodeSeconds(_ interval: TimeInterval) -> [UInt8] {
+  var seconds = interval.rounded(.down)
+  var nanos = ((interval - seconds) * 1e9).rounded()
+  if nanos >= 1e9 { seconds += 1; nanos = 0 }
+  var bytes: [UInt8] = []
+  if seconds != 0 { encodeVarintField(1, UInt64(bitPattern: Int64(seconds)), into: &bytes) }
+  if nanos != 0 { encodeVarintField(2, UInt64(nanos), into: &bytes) }
+  return bytes
+}
+
+private func encodeMetricValue(_ value: MetricValue) -> [UInt8] {
+  var bytes: [UInt8] = []
+  if value.state != .unspecified { encodeVarintField(1, UInt64(value.state.rawValue), into: &bytes) }
+  // Oneof members are written even when they hold the default value.
+  switch value.content {
+  case .none: break
+  case .percent(let percent):
+    bytes.append(2 << 3 | 1)
+    withUnsafeBytes(of: percent.bitPattern.littleEndian) { bytes.append(contentsOf: $0) }
+  case .decimal(let decimal): encodeBytes(3, Array(decimal.utf8), into: &bytes)
+  case .integer(let integer): encodeVarintField(4, UInt64(bitPattern: integer), into: &bytes)
+  case .money(let currency, let amount):
+    var money: [UInt8] = []
+    encodeString(1, currency, into: &money)
+    encodeString(2, amount, into: &money)
+    encodeBytes(5, money, into: &bytes)
+  case .time(let date): encodeBytes(6, encodeSeconds(date.timeIntervalSince1970), into: &bytes)
+  case .duration(let interval): encodeBytes(7, encodeSeconds(interval), into: &bytes)
+  case .text(let text): encodeBytes(8, Array(text.utf8), into: &bytes)
+  case .flag(let flag): encodeVarintField(9, flag ? 1 : 0, into: &bytes)
+  }
+  return bytes
+}
+
+/// NativeWidgetSnapshot with the fields this module decodes. ENDED snapshots
+/// never carry a summary.
+public func encodeSnapshot(_ snapshot: NativeWidgetSnapshot) -> [UInt8] {
+  var bytes: [UInt8] = []
+  encodeString(1, snapshot.dashboardId, into: &bytes)
+  encodeString(2, snapshot.widgetId, into: &bytes)
+  encodeString(3, snapshot.spaceId, into: &bytes)
+  if snapshot.sharingState != .unspecified { encodeVarintField(4, UInt64(snapshot.sharingState.rawValue), into: &bytes) }
+  if let summary = snapshot.summary, snapshot.sharingState != .ended {
+    var encoded: [UInt8] = []
+    encodeString(1, summary.title, into: &encoded)
+    encodeString(2, summary.primaryLabel, into: &encoded)
+    // An empty MetricValue decodes to the default, so it is omitted like an
+    // unset message field.
+    if summary.primaryValue != MetricValue() { encodeBytes(3, encodeMetricValue(summary.primaryValue), into: &encoded) }
+    encodeString(4, summary.secondaryLabel, into: &encoded)
+    if summary.secondaryValue != MetricValue() { encodeBytes(5, encodeMetricValue(summary.secondaryValue), into: &encoded) }
+    if let updated = summary.dataUpdatedAt { encodeBytes(6, encodeSeconds(updated.timeIntervalSince1970), into: &encoded) }
+    encodeBytes(5, encoded, into: &bytes)
+  }
+  if let refreshed = snapshot.refreshedAt { encodeBytes(6, encodeSeconds(refreshed.timeIntervalSince1970), into: &bytes) }
+  return bytes
 }
 
 /// QueryWidgetDataRequest(dashboard_id, widget_id, time_zone).
