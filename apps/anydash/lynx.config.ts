@@ -123,6 +123,11 @@ export default defineConfig({
             },
           },
           { from: "web/host-module.js", to: "host-module.js" },
+          // anydash.delino.io serves the CLI install scripts that
+          // packages/anydash owns; Pages headers serve them as plain text.
+          { from: "../../packages/anydash/install/install.sh", to: "." },
+          { from: "../../packages/anydash/install/install.ps1", to: "." },
+          { from: "web/_headers", to: "." },
           { from: "web/icons", to: "icons" },
           { from: "../../LICENSE", to: "." },
           { from: "../../NOTICE", to: "." },
