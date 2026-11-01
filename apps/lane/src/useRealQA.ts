@@ -8,9 +8,13 @@ import {
   type RealQAState,
 } from "./realqa-host";
 export function useRealQA() {
-  const [available, setAvailable] = useState(false);
+  // Unknown until the background thread checks the host, so desktop does not
+  // briefly render the mobile read-only entry.
+  const [available, setAvailable] = useState<boolean>();
   const [state, setState] = useState<RealQAState>();
   const [error, setError] = useState("");
+  // Mode of the in-app capture that failed most recently; offered for retry.
+  const [retryMode, setRetryMode] = useState<CaptureMode>();
   const [busy, setBusy] = useState(false);
   const [discard, setDiscard] = useState(false);
   const [saved, setSaved] = useState<{ taskId: string; spaceId?: string }>();
@@ -35,6 +39,7 @@ export function useRealQA() {
     ++revision.current;
     setBusy(true);
     setError("");
+    setRetryMode(undefined);
     try {
       await action();
       await refresh();
@@ -77,17 +82,23 @@ export function useRealQA() {
   };
   const capture = (mode: CaptureMode) =>
     run(async () => {
-      if (mode === CaptureMode.Screen || mode === CaptureMode.Window) {
-        const result = await realqa<{
-          sources: {
-            id: string;
-            name: string;
-            width: number;
-            height: number;
-          }[];
-        }>({ op: "sources", mode });
-        setSources({ mode, sources: result.sources });
-      } else await realqa({ op: "capture", mode });
+      try {
+        if (mode === CaptureMode.Screen || mode === CaptureMode.Window) {
+          const result = await realqa<{
+            sources: {
+              id: string;
+              name: string;
+              width: number;
+              height: number;
+            }[];
+          }>({ op: "sources", mode });
+          setSources({ mode, sources: result.sources });
+        } else await realqa({ op: "capture", mode });
+      } catch (e) {
+        // The draft is unchanged; keep the failed mode for an explicit retry.
+        if (active.current) setRetryMode(mode);
+        throw e;
+      }
     });
   useEffect(() => {
     active.current = true;
@@ -122,6 +133,8 @@ export function useRealQA() {
     updateDraft,
     state,
     error,
+    retryMode,
+    setRetryMode,
     busy,
     discard,
     setDiscard,

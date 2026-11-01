@@ -53,6 +53,9 @@ export interface DraftImage {
   metadata: Metadata;
   canUndo?: boolean;
   canRedo?: boolean;
+  // Set by Chrome DOM captures that include only the visible part of a
+  // partially visible element.
+  clipped?: boolean;
 }
 export interface CaptureDraft {
   id?: string;
@@ -67,6 +70,8 @@ export interface RealQAState {
   draft: CaptureDraft | null;
   shortcuts: Partial<Record<CaptureMode, string>>;
   permission?: string;
+  // Capture guidance from the OS host, such as Windows capture policy limits.
+  message?: string;
   chrome?: {
     state: string;
     profile?: string;

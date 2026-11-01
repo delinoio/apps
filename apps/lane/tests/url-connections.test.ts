@@ -121,12 +121,14 @@ function mount(
   external?: LaneAdapter,
 ) {
   const values = new Map<string, string>();
+  const focused: string[] = [];
   const query: any = {
     select: (selector: string) => ({
       invoke: (call: { method: string; params?: { value?: string } }) => ({
         exec() {
           if (call.method === "setValue")
             values.set(selector, call.params?.value ?? "");
+          if (call.method === "setFocus") focused.push(selector);
         },
       }),
     }),
@@ -171,6 +173,7 @@ function mount(
     ...mock,
     view,
     values,
+    focused,
     buttons,
     button,
     input,
@@ -558,6 +561,27 @@ test("URL synchronization labels follow local status and failures keep rows", as
       },
       "Synchronization failed",
     ],
+    [
+      {
+        syncEnabled: true,
+        connected: true,
+        reconnectRequired: true,
+        pendingItemCount: "0",
+      },
+      "Synchronization failed",
+    ],
+    [
+      { syncEnabled: true, connected: false, pendingItemCount: "0" },
+      "Synchronization failed",
+    ],
+    [
+      { syncEnabled: true, connected: true, pendingItemCount: "0" },
+      "Synchronized",
+    ],
+    [
+      { syncEnabled: false, connected: false, pendingItemCount: "0" },
+      "Local only",
+    ],
   ] as const) {
     const adapter = {
       subscribe: () => () => {},
@@ -609,4 +633,116 @@ test("URL synchronization labels follow local status and failures keep rows", as
     "https://unsaved.example/app",
   );
   f.view.unmount();
+});
+
+async function globalKey(
+  f: ReturnType<typeof mount>,
+  key: string,
+  reverse = false,
+) {
+  const handlers = all(
+    f.view.tree(),
+    (node) => typeof node.props["global-bindkeydown"] === "function",
+  ).map((node) => node.props["global-bindkeydown"]);
+  for (const handler of reverse ? handlers.reverse() : handlers)
+    handler({ key });
+  await f.view.settle();
+}
+const hasDialog = (f: ReturnType<typeof mount>, title: string) =>
+  all(f.view.tree(), (node) => node.props["accessibility-label"] === title)
+    .length > 0;
+
+test("Escape closes only a nested discard confirmation, in any delivery order", async () => {
+  for (const reverse of [false, true]) {
+    const f = mount([conflicting()]);
+    await f.view.settle();
+    await f.tap("Resolve conflict");
+    await f.tap("Use this version");
+    const resolve = "Resolve URL connection conflict";
+    const confirm = "Discard conflict resolution?";
+    await globalKey(f, "Escape", reverse);
+    assert.ok(hasDialog(f, confirm));
+    await globalKey(f, "Escape", reverse);
+    assert.ok(!hasDialog(f, confirm), "the confirmation closes");
+    assert.ok(hasDialog(f, resolve), "the resolution and its choice remain");
+    assert.equal(f.dirty(), true);
+    await globalKey(f, "Escape", reverse);
+    await f.tap("Discard resolution");
+    assert.ok(!hasDialog(f, resolve));
+    assert.equal(f.focused.at(-1), "#url-connection-resolve-rule");
+    f.view.unmount();
+
+    const editor = mount();
+    await editor.view.settle();
+    await editor.tap("Add connection");
+    await editor.type("https://kept.example/app");
+    await globalKey(editor, "Escape", reverse);
+    assert.ok(hasDialog(editor, "Discard URL connection changes?"));
+    await globalKey(editor, "Escape", reverse);
+    assert.ok(!hasDialog(editor, "Discard URL connection changes?"));
+    assert.ok(hasDialog(editor, "Add URL connection"));
+    assert.equal(
+      editor.values.get(`#${editor.input().props.id}`),
+      "https://kept.example/app",
+    );
+    editor.view.unmount();
+  }
+});
+
+test("URL dialogs return focus to their triggers", async () => {
+  const f = mount([applied("https://one.example/app", "repo-one")]);
+  await f.view.settle();
+  assert.equal(f.button("Add connection").props.id, "url-connection-add");
+  await f.tap("Add connection");
+  await globalKey(f, "Escape");
+  await f.tap("Discard changes");
+  assert.ok(!hasDialog(f, "Add URL connection"));
+  assert.ok(f.focused.includes("#url-connection-add"));
+
+  await f.tap("Edit");
+  await globalKey(f, "Escape");
+  await f.tap("Discard changes");
+  assert.ok(f.focused.includes("#url-connection-edit-rule"));
+
+  await f.tap("Delete");
+  await f.tap("Cancel");
+  assert.equal(f.focused.at(-1), "#url-connection-delete-rule");
+  f.view.unmount();
+});
+
+test("selected repository and conflict versions are exposed, not only colored", async () => {
+  const f = mount([conflicting()]);
+  await f.view.settle();
+  await f.tap("Resolve conflict");
+  const versions = () => f.buttons("Use this version");
+  assert.deepEqual(
+    versions().map((node) => node.props["data-pressed"]),
+    ["false", "false"],
+  );
+  await f.tap("Use this version", 1);
+  assert.deepEqual(
+    versions().map((node) => node.props["accessibility-value"]),
+    [undefined, "Selected"],
+  );
+  assert.equal(versions()[1].props["data-pressed"], "true");
+  assert.equal(
+    f.button("Two").props["accessibility-label"],
+    "Resolved repository: Two",
+  );
+  assert.equal(f.button("Two").props["accessibility-value"], "Selected");
+  assert.equal(f.button("One").props["accessibility-value"], undefined);
+  f.view.unmount();
+
+  const editor = mount();
+  await editor.view.settle();
+  await editor.tap("Add connection");
+  await editor.tap("One");
+  assert.equal(
+    editor.button("One").props["accessibility-label"],
+    "Repository: One",
+  );
+  assert.equal(editor.button("One").props["accessibility-value"], "Selected");
+  assert.equal(editor.button("One").props["data-pressed"], "true");
+  assert.equal(editor.button("Two").props["data-pressed"], "false");
+  editor.view.unmount();
 });
