@@ -168,10 +168,11 @@ function SessionGate({ apiUrl, sessionClient, transport }: AppProps) {
       session,
       signOut: async () => {
         await sessionClient.logout(session.csrfToken);
-        queryClient.clear();
-        queryClient.setQueryData<Session>(SESSION_QUERY_KEY, {
-          status: SessionStatus.SignedOut,
-        });
+        const signedOut: Session = { status: SessionStatus.SignedOut };
+        queryClient.setQueryData<Session>(SESSION_QUERY_KEY, signedOut);
+        // Drop every cached management response of the previous user.
+        queryClient.removeQueries({ queryKey: ["connect-query"] });
+        queryClient.getMutationCache().clear();
       },
     };
   }, [session, sessionClient, queryClient]);

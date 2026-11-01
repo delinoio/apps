@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,8 +11,8 @@ import {
 
 /**
  * A dialog that closes with Esc, the close button or an outside click and
- * returns focus to its trigger. Forms put `autoFocus` on their single
- * critical input so it receives focus when the dialog opens.
+ * returns focus to the control that opened it. Forms put `autoFocus` on
+ * their single critical input so it receives focus when the dialog opens.
  */
 export function Modal({
   open,
@@ -32,6 +32,11 @@ export function Modal({
   /** Set to false while a request is running so it is not abandoned. */
   dismissible?: boolean;
 }) {
+  // Radix returns focus only to its own trigger element. Console dialogs are
+  // opened by ordinary buttons, so remember the focused control instead.
+  const [opener] = useState(() =>
+    typeof document === "undefined" ? null : document.activeElement,
+  );
   return (
     <Dialog
       open={open}
@@ -47,6 +52,11 @@ export function Modal({
         onEscapeKeyDown={(event) => {
           if (!dismissible) event.preventDefault();
         }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (opener instanceof HTMLElement && opener.isConnected)
+            opener.focus();
+        }}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -59,4 +69,17 @@ export function Modal({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Focuses an input that appears inside an already open dialog, for example
+ * when a multi-step form moves to its next step. `autoFocus` covers inputs
+ * present when the dialog opens.
+ */
+export function useFocusOnMount<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return ref;
 }

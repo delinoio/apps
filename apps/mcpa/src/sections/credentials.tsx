@@ -27,7 +27,7 @@ import {
 } from "../lib/oauth";
 import { isHttpUrl, nameError, parseList } from "../lib/validate";
 import { EmptyState, ErrorState, QueryView } from "../components/states";
-import { Modal } from "../components/modal";
+import { Modal, useFocusOnMount } from "../components/modal";
 import { Field } from "../components/field";
 import { CopyButton } from "../components/copy-button";
 
@@ -312,12 +312,7 @@ export function ConnectAccountDialog({
             </li>
           </ol>
           <Field label="Final page address" error={fieldError}>
-            <Input
-              autoFocus
-              value={callbackUrl}
-              onChange={(event) => setCallbackUrl(event.target.value)}
-              placeholder="http://localhost:…/callback?code=…"
-            />
+            <CallbackUrlInput value={callbackUrl} onChange={setCallbackUrl} />
           </Field>
           {Boolean(state.error) && <ErrorState compact error={state.error} />}
           {flow?.expireTime && (
@@ -415,6 +410,27 @@ export function ConnectAccountDialog({
     >
       {body}
     </Modal>
+  );
+}
+
+function CallbackUrlInput({
+  value,
+  onChange,
+  ...rest
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  // The single critical input of this step receives focus when it appears.
+  const ref = useFocusOnMount<HTMLInputElement>();
+  return (
+    <Input
+      {...rest}
+      ref={ref}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder="http://localhost:…/callback?code=…"
+    />
   );
 }
 
