@@ -44,19 +44,105 @@ export function decodePNG(base64: string): number[] {
   }
   return bytes;
 }
+// RFC 3492 Punycode for one lowercase, NFC-normalized hostname label.
+function punycode(label: string): string {
+  const input = Array.from(label, (char) => char.codePointAt(0)!);
+  const digit = (value: number) =>
+    String.fromCharCode(value + (value < 26 ? 97 : 22));
+  let output = input
+    .filter((code) => code < 0x80)
+    .map((code) => String.fromCharCode(code))
+    .join("");
+  const basic = output.length;
+  let handled = basic;
+  if (basic) output += "-";
+  let n = 0x80;
+  let delta = 0;
+  let bias = 72;
+  const adapt = (value: number, points: number, first: boolean) => {
+    value = first ? Math.floor(value / 700) : value >> 1;
+    value += Math.floor(value / points);
+    let k = 0;
+    for (; value > 455; k += 36) value = Math.floor(value / 35);
+    return k + Math.floor((36 * value) / (value + 38));
+  };
+  while (handled < input.length) {
+    const next = Math.min(...input.filter((code) => code >= n));
+    delta += (next - n) * (handled + 1);
+    n = next;
+    for (const code of input) {
+      if (code < n) delta++;
+      if (code !== n) continue;
+      let q = delta;
+      for (let k = 36; ; k += 36) {
+        const t = k <= bias ? 1 : k >= bias + 26 ? 26 : k - bias;
+        if (q < t) break;
+        output += digit(t + ((q - t) % (36 - t)));
+        q = Math.floor((q - t) / (36 - t));
+      }
+      output += digit(q);
+      bias = adapt(delta, handled + 1, handled === basic);
+      delta = 0;
+      handled++;
+    }
+    delta++;
+    n++;
+  }
+  return output;
+}
+// Lynx isolates do not guarantee the WHATWG URL API. This covers the
+// serialization steps the domain stores apply to page URLs: host case, IDN
+// labels, default and empty ports, dot segments and path percent-encoding.
+function normalizePageURL(url: string): string | undefined {
+  const match = /^(https?):\/\/([^/?#]*)([^?#]*)/i.exec(url);
+  if (!match || match[2].includes("@") || /[\\\s]/.test(url)) return;
+  const scheme = match[1].toLowerCase();
+  const authority = /^([^:[\]]+|\[[^\]]+\])(?::(\d*))?$/.exec(match[2]);
+  if (!authority) return;
+  let host = authority[1].toLowerCase();
+  if (!host.startsWith("[")) {
+    if (host.normalize) host = host.normalize("NFC");
+    host = host
+      .split(".")
+      .map((label) =>
+        /[^\x00-\x7f]/.test(label) ? `xn--${punycode(label)}` : label,
+      )
+      .join(".");
+  }
+  const portText = authority[2];
+  if (portText) {
+    const port = Number(portText);
+    if (port > 65535) return;
+    if (port !== (scheme === "https" ? 443 : 80)) host += `:${port}`;
+  }
+  const segments: string[] = [];
+  const parts = match[3].split("/").slice(1);
+  parts.forEach((segment, index) => {
+    const last = index === parts.length - 1;
+    if (segment === ".." || /^(\.|%2e){2}$/i.test(segment)) {
+      segments.pop();
+      if (last) segments.push("");
+    } else if (segment === "." || /^%2e$/i.test(segment)) {
+      if (last) segments.push("");
+    } else segments.push(segment);
+  });
+  const path = Array.from(`/${segments.join("/")}`, (char) => {
+    const code = char.codePointAt(0)!;
+    return code < 0x21 || code > 0x7e || '"<>`{}'.includes(char)
+      ? encodeURIComponent(char)
+      : char;
+  }).join("");
+  return `${scheme}://${host}${path}`.replace(/\/+$/, "");
+}
 // Rules arrive normalized from the domain store. Preserve path case and segment boundaries.
+// The caller excludes conflicted and deleted rules before matching.
 export function matchingRepository(
   url: string | undefined,
   rules: readonly { prefix: string; repositoryId: string }[],
 ): string | undefined {
   if (!url) return;
-  const match = /^(https?):\/\/([^/?#]+)([^?#]*)/i.exec(url);
-  if (!match || match[2].includes("@") || /[\\\s]/.test(url)) return;
-  const scheme = match[1].toLowerCase();
-  const host = match[2]
-    .toLowerCase()
-    .replace(scheme === "https" ? /:443$/ : /:80$/, "");
-  const normalized = `${scheme}://${host}${match[3]}`.replace(/\/+$/, "");
+  const normalized = normalizePageURL(url);
+  if (normalized === undefined) return;
   return rules
     .filter((rule) => {
       // The domain store retains '/' at an origin root. Compare both sides

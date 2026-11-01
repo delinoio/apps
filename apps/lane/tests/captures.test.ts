@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { create } from "@bufbuild/protobuf";
 import {
   CreateCaptureTaskRequestSchema,
@@ -78,6 +79,35 @@ test("URL mapping uses longest boundary match, normalized host/port, and case-se
     matchingRepository("https://user@example.test/app", rules),
     undefined,
   );
+});
+test("page URL selection matches every shared URL-prefix vector", async () => {
+  const fixtures = JSON.parse(
+    await readFile(
+      new URL(
+        "../../../protos/lane/v1/fixtures/url-prefixes.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  let count = 0;
+  for (const c of fixtures.cases) {
+    if (c.input.operation !== "select") continue;
+    // The composer excludes conflicted rules before matching.
+    const rules = c.input.rules
+      .filter((rule: { conflict?: boolean }) => !rule.conflict)
+      .map((rule: { prefix: string; repository: string }) => ({
+        prefix: rule.prefix,
+        repositoryId: rule.repository,
+      }));
+    assert.equal(
+      matchingRepository(c.input.page, rules),
+      c.expected.repository ?? undefined,
+      c.id,
+    );
+    count++;
+  }
+  assert.ok(count > 0);
 });
 test("normal task edits retain capture references and exact byte sizes", () => {
   const task = toUI(
