@@ -364,7 +364,16 @@ try {
         );
     } else {
       if (config.chromeExtensionIds?.length)
-        await removeNativeMessaging(registration);
+        try {
+          await removeNativeMessaging(registration);
+        } catch (error) {
+          // A later-started Lane installation re-registered Chrome for its own
+          // relay. Keep that registration and remove only this application.
+          if (error.message !== "REGISTRATION_OWNER_CHANGED") throw error;
+          console.info(
+            JSON.stringify({ event: "lane_chrome_registration_retained" }),
+          );
+        }
       rmSync(installed, { recursive: true });
     }
     console.info(

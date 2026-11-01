@@ -441,6 +441,11 @@ test("binary release is gated by validated source, complete assembly and protect
       "Build desktop with the matching packaged synchronization helper",
   );
   assert.match(desktop.run, /pnpm --dir "apps\/lane" build:desktop/);
+  assert.deepEqual(desktop.env, {
+    LANE_CHROME_EXTENSION_IDS: "${{ vars.LANE_CHROME_EXTENSION_IDS }}",
+    LANE_CHROME_WEB_STORE_EXTENSION_ID:
+      "${{ vars.LANE_CHROME_WEB_STORE_EXTENSION_ID }}",
+  });
   assert.equal(workflow.jobs.assemble.needs, "build");
   assert.equal(workflow.jobs.publish.needs, "assemble");
   assert.equal(workflow.jobs.publish.environment, "delino-site-production");

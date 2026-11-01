@@ -15,6 +15,7 @@ import { control, WindowSession, unavailable } from "./bridge.mjs";
 import { DesktopUpdater } from "./updater.mjs";
 import { RealQA } from "./realqa.mjs";
 import { connectChrome } from "./realqa-chrome.mjs";
+import { ensureNativeMessaging } from "../../../lane-chrome-extension/scripts/native-registration.mjs";
 import { homedir } from "node:os";
 import { WorkspaceExit } from "./workspace-exit.mjs";
 import { realQASmoke } from "./realqa-smoke.mjs";
@@ -455,6 +456,25 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
         },
       });
       await realqa.start();
+      // Native-testing packages run from scratch roots and must not change the
+      // user's Chrome registration.
+      if (chromeExtensionIds.length && !config.testing)
+        ensureNativeMessaging({
+          extensionIds: chromeExtensionIds,
+          relayExecutable: join(
+            resources,
+            "relay",
+            process.platform === "darwin"
+              ? "lane-chrome-host"
+              : "lane-chrome-host.exe",
+          ),
+          ...(process.platform === "win32"
+            ? { manifestDirectory: join(dataRoot, "native-messaging") }
+            : {}),
+        }).then(
+          (result) => log("lane_chrome_registration", result),
+          () => log("lane_chrome_registration_failed"),
+        );
       if (chromeExtensionIds.length) {
         // Bridge startup failures are reported as the Chrome `error` state with a
         // retry/reset action instead of hiding the Chrome section.

@@ -306,7 +306,10 @@ the package tests and the real packed CLI version/help/MCP smoke checks.
 
 The two macOS runners and Windows x64 runner also build the desktop archive with
 `LANE_URL_SCHEME=lane`, the production bundle, native host, Chrome relay and
-matching verified CLI synchronization helper. macOS archives retain framework
+matching verified CLI synchronization helper. The desktop build reads the
+`LANE_CHROME_EXTENSION_IDS` and `LANE_CHROME_WEB_STORE_EXTENSION_ID` repository
+variables. Empty variables disable Chrome registration and the `Install extension`
+listing, and the build rejects malformed IDs. macOS archives retain framework
 symlinks and ad-hoc signatures; Windows is an unsigned portable application
 archive. The owning desktop build launcher prepares its pinned Windows App SDK
 and C++/WinRT packages and generates both Windows OS and App SDK projections.

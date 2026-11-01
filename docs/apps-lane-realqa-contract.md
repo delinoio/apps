@@ -251,7 +251,25 @@ and never bypasses approval.
 The existing Lane installer bundles the relay with a private runtime or standalone
 executable and registers exact extension origins through the extension's
 `scripts/native-registration.mjs`. Removal unregisters only that installation's
-manifest. A real development or published extension ID is required; packaging
+manifest. When it is still owned by another installation, removal keeps that
+registration and removes only its own application. Release archives are
+portable and have no installer step. Therefore, at every start of a
+non-testing package with configured extension IDs, the desktop host checks the
+registration and rewrites it for its own packaged relay when the manifest is
+missing, unreadable, points to another relay or allows different origins. On
+Windows, it also restores a missing or different registry value. The most
+recently started installation owns the registration, as with the URL scheme.
+Every relay reaches the running host through the shared per-user data
+directory. A macOS copy that runs from an `AppTranslocation` path is not
+registered, because that path disappears when the app quits. The check runs
+without blocking startup and logs only `registered`, `current`,
+`translocated` or a failure event, never paths. A deleted portable archive
+leaves its registration until another installation starts. Chrome then cannot
+start the relay, and the extension shows its `LANE_NOT_RUNNING` guidance.
+Native-testing packages never change this registration. Release builds read
+`LANE_CHROME_EXTENSION_IDS` and `LANE_CHROME_WEB_STORE_EXTENSION_ID` from
+repository variables of the same names. When these variables are empty, the
+build disables registration and the Chrome connection service. A real development or published extension ID is required; packaging
 must not substitute a fabricated Chrome Web Store ID. `pnpm test` in the extension
 workspace validates fixtures and creates its unpacked build; `pnpm package`
 creates its review ZIP. Store copy and privacy materials live in `store/`.
