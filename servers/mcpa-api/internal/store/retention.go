@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -66,7 +67,7 @@ func TenantsWithData(ctx context.Context, db DB, after string, limit int) ([]str
 
 // TenantDeletion counts what DeleteTenantData removed.
 type TenantDeletion struct {
-	Resources   int64
+	ResourceIDs []uuid.UUID
 	CallRecords int64
 	Aggregates  int64
 	AuditEvents int64
@@ -96,16 +97,20 @@ func (s *Store) DeleteTenantData(ctx context.Context, tenantID string) (TenantDe
 			{&d.AuditEvents, `DELETE FROM audit_events WHERE tenant_id = $1`},
 			{nil, `DELETE FROM tenant_budgets WHERE tenant_id = $1`},
 			{nil, `DELETE FROM tenant_group_snapshots WHERE tenant_id = $1`},
-			// Cascades to routing, ACL, credentials, OAuth flows, call keys and
-			// resource budgets.
-			{&d.Resources, `DELETE FROM resources WHERE tenant_id = $1`},
 		}
 		for _, step := range steps {
 			if err := count(step.dst, step.sql); err != nil {
 				return err
 			}
 		}
-		return nil
+		// Cascades to routing, ACL, credentials, OAuth flows, call keys and
+		// resource budgets.
+		rows, err := tx.Query(ctx, `DELETE FROM resources WHERE tenant_id = $1 RETURNING id`, tenantID)
+		if err != nil {
+			return err
+		}
+		d.ResourceIDs, err = pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+		return err
 	})
 	return d, err
 }

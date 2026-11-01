@@ -383,8 +383,9 @@ func antigravityExchange(ctx context.Context, b *Broker, code, _ string, sec flo
 	projectID, err := sdkauth.FetchAntigravityProjectID(projectCtx, resp.AccessToken, b.http)
 	cancel()
 	if err != nil {
-		// The SDK login also continues without a project.
-		b.log.WarnContext(ctx, "antigravity project lookup failed; connecting without a project", "error", err)
+		// The SDK login also continues without a project. The SDK error can
+		// quote the provider response body, so it is not logged.
+		b.log.WarnContext(ctx, "antigravity project lookup failed; connecting without a project")
 		projectID = ""
 	}
 	now := b.now()
