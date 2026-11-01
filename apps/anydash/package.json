@@ -6,11 +6,14 @@
   "type": "module",
   "scripts": {
     "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name anydash --app-port 46328 rspeedy dev",
+    "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- pnpm desktop:start",
     "build": "rspeedy build",
     "build:frontend": "pnpm build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
-    "test": "pnpm typecheck && rstest && pnpm build",
-    "test:browser": "pnpm build && node tests/browser.mjs"
+    "test": "pnpm typecheck && rstest && node --test native/desktop/desktop.test.mjs scripts/icons.test.mjs && pnpm build",
+    "test:browser": "pnpm build && node tests/browser.mjs",
+    "build:desktop": "pnpm build && node scripts/desktop.mjs build",
+    "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.16.0",

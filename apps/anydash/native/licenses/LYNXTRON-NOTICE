@@ -1,0 +1,9 @@
+Lynxtron 0.0.30
+Copyright 2026 The Lynxtron Authors. All rights reserved.
+Source: https://github.com/lynx-family/lynxtron/tree/v0.0.30
+
+The desktop application includes the official Lynxtron runtime and the
+@lynx-js/lynxtron JavaScript API wrapper. Preserve the upstream runtime resources,
+embedded notices and accompanying LYNXTRON-LICENSE, LYNXTRON-LICENSE.chromium and
+LYNXTRON-LICENSE.chromium_os files. Lynx runtime notices are retained separately
+in LYNX-LICENSE and LYNX-NOTICE.
