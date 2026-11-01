@@ -378,14 +378,14 @@ Managed CPA has three components: the `mcpa` console route, the `mcpa-api` Go se
 
 - The console uses fixed loopback port `46328` and the API uses `46329`. Their Portless routes are `https://mcpa.localhost` and `https://mcpa-api.localhost` in the main checkout.
 - Root Compose includes `mcpa-postgres` on loopback port `${MCPA_POSTGRES_PORT:-55438}`, with database and user `mcpa` and disposable password `local-mcpa`. Its named volume is independent of other services. These values are local development defaults only. Root development resolves its URL into the `mcpa` entry of `DEV_COMPOSE_DATABASE_URLS`, and only the Managed CPA API task receives it, after service-local Infisical injection.
-- The API is a Go package in the root module, not a Cargo workspace member. Its Turbo `dev` task depends on its own `build` task, which runs `go build` to write `servers/target/debug/mcpa-api`. The shared launcher then executes that binary like the Rust APIs. The shared Cargo `//#server-build` task does not build it, and the launcher does not build or watch. Restart `pnpm dev` after server changes.
+- The API is a Go package in the root module, not a Cargo workspace member. The root `server-build` script runs `servers/scripts/build-rust.mjs` and then `servers/scripts/build-go.mjs`, which runs `go build` to write `<CARGO_TARGET_DIR or servers/target>/debug/mcpa-api`. The `//#server-build` Turbo task includes the Go sources, migrations, `go.mod`, `go.sum` and generated Go protocol bindings as inputs. Cargo remains the only Rust build owner. The shared launcher executes the Go binary like the Rust APIs and does not build or watch. Restart `pnpm dev` after server changes.
 - Run `pnpm dev:db:up`, then run `mcpa-api migrate` explicitly before serving. Startup checks the schema and never migrates. Root `pnpm dev:db:reset` includes the Managed CPA database and applies its migrations explicitly after building the Go binary.
 
 ### CI
 
 Managed CPA CI runs on Ubuntu with these jobs:
 
-- An affected `mcpa-api` job runs the package scripts `ci:format`, `ci:vet`, `ci:unit`, `ci:integration` and `ci:vuln`. The integration step uses the disposable PostgreSQL database `mcpa_api_test` on port `55438` through `TEST_DATABASE_URL`.
+- An affected `mcpa-api` job runs the package scripts `ci:vet`, `ci:unit`, `ci:integration` and `ci:vuln`. Go formatting for `servers/mcpa-api` runs in the shared `check-formatting` job. Like the Rust APIs, ordinary CI does not build the `mcpa-api` image; `ci:oci` remains available for explicit local packaging validation, and the release image workflow builds and publishes it. The integration step uses the disposable PostgreSQL database `mcpa_api_test` on port `55438` through `TEST_DATABASE_URL`.
 - An affected `mcpa-frontend` job runs the console `pnpm test` and removes generated `dist`.
 - An `ops` check validates the Prometheus rules under `servers/mcpa-api/ops/` with rule tests.
 

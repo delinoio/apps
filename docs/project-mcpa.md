@@ -57,7 +57,7 @@ Server runtime rollout, infrastructure and deployment-specific monitoring settin
 - Console and interactive MCP access require Logto login with MFA evidence in the token. Non-interactive management uses Delcore personal service keys (`dlk_`), which act with their owner's per-resource ACL and are exempt from MFA. Tenant service keys are rejected for management.
 - Model calls require Delcore `Authorize` with `paid=true` and an `ACTIVE` tenant. Management operations use `paid=false`. Paid authorization fails closed when Delcore cannot be reached after the authorization cache TTL expires.
 - Billable bytes are the request bytes Managed CPA sends to the provider plus the response bytes it sends to the customer, counted as HTTP headers and body before TLS. Management, console, authentication and MCP traffic is free and never metered. Provider-reported token counts are never used.
-- The Delcore meter is `mcpa_traffic_bytes` (event type `mcpa.traffic`, sum of attribute `bytes`), priced by price key `mcpa_traffic` at USD 0.07 per GiB with zero included usage and no per-request fee. Delcore issues the final bill; Managed CPA usage views show an estimate.
+- The Delcore meter is `mcpa-traffic-bytes` (event type `mcpa.traffic`, sum of attribute `bytes`), priced by price key `mcpa-traffic` at USD 0.07 per GiB with zero included usage and no per-request fee. Delcore issues the final bill; Managed CPA usage views show an estimate.
 - Pending usage reports follow the shared Delcore consumer policy: they are retried for 30 days after first creation and then deleted without estimating.
 - Only an explicit Delcore `DELETED` tenant state permits automatic deletion of retained tenant data.
 

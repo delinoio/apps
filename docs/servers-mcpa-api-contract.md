@@ -121,13 +121,13 @@ Delcore groups grant these capabilities. The service UUID v7 is configured as `M
 
 Operators also register the traffic meter and price:
 
-- Meter: `PutMeter` with key `mcpa_traffic_bytes`, event type `mcpa.traffic`, aggregation `sum` of the numeric attribute `bytes`, grouped by `resource_id`.
-- Price: `CreatePrice` with price key `mcpa_traffic`, a USD usage unit price per byte of `0.00000000006519258022308349609375` (exactly USD 0.07 / 2^30, which is USD 0.07 per GiB), zero included usage and no per-request fee.
+- Meter: `PutMeter` with key `mcpa-traffic-bytes`, event type `mcpa.traffic`, aggregation `sum` of the numeric attribute `bytes`, grouped by `resource_id`.
+- Price: `CreatePrice` with price key `mcpa-traffic`, a USD usage unit price per byte of `0.00000000006519258022308349609375` (exactly USD 0.07 / 2^30, which is USD 0.07 per GiB), zero included usage and no per-request fee.
 - `servers/mcpa-api/catalog/` holds a split-file catalog example in the format of `servers/delcore-api/catalog` for development and operators. Production registration stays outside Git.
 
 The server makes these calls:
 
-- Machine-to-machine calls, with the token from `LOGTO_TOKEN_URL`, `CLIENT_ID` and `CLIENT_SECRET` for audience `DELCORE_RESOURCE`: `Authorize`, `AuthorizeApiKey`, `GetTenantStates`, `CheckTenantLifecycle`, `IngestEvent` and `ListMeterAggregates`. `ListMeterAggregates` for meter `mcpa_traffic_bytes` also supplies the bounds of the tenant's current Delcore billing period for budgets.
+- Machine-to-machine calls, with the token from `LOGTO_TOKEN_URL`, `CLIENT_ID` and `CLIENT_SECRET` for audience `DELCORE_RESOURCE`: `Authorize`, `AuthorizeApiKey`, `GetTenantStates`, `CheckTenantLifecycle`, `IngestEvent` and `ListMeterAggregates`. `ListMeterAggregates` for meter `mcpa-traffic-bytes` also supplies the bounds of the tenant's current Delcore billing period for budgets.
 - User-token calls, only for console and MCP sessions, with the Delcore-audience token from the same Logto login: `GetCurrentUser`, following every `next_after_id` page, for the internal user ID and the user's tenants; and `ListGroups` for group names and for the group-membership snapshot.
 
 Management actions call `Authorize(tenant_id, user_id, capability, paid=false)`. Model calls call `Authorize(tenant_id, issuer_user_id, "invoke_models", paid=true)` and require `GetTenantStates` to report `TENANT_STATE_ACTIVE`.
