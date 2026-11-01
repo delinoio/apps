@@ -76,6 +76,21 @@ pub fn read(ctx: &Ctx) -> Result<Login, Fail> {
         None => Err(Fail::new(FailureClass::CredentialMissing)),
     }
 }
+/// Whether the Codex login belongs to the connection's account.
+///
+/// A connection without a stored fingerprint accepts any login. A different account, an API-key
+/// login or a login without an account ID does not match, because its usage would be reported
+/// under the wrong account.
+#[must_use]
+pub fn account_matches(login: &Login, expected: &str) -> bool {
+    expected.is_empty() || super::fingerprint(Provider::Codex, &login.account_id) == expected
+}
+/// Whether this device can collect the connection: the Codex login is readable and belongs to
+/// the connection's account.
+#[must_use]
+pub fn ready(ctx: &Ctx, conn: &ConnectionRow) -> bool {
+    read(ctx).is_ok_and(|login| account_matches(&login, &conn.account_fingerprint))
+}
 pub fn validate(ctx: &Ctx) -> Result<Validation, Fail> {
     let login = read(ctx)?;
     Ok(Validation {
@@ -232,6 +247,24 @@ pub async fn poll(ctx: &Ctx, conn: &ConnectionRow, now: i64) -> Outcome {
         Ok(login) => login,
         Err(fail) => return outcome(Provider::Codex, Err(fail), now),
     };
+    // The Codex CLI can be signed in to another account since the connection was added. Its
+    // usage must not be reported under this connection: the credential of the connection's
+    // account is missing on this device until the CLI is signed in to that account again.
+    if !account_matches(&login, &conn.account_fingerprint) {
+        tracing::warn!(
+            event = "provider_account_mismatch",
+            connection_id = %conn.id,
+            provider = "codex",
+            "The Codex CLI is signed in to a different account than the connection; the provider is not called."
+        );
+        let mut o = outcome(
+            Provider::Codex,
+            Err(Fail::new(FailureClass::CredentialMissing)),
+            now,
+        );
+        o.account_mismatch = true;
+        return o;
+    }
     if login.api_key_only {
         return Outcome {
             snapshot: not_provided(now),

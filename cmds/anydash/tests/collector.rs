@@ -601,6 +601,81 @@ async fn active_observation_is_timestamped_after_lease_acquisition() {
     );
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn codex_connection_is_not_polled_with_another_account() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    let auth = home.path().join(".codex/auth.json");
+    let sign_in = |account: &str| {
+        support::write(
+            &auth,
+            &json!({"tokens": {"access_token": support::jwt(time::now() + 3600), "account_id": account}})
+                .to_string(),
+        );
+    };
+    sign_in("acct-a");
+    core.add_connection(AddConnectionCredentialRequest {
+        provider: Provider::Codex.into(),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    // The Codex CLI is now signed in to another account.
+    sign_in("acct-b");
+    let base = api(state.clone());
+    mock.set(move |r| {
+        if r.route() == "/backend-api/wham/usage" {
+            Reply::json(200, &json!({"plan_type": "plus"}))
+        } else {
+            base(r)
+        }
+    });
+    let now = time::now();
+    core.heartbeat(now).await.unwrap();
+    let hb: HeartbeatRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("Heartbeat"))
+            .unwrap(),
+    );
+    assert!(
+        hb.ready_connection_ids.is_empty(),
+        "the device is not ready for another account's connection"
+    );
+    assert_eq!(
+        core.poll_connection("c1", now).await.unwrap(),
+        Some(CollectionStatus::AuthExpired)
+    );
+    assert_eq!(mock.count("/backend-api/wham/usage"), 0);
+    let report: ReportSnapshotRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("ReportSnapshot"))
+            .unwrap(),
+    );
+    assert_eq!(
+        report.snapshot.unwrap().failure_class,
+        pb::FailureClass::CredentialMissing as i32
+    );
+    // The lease goes to a ready device of the connection's account.
+    assert_eq!(mock.count("/anydash.v1.CollectorService/ReleaseLease"), 1);
+    assert!(!core.status(true).unwrap().connections[0].lease_held);
+    // Signing in to the connection's account again makes the device ready.
+    sign_in("acct-a");
+    mock.clear();
+    core.heartbeat(now + 60).await.unwrap();
+    let hb: HeartbeatRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("Heartbeat"))
+            .unwrap(),
+    );
+    assert_eq!(hb.ready_connection_ids, vec!["c1".to_owned()]);
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn provider_backoff_and_official_auth_expiry_stop() {
     let home = tempfile::tempdir().unwrap();
     let state = Arc::new(Mutex::new(Api::default()));

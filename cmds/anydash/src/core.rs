@@ -611,6 +611,13 @@ impl Core {
             provider: provider.into(),
             display_name: connection.display_name.clone(),
             scope_id: r.scope_id.trim().to_owned(),
+            // The server keeps the fingerprint of the first registration; a registration
+            // without one adopts it.
+            account_fingerprint: if connection.account_fingerprint.is_empty() {
+                validation.fingerprint
+            } else {
+                connection.account_fingerprint.clone()
+            },
             ..ConnectionRow::default()
         })?;
         drop(store);
@@ -1002,13 +1009,7 @@ impl Core {
         };
         Ok(rows
             .into_iter()
-            .filter(|(c, has)| {
-                providers::ready(
-                    &self.ctx,
-                    Provider::try_from(c.provider).unwrap_or(Provider::Unspecified),
-                    *has,
-                )
-            })
+            .filter(|(c, has)| providers::ready(&self.ctx, c, *has))
             .map(|(c, _)| c.id)
             .collect())
     }
@@ -1254,6 +1255,11 @@ impl Core {
             row.last_active_observed = observed_seconds;
         }
         let result = self.report(&mut row, snapshot).await;
+        if outcome.account_mismatch && row.lease_held {
+            // This device stays not ready while its CLI belongs to another account; release the
+            // lease so a ready device of the connection's account can take over.
+            self.release_lease(&mut row).await;
+        }
         self.store().put_connection(&row)?;
         result.map(|()| Some(status))
     }
@@ -1264,10 +1270,16 @@ impl Core {
             return Ok(());
         };
         let rows = self.store().connections()?;
+        // Local sessions belong to the current Codex login; report them only under a connection
+        // of that account.
+        let login = providers::codex::read(&self.ctx).ok();
         for mut row in rows {
             if row.provider == Provider::Codex as i32
                 && row.lease_held
                 && at > row.last_active_observed
+                && login
+                    .as_ref()
+                    .is_some_and(|l| providers::codex::account_matches(l, &row.account_fingerprint))
             {
                 let mut snapshot = providers::codex::map_passive(&value, at);
                 snapshot.next_attempt_at = time::optional(row.next_attempt);
@@ -1301,17 +1313,21 @@ impl Core {
             return;
         };
         for mut row in rows.into_iter().filter(|r| r.lease_held) {
-            let request = ReleaseLeaseRequest {
-                connection_id: row.id.clone(),
-                epoch: row.lease_epoch,
-            };
-            let _: Result<ReleaseLeaseResponse> = self
-                .call("CollectorService", "ReleaseLease", &request)
-                .await;
-            row.lease_held = false;
+            self.release_lease(&mut row).await;
             let _ = self.store().put_connection(&row);
-            tracing::info!(event = "lease_released", connection_id = %row.id);
         }
+    }
+    /// Release one held lease. A failed release leaves the lease to expire on the server.
+    async fn release_lease(&self, row: &mut ConnectionRow) {
+        let request = ReleaseLeaseRequest {
+            connection_id: row.id.clone(),
+            epoch: row.lease_epoch,
+        };
+        let _: Result<ReleaseLeaseResponse> = self
+            .call("CollectorService", "ReleaseLease", &request)
+            .await;
+        row.lease_held = false;
+        tracing::info!(event = "lease_released", connection_id = %row.id);
     }
     /// One scheduler pass: local sync and upload every minute, heartbeat every minute and
     /// polls for due connections. API failures back off from 1 to 30 minutes.

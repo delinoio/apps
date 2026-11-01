@@ -113,6 +113,39 @@ async fn codex_success_not_provided_and_headers() {
     mock.assert_no_refresh_requests();
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn codex_login_of_another_account_is_not_polled() {
+    let home = tempfile::tempdir().unwrap();
+    codex_auth(home.path(), NOW + 3600);
+    let mock = Mock::start(|_| Reply::json(200, &wham())).await;
+    let ctx = support::ctx(home.path(), &mock, "grok");
+    // The connection was added for another account; the CLI is now signed in to `acct-1`.
+    let mut other = row(Provider::Codex);
+    other.account_fingerprint = providers::fingerprint(Provider::Codex, "acct-2");
+    assert!(!providers::ready(&ctx, &other, false));
+    let o = providers::poll(&ctx, &other, None, NOW).await;
+    assert!(o.account_mismatch);
+    assert_eq!(o.snapshot.status, CollectionStatus::AuthExpired as i32);
+    assert_eq!(
+        o.snapshot.failure_class,
+        FailureClass::CredentialMissing as i32
+    );
+    assert_eq!(
+        mock.count("/backend-api/wham/usage"),
+        0,
+        "the other account's usage is never requested"
+    );
+    // The connection's own account is polled; a connection without a fingerprint accepts any.
+    let mut own = row(Provider::Codex);
+    own.account_fingerprint = providers::fingerprint(Provider::Codex, "acct-1");
+    assert!(providers::ready(&ctx, &own, false));
+    for conn in [own, row(Provider::Codex)] {
+        let o = providers::poll(&ctx, &conn, None, NOW).await;
+        assert!(!o.account_mismatch);
+        assert_eq!(o.snapshot.status, CollectionStatus::Succeeded as i32);
+    }
+    assert_eq!(mock.count("/backend-api/wham/usage"), 2);
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn codex_api_key_login_is_not_provided() {
     let home = tempfile::tempdir().unwrap();
     support::write(

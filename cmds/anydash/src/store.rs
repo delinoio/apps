@@ -19,7 +19,7 @@ CREATE TABLE contributions(path TEXT NOT NULL, tool INTEGER NOT NULL, model TEXT
 CREATE TABLE claude_records(key TEXT NOT NULL, path TEXT NOT NULL, total INTEGER NOT NULL, at INTEGER NOT NULL, model TEXT NOT NULL, input INTEGER NOT NULL, output INTEGER NOT NULL, cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, PRIMARY KEY(key, path));
 CREATE TABLE sessions(tool INTEGER NOT NULL, session TEXT NOT NULL, path TEXT NOT NULL, started INTEGER NOT NULL, model TEXT NOT NULL, PRIMARY KEY(tool, session, path));
 CREATE TABLE buckets(tool INTEGER NOT NULL, model TEXT NOT NULL, bucket INTEGER NOT NULL, sessions INTEGER NOT NULL, input INTEGER NOT NULL, output INTEGER NOT NULL, cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, version INTEGER NOT NULL, uploaded_version INTEGER NOT NULL, PRIMARY KEY(tool, model, bucket));
-CREATE TABLE connections(id TEXT PRIMARY KEY, provider INTEGER NOT NULL, display_name TEXT NOT NULL, scope_id TEXT NOT NULL, lease_epoch INTEGER NOT NULL, lease_held INTEGER NOT NULL, failures INTEGER NOT NULL, next_attempt INTEGER NOT NULL, last_status INTEGER NOT NULL, failure_class INTEGER NOT NULL, last_success INTEGER NOT NULL, last_error_correlation TEXT NOT NULL, credential_marker TEXT NOT NULL, auth_stopped INTEGER NOT NULL, last_active_observed INTEGER NOT NULL, last_manual INTEGER NOT NULL);
+CREATE TABLE connections(id TEXT PRIMARY KEY, provider INTEGER NOT NULL, display_name TEXT NOT NULL, scope_id TEXT NOT NULL, lease_epoch INTEGER NOT NULL, lease_held INTEGER NOT NULL, failures INTEGER NOT NULL, next_attempt INTEGER NOT NULL, last_status INTEGER NOT NULL, failure_class INTEGER NOT NULL, last_success INTEGER NOT NULL, last_error_correlation TEXT NOT NULL, credential_marker TEXT NOT NULL, auth_stopped INTEGER NOT NULL, last_active_observed INTEGER NOT NULL, last_manual INTEGER NOT NULL, account_fingerprint TEXT NOT NULL);
 CREATE TABLE pending_snapshots(connection_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, snapshot BLOB NOT NULL);
 CREATE TABLE widget_snapshots(widget_id TEXT PRIMARY KEY, position INTEGER NOT NULL, snapshot BLOB NOT NULL);
 ";
@@ -91,6 +91,10 @@ pub struct ConnectionRow {
     pub auth_stopped: bool,
     pub last_active_observed: i64,
     pub last_manual: i64,
+    /// The connection's provider account fingerprint when it was added or registered on this
+    /// device, or empty when the provider exposes no stable account. Local CLI credentials are
+    /// used only while they still belong to this account.
+    pub account_fingerprint: String,
 }
 #[must_use]
 pub fn int(v: u64) -> i64 {
@@ -545,7 +549,7 @@ impl Store {
             .conn
             .prepare(
                 "SELECT id, provider, display_name, scope_id, lease_epoch, lease_held, failures, next_attempt, last_status, failure_class,
-                 last_success, last_error_correlation, credential_marker, auth_stopped, last_active_observed, last_manual FROM connections ORDER BY id",
+                 last_success, last_error_correlation, credential_marker, auth_stopped, last_active_observed, last_manual, account_fingerprint FROM connections ORDER BY id",
             )?
             .query_map([], |r| {
                 Ok(ConnectionRow {
@@ -565,6 +569,7 @@ impl Store {
                     auth_stopped: r.get(13)?,
                     last_active_observed: r.get(14)?,
                     last_manual: r.get(15)?,
+                    account_fingerprint: r.get(16)?,
                 })
             })?
             .collect::<rusqlite::Result<_>>()?)
@@ -575,15 +580,16 @@ impl Store {
     pub fn put_connection(&self, c: &ConnectionRow) -> Result<()> {
         self.conn.execute(
             "INSERT INTO connections(id, provider, display_name, scope_id, lease_epoch, lease_held, failures, next_attempt, last_status,
-             failure_class, last_success, last_error_correlation, credential_marker, auth_stopped, last_active_observed, last_manual)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+             failure_class, last_success, last_error_correlation, credential_marker, auth_stopped, last_active_observed, last_manual, account_fingerprint)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
              ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, display_name = excluded.display_name, scope_id = excluded.scope_id,
              lease_epoch = excluded.lease_epoch, lease_held = excluded.lease_held, failures = excluded.failures, next_attempt = excluded.next_attempt,
              last_status = excluded.last_status, failure_class = excluded.failure_class, last_success = excluded.last_success,
              last_error_correlation = excluded.last_error_correlation, credential_marker = excluded.credential_marker,
-             auth_stopped = excluded.auth_stopped, last_active_observed = excluded.last_active_observed, last_manual = excluded.last_manual",
+             auth_stopped = excluded.auth_stopped, last_active_observed = excluded.last_active_observed, last_manual = excluded.last_manual,
+             account_fingerprint = excluded.account_fingerprint",
             params![c.id, c.provider, c.display_name, c.scope_id, int(c.lease_epoch), c.lease_held, c.failures, c.next_attempt, c.last_status,
-                c.failure_class, c.last_success, c.last_error_correlation, c.credential_marker, c.auth_stopped, c.last_active_observed, c.last_manual],
+                c.failure_class, c.last_success, c.last_error_correlation, c.credential_marker, c.auth_stopped, c.last_active_observed, c.last_manual, c.account_fingerprint],
         )?;
         Ok(())
     }

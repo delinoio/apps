@@ -160,6 +160,9 @@ pub struct Outcome {
     pub marker: String,
     /// No provider request was made because the stored credential is still expired.
     pub skipped: bool,
+    /// No provider request was made because the local CLI is signed in to a different account
+    /// than the connection's; the device hands the lease to another ready device.
+    pub account_mismatch: bool,
 }
 /// Response of a provider GET: status, `Retry-After` and body.
 pub struct Response {
@@ -594,9 +597,9 @@ pub async fn validate(
 }
 /// Whether this device can read a usable credential for the connection now.
 #[must_use]
-pub fn ready(ctx: &Ctx, provider: Provider, has_secret: bool) -> bool {
-    match provider {
-        Provider::Codex => codex::read(ctx).is_ok(),
+pub fn ready(ctx: &Ctx, conn: &ConnectionRow, has_secret: bool) -> bool {
+    match Provider::try_from(conn.provider).unwrap_or(Provider::Unspecified) {
+        Provider::Codex => codex::ready(ctx, conn),
         Provider::ClaudeCode => claude::read(ctx).is_ok(),
         Provider::Grok => grok::executable(ctx).is_some(),
         _ => has_secret,
