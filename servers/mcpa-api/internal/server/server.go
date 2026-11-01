@@ -27,8 +27,10 @@ import (
 	"github.com/delinoio/apps/servers/mcpa-api/internal/web"
 )
 
-// TraceHeader carries the per-request correlation ID on every response.
-const TraceHeader = "X-Mcpa-Trace-Id"
+// RequestIDHeader carries the per-request correlation ID on every response.
+// Outside the call surface its value is the trace ID; the call surface
+// replaces it with the call record ID.
+const RequestIDHeader = "X-Mcpa-Request-Id"
 
 // Mount is an HTTP route contributed by a later layer, for example
 // "/r/{resource_id}/", "/mcp", "/oauth/" or "/.well-known/". Pattern uses
@@ -139,7 +141,7 @@ func (s *server) wrap(surface obs.Surface, next http.Handler) http.Handler {
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(attribute.String("http.request.method", r.Method), attribute.String("mcpa.surface", string(surface)), attribute.String("mcpa.trace_id", traceID)))
 		defer span.End()
-		w.Header().Set(TraceHeader, traceID)
+		w.Header().Set(RequestIDHeader, traceID)
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r.WithContext(ctx))
 		status := sw.status
@@ -164,7 +166,7 @@ var (
 		"Grpc-Timeout", "X-Grpc-Web", "X-User-Agent", "Authorization", auth.CSRFHeader,
 	}, ", ")
 	corsExposeHeaders = strings.Join([]string{
-		"Grpc-Status", "Grpc-Message", "Grpc-Status-Details-Bin", "Connect-Content-Encoding", "Connect-Accept-Encoding", TraceHeader,
+		"Grpc-Status", "Grpc-Message", "Grpc-Status-Details-Bin", "Connect-Content-Encoding", "Connect-Accept-Encoding", RequestIDHeader,
 	}, ", ")
 )
 
