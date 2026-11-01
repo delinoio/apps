@@ -112,6 +112,9 @@ const (
 	// McpaServiceListAuditEventsProcedure is the fully-qualified name of the McpaService's
 	// ListAuditEvents RPC.
 	McpaServiceListAuditEventsProcedure = "/mcpa.v1.McpaService/ListAuditEvents"
+	// McpaServiceListTenantAuditEventsProcedure is the fully-qualified name of the McpaService's
+	// ListTenantAuditEvents RPC.
+	McpaServiceListTenantAuditEventsProcedure = "/mcpa.v1.McpaService/ListTenantAuditEvents"
 )
 
 // McpaServiceClient is a client for the mcpa.v1.McpaService service.
@@ -143,6 +146,7 @@ type McpaServiceClient interface {
 	GetUsage(context.Context, *connect.Request[v1.GetUsageRequest]) (*connect.Response[v1.GetUsageResponse], error)
 	ListCallRecords(context.Context, *connect.Request[v1.ListCallRecordsRequest]) (*connect.Response[v1.ListCallRecordsResponse], error)
 	ListAuditEvents(context.Context, *connect.Request[v1.ListAuditEventsRequest]) (*connect.Response[v1.ListAuditEventsResponse], error)
+	ListTenantAuditEvents(context.Context, *connect.Request[v1.ListTenantAuditEventsRequest]) (*connect.Response[v1.ListTenantAuditEventsResponse], error)
 }
 
 // NewMcpaServiceClient constructs a client for the mcpa.v1.McpaService service. By default, it uses
@@ -318,6 +322,12 @@ func NewMcpaServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(mcpaServiceMethods.ByName("ListAuditEvents")),
 			connect.WithClientOptions(opts...),
 		),
+		listTenantAuditEvents: connect.NewClient[v1.ListTenantAuditEventsRequest, v1.ListTenantAuditEventsResponse](
+			httpClient,
+			baseURL+McpaServiceListTenantAuditEventsProcedure,
+			connect.WithSchema(mcpaServiceMethods.ByName("ListTenantAuditEvents")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -350,6 +360,7 @@ type mcpaServiceClient struct {
 	getUsage                 *connect.Client[v1.GetUsageRequest, v1.GetUsageResponse]
 	listCallRecords          *connect.Client[v1.ListCallRecordsRequest, v1.ListCallRecordsResponse]
 	listAuditEvents          *connect.Client[v1.ListAuditEventsRequest, v1.ListAuditEventsResponse]
+	listTenantAuditEvents    *connect.Client[v1.ListTenantAuditEventsRequest, v1.ListTenantAuditEventsResponse]
 }
 
 // GetViewer calls mcpa.v1.McpaService.GetViewer.
@@ -487,6 +498,11 @@ func (c *mcpaServiceClient) ListAuditEvents(ctx context.Context, req *connect.Re
 	return c.listAuditEvents.CallUnary(ctx, req)
 }
 
+// ListTenantAuditEvents calls mcpa.v1.McpaService.ListTenantAuditEvents.
+func (c *mcpaServiceClient) ListTenantAuditEvents(ctx context.Context, req *connect.Request[v1.ListTenantAuditEventsRequest]) (*connect.Response[v1.ListTenantAuditEventsResponse], error) {
+	return c.listTenantAuditEvents.CallUnary(ctx, req)
+}
+
 // McpaServiceHandler is an implementation of the mcpa.v1.McpaService service.
 type McpaServiceHandler interface {
 	GetViewer(context.Context, *connect.Request[v1.GetViewerRequest]) (*connect.Response[v1.GetViewerResponse], error)
@@ -516,6 +532,7 @@ type McpaServiceHandler interface {
 	GetUsage(context.Context, *connect.Request[v1.GetUsageRequest]) (*connect.Response[v1.GetUsageResponse], error)
 	ListCallRecords(context.Context, *connect.Request[v1.ListCallRecordsRequest]) (*connect.Response[v1.ListCallRecordsResponse], error)
 	ListAuditEvents(context.Context, *connect.Request[v1.ListAuditEventsRequest]) (*connect.Response[v1.ListAuditEventsResponse], error)
+	ListTenantAuditEvents(context.Context, *connect.Request[v1.ListTenantAuditEventsRequest]) (*connect.Response[v1.ListTenantAuditEventsResponse], error)
 }
 
 // NewMcpaServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -687,6 +704,12 @@ func NewMcpaServiceHandler(svc McpaServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(mcpaServiceMethods.ByName("ListAuditEvents")),
 		connect.WithHandlerOptions(opts...),
 	)
+	mcpaServiceListTenantAuditEventsHandler := connect.NewUnaryHandler(
+		McpaServiceListTenantAuditEventsProcedure,
+		svc.ListTenantAuditEvents,
+		connect.WithSchema(mcpaServiceMethods.ByName("ListTenantAuditEvents")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/mcpa.v1.McpaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case McpaServiceGetViewerProcedure:
@@ -743,6 +766,8 @@ func NewMcpaServiceHandler(svc McpaServiceHandler, opts ...connect.HandlerOption
 			mcpaServiceListCallRecordsHandler.ServeHTTP(w, r)
 		case McpaServiceListAuditEventsProcedure:
 			mcpaServiceListAuditEventsHandler.ServeHTTP(w, r)
+		case McpaServiceListTenantAuditEventsProcedure:
+			mcpaServiceListTenantAuditEventsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -858,4 +883,8 @@ func (UnimplementedMcpaServiceHandler) ListCallRecords(context.Context, *connect
 
 func (UnimplementedMcpaServiceHandler) ListAuditEvents(context.Context, *connect.Request[v1.ListAuditEventsRequest]) (*connect.Response[v1.ListAuditEventsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mcpa.v1.McpaService.ListAuditEvents is not implemented"))
+}
+
+func (UnimplementedMcpaServiceHandler) ListTenantAuditEvents(context.Context, *connect.Request[v1.ListTenantAuditEventsRequest]) (*connect.Response[v1.ListTenantAuditEventsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mcpa.v1.McpaService.ListTenantAuditEvents is not implemented"))
 }

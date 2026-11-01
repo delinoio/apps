@@ -642,6 +642,18 @@ message ListAuditEventsResponse {
   string next_after_id = 3;
 }
 
+// ListTenantAuditEventsRequest lists the tenant-level audit events, which
+// have no owning resource (tenant budget changes).
+message ListTenantAuditEventsRequest {
+  string tenant_id = 1;
+  Page page = 2;
+}
+message ListTenantAuditEventsResponse {
+  Metadata metadata = 1;
+  repeated AuditEvent events = 2;
+  string next_after_id = 3;
+}
+
 // McpaService is the management interface. Console sessions, interactive MCP
 // sessions and Delcore personal keys use the same handlers.
 service McpaService {
@@ -672,4 +684,5 @@ service McpaService {
   rpc GetUsage(GetUsageRequest) returns (GetUsageResponse);
   rpc ListCallRecords(ListCallRecordsRequest) returns (ListCallRecordsResponse);
   rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse);
+  rpc ListTenantAuditEvents(ListTenantAuditEventsRequest) returns (ListTenantAuditEventsResponse);
 }

@@ -5394,6 +5394,120 @@ func (x *ListAuditEventsResponse) GetNextAfterId() string {
 	return ""
 }
 
+// ListTenantAuditEventsRequest lists the tenant-level audit events, which
+// have no owning resource (tenant budget changes).
+type ListTenantAuditEventsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Page          *Page                  `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTenantAuditEventsRequest) Reset() {
+	*x = ListTenantAuditEventsRequest{}
+	mi := &file_mcpa_v1_mcpa_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTenantAuditEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTenantAuditEventsRequest) ProtoMessage() {}
+
+func (x *ListTenantAuditEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mcpa_v1_mcpa_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTenantAuditEventsRequest.ProtoReflect.Descriptor instead.
+func (*ListTenantAuditEventsRequest) Descriptor() ([]byte, []int) {
+	return file_mcpa_v1_mcpa_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *ListTenantAuditEventsRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *ListTenantAuditEventsRequest) GetPage() *Page {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListTenantAuditEventsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Metadata      *Metadata              `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Events        []*AuditEvent          `protobuf:"bytes,2,rep,name=events,proto3" json:"events,omitempty"`
+	NextAfterId   string                 `protobuf:"bytes,3,opt,name=next_after_id,json=nextAfterId,proto3" json:"next_after_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTenantAuditEventsResponse) Reset() {
+	*x = ListTenantAuditEventsResponse{}
+	mi := &file_mcpa_v1_mcpa_proto_msgTypes[74]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTenantAuditEventsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTenantAuditEventsResponse) ProtoMessage() {}
+
+func (x *ListTenantAuditEventsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_mcpa_v1_mcpa_proto_msgTypes[74]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTenantAuditEventsResponse.ProtoReflect.Descriptor instead.
+func (*ListTenantAuditEventsResponse) Descriptor() ([]byte, []int) {
+	return file_mcpa_v1_mcpa_proto_rawDescGZIP(), []int{74}
+}
+
+func (x *ListTenantAuditEventsResponse) GetMetadata() *Metadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *ListTenantAuditEventsResponse) GetEvents() []*AuditEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *ListTenantAuditEventsResponse) GetNextAfterId() string {
+	if x != nil {
+		return x.NextAfterId
+	}
+	return ""
+}
+
 var File_mcpa_v1_mcpa_proto protoreflect.FileDescriptor
 
 const file_mcpa_v1_mcpa_proto_rawDesc = "" +
@@ -5772,6 +5886,13 @@ const file_mcpa_v1_mcpa_proto_rawDesc = "" +
 	"\x17ListAuditEventsResponse\x12-\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x11.mcpa.v1.MetadataR\bmetadata\x12+\n" +
 	"\x06events\x18\x02 \x03(\v2\x13.mcpa.v1.AuditEventR\x06events\x12\"\n" +
+	"\rnext_after_id\x18\x03 \x01(\tR\vnextAfterId\"^\n" +
+	"\x1cListTenantAuditEventsRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12!\n" +
+	"\x04page\x18\x02 \x01(\v2\r.mcpa.v1.PageR\x04page\"\x9f\x01\n" +
+	"\x1dListTenantAuditEventsResponse\x12-\n" +
+	"\bmetadata\x18\x01 \x01(\v2\x11.mcpa.v1.MetadataR\bmetadata\x12+\n" +
+	"\x06events\x18\x02 \x03(\v2\x13.mcpa.v1.AuditEventR\x06events\x12\"\n" +
 	"\rnext_after_id\x18\x03 \x01(\tR\vnextAfterId*\xfa\x03\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\x1e\n" +
@@ -5871,7 +5992,7 @@ const file_mcpa_v1_mcpa_proto_rawDesc = "" +
 	"\x12ACTOR_KIND_CONSOLE\x10\x01\x12\x12\n" +
 	"\x0eACTOR_KIND_MCP\x10\x02\x12\x1b\n" +
 	"\x17ACTOR_KIND_PERSONAL_KEY\x10\x03\x12\x15\n" +
-	"\x11ACTOR_KIND_SYSTEM\x10\x042\x84\x12\n" +
+	"\x11ACTOR_KIND_SYSTEM\x10\x042\xec\x12\n" +
 	"\vMcpaService\x12B\n" +
 	"\tGetViewer\x12\x19.mcpa.v1.GetViewerRequest\x1a\x1a.mcpa.v1.GetViewerResponse\x12W\n" +
 	"\x10ListTenantGroups\x12 .mcpa.v1.ListTenantGroupsRequest\x1a!.mcpa.v1.ListTenantGroupsResponse\x12Q\n" +
@@ -5899,7 +6020,8 @@ const file_mcpa_v1_mcpa_proto_rawDesc = "" +
 	"\x0fSetTenantBudget\x12\x1f.mcpa.v1.SetTenantBudgetRequest\x1a .mcpa.v1.SetTenantBudgetResponse\x12?\n" +
 	"\bGetUsage\x12\x18.mcpa.v1.GetUsageRequest\x1a\x19.mcpa.v1.GetUsageResponse\x12T\n" +
 	"\x0fListCallRecords\x12\x1f.mcpa.v1.ListCallRecordsRequest\x1a .mcpa.v1.ListCallRecordsResponse\x12T\n" +
-	"\x0fListAuditEvents\x12\x1f.mcpa.v1.ListAuditEventsRequest\x1a .mcpa.v1.ListAuditEventsResponseB0Z.github.com/delinoio/apps/protos/mcpa/v1;mcpav1b\x06proto3"
+	"\x0fListAuditEvents\x12\x1f.mcpa.v1.ListAuditEventsRequest\x1a .mcpa.v1.ListAuditEventsResponse\x12f\n" +
+	"\x15ListTenantAuditEvents\x12%.mcpa.v1.ListTenantAuditEventsRequest\x1a&.mcpa.v1.ListTenantAuditEventsResponseB0Z.github.com/delinoio/apps/protos/mcpa/v1;mcpav1b\x06proto3"
 
 var (
 	file_mcpa_v1_mcpa_proto_rawDescOnce sync.Once
@@ -5914,7 +6036,7 @@ func file_mcpa_v1_mcpa_proto_rawDescGZIP() []byte {
 }
 
 var file_mcpa_v1_mcpa_proto_enumTypes = make([]protoimpl.EnumInfo, 13)
-var file_mcpa_v1_mcpa_proto_msgTypes = make([]protoimpl.MessageInfo, 74)
+var file_mcpa_v1_mcpa_proto_msgTypes = make([]protoimpl.MessageInfo, 76)
 var file_mcpa_v1_mcpa_proto_goTypes = []any{
 	(ErrorReason)(0),                         // 0: mcpa.v1.ErrorReason
 	(ResourceRole)(0),                        // 1: mcpa.v1.ResourceRole
@@ -6002,8 +6124,10 @@ var file_mcpa_v1_mcpa_proto_goTypes = []any{
 	(*ListCallRecordsResponse)(nil),          // 83: mcpa.v1.ListCallRecordsResponse
 	(*ListAuditEventsRequest)(nil),           // 84: mcpa.v1.ListAuditEventsRequest
 	(*ListAuditEventsResponse)(nil),          // 85: mcpa.v1.ListAuditEventsResponse
-	nil,                                      // 86: mcpa.v1.AuditEvent.DetailsEntry
-	(*timestamppb.Timestamp)(nil),            // 87: google.protobuf.Timestamp
+	(*ListTenantAuditEventsRequest)(nil),     // 86: mcpa.v1.ListTenantAuditEventsRequest
+	(*ListTenantAuditEventsResponse)(nil),    // 87: mcpa.v1.ListTenantAuditEventsResponse
+	nil,                                      // 88: mcpa.v1.AuditEvent.DetailsEntry
+	(*timestamppb.Timestamp)(nil),            // 89: google.protobuf.Timestamp
 }
 var file_mcpa_v1_mcpa_proto_depIdxs = []int32{
 	0,   // 0: mcpa.v1.ErrorDetail.reason:type_name -> mcpa.v1.ErrorReason
@@ -6012,40 +6136,40 @@ var file_mcpa_v1_mcpa_proto_depIdxs = []int32{
 	17,  // 3: mcpa.v1.Resource.routing:type_name -> mcpa.v1.RoutingSettings
 	16,  // 4: mcpa.v1.Resource.endpoints:type_name -> mcpa.v1.Endpoint
 	1,   // 5: mcpa.v1.Resource.caller_role:type_name -> mcpa.v1.ResourceRole
-	87,  // 6: mcpa.v1.Resource.create_time:type_name -> google.protobuf.Timestamp
-	87,  // 7: mcpa.v1.Resource.update_time:type_name -> google.protobuf.Timestamp
+	89,  // 6: mcpa.v1.Resource.create_time:type_name -> google.protobuf.Timestamp
+	89,  // 7: mcpa.v1.Resource.update_time:type_name -> google.protobuf.Timestamp
 	2,   // 8: mcpa.v1.AclEntry.principal_kind:type_name -> mcpa.v1.PrincipalKind
 	1,   // 9: mcpa.v1.AclEntry.role:type_name -> mcpa.v1.ResourceRole
-	87,  // 10: mcpa.v1.AclEntry.create_time:type_name -> google.protobuf.Timestamp
+	89,  // 10: mcpa.v1.AclEntry.create_time:type_name -> google.protobuf.Timestamp
 	3,   // 11: mcpa.v1.Credential.provider:type_name -> mcpa.v1.Provider
 	4,   // 12: mcpa.v1.Credential.kind:type_name -> mcpa.v1.CredentialKind
-	87,  // 13: mcpa.v1.Credential.create_time:type_name -> google.protobuf.Timestamp
+	89,  // 13: mcpa.v1.Credential.create_time:type_name -> google.protobuf.Timestamp
 	3,   // 14: mcpa.v1.ProviderOAuthFlow.provider:type_name -> mcpa.v1.Provider
 	7,   // 15: mcpa.v1.ProviderOAuthFlow.kind:type_name -> mcpa.v1.OauthFlowKind
 	8,   // 16: mcpa.v1.ProviderOAuthFlow.state:type_name -> mcpa.v1.OauthFlowState
-	87,  // 17: mcpa.v1.ProviderOAuthFlow.expire_time:type_name -> google.protobuf.Timestamp
-	87,  // 18: mcpa.v1.CallKey.create_time:type_name -> google.protobuf.Timestamp
-	87,  // 19: mcpa.v1.CallKey.expire_time:type_name -> google.protobuf.Timestamp
-	87,  // 20: mcpa.v1.CallKey.last_used_time:type_name -> google.protobuf.Timestamp
-	87,  // 21: mcpa.v1.CallKey.revoke_time:type_name -> google.protobuf.Timestamp
-	87,  // 22: mcpa.v1.Budget.period_start:type_name -> google.protobuf.Timestamp
-	87,  // 23: mcpa.v1.Budget.period_end:type_name -> google.protobuf.Timestamp
+	89,  // 17: mcpa.v1.ProviderOAuthFlow.expire_time:type_name -> google.protobuf.Timestamp
+	89,  // 18: mcpa.v1.CallKey.create_time:type_name -> google.protobuf.Timestamp
+	89,  // 19: mcpa.v1.CallKey.expire_time:type_name -> google.protobuf.Timestamp
+	89,  // 20: mcpa.v1.CallKey.last_used_time:type_name -> google.protobuf.Timestamp
+	89,  // 21: mcpa.v1.CallKey.revoke_time:type_name -> google.protobuf.Timestamp
+	89,  // 22: mcpa.v1.Budget.period_start:type_name -> google.protobuf.Timestamp
+	89,  // 23: mcpa.v1.Budget.period_end:type_name -> google.protobuf.Timestamp
 	3,   // 24: mcpa.v1.CallRecord.provider:type_name -> mcpa.v1.Provider
 	9,   // 25: mcpa.v1.CallRecord.status:type_name -> mcpa.v1.CallStatus
 	10,  // 26: mcpa.v1.CallRecord.provider_status_class:type_name -> mcpa.v1.StatusClass
-	87,  // 27: mcpa.v1.CallRecord.start_time:type_name -> google.protobuf.Timestamp
+	89,  // 27: mcpa.v1.CallRecord.start_time:type_name -> google.protobuf.Timestamp
 	5,   // 28: mcpa.v1.CallRecord.format:type_name -> mcpa.v1.EndpointFormat
 	3,   // 29: mcpa.v1.CallFilter.providers:type_name -> mcpa.v1.Provider
 	9,   // 30: mcpa.v1.CallFilter.statuses:type_name -> mcpa.v1.CallStatus
-	87,  // 31: mcpa.v1.CallFilter.start_time:type_name -> google.protobuf.Timestamp
-	87,  // 32: mcpa.v1.CallFilter.end_time:type_name -> google.protobuf.Timestamp
-	87,  // 33: mcpa.v1.UsageRow.day:type_name -> google.protobuf.Timestamp
+	89,  // 31: mcpa.v1.CallFilter.start_time:type_name -> google.protobuf.Timestamp
+	89,  // 32: mcpa.v1.CallFilter.end_time:type_name -> google.protobuf.Timestamp
+	89,  // 33: mcpa.v1.UsageRow.day:type_name -> google.protobuf.Timestamp
 	3,   // 34: mcpa.v1.UsageRow.provider:type_name -> mcpa.v1.Provider
 	9,   // 35: mcpa.v1.UsageRow.status:type_name -> mcpa.v1.CallStatus
 	11,  // 36: mcpa.v1.AuditEvent.action:type_name -> mcpa.v1.AuditAction
 	12,  // 37: mcpa.v1.AuditEvent.actor_kind:type_name -> mcpa.v1.ActorKind
-	86,  // 38: mcpa.v1.AuditEvent.details:type_name -> mcpa.v1.AuditEvent.DetailsEntry
-	87,  // 39: mcpa.v1.AuditEvent.occur_time:type_name -> google.protobuf.Timestamp
+	88,  // 38: mcpa.v1.AuditEvent.details:type_name -> mcpa.v1.AuditEvent.DetailsEntry
+	89,  // 39: mcpa.v1.AuditEvent.occur_time:type_name -> google.protobuf.Timestamp
 	29,  // 40: mcpa.v1.Viewer.tenants:type_name -> mcpa.v1.Tenant
 	12,  // 41: mcpa.v1.Viewer.actor_kind:type_name -> mcpa.v1.ActorKind
 	14,  // 42: mcpa.v1.GetViewerResponse.metadata:type_name -> mcpa.v1.Metadata
@@ -6086,7 +6210,7 @@ var file_mcpa_v1_mcpa_proto_depIdxs = []int32{
 	21,  // 77: mcpa.v1.CompleteProviderOAuthResponse.flow:type_name -> mcpa.v1.ProviderOAuthFlow
 	14,  // 78: mcpa.v1.GetProviderOAuthFlowResponse.metadata:type_name -> mcpa.v1.Metadata
 	21,  // 79: mcpa.v1.GetProviderOAuthFlowResponse.flow:type_name -> mcpa.v1.ProviderOAuthFlow
-	87,  // 80: mcpa.v1.IssueCallKeyRequest.expire_time:type_name -> google.protobuf.Timestamp
+	89,  // 80: mcpa.v1.IssueCallKeyRequest.expire_time:type_name -> google.protobuf.Timestamp
 	14,  // 81: mcpa.v1.IssueCallKeyResponse.metadata:type_name -> mcpa.v1.Metadata
 	22,  // 82: mcpa.v1.IssueCallKeyResponse.call_key:type_name -> mcpa.v1.CallKey
 	15,  // 83: mcpa.v1.ListCallKeysRequest.page:type_name -> mcpa.v1.Page
@@ -6114,65 +6238,70 @@ var file_mcpa_v1_mcpa_proto_depIdxs = []int32{
 	15,  // 105: mcpa.v1.ListAuditEventsRequest.page:type_name -> mcpa.v1.Page
 	14,  // 106: mcpa.v1.ListAuditEventsResponse.metadata:type_name -> mcpa.v1.Metadata
 	28,  // 107: mcpa.v1.ListAuditEventsResponse.events:type_name -> mcpa.v1.AuditEvent
-	32,  // 108: mcpa.v1.McpaService.GetViewer:input_type -> mcpa.v1.GetViewerRequest
-	34,  // 109: mcpa.v1.McpaService.ListTenantGroups:input_type -> mcpa.v1.ListTenantGroupsRequest
-	36,  // 110: mcpa.v1.McpaService.CreateResource:input_type -> mcpa.v1.CreateResourceRequest
-	38,  // 111: mcpa.v1.McpaService.GetResource:input_type -> mcpa.v1.GetResourceRequest
-	40,  // 112: mcpa.v1.McpaService.ListResources:input_type -> mcpa.v1.ListResourcesRequest
-	42,  // 113: mcpa.v1.McpaService.UpdateResource:input_type -> mcpa.v1.UpdateResourceRequest
-	44,  // 114: mcpa.v1.McpaService.DeleteResource:input_type -> mcpa.v1.DeleteResourceRequest
-	46,  // 115: mcpa.v1.McpaService.UpdateRouting:input_type -> mcpa.v1.UpdateRoutingRequest
-	48,  // 116: mcpa.v1.McpaService.ListAclEntries:input_type -> mcpa.v1.ListAclEntriesRequest
-	50,  // 117: mcpa.v1.McpaService.PutAclEntry:input_type -> mcpa.v1.PutAclEntryRequest
-	52,  // 118: mcpa.v1.McpaService.RemoveAclEntry:input_type -> mcpa.v1.RemoveAclEntryRequest
-	54,  // 119: mcpa.v1.McpaService.ListCredentials:input_type -> mcpa.v1.ListCredentialsRequest
-	56,  // 120: mcpa.v1.McpaService.RegisterApiKeyCredential:input_type -> mcpa.v1.RegisterApiKeyCredentialRequest
-	58,  // 121: mcpa.v1.McpaService.RemoveCredential:input_type -> mcpa.v1.RemoveCredentialRequest
-	60,  // 122: mcpa.v1.McpaService.StartProviderOAuth:input_type -> mcpa.v1.StartProviderOAuthRequest
-	62,  // 123: mcpa.v1.McpaService.CompleteProviderOAuth:input_type -> mcpa.v1.CompleteProviderOAuthRequest
-	64,  // 124: mcpa.v1.McpaService.GetProviderOAuthFlow:input_type -> mcpa.v1.GetProviderOAuthFlowRequest
-	66,  // 125: mcpa.v1.McpaService.IssueCallKey:input_type -> mcpa.v1.IssueCallKeyRequest
-	68,  // 126: mcpa.v1.McpaService.ListCallKeys:input_type -> mcpa.v1.ListCallKeysRequest
-	70,  // 127: mcpa.v1.McpaService.RevokeCallKey:input_type -> mcpa.v1.RevokeCallKeyRequest
-	72,  // 128: mcpa.v1.McpaService.GetResourceBudget:input_type -> mcpa.v1.GetResourceBudgetRequest
-	74,  // 129: mcpa.v1.McpaService.SetResourceBudget:input_type -> mcpa.v1.SetResourceBudgetRequest
-	76,  // 130: mcpa.v1.McpaService.GetTenantBudget:input_type -> mcpa.v1.GetTenantBudgetRequest
-	78,  // 131: mcpa.v1.McpaService.SetTenantBudget:input_type -> mcpa.v1.SetTenantBudgetRequest
-	80,  // 132: mcpa.v1.McpaService.GetUsage:input_type -> mcpa.v1.GetUsageRequest
-	82,  // 133: mcpa.v1.McpaService.ListCallRecords:input_type -> mcpa.v1.ListCallRecordsRequest
-	84,  // 134: mcpa.v1.McpaService.ListAuditEvents:input_type -> mcpa.v1.ListAuditEventsRequest
-	33,  // 135: mcpa.v1.McpaService.GetViewer:output_type -> mcpa.v1.GetViewerResponse
-	35,  // 136: mcpa.v1.McpaService.ListTenantGroups:output_type -> mcpa.v1.ListTenantGroupsResponse
-	37,  // 137: mcpa.v1.McpaService.CreateResource:output_type -> mcpa.v1.CreateResourceResponse
-	39,  // 138: mcpa.v1.McpaService.GetResource:output_type -> mcpa.v1.GetResourceResponse
-	41,  // 139: mcpa.v1.McpaService.ListResources:output_type -> mcpa.v1.ListResourcesResponse
-	43,  // 140: mcpa.v1.McpaService.UpdateResource:output_type -> mcpa.v1.UpdateResourceResponse
-	45,  // 141: mcpa.v1.McpaService.DeleteResource:output_type -> mcpa.v1.DeleteResourceResponse
-	47,  // 142: mcpa.v1.McpaService.UpdateRouting:output_type -> mcpa.v1.UpdateRoutingResponse
-	49,  // 143: mcpa.v1.McpaService.ListAclEntries:output_type -> mcpa.v1.ListAclEntriesResponse
-	51,  // 144: mcpa.v1.McpaService.PutAclEntry:output_type -> mcpa.v1.PutAclEntryResponse
-	53,  // 145: mcpa.v1.McpaService.RemoveAclEntry:output_type -> mcpa.v1.RemoveAclEntryResponse
-	55,  // 146: mcpa.v1.McpaService.ListCredentials:output_type -> mcpa.v1.ListCredentialsResponse
-	57,  // 147: mcpa.v1.McpaService.RegisterApiKeyCredential:output_type -> mcpa.v1.RegisterApiKeyCredentialResponse
-	59,  // 148: mcpa.v1.McpaService.RemoveCredential:output_type -> mcpa.v1.RemoveCredentialResponse
-	61,  // 149: mcpa.v1.McpaService.StartProviderOAuth:output_type -> mcpa.v1.StartProviderOAuthResponse
-	63,  // 150: mcpa.v1.McpaService.CompleteProviderOAuth:output_type -> mcpa.v1.CompleteProviderOAuthResponse
-	65,  // 151: mcpa.v1.McpaService.GetProviderOAuthFlow:output_type -> mcpa.v1.GetProviderOAuthFlowResponse
-	67,  // 152: mcpa.v1.McpaService.IssueCallKey:output_type -> mcpa.v1.IssueCallKeyResponse
-	69,  // 153: mcpa.v1.McpaService.ListCallKeys:output_type -> mcpa.v1.ListCallKeysResponse
-	71,  // 154: mcpa.v1.McpaService.RevokeCallKey:output_type -> mcpa.v1.RevokeCallKeyResponse
-	73,  // 155: mcpa.v1.McpaService.GetResourceBudget:output_type -> mcpa.v1.GetResourceBudgetResponse
-	75,  // 156: mcpa.v1.McpaService.SetResourceBudget:output_type -> mcpa.v1.SetResourceBudgetResponse
-	77,  // 157: mcpa.v1.McpaService.GetTenantBudget:output_type -> mcpa.v1.GetTenantBudgetResponse
-	79,  // 158: mcpa.v1.McpaService.SetTenantBudget:output_type -> mcpa.v1.SetTenantBudgetResponse
-	81,  // 159: mcpa.v1.McpaService.GetUsage:output_type -> mcpa.v1.GetUsageResponse
-	83,  // 160: mcpa.v1.McpaService.ListCallRecords:output_type -> mcpa.v1.ListCallRecordsResponse
-	85,  // 161: mcpa.v1.McpaService.ListAuditEvents:output_type -> mcpa.v1.ListAuditEventsResponse
-	135, // [135:162] is the sub-list for method output_type
-	108, // [108:135] is the sub-list for method input_type
-	108, // [108:108] is the sub-list for extension type_name
-	108, // [108:108] is the sub-list for extension extendee
-	0,   // [0:108] is the sub-list for field type_name
+	15,  // 108: mcpa.v1.ListTenantAuditEventsRequest.page:type_name -> mcpa.v1.Page
+	14,  // 109: mcpa.v1.ListTenantAuditEventsResponse.metadata:type_name -> mcpa.v1.Metadata
+	28,  // 110: mcpa.v1.ListTenantAuditEventsResponse.events:type_name -> mcpa.v1.AuditEvent
+	32,  // 111: mcpa.v1.McpaService.GetViewer:input_type -> mcpa.v1.GetViewerRequest
+	34,  // 112: mcpa.v1.McpaService.ListTenantGroups:input_type -> mcpa.v1.ListTenantGroupsRequest
+	36,  // 113: mcpa.v1.McpaService.CreateResource:input_type -> mcpa.v1.CreateResourceRequest
+	38,  // 114: mcpa.v1.McpaService.GetResource:input_type -> mcpa.v1.GetResourceRequest
+	40,  // 115: mcpa.v1.McpaService.ListResources:input_type -> mcpa.v1.ListResourcesRequest
+	42,  // 116: mcpa.v1.McpaService.UpdateResource:input_type -> mcpa.v1.UpdateResourceRequest
+	44,  // 117: mcpa.v1.McpaService.DeleteResource:input_type -> mcpa.v1.DeleteResourceRequest
+	46,  // 118: mcpa.v1.McpaService.UpdateRouting:input_type -> mcpa.v1.UpdateRoutingRequest
+	48,  // 119: mcpa.v1.McpaService.ListAclEntries:input_type -> mcpa.v1.ListAclEntriesRequest
+	50,  // 120: mcpa.v1.McpaService.PutAclEntry:input_type -> mcpa.v1.PutAclEntryRequest
+	52,  // 121: mcpa.v1.McpaService.RemoveAclEntry:input_type -> mcpa.v1.RemoveAclEntryRequest
+	54,  // 122: mcpa.v1.McpaService.ListCredentials:input_type -> mcpa.v1.ListCredentialsRequest
+	56,  // 123: mcpa.v1.McpaService.RegisterApiKeyCredential:input_type -> mcpa.v1.RegisterApiKeyCredentialRequest
+	58,  // 124: mcpa.v1.McpaService.RemoveCredential:input_type -> mcpa.v1.RemoveCredentialRequest
+	60,  // 125: mcpa.v1.McpaService.StartProviderOAuth:input_type -> mcpa.v1.StartProviderOAuthRequest
+	62,  // 126: mcpa.v1.McpaService.CompleteProviderOAuth:input_type -> mcpa.v1.CompleteProviderOAuthRequest
+	64,  // 127: mcpa.v1.McpaService.GetProviderOAuthFlow:input_type -> mcpa.v1.GetProviderOAuthFlowRequest
+	66,  // 128: mcpa.v1.McpaService.IssueCallKey:input_type -> mcpa.v1.IssueCallKeyRequest
+	68,  // 129: mcpa.v1.McpaService.ListCallKeys:input_type -> mcpa.v1.ListCallKeysRequest
+	70,  // 130: mcpa.v1.McpaService.RevokeCallKey:input_type -> mcpa.v1.RevokeCallKeyRequest
+	72,  // 131: mcpa.v1.McpaService.GetResourceBudget:input_type -> mcpa.v1.GetResourceBudgetRequest
+	74,  // 132: mcpa.v1.McpaService.SetResourceBudget:input_type -> mcpa.v1.SetResourceBudgetRequest
+	76,  // 133: mcpa.v1.McpaService.GetTenantBudget:input_type -> mcpa.v1.GetTenantBudgetRequest
+	78,  // 134: mcpa.v1.McpaService.SetTenantBudget:input_type -> mcpa.v1.SetTenantBudgetRequest
+	80,  // 135: mcpa.v1.McpaService.GetUsage:input_type -> mcpa.v1.GetUsageRequest
+	82,  // 136: mcpa.v1.McpaService.ListCallRecords:input_type -> mcpa.v1.ListCallRecordsRequest
+	84,  // 137: mcpa.v1.McpaService.ListAuditEvents:input_type -> mcpa.v1.ListAuditEventsRequest
+	86,  // 138: mcpa.v1.McpaService.ListTenantAuditEvents:input_type -> mcpa.v1.ListTenantAuditEventsRequest
+	33,  // 139: mcpa.v1.McpaService.GetViewer:output_type -> mcpa.v1.GetViewerResponse
+	35,  // 140: mcpa.v1.McpaService.ListTenantGroups:output_type -> mcpa.v1.ListTenantGroupsResponse
+	37,  // 141: mcpa.v1.McpaService.CreateResource:output_type -> mcpa.v1.CreateResourceResponse
+	39,  // 142: mcpa.v1.McpaService.GetResource:output_type -> mcpa.v1.GetResourceResponse
+	41,  // 143: mcpa.v1.McpaService.ListResources:output_type -> mcpa.v1.ListResourcesResponse
+	43,  // 144: mcpa.v1.McpaService.UpdateResource:output_type -> mcpa.v1.UpdateResourceResponse
+	45,  // 145: mcpa.v1.McpaService.DeleteResource:output_type -> mcpa.v1.DeleteResourceResponse
+	47,  // 146: mcpa.v1.McpaService.UpdateRouting:output_type -> mcpa.v1.UpdateRoutingResponse
+	49,  // 147: mcpa.v1.McpaService.ListAclEntries:output_type -> mcpa.v1.ListAclEntriesResponse
+	51,  // 148: mcpa.v1.McpaService.PutAclEntry:output_type -> mcpa.v1.PutAclEntryResponse
+	53,  // 149: mcpa.v1.McpaService.RemoveAclEntry:output_type -> mcpa.v1.RemoveAclEntryResponse
+	55,  // 150: mcpa.v1.McpaService.ListCredentials:output_type -> mcpa.v1.ListCredentialsResponse
+	57,  // 151: mcpa.v1.McpaService.RegisterApiKeyCredential:output_type -> mcpa.v1.RegisterApiKeyCredentialResponse
+	59,  // 152: mcpa.v1.McpaService.RemoveCredential:output_type -> mcpa.v1.RemoveCredentialResponse
+	61,  // 153: mcpa.v1.McpaService.StartProviderOAuth:output_type -> mcpa.v1.StartProviderOAuthResponse
+	63,  // 154: mcpa.v1.McpaService.CompleteProviderOAuth:output_type -> mcpa.v1.CompleteProviderOAuthResponse
+	65,  // 155: mcpa.v1.McpaService.GetProviderOAuthFlow:output_type -> mcpa.v1.GetProviderOAuthFlowResponse
+	67,  // 156: mcpa.v1.McpaService.IssueCallKey:output_type -> mcpa.v1.IssueCallKeyResponse
+	69,  // 157: mcpa.v1.McpaService.ListCallKeys:output_type -> mcpa.v1.ListCallKeysResponse
+	71,  // 158: mcpa.v1.McpaService.RevokeCallKey:output_type -> mcpa.v1.RevokeCallKeyResponse
+	73,  // 159: mcpa.v1.McpaService.GetResourceBudget:output_type -> mcpa.v1.GetResourceBudgetResponse
+	75,  // 160: mcpa.v1.McpaService.SetResourceBudget:output_type -> mcpa.v1.SetResourceBudgetResponse
+	77,  // 161: mcpa.v1.McpaService.GetTenantBudget:output_type -> mcpa.v1.GetTenantBudgetResponse
+	79,  // 162: mcpa.v1.McpaService.SetTenantBudget:output_type -> mcpa.v1.SetTenantBudgetResponse
+	81,  // 163: mcpa.v1.McpaService.GetUsage:output_type -> mcpa.v1.GetUsageResponse
+	83,  // 164: mcpa.v1.McpaService.ListCallRecords:output_type -> mcpa.v1.ListCallRecordsResponse
+	85,  // 165: mcpa.v1.McpaService.ListAuditEvents:output_type -> mcpa.v1.ListAuditEventsResponse
+	87,  // 166: mcpa.v1.McpaService.ListTenantAuditEvents:output_type -> mcpa.v1.ListTenantAuditEventsResponse
+	139, // [139:167] is the sub-list for method output_type
+	111, // [111:139] is the sub-list for method input_type
+	111, // [111:111] is the sub-list for extension type_name
+	111, // [111:111] is the sub-list for extension extendee
+	0,   // [0:111] is the sub-list for field type_name
 }
 
 func init() { file_mcpa_v1_mcpa_proto_init() }
@@ -6186,7 +6315,7 @@ func file_mcpa_v1_mcpa_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mcpa_v1_mcpa_proto_rawDesc), len(file_mcpa_v1_mcpa_proto_rawDesc)),
 			NumEnums:      13,
-			NumMessages:   74,
+			NumMessages:   76,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
