@@ -12,6 +12,7 @@ import {
   Provider,
   ResourceRole,
 } from "@repo/protos/mcpa/v1/mcpa_pb";
+import { SESSION_QUERY_KEY } from "../src/app";
 import { SessionStatus } from "../src/lib/session";
 import {
   API,
@@ -205,6 +206,41 @@ describe("session states", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     expect(await screen.findByRole("link", { name: "Sign in" })).toBeTruthy();
     expect(sessionClient.calls).toContain("logout:csrf-1");
+  });
+
+  it("drops the previous user's data when a session refetch finds another user", async () => {
+    let tenants = [{ id: TENANT_ID, name: "Acme", personal: false }];
+    const { queryClient } = renderApp({
+      sessions: [
+        signedIn,
+        {
+          status: SessionStatus.SignedIn,
+          userId: "user-2",
+          csrfToken: "csrf-2",
+        },
+      ],
+      service: {
+        ...baseService(),
+        getViewer: () => ({ viewer: { userId: "user", tenants } }),
+      },
+    });
+    expect(await screen.findByRole("link", { name: /Acme/ })).toBeTruthy();
+    // Another tab signed in as a different user; this tab finds the new
+    // session when it refetches it.
+    tenants = [{ id: "tenant-2", name: "Globex", personal: false }];
+    await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
+    expect(await screen.findByRole("link", { name: /Globex/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Acme/ })).toBeNull();
+    expect(
+      JSON.stringify(
+        queryClient
+          .getQueryCache()
+          .getAll()
+          .map((query) => query.state.data),
+        (_, value: unknown) =>
+          typeof value === "bigint" ? value.toString() : value,
+      ),
+    ).not.toContain("Acme");
   });
 });
 

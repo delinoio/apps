@@ -24,6 +24,7 @@ TypeScript, React and Rsbuild follow the repository frontend stack. Node.js 24 r
   - 401 shows the signed-out state with a sign-in action.
   - 403 `mfa_required` shows an MFA screen that explains the requirement and links to `reauthentication_url` for enrollment or reauthentication. Because the server never adds MFA evidence to an existing session, the screen also offers to sign in again: the console ends the restricted session with `POST /auth/logout` and the response's `csrf_token`, then starts a new login.
 - Every Connect call uses the API origin with `credentials: "include"` and sends `X-Mcpa-CSRF` with the session CSRF token. The console refreshes with `POST /auth/refresh` before `expires_at` and on an authentication failure, then retries once. It signs out with `POST /auth/logout`, also with the CSRF header.
+- Cached management responses belong to the signed-in user. Signing out drops them. When a session refetch or recovery finds a different user, for example after another tab signed in again, the console drops the previous user's cached responses and mutations and starts the console views again for the new user.
 - A Connect error with `ERROR_REASON_MFA_REQUIRED` routes to the MFA screen. `ERROR_REASON_UNAUTHENTICATED` routes to sign-in.
 - The API origin is public build configuration (`PUBLIC_MCPA_API_URL`, default `https://mcpa.api.delino.io`). Only `PUBLIC_*` values enter the browser bundle; the bundle contains no service credentials.
 

@@ -17,7 +17,10 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { TransportProvider } from "@connectrpc/connect-query";
+import {
+  addStaticKeyToTransport,
+  TransportProvider,
+} from "@connectrpc/connect-query";
 import type { Transport } from "@connectrpc/connect";
 import { Button } from "@packages/ui/components/button";
 import { describeError, ErrorKind } from "./lib/errors";
@@ -150,12 +153,41 @@ function SessionGate({
     return recovering.current;
   }, [sessionClient, queryClient]);
 
-  const managementTransport = useMemo(
+  const baseTransport = useMemo(
     () =>
       transport ??
       createMcpaTransport(apiUrl, { csrfToken: () => csrf.current, recover }),
     [apiUrl, transport, recover],
   );
+
+  // Management responses belong to the signed-in user. Another tab can sign
+  // in as a different user, which this tab finds on a session refetch or
+  // recovery rather than through its own sign-out. Connect Query keys include
+  // the transport key, so a key per user keeps the new user's queries from
+  // reading the previous user's cached responses.
+  const userId =
+    session?.status === SessionStatus.SignedIn ? session.userId : undefined;
+  const managementTransport = useMemo(
+    () =>
+      addStaticKeyToTransport(baseTransport, managementTransportKey(userId)),
+    [baseTransport, userId],
+  );
+  // When the signed-in user changes, drop the previous user's cached
+  // management responses and mutations.
+  const lastUserId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!userId) return;
+    const previous = lastUserId.current;
+    lastUserId.current = userId;
+    if (previous === undefined || previous === userId) return;
+    queryClient.removeQueries({
+      queryKey: [
+        "connect-query",
+        { transport: managementTransportKey(previous) },
+      ],
+    });
+    queryClient.getMutationCache().clear();
+  }, [userId, queryClient]);
 
   // After sign-in the API returns to the console root; restore the page the
   // user was on when they started signing in.
@@ -244,10 +276,16 @@ function SessionGate({
   return (
     <SessionContext.Provider value={value}>
       <TransportProvider transport={managementTransport}>
-        <ConsoleShell />
+        {/* A different user gets a fresh console without the previous
+            user's component state. */}
+        <ConsoleShell key={session.userId} />
       </TransportProvider>
     </SessionContext.Provider>
   );
+}
+
+function managementTransportKey(userId: string | undefined): string {
+  return `mcpa-user:${userId ?? ""}`;
 }
 
 function CenteredPage({ children }: { children: ReactNode }) {
