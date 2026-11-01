@@ -1176,6 +1176,12 @@ impl Core {
             return Ok(Some(CollectionStatus::AuthExpired));
         }
         let mut snapshot = outcome.snapshot;
+        // `now` was taken at the start of the cycle, before the heartbeat that may have acquired
+        // this lease, and the server rejects observations earlier than the lease's `acquired_at`.
+        // Timestamp the observation when the poll completes, after acquisition and renewal.
+        let observed = time::now_timestamp();
+        let observed_seconds = observed.seconds;
+        snapshot.observed_at = Some(observed);
         let status =
             CollectionStatus::try_from(snapshot.status).unwrap_or(CollectionStatus::Failed);
         let class =
@@ -1245,7 +1251,7 @@ impl Core {
             status,
             CollectionStatus::Succeeded | CollectionStatus::PartiallySucceeded
         ) {
-            row.last_active_observed = now;
+            row.last_active_observed = observed_seconds;
         }
         let result = self.report(&mut row, snapshot).await;
         self.store().put_connection(&row)?;

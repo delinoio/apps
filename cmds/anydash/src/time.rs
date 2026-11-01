@@ -11,6 +11,18 @@ pub fn now() -> i64 {
 pub fn now_micros() -> u64 {
     u64::try_from(Utc::now().timestamp_micros()).unwrap_or(0)
 }
+/// The current UTC time as a timestamp with the server's microsecond precision.
+///
+/// Snapshot observation times use it so that an observation made right after a lease
+/// acquisition is not truncated to a second before the lease's `acquired_at`.
+#[must_use]
+pub fn now_timestamp() -> prost_types::Timestamp {
+    let micros = Utc::now().timestamp_micros();
+    prost_types::Timestamp {
+        seconds: micros.div_euclid(1_000_000),
+        nanos: i32::try_from(micros.rem_euclid(1_000_000) * 1_000).unwrap_or(0),
+    }
+}
 /// Parse an RFC 3339 timestamp with any UTC offset into Unix seconds.
 #[must_use]
 pub fn parse(value: &str) -> Option<i64> {

@@ -562,6 +562,45 @@ async fn lease_acquire_epoch_reports_and_loss() {
     assert_eq!(core.status(true).unwrap().connections.len(), 0);
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn active_observation_is_timestamped_after_lease_acquisition() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    // The server records `acquired_at` with microsecond precision when it grants the lease.
+    let acquired = Arc::new(Mutex::new(None));
+    let base = api(state.clone());
+    let a = acquired.clone();
+    mock.set(move |r| {
+        if r.route().ends_with("AcquireLease") {
+            *a.lock().unwrap() = Some(chrono::Utc::now().timestamp_micros());
+        }
+        base(r)
+    });
+    // The cycle time is taken before the heartbeat that acquires the lease.
+    let now = time::now();
+    core.heartbeat(now).await.unwrap();
+    assert_eq!(
+        core.poll_connection("c1", now).await.unwrap(),
+        Some(CollectionStatus::Succeeded)
+    );
+    let report: ReportSnapshotRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("ReportSnapshot"))
+            .unwrap(),
+    );
+    let observed = report.snapshot.unwrap().observed_at.unwrap();
+    assert_eq!(observed.nanos % 1_000, 0, "microsecond precision");
+    let observed = observed.seconds * 1_000_000 + i64::from(observed.nanos / 1_000);
+    let acquired = acquired.lock().unwrap().expect("the lease was acquired");
+    assert!(
+        observed >= acquired,
+        "observed_at {observed} precedes the lease acquisition {acquired}"
+    );
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn provider_backoff_and_official_auth_expiry_stop() {
     let home = tempfile::tempdir().unwrap();
     let state = Arc::new(Mutex::new(Api::default()));
