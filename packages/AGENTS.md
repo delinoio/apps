@@ -10,4 +10,4 @@
 
 - `packages/lane` owns the Lane npm installer and common agent skill/guides. Read the [Lane project](../docs/project-lane.md) and [distribution contract](../docs/packages-lane-distribution-contract.md); CLI source remains in `cmds/lane`.
 
-- Planned `packages/anydash` owns the AnyDash npm installer and install scripts. Read the [AnyDash project](../docs/project-anydash.md) and [distribution contract](../docs/packages-anydash-distribution-contract.md); CLI source remains in `cmds/anydash`.
+- `packages/anydash` owns the AnyDash npm launcher, platform packages and install scripts. Read the [AnyDash project](../docs/project-anydash.md) and [distribution contract](../docs/packages-anydash-distribution-contract.md); CLI source remains in `cmds/anydash`.
