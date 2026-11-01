@@ -20,6 +20,26 @@ static void AnyDashLog(NSString *event, NSDictionary *fields) {
   NSLog(@"%@", [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
 }
 
+/// Appends `delcore_access_token` (field 1, length-delimited) to a binary
+/// Protobuf request. A later occurrence of a singular field wins when the server
+/// parses the message, so a value set by the bundle is replaced.
+static NSData *WithDelcoreToken(NSData *body, NSString *token) {
+  NSData *value = [token dataUsingEncoding:NSUTF8StringEncoding];
+  NSMutableData *result = [body mutableCopy];
+  uint8_t tag = 0x0a;
+  [result appendBytes:&tag length:1];
+  NSUInteger remaining = value.length;
+  while (remaining > 0x7f) {
+    uint8_t byte = (uint8_t)((remaining & 0x7f) | 0x80);
+    [result appendBytes:&byte length:1];
+    remaining >>= 7;
+  }
+  uint8_t last = (uint8_t)remaining;
+  [result appendBytes:&last length:1];
+  [result appendData:value];
+  return result;
+}
+
 static NSString *Reply(id value, NSString *error) {
   NSDictionary *body = error ? @{@"ok": @NO, @"error": @{@"message": error}} : @{@"ok": @YES, @"value": value ?: @{}};
   NSData *data = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
@@ -286,10 +306,6 @@ static void KeychainRemove(NSString *account, NSString *group) {
     [NSFileManager.defaultManager removeItemAtURL:[self snapshotDirectory] error:nil];
     [AnyDashWidgetBridge reloadAll];
     completion(Reply(@{}, nil));
-  } else if ([method isEqualToString:@"delcoreToken"]) {
-    [self accessToken:self.config[@"delcoreResource"] completion:^(NSString *token, NSString *error) {
-      completion(Reply(token ? @{@"token": token} : nil, error));
-    }];
   } else if ([method isEqualToString:@"rpc"]) {
     [self rpc:payload completion:completion];
   } else if ([method isEqualToString:@"copyText"]) {
@@ -367,11 +383,12 @@ static void KeychainRemove(NSString *account, NSString *group) {
     completion(Reply(nil, @"Invalid RPC target."));
     return;
   }
-  void (^send)(NSString *) = ^(NSString *token) {
+  NSData *body = [[NSData alloc] initWithBase64EncodedString:[payload[@"body"] description] ?: @"" options:0] ?: [NSData data];
+  void (^send)(NSString *, NSData *) = ^(NSString *token, NSData *requestBody) {
     NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@/%@/%@", self.config[@"api"], service, method]];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"POST";
-    request.HTTPBody = [[NSData alloc] initWithBase64EncodedString:[payload[@"body"] description] ?: @"" options:0];
+    request.HTTPBody = requestBody;
     [request setValue:@"application/proto" forHTTPHeaderField:@"Content-Type"];
     [request setValue:@"1" forHTTPHeaderField:@"Connect-Protocol-Version"];
     NSDictionary *headers = [payload[@"headers"] isKindOfClass:NSDictionary.class] ? payload[@"headers"] : @{};
@@ -387,10 +404,20 @@ static void KeychainRemove(NSString *account, NSString *group) {
       completion(Reply(@{@"status": @(http.statusCode), @"body": [data base64EncodedStringWithOptions:0] ?: @"", @"correlationId": correlation ?: @""}, nil));
     }] resume];
   };
-  if (!KeychainGet(kRefreshAccount, nil)) { send(nil); return; }
+  if (!KeychainGet(kRefreshAccount, nil)) { send(nil, body); return; }
   [self accessToken:self.config[@"anydashResource"] completion:^(NSString *token, NSString *error) {
     if (!token) { completion(Reply(@{@"status": @401, @"body": @""}, nil)); return; }
-    send(token);
+    NSString *target = [NSString stringWithFormat:@"%@/%@", service, method];
+    if (![@[@"anydash.v1.AccountService/ConnectAccount", @"anydash.v1.DashboardService/ListSpaces"] containsObject:target]) {
+      send(token, body);
+      return;
+    }
+    // These requests carry `string delcore_access_token = 1`; the host appends
+    // the Delcore token so it never crosses into the Lynx bundle.
+    [self accessToken:self.config[@"delcoreResource"] completion:^(NSString *delcore, NSString *failure) {
+      if (!delcore) { completion(Reply(@{@"status": @401, @"body": @""}, nil)); return; }
+      send(token, WithDelcoreToken(body, delcore));
+    }];
   }];
 }
 @end

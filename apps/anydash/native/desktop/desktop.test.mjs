@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { NativeAuth, pkcePair, subject } from "./auth.mjs";
 import { Collector, ipcCall, socketPath } from "./collector.mjs";
-import { DesktopHost } from "./host.mjs";
+import { DesktopHost, withDelcoreToken } from "./host.mjs";
 import { memoryStore } from "./secure-store.mjs";
 import {
   compareVersions,
@@ -252,6 +252,35 @@ test("routes API and collector requests with the right credentials", async () =>
     ).ok,
     false,
   );
+});
+
+test("injects the Delcore token in the host instead of returning it", async () => {
+  const { value, requests } = host();
+  assert.equal(
+    JSON.parse(await value.reply("delcoreToken", "{}")).error.code,
+    "UNSUPPORTED",
+  );
+  for (const [service, method] of [
+    ["anydash.v1.AccountService", "ConnectAccount"],
+    ["anydash.v1.DashboardService", "ListSpaces"],
+    ["anydash.v1.AccountService", "GetAccount"],
+  ])
+    await value.call("rpc", {
+      target: "api",
+      service,
+      method,
+      body: "",
+      headers: {},
+    });
+  const token = Buffer.from("token:https://delcore.api.delino.io");
+  const expected = Buffer.concat([Buffer.from([0x0a, token.length]), token]);
+  assert.deepEqual(requests[0].init.body, expected);
+  assert.deepEqual(requests[1].init.body, expected);
+  assert.equal(requests[2].init.body.length, 0);
+  // JWT-length tokens use a multi-byte varint length.
+  const long = withDelcoreToken(Buffer.from([0x0a, 0]), "j".repeat(300));
+  assert.deepEqual([...long.subarray(0, 5)], [0x0a, 0, 0x0a, 0xac, 0x02]);
+  assert.equal(long.length, 5 + 300);
 });
 
 test("keeps the widget cache by user key and purges by prefix", async () => {

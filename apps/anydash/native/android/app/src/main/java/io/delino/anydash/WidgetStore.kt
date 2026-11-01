@@ -73,6 +73,30 @@ internal object AnyDashApi {
         service.startsWith("anydash.v1.") && service != "anydash.v1.LocalCollectorService" &&
             name.matches(service) && name.matches(method)
 
+    /** Requests whose field 1 is `string delcore_access_token`; the host injects that token. */
+    fun needsDelcoreToken(service: String, method: String) =
+        "$service/$method" in setOf("anydash.v1.AccountService/ConnectAccount", "anydash.v1.DashboardService/ListSpaces")
+
+    /**
+     * Appends `delcore_access_token` (field 1, length-delimited) to a binary Protobuf request, so
+     * the Delcore token never crosses into the Lynx bundle. A later occurrence of a singular field
+     * wins when the server parses the message, so a value set by the bundle is replaced.
+     */
+    fun withDelcoreToken(body: ByteArray, token: String): ByteArray {
+        val value = token.toByteArray(Charsets.UTF_8)
+        val out = java.io.ByteArrayOutputStream(body.size + value.size + 6)
+        out.write(body)
+        out.write(0x0a)
+        var remaining = value.size
+        while (remaining > 0x7f) {
+            out.write((remaining and 0x7f) or 0x80)
+            remaining = remaining ushr 7
+        }
+        out.write(remaining)
+        out.write(value)
+        return out.toByteArray()
+    }
+
     fun call(service: String, method: String, body: ByteArray, headers: Map<String, String>, token: String?): RpcResult {
         require(validTarget(service, method))
         val connection = URL("${BuildConfig.ANYDASH_API_URL}/$service/$method").openConnection() as HttpURLConnection

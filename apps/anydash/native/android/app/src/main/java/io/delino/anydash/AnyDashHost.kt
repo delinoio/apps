@@ -71,7 +71,6 @@ internal class AnyDashHost(private val context: Context) {
             AnyDashWidgetProvider.updateAll(context)
             success(JSONObject())
         }
-        "delcoreToken" -> success(JSONObject().put("token", auth.accessToken(BuildConfig.DELCORE_RESOURCE)))
         "rpc" -> rpc(payload)
         "copyText" -> {
             val text = payload.optString("text")
@@ -133,8 +132,13 @@ internal class AnyDashHost(private val context: Context) {
         val method = payload.optString("method")
         if (payload.optString("target") != "api" || !AnyDashApi.validTarget(service, method))
             return failure("Invalid RPC target.")
+        var body = unbase64(payload.optString("body"))
         val token = if (auth.signedIn) {
-            try { auth.accessToken(BuildConfig.ANYDASH_RESOURCE) } catch (_: AuthException) {
+            try {
+                if (AnyDashApi.needsDelcoreToken(service, method))
+                    body = AnyDashApi.withDelcoreToken(body, auth.accessToken(BuildConfig.DELCORE_RESOURCE))
+                auth.accessToken(BuildConfig.ANYDASH_RESOURCE)
+            } catch (_: AuthException) {
                 return success(JSONObject().put("status", 401).put("body", ""))
             }
         } else null
@@ -142,7 +146,7 @@ internal class AnyDashHost(private val context: Context) {
             json.keys().asSequence().associateWith { json.optString(it) }
         } ?: emptyMap()
         val result = try {
-            AnyDashApi.call(service, method, unbase64(payload.optString("body")), headers, token)
+            AnyDashApi.call(service, method, body, headers, token)
         } catch (_: java.io.IOException) {
             return failure("The network request failed.")
         }

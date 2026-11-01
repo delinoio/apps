@@ -62,8 +62,6 @@ export class FakeHost implements HostModule {
       case "signOut":
         this.signedIn = false;
         return {};
-      case "delcoreToken":
-        return { token: "delcore-token" };
       case "rpc": {
         if (payload.target === "collector" && this.info.platform !== HostPlatform.Desktop)
           throw new Error("The local collector is unavailable.");

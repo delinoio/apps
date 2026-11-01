@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
+import { fromBinary, toBinary, create } from "@bufbuild/protobuf";
+import { base64Encode } from "@bufbuild/protobuf/wire";
 import { describe, expect, it } from "@rstest/core";
+import {
+  ConnectAccountRequestSchema,
+  ListSpacesRequestSchema,
+} from "@repo/protos/anydash/v1/anydash_pb";
 import {
   BrowserHost,
   CALLBACK_PATH,
+  withDelcoreToken,
   type BrowserDeps,
 } from "../web/browser-host";
 
@@ -95,11 +102,54 @@ describe("browser host", () => {
     expect(headers.Cookie).toBeUndefined();
     expect(requests[0].init.credentials).toBe("omit");
   });
-  it("returns the Delcore resource token separately", async () => {
-    const host = new BrowserHost(deps().value);
-    expect(await host.call("delcoreToken", {})).toEqual({
-      token: "token-for-https://delcore.api.delino.io",
-    });
+  it("injects the Delcore token into ConnectAccount and ListSpaces only", async () => {
+    const { value, requests } = deps();
+    const host = new BrowserHost(value);
+    expect(JSON.parse(await host.reply("delcoreToken", "{}")).error.code).toBe(
+      "UNSUPPORTED",
+    );
+    const send = (service: string, method: string, body: Uint8Array) =>
+      host.call("rpc", {
+        target: "api",
+        service,
+        method,
+        body: base64Encode(body),
+        headers: {},
+      });
+    await send(
+      "anydash.v1.AccountService",
+      "ConnectAccount",
+      toBinary(
+        ConnectAccountRequestSchema,
+        create(ConnectAccountRequestSchema),
+      ),
+    );
+    await send(
+      "anydash.v1.DashboardService",
+      "ListSpaces",
+      toBinary(
+        ListSpacesRequestSchema,
+        create(ListSpacesRequestSchema, { delcoreAccessToken: "from-bundle" }),
+      ),
+    );
+    await send("anydash.v1.AccountService", "GetAccount", new Uint8Array());
+    const sent = requests.map((request) => request.init.body as Uint8Array);
+    expect(
+      fromBinary(ConnectAccountRequestSchema, sent[0]).delcoreAccessToken,
+    ).toBe("token-for-https://delcore.api.delino.io");
+    expect(
+      fromBinary(ListSpacesRequestSchema, sent[1]).delcoreAccessToken,
+    ).toBe("token-for-https://delcore.api.delino.io");
+    expect(sent[2].length).toBe(0);
+  });
+  it("encodes JWT-length Delcore tokens with a multi-byte length", () => {
+    const token = "j".repeat(20_000);
+    expect(
+      fromBinary(
+        ListSpacesRequestSchema,
+        withDelcoreToken(new Uint8Array(), token),
+      ).delcoreAccessToken,
+    ).toBe(token);
   });
   it("refuses collector calls, non-HTTPS links and foreign services", async () => {
     const host = new BrowserHost(deps().value);

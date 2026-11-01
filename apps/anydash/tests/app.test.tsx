@@ -70,6 +70,28 @@ describe("onboarding", () => {
   });
 });
 
+describe("session", () => {
+  it("leaves the Delcore token to the host", async () => {
+    app = await renderApp({ team: true });
+    await app.see("62% left");
+    expect(app.host.calls.some((call) => call.method === "delcoreToken")).toBe(
+      false,
+    );
+    const carriers = app.host.api.calls.filter(
+      (call) =>
+        call.method === "ConnectAccount" || call.method === "ListSpaces",
+    );
+    expect(carriers.map((call) => call.method)).toEqual([
+      "ConnectAccount",
+      "ListSpaces",
+    ]);
+    for (const call of carriers)
+      expect(
+        (call.request as { delcoreAccessToken: string }).delcoreAccessToken,
+      ).toBe("");
+  });
+});
+
 describe("dashboard states", () => {
   it("renders every metric state, the duplicate notice and the header", async () => {
     app = await renderApp({ path: dashboardPath });

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Browser implementation of the AnyDashHost contract (src/host.ts). It runs on
 // the page, outside the Lynx worker: it owns Logto PKCE sign-in, adds the
-// AnyDash bearer token to API requests and keeps tokens out of the bundle.
+// AnyDash bearer token to API requests, injects the Delcore token into the
+// requests that carry it and keeps tokens out of the bundle.
 
 export interface BrowserConfig {
   api: string;
@@ -40,7 +41,6 @@ export enum CallMethod {
   Session = "session",
   SignIn = "signIn",
   SignOut = "signOut",
-  DelcoreToken = "delcoreToken",
   Rpc = "rpc",
   CopyText = "copyText",
   OpenURL = "openURL",
@@ -60,6 +60,36 @@ const ALLOWED_HEADERS = new Set([
   "x-anydash-client-version",
 ]);
 const RPC_NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
+/**
+ * Requests whose field 1 is `string delcore_access_token`. The host appends the
+ * Delcore resource token so it never crosses into the Lynx bundle.
+ */
+const DELCORE_TOKEN_METHODS = new Set([
+  "anydash.v1.AccountService/ConnectAccount",
+  "anydash.v1.DashboardService/ListSpaces",
+]);
+
+/**
+ * Appends `delcore_access_token` (field 1, length-delimited) to a binary
+ * Protobuf request. A later occurrence of a singular field wins when the server
+ * parses the message, so a value set by the bundle is replaced.
+ */
+export function withDelcoreToken(body: Uint8Array, token: string) {
+  const value = new TextEncoder().encode(token);
+  const length: number[] = [];
+  let remaining = value.length;
+  while (remaining > 0x7f) {
+    length.push((remaining & 0x7f) | 0x80);
+    remaining >>>= 7;
+  }
+  length.push(remaining);
+  const result = new Uint8Array(body.length + 1 + length.length + value.length);
+  result.set(body);
+  result[body.length] = 0x0a;
+  result.set(length, body.length + 1);
+  result.set(value, body.length + 1 + length.length);
+  return result;
+}
 
 export class HostCallError extends Error {
   constructor(
@@ -131,12 +161,6 @@ export class BrowserHost {
       case CallMethod.SignOut:
         await this.requireAuth().signOut(deps.location.origin);
         return {};
-      case CallMethod.DelcoreToken:
-        return {
-          token: await this.requireAuth().getAccessToken(
-            deps.config.delcoreResource,
-          ),
-        };
       case CallMethod.Rpc:
         return this.rpc(payload);
       case CallMethod.CopyText:
@@ -201,16 +225,18 @@ export class BrowserHost {
       if (ALLOWED_HEADERS.has(key.toLowerCase()) && typeof value === "string")
         headers[key] = value;
     const auth = deps.auth;
-    if (auth && (await auth.isAuthenticated()))
+    let body = base64ToBytes(String(payload.body ?? ""));
+    if (auth && (await auth.isAuthenticated())) {
       headers.Authorization = `Bearer ${await auth.getAccessToken(deps.config.anydashResource)}`;
+      if (DELCORE_TOKEN_METHODS.has(`${service}/${method}`))
+        body = withDelcoreToken(
+          body,
+          await auth.getAccessToken(deps.config.delcoreResource),
+        );
+    }
     const response = await deps.fetch(
       `${deps.config.api}/${service}/${method}`,
-      {
-        method: "POST",
-        headers,
-        body: base64ToBytes(String(payload.body ?? "")),
-        credentials: "omit",
-      },
+      { method: "POST", headers, body, credentials: "omit" },
     );
     return {
       status: response.status,

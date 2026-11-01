@@ -12,6 +12,29 @@ const ALLOWED_HEADERS = new Set([
   "x-anydash-client-version",
 ]);
 const RPC_NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
+// Requests whose field 1 is `string delcore_access_token`. The host appends the
+// Delcore resource token so it never crosses into the Lynx bundle.
+const DELCORE_TOKEN_METHODS = new Set([
+  "anydash.v1.AccountService/ConnectAccount",
+  "anydash.v1.DashboardService/ListSpaces",
+]);
+
+/**
+ * Appends `delcore_access_token` (field 1, length-delimited) to a binary
+ * Protobuf request. A later occurrence of a singular field wins when the server
+ * parses the message, so a value set by the bundle is replaced.
+ */
+export function withDelcoreToken(body, token) {
+  const value = Buffer.from(token, "utf8");
+  const length = [];
+  let remaining = value.length;
+  while (remaining > 0x7f) {
+    length.push((remaining & 0x7f) | 0x80);
+    remaining >>>= 7;
+  }
+  length.push(remaining);
+  return Buffer.concat([body, Buffer.from([0x0a, ...length]), value]);
+}
 const COLLECTOR_METHODS = new Set([
   "GetCollectorStatus",
   "StartLogin",
@@ -102,10 +125,6 @@ export class DesktopHost {
         await this.auth.signOut();
         await rm(this.cacheDirectory, { recursive: true, force: true });
         return {};
-      case "delcoreToken":
-        return {
-          token: await this.auth.accessToken(this.config.delcoreResource),
-        };
       case "rpc":
         return payload.target === "collector"
           ? this.#collector(payload)
@@ -208,15 +227,18 @@ export class DesktopHost {
     for (const [key, value] of Object.entries(payload.headers ?? {}))
       if (ALLOWED_HEADERS.has(key.toLowerCase()) && typeof value === "string")
         headers[key] = value;
-    if (await this.auth.signedIn())
+    let body = Buffer.from(String(payload.body ?? ""), "base64");
+    if (await this.auth.signedIn()) {
       headers.authorization = `Bearer ${await this.auth.accessToken(this.config.anydashResource)}`;
+      if (DELCORE_TOKEN_METHODS.has(`${service}/${method}`))
+        body = withDelcoreToken(
+          body,
+          await this.auth.accessToken(this.config.delcoreResource),
+        );
+    }
     const response = await this.fetcher(
       `${this.config.api}/${service}/${method}`,
-      {
-        method: "POST",
-        headers,
-        body: Buffer.from(String(payload.body ?? ""), "base64"),
-      },
+      { method: "POST", headers, body },
     );
     return {
       status: response.status,

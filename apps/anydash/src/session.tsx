@@ -96,11 +96,6 @@ export function createQueryClient(onProblem: (error: unknown) => void) {
   });
 }
 
-async function delcoreToken() {
-  const { token } = await hostCall<{ token: string }>(HostMethod.DelcoreToken);
-  return token;
-}
-
 export function SessionProvider({
   children,
   info: initialInfo,
@@ -148,9 +143,8 @@ export function SessionProvider({
   );
 
   const reloadSpaces = useCallback(async () => {
-    const response = await dashboards.listSpaces({
-      delcoreAccessToken: await delcoreToken(),
-    });
+    // The host sets delcore_access_token; the token never enters the bundle.
+    const response = await dashboards.listSpaces({});
     setSpaces(response.spaces);
     return response.spaces;
   }, []);
@@ -170,9 +164,7 @@ export function SessionProvider({
         }
         setUserKey(session.userKey ?? "");
         setPhase(SessionPhase.Connecting);
-        const connected = await accounts.connectAccount({
-          delcoreAccessToken: await delcoreToken(),
-        });
+        const connected = await accounts.connectAccount({});
         if (!active) return;
         setAccount(connected.account);
         await reloadSpaces();

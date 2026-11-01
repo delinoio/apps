@@ -17,7 +17,6 @@ export enum HostMethod {
   Session = "session",
   SignIn = "signIn",
   SignOut = "signOut",
-  DelcoreToken = "delcoreToken",
   Rpc = "rpc",
   CopyText = "copyText",
   OpenURL = "openURL",
@@ -31,7 +30,10 @@ export enum HostMethod {
 }
 
 export enum RpcTarget {
-  /** The AnyDash API; the host adds the Logto user token. */
+  /**
+   * The AnyDash API; the host adds the Logto user token and, for
+   * `ConnectAccount` and `ListSpaces`, sets `delcore_access_token` itself.
+   */
   Api = "api",
   /** LocalCollectorService over local IPC; desktop hosts only. */
   Collector = "collector",
