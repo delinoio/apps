@@ -98,3 +98,60 @@ func TestServeReturnsListenerFailure(t *testing.T) {
 		t.Fatal("a failing listener did not stop serve")
 	}
 }
+
+func TestServeKeepsRequestContextsDuringDrain(t *testing.T) {
+	a := quietApp()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	ctxErr := make(chan error, 1)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+		ctxErr <- r.Context().Err()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	ln := listen(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- a.serve(ctx, ln, handler) }()
+
+	resp := make(chan *http.Response, 1)
+	go func() {
+		r, err := http.Get("http://" + ln.Addr().String() + "/")
+		if err != nil {
+			t.Errorf("in-flight request failed: %v", err)
+			resp <- nil
+			return
+		}
+		r.Body.Close()
+		resp <- r
+	}()
+	<-started
+
+	// Ending the serve context starts the drain; the in-flight request keeps
+	// a live context and completes.
+	cancel()
+	select {
+	case err := <-ctxErr:
+		t.Fatalf("the request context ended with the serve context: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	if err := <-ctxErr; err != nil {
+		t.Fatalf("the request context ended during the drain: %v", err)
+	}
+	if r := <-resp; r == nil || r.StatusCode != http.StatusNoContent {
+		t.Fatalf("in-flight request response = %v", r)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serve returned %v after the drain", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve did not return after the drain")
+	}
+}

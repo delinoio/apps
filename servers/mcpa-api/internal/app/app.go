@@ -188,6 +188,11 @@ func (a *App) Serve(ctx context.Context, ln net.Listener) error {
 func (a *App) serve(ctx context.Context, ln net.Listener, handler http.Handler) error {
 	runCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
+	// Requests get their own lifetime: ending ctx starts the graceful drain,
+	// and in-flight requests keep their context until Shutdown completes or
+	// its deadline expires.
+	reqCtx, cancelRequests := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelRequests()
 
 	srv := &http.Server{
 		Handler:           handler,
@@ -195,7 +200,7 @@ func (a *App) serve(ctx context.Context, ln net.Listener, handler http.Handler) 
 		IdleTimeout:       2 * time.Minute,
 		// No read or write timeout: model calls stream for as long as the
 		// provider does.
-		BaseContext: func(net.Listener) context.Context { return runCtx },
+		BaseContext: func(net.Listener) context.Context { return reqCtx },
 		ErrorLog:    slog.NewLogLogger(a.Log.Handler(), slog.LevelWarn),
 	}
 
@@ -227,6 +232,8 @@ func (a *App) serve(ctx context.Context, ln net.Listener, handler http.Handler) 
 	shutdownCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), ShutdownTimeout)
 	defer stop()
 	shutdownErr := srv.Shutdown(shutdownCtx)
+	// Cancel requests that outlived the drain deadline.
+	cancelRequests()
 	cancel(nil)
 
 	done := make(chan struct{})
