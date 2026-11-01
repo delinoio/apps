@@ -112,9 +112,12 @@ async fn build(
             .iter_mut()
             .filter(|w| w.sharing_state == SharingState::Shared)
         {
+            let membership = roles.get(&w.owner.to_string()).copied().unwrap_or_default();
             let reason = if !accounts.contains(&w.owner) {
                 Some(SharingEndReason::OwnerDataDeleted)
-            } else if !roles.get(&w.owner.to_string()).is_some_and(|r| r.viewer()) {
+            } else if !membership.roles.viewer() || membership.since != w.owner_member_since {
+                // A different membership start means the owner left and rejoined since the
+                // widget was shared, even if no query ran during the absence.
                 Some(SharingEndReason::OwnerLeftSpace)
             } else if !w.all_devices && w.connections.is_empty() && w.devices.is_empty() {
                 Some(SharingEndReason::SourceDeleted)

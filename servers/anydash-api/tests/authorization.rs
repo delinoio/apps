@@ -545,3 +545,117 @@ async fn team_roles_isolation_and_data_owner_sharing() {
     .await;
     f.cleanup().await;
 }
+
+/// The widget's sharing state and end reason as reported by `QueryWidgetData`.
+async fn sharing(
+    f: &Fixture,
+    caller: &support::Caller,
+    dashboard: &str,
+    widget: &str,
+) -> (String, String) {
+    let data = f
+        .ok(
+            caller,
+            "WidgetDataService/QueryWidgetData",
+            json!({"dashboardId":dashboard,"widgetId":widget}),
+        )
+        .await;
+    (
+        data["data"]["sharingState"].as_str().unwrap().to_owned(),
+        data["data"]["sharingEndReason"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned(),
+    )
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn departure_and_rejoin_end_sharing_without_an_intermediate_query() {
+    let f = Fixture::setup().await;
+    let owner = f.person("owner");
+    let member = f.person("member");
+    let team = f.team(
+        "Acme",
+        &[(&owner, &["ROLE_OWNER"]), (&member, &["ROLE_MEMBER"])],
+    );
+    for p in [&owner, &member] {
+        f.connect(p).await;
+    }
+    let (o, m) = (f.user(&owner), f.user(&member));
+    let (_, member_token, _) = f.enroll(&member, "member-laptop", "").await;
+    let codex = f
+        .ok(
+            &f.device(&member_token),
+            "ConnectionService/CreateConnection",
+            json!({"requestId":id(),"provider":"PROVIDER_CODEX"}),
+        )
+        .await["connection"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let dash = f
+        .ok(
+            &o,
+            "DashboardService/CreateDashboard",
+            json!({"requestId":id(),"spaceId":team,"name":"Team board"}),
+        )
+        .await["dashboard"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let v = version(&f, &m, &dash).await;
+    let widget = f
+        .ok(
+            &m,
+            "DashboardService/AddWidget",
+            json!({"dashboardId":dash,"expectedVersion":v,"requestId":id(),"type":"WIDGET_TYPE_SUBSCRIPTION_LIMITS","layout":layout("WIDGET_PRESENTATION_GAUGE"),"query":{},"source":{"connectionIds":[codex]}}),
+        )
+        .await["widgetId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // The data owner's membership start is stored with the shared widget.
+    assert_eq!(
+        f.count(&format!(
+            "SELECT count(*) FROM widgets WHERE id='{widget}' AND data_owner_member_since IS NOT NULL"
+        ))
+        .await,
+        1
+    );
+    let state = |caller| sharing(&f, caller, &dash, &widget);
+    assert_eq!(state(&o).await.0, "SHARING_STATE_SHARED");
+    // A role change keeps the membership and therefore the sharing.
+    f.set_roles(&team, &member, &["ROLE_ADMIN"]);
+    assert_eq!(state(&o).await.0, "SHARING_STATE_SHARED");
+    // The data owner leaves and rejoins with no query in between: the new membership start ends
+    // sharing at the next evaluation, and the end is persisted.
+    f.set_roles(&team, &member, &[]);
+    f.set_roles(&team, &member, &["ROLE_MEMBER"]);
+    assert_eq!(
+        state(&o).await,
+        (
+            "SHARING_STATE_ENDED".to_owned(),
+            "SHARING_END_REASON_OWNER_LEFT_SPACE".to_owned()
+        )
+    );
+    assert_eq!(
+        f.count(&format!(
+            "SELECT count(*) FROM widgets WHERE id='{widget}' AND sharing_state=3 AND sharing_end_reason=2"
+        ))
+        .await,
+        1
+    );
+    assert_eq!(state(&m).await.0, "SHARING_STATE_ENDED");
+    // The rejoined owner can share explicitly again; the current membership start is stored.
+    let v = version(&f, &m, &dash).await;
+    f.ok(
+        &m,
+        "DashboardService/SetWidgetSharingScope",
+        json!({"dashboardId":dash,"expectedVersion":v,"widgetId":widget,"source":{"connectionIds":[codex]}}),
+    )
+    .await;
+    assert_eq!(state(&o).await.0, "SHARING_STATE_SHARED");
+    assert_eq!(state(&m).await.0, "SHARING_STATE_SHARED");
+    f.cleanup().await;
+}

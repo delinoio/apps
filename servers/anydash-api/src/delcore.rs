@@ -2,6 +2,7 @@
 //! Delcore identity, tenant state and role reads. AnyDash never reads Delcore tables and never
 //! caches authorization state across requests.
 use crate::{ApiError, Result, config::Config};
+use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use server_common::authority::{Authority, TenantState};
 use std::collections::{HashMap, HashSet};
@@ -28,6 +29,15 @@ impl Roles {
     pub fn viewer(self) -> bool {
         self.manager() || self.has(Self::MEMBER)
     }
+}
+
+/// One user's current membership in one tenant: the fixed roles and the start of the current
+/// membership. Non-members have no roles and no start. A departure followed by a rejoin yields a
+/// new start, so comparing it with a stored value detects an absence between two reads.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Membership {
+    pub roles: Roles,
+    pub since: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug)]
@@ -135,9 +145,13 @@ impl Delcore {
         }
     }
 
-    /// Fixed roles of the given users in one tenant, in batches of 100. Non-members, withdrawing
-    /// users and users of deleted tenants have no roles.
-    pub async fn roles(&self, tenant: &str, users: &[String]) -> Result<HashMap<String, Roles>> {
+    /// Memberships of the given users in one tenant, in batches of 100. Non-members, withdrawing
+    /// users and users of deleted tenants have no roles and no membership start.
+    pub async fn roles(
+        &self,
+        tenant: &str,
+        users: &[String],
+    ) -> Result<HashMap<String, Membership>> {
         let mut unique: Vec<String> = Vec::new();
         for u in users {
             if !unique.contains(u) {
@@ -177,18 +191,39 @@ impl Delcore {
                 if entry["userId"].as_str() != Some(user.as_str()) {
                     return Err(ApiError::dependency());
                 }
-                out.insert(user.clone(), parse_roles(entry)?);
+                out.insert(user.clone(), parse_membership(entry)?);
             }
         }
         Ok(out)
     }
 }
 
-fn parse_roles(entry: &Value) -> Result<Roles> {
-    let mut roles = Roles::default();
+/// A member entry must carry its membership start: without it a departure and rejoin could not
+/// be detected, so a missing or malformed value denies access as a Delcore failure.
+fn parse_membership(entry: &Value) -> Result<Membership> {
     if entry["member"].as_bool() != Some(true) {
-        return Ok(roles);
+        return Ok(Membership::default());
     }
+    let since = entry["memberSince"]
+        .as_str()
+        .and_then(|v| DateTime::parse_from_rfc3339(v).ok())
+        .map(|v| v.with_timezone(&Utc))
+        .ok_or_else(|| {
+            tracing::warn!(
+                category = "delcore",
+                operation = "GetTenantMemberRoles",
+                "member entry without a valid membership start"
+            );
+            ApiError::dependency()
+        })?;
+    Ok(Membership {
+        roles: parse_roles(entry),
+        since: Some(since),
+    })
+}
+
+fn parse_roles(entry: &Value) -> Roles {
+    let mut roles = Roles::default();
     for role in entry["roles"].as_array().into_iter().flatten() {
         let r = match (role.as_str(), role.as_i64()) {
             (Some("ROLE_OWNER"), _) | (_, Some(1)) => Roles::OWNER,
@@ -199,7 +234,7 @@ fn parse_roles(entry: &Value) -> Result<Roles> {
         };
         roles = roles.union(r);
     }
-    Ok(roles)
+    roles
 }
 
 #[cfg(test)]
@@ -207,18 +242,50 @@ mod tests {
     use super::*;
     #[test]
     fn role_matrix_helpers_follow_the_team_rules() {
-        let e = |v: Value| parse_roles(&v).unwrap();
-        let owner = e(json!({"member":true,"roles":["ROLE_OWNER"]}));
-        let admin = e(json!({"member":true,"roles":["ROLE_ADMIN"]}));
-        let member = e(json!({"member":true,"roles":["ROLE_MEMBER"]}));
-        let billing = e(json!({"member":true,"roles":["ROLE_BILLING"]}));
-        let gone = e(json!({"member":false,"roles":["ROLE_OWNER"]}));
-        let union = e(json!({"member":true,"roles":["ROLE_BILLING","ROLE_MEMBER"]}));
+        let since = "2026-10-01T08:30:00.123456Z";
+        let e = |roles: Value| {
+            parse_membership(&json!({"member":true,"roles":roles,"memberSince":since}))
+                .unwrap()
+                .roles
+        };
+        let owner = e(json!(["ROLE_OWNER"]));
+        let admin = e(json!(["ROLE_ADMIN"]));
+        let member = e(json!(["ROLE_MEMBER"]));
+        let billing = e(json!(["ROLE_BILLING"]));
+        let gone = parse_membership(&json!({"member":false,"roles":["ROLE_OWNER"]}))
+            .unwrap()
+            .roles;
+        let union = e(json!(["ROLE_BILLING", "ROLE_MEMBER"]));
         assert!(owner.manager() && owner.viewer());
         assert!(admin.manager() && admin.viewer());
         assert!(!member.manager() && member.viewer());
         assert!(!billing.manager() && !billing.viewer());
         assert!(!gone.viewer());
         assert!(union.viewer() && !union.manager());
+    }
+
+    #[test]
+    fn membership_start_is_exact_and_required_for_members() {
+        let m = parse_membership(
+            &json!({"member":true,"roles":["ROLE_MEMBER"],"memberSince":"2026-10-01T08:30:00.123456Z"}),
+        )
+        .unwrap();
+        assert_eq!(
+            m.since.unwrap().timestamp_micros(),
+            DateTime::parse_from_rfc3339("2026-10-01T08:30:00.123456Z")
+                .unwrap()
+                .timestamp_micros()
+        );
+        // Non-members have no start, even if one is sent.
+        let gone = parse_membership(&json!({"member":false,"memberSince":"2026-10-01T08:30:00Z"}))
+            .unwrap();
+        assert_eq!(gone, Membership::default());
+        // A member without a valid start fails closed.
+        for entry in [
+            json!({"member":true,"roles":["ROLE_MEMBER"]}),
+            json!({"member":true,"roles":["ROLE_MEMBER"],"memberSince":"yesterday"}),
+        ] {
+            assert!(parse_membership(&entry).is_err());
+        }
     }
 }

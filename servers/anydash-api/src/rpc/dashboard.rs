@@ -18,6 +18,9 @@ pub struct Space {
     pub tenant: Uuid,
     pub personal: bool,
     pub roles: Roles,
+    /// Start of the caller's current team membership from the role read; `None` in the personal
+    /// space. Stored on widgets the caller shares so that a later departure and rejoin ends them.
+    pub member_since: Option<DateTime<Utc>>,
 }
 
 impl Space {
@@ -80,17 +83,18 @@ pub async fn space(
             tenant,
             personal: true,
             roles: Roles::OWNER,
+            member_since: None,
         });
     }
     let me = user.user_id.to_string();
-    let roles = s
+    let membership = s
         .delcore
         .roles(&tenant.to_string(), std::slice::from_ref(&me))
         .await?
         .get(&me)
         .copied()
         .unwrap_or_default();
-    if !roles.viewer() {
+    if !membership.roles.viewer() {
         return Err(match missing_field {
             Some(field) => ApiError::not_found(field),
             None => ApiError::denied(),
@@ -100,7 +104,8 @@ pub async fn space(
     Ok(Space {
         tenant,
         personal: false,
-        roles,
+        roles: membership.roles,
+        member_since: membership.since,
     })
 }
 
@@ -219,6 +224,8 @@ pub struct WidgetRow {
     pub all_devices: bool,
     pub sharing_state: SharingState,
     pub end_reason: SharingEndReason,
+    /// The data owner's membership start when the widget was last shared in a team space.
+    pub owner_member_since: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub connections: Vec<Uuid>,
     pub devices: Vec<Uuid>,
@@ -226,7 +233,7 @@ pub struct WidgetRow {
 
 pub async fn widgets(db: &mut PgConnection, dashboard: Uuid) -> Result<Vec<WidgetRow>> {
     let rows = sqlx::query(
-        "SELECT id,data_owner_user_id,type,x,y,width,height,title,presentation,query,all_devices,sharing_state,sharing_end_reason,created_at \
+        "SELECT id,data_owner_user_id,type,x,y,width,height,title,presentation,query,all_devices,sharing_state,sharing_end_reason,data_owner_member_since,created_at \
          FROM widgets WHERE dashboard_id=$1 ORDER BY sort_order,id",
     )
     .bind(dashboard)
@@ -267,6 +274,7 @@ pub async fn widgets(db: &mut PgConnection, dashboard: Uuid) -> Result<Vec<Widge
                 all_devices: r.get("all_devices"),
                 sharing_state: enum_of(r.get("sharing_state")),
                 end_reason: enum_of(r.get("sharing_end_reason")),
+                owner_member_since: r.get("data_owner_member_since"),
                 created_at: r.get("created_at"),
                 connections,
                 devices,
@@ -353,6 +361,7 @@ pub async fn list_spaces(
         tenant: user.personal_tenant,
         personal: true,
         roles: Roles::OWNER,
+        member_since: None,
     };
     let onboarding = if onboarded(&s.db, user.user_id).await? {
         OnboardingState::Ready
@@ -379,20 +388,21 @@ pub async fn list_spaces(
         if *state != TenantState::Active {
             continue;
         }
-        let roles = s
+        let membership = s
             .delcore
             .roles(&tenant.id, std::slice::from_ref(&me))
             .await?
             .get(&me)
             .copied()
             .unwrap_or_default();
-        if !roles.viewer() {
+        if !membership.roles.viewer() {
             continue;
         }
         let space = Space {
             tenant: validate::id("space_id", &tenant.id)?,
             personal: false,
-            roles,
+            roles: membership.roles,
+            member_since: membership.since,
         };
         team_spaces.push(super::Space {
             id: tenant.id.clone(),
@@ -1061,8 +1071,8 @@ pub async fn add_widget(s: &Server, call: &Call, q: AddWidgetRequest) -> Result<
         SharingState::Shared
     };
     sqlx::query(
-        "INSERT INTO widgets(id,dashboard_id,data_owner_user_id,type,x,y,width,height,title,presentation,query,all_devices,sharing_state,sort_order,created_at) \
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,(SELECT COALESCE(max(sort_order),0)+1 FROM widgets WHERE dashboard_id=$2),$14)",
+        "INSERT INTO widgets(id,dashboard_id,data_owner_user_id,type,x,y,width,height,title,presentation,query,all_devices,sharing_state,data_owner_member_since,sort_order,created_at) \
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$15,(SELECT COALESCE(max(sort_order),0)+1 FROM widgets WHERE dashboard_id=$2),$14)",
     )
     .bind(widget)
     .bind(id)
@@ -1078,6 +1088,9 @@ pub async fn add_widget(s: &Server, call: &Call, q: AddWidgetRequest) -> Result<
     .bind(source.all_devices)
     .bind(e16(state))
     .bind(call.now)
+    // The data owner's membership start from this request's role read; a different start in a
+    // later read ends sharing with OWNER_LEFT_SPACE.
+    .bind(space.member_since)
     .execute(&mut *tx)
     .await?;
     write_sources(&mut tx, widget, &source).await?;
@@ -1332,9 +1345,12 @@ pub async fn set_widget_sharing_scope(
     } else {
         SharingState::Shared
     };
-    sqlx::query("UPDATE widgets SET sharing_state=$2,sharing_end_reason=0 WHERE id=$1")
+    // Sharing again records the owner's current membership start, so a rejoined owner can
+    // explicitly share a widget that an earlier departure ended.
+    sqlx::query("UPDATE widgets SET sharing_state=$2,sharing_end_reason=0,data_owner_member_since=$3 WHERE id=$1")
         .bind(widget)
         .bind(e16(state))
+        .bind(space.member_since)
         .execute(&mut *tx)
         .await?;
     if !space.personal {
@@ -1422,11 +1438,13 @@ mod tests {
             tenant,
             personal: false,
             roles: r,
+            member_since: Some(Utc::now()),
         };
         let personal = Space {
             tenant,
             personal: true,
             roles: Roles::OWNER,
+            member_since: None,
         };
         let check = |s: Space| (s.view(), s.edit(), s.create(), s.delete(), s.activity());
         assert_eq!(check(personal), (true, true, true, true, true));

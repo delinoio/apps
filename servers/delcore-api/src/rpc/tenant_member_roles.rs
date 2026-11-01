@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use super::*;
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use sqlx::Row;
 use std::collections::HashMap;
@@ -7,9 +8,10 @@ use std::collections::HashMap;
 impl Call<'_> {
     /// Reads the fixed roles of 1 to 100 users in one tenant for a registered consumer service.
     ///
-    /// The read never writes state and returns no names or personal data. A user who is not a
-    /// current member, is withdrawing, or belongs to a deleted or unknown tenant is reported as a
-    /// non-member without roles.
+    /// The read never writes state and returns no names or personal data. A current member is
+    /// reported with the start of the current membership. A user who is not a current member, is
+    /// withdrawing, or belongs to a deleted or unknown tenant is reported as a non-member without
+    /// roles or membership start.
     pub async fn tenant_member_roles(&mut self, q: &Value) -> Result<Value> {
         self.service_scope("authorize").await?;
         let tenant = string(q, "tenantId");
@@ -33,7 +35,7 @@ impl Call<'_> {
             })
             .collect::<Result<Vec<_>>>()?;
         let rows = sqlx::query(
-            "SELECT m.user_id::text,m.roles FROM members m \
+            "SELECT m.user_id::text,m.roles,m.member_since FROM members m \
              JOIN tenants t ON t.id=m.tenant_id JOIN users u ON u.id=m.user_id \
              WHERE m.tenant_id=$1 AND m.user_id=ANY($2::uuid[]) \
              AND t.deleted_at IS NULL AND u.withdrawing_at IS NULL",
@@ -48,16 +50,20 @@ impl Call<'_> {
             let mut roles: Vec<i32> = row.try_get(1)?;
             roles.sort_unstable();
             roles.dedup();
-            known.insert(user, roles);
+            let since: DateTime<Utc> = row.try_get(2)?;
+            known.insert(user, (roles, since));
         }
         let mut members = 0usize;
         let mut entries = Vec::new();
         for id in ids {
             let id = id.as_str().unwrap_or("");
             match known.get(id) {
-                Some(roles) => {
+                Some((roles, since)) => {
                     members += 1;
-                    entries.push(json!({"userId":id,"member":true,"roles":roles}));
+                    // Microseconds keep the stored value exact, so consumers can compare it.
+                    let since = since.to_rfc3339_opts(SecondsFormat::Micros, true);
+                    entries
+                        .push(json!({"userId":id,"member":true,"roles":roles,"memberSince":since}));
                 }
                 None => entries.push(json!({"userId":id,"member":false,"roles":[]})),
             }

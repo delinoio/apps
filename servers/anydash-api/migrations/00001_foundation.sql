@@ -244,6 +244,10 @@ CREATE TABLE widgets (
   all_devices boolean NOT NULL,
   sharing_state smallint NOT NULL,
   sharing_end_reason smallint NOT NULL DEFAULT 0,
+  -- The data owner's Delcore membership start (GetTenantMemberRoles member_since) from the role
+  -- read when the widget was last shared in a team space; NULL in personal spaces. A later role
+  -- read reporting a different start ends sharing with OWNER_LEFT_SPACE.
+  data_owner_member_since timestamptz,
   sort_order bigint NOT NULL,
   created_at timestamptz NOT NULL
 );

@@ -43,12 +43,29 @@ pub struct Person {
     pub personal: String,
 }
 
+/// One mocked team membership: fixed roles and the start of the current membership, which
+/// survives role changes and is renewed when the user leaves and rejoins, as in Delcore.
+#[derive(Clone, Debug)]
+pub struct Membership {
+    pub roles: Vec<&'static str>,
+    pub since: String,
+}
+
+impl Membership {
+    fn new(roles: &[&'static str]) -> Self {
+        Self {
+            roles: roles.to_vec(),
+            since: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+        }
+    }
+}
+
 /// Mutable state of the mocked dependencies.
 #[derive(Default)]
 pub struct Mock {
     pub users: HashMap<String, Person>,
-    /// Team tenants: id → (name, members user_id → roles).
-    pub teams: HashMap<String, (String, HashMap<String, Vec<&'static str>>)>,
+    /// Team tenants: id → (name, members user_id → membership).
+    pub teams: HashMap<String, (String, HashMap<String, Membership>)>,
     /// Tenant states by tenant ID; unknown IDs are UNKNOWN, known ones ACTIVE by default.
     pub states: HashMap<String, &'static str>,
     pub delcore_down: bool,
@@ -199,18 +216,21 @@ async fn member_roles(State(m): State<Shared>, Json(body): Json<Value>) -> impl 
                 .users
                 .values()
                 .any(|p| p.personal == tenant && p.user_id == u);
-            let roles: Vec<&str> = if personal_owner {
-                vec!["ROLE_OWNER"]
+            let membership = if personal_owner {
+                Some(Membership {
+                    roles: vec!["ROLE_OWNER"],
+                    since: "2026-01-01T00:00:00Z".into(),
+                })
             } else {
                 m.teams
                     .get(&tenant)
                     .and_then(|(_, members)| members.get(u).cloned())
-                    .unwrap_or_default()
             };
-            if roles.is_empty() || deleted {
-                json!({"userId":u,"member":false})
-            } else {
-                json!({"userId":u,"member":true,"roles":roles})
+            match membership {
+                Some(m) if !deleted => {
+                    json!({"userId":u,"member":true,"roles":m.roles,"memberSince":m.since})
+                }
+                _ => json!({"userId":u,"member":false}),
             }
         })
         .collect();
@@ -379,7 +399,7 @@ impl Fixture {
         let tenant = id();
         let map = members
             .iter()
-            .map(|(p, r)| (p.user_id.clone(), r.to_vec()))
+            .map(|(p, r)| (p.user_id.clone(), Membership::new(r)))
             .collect();
         self.mock
             .lock()
@@ -389,13 +409,17 @@ impl Fixture {
         tenant
     }
 
+    /// Changes a person's team roles. Empty roles remove the membership; roles for a person who
+    /// is not a member start a new membership, while a role change keeps the membership start.
     pub fn set_roles(&self, tenant: &str, person: &Person, roles: &[&'static str]) {
         let mut m = self.mock.lock().unwrap();
         let members = &mut m.teams.get_mut(tenant).unwrap().1;
         if roles.is_empty() {
             members.remove(&person.user_id);
+        } else if let Some(existing) = members.get_mut(&person.user_id) {
+            existing.roles = roles.to_vec();
         } else {
-            members.insert(person.user_id.clone(), roles.to_vec());
+            members.insert(person.user_id.clone(), Membership::new(roles));
         }
     }
 

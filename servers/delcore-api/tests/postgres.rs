@@ -212,30 +212,36 @@ async fn tenant_member_roles_report_current_fixed_roles_only() {
         )
         .await;
     let tenant = org["tenant"]["id"].as_str().unwrap().to_owned();
-    f.rpc("owner","CreateInvitation",json!({"requestKey":key(),"tenantId":tenant,"email":"member@example.test","roles":["ROLE_MEMBER"],"returnUrl":f.config.return_urls[0]})).await;
-    let text: String = sqlx::query_scalar(
-        "SELECT payload->>'text' FROM jobs WHERE kind='email' ORDER BY created_at LIMIT 1",
-    )
-    .fetch_one(&f.db)
-    .await
-    .unwrap();
-    let url = reqwest::Url::parse(
-        text.strip_prefix("Accept your organization invitation: ")
-            .unwrap(),
-    )
-    .unwrap();
-    let token = url
-        .query_pairs()
-        .find(|(k, _)| k == "invitation_token")
-        .unwrap()
-        .1
-        .into_owned();
-    f.rpc(
-        "member",
-        "AcceptInvitation",
-        json!({"requestKey":key(),"token":token}),
-    )
-    .await;
+    let join = |tenant: String| {
+        let f = &f;
+        async move {
+            f.rpc("owner","CreateInvitation",json!({"requestKey":key(),"tenantId":tenant,"email":"member@example.test","roles":["ROLE_MEMBER"],"returnUrl":f.config.return_urls[0]})).await;
+            let text: String = sqlx::query_scalar(
+                "SELECT payload->>'text' FROM jobs WHERE kind='email' ORDER BY created_at DESC,id DESC LIMIT 1",
+            )
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+            let url = reqwest::Url::parse(
+                text.strip_prefix("Accept your organization invitation: ")
+                    .unwrap(),
+            )
+            .unwrap();
+            let token = url
+                .query_pairs()
+                .find(|(k, _)| k == "invitation_token")
+                .unwrap()
+                .1
+                .into_owned();
+            f.rpc(
+                "member",
+                "AcceptInvitation",
+                json!({"requestKey":key(),"token":token}),
+            )
+            .await;
+        }
+    };
+    join(tenant.clone()).await;
     let member = f.rpc("member", "GetCurrentUser", json!({})).await;
     let unknown = key();
     let ids = json!([
@@ -266,18 +272,47 @@ async fn tenant_member_roles_report_current_fixed_roles_only() {
     assert_eq!(members[0]["roles"], json!(["ROLE_MEMBER"]));
     assert_eq!(members[1]["member"], true);
     assert_eq!(members[1]["roles"], json!(["ROLE_OWNER"]));
+    // Current members carry the start of their current membership; non-members carry none.
+    let since = |entry: &serde_json::Value| {
+        chrono::DateTime::parse_from_rfc3339(entry["memberSince"].as_str().unwrap()).unwrap()
+    };
+    let joined = since(&members[0]);
+    assert!(since(&members[1]) <= joined, "the owner joined first");
     for entry in &members[2..4] {
         assert_ne!(entry["member"], true);
         assert!(entry.get("roles").is_none_or(|r| r == &json!([])));
+        assert!(entry.get("memberSince").is_none_or(|v| v.is_null()));
     }
     assert_eq!(members[4], members[0]);
     // Billing-only members are reported with their role; consumers decide what it allows.
+    // Role changes keep the membership start.
     f.rpc("owner","SetMemberRoles",json!({"requestKey":key(),"tenantId":tenant,"userId":member["userId"],"roles":["ROLE_BILLING","ROLE_ADMIN"]})).await;
     let result = read(json!([member["userId"]]), tenant.clone()).await;
     assert_eq!(
         result["members"][0]["roles"],
         json!(["ROLE_ADMIN", "ROLE_BILLING"])
     );
+    assert_eq!(since(&result["members"][0]), joined);
+    // Leaving and rejoining starts a new membership with a new start.
+    f.rpc(
+        "member",
+        "RemoveMember",
+        json!({"requestKey":key(),"tenantId":tenant,"userId":member["userId"]}),
+    )
+    .await;
+    let result = read(json!([member["userId"]]), tenant.clone()).await;
+    assert_ne!(result["members"][0]["member"], true);
+    assert!(
+        result["members"][0]
+            .get("memberSince")
+            .is_none_or(|v| v.is_null())
+    );
+    join(tenant.clone()).await;
+    let result = read(json!([member["userId"]]), tenant.clone()).await;
+    assert_eq!(result["members"][0]["member"], true);
+    assert_eq!(result["members"][0]["roles"], json!(["ROLE_MEMBER"]));
+    assert!(since(&result["members"][0]) > joined);
+    f.rpc("owner","SetMemberRoles",json!({"requestKey":key(),"tenantId":tenant,"userId":member["userId"],"roles":["ROLE_BILLING","ROLE_ADMIN"]})).await;
     let audit_before: i64 = sqlx::query_scalar("SELECT count(*) FROM audit")
         .fetch_one(&f.db)
         .await

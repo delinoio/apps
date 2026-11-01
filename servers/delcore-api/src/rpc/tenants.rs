@@ -41,11 +41,14 @@ impl Call<'_> {
         sqlx::query("INSERT INTO tenants(id,name,personal,owner_id,plan_id,period_start,period_end) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(uuid(&tenant)?).bind(name).bind(personal).bind(uuid(&self.user)?).bind(uuid(&plan)?).bind(start).bind(end).execute(&mut *self.tx).await?;
         let version = crate::postgres::active_catalog_version(self.tx, "plan", &plan).await?;
         crate::postgres::replace_tenant_selections(self.tx, &tenant, &[version], self.now).await?;
-        sqlx::query("INSERT INTO members VALUES($1,$2,ARRAY[1])")
-            .bind(uuid(&tenant)?)
-            .bind(uuid(&self.user)?)
-            .execute(&mut *self.tx)
-            .await?;
+        sqlx::query(
+            "INSERT INTO members(tenant_id,user_id,roles,member_since) VALUES($1,$2,ARRAY[1],$3)",
+        )
+        .bind(uuid(&tenant)?)
+        .bind(uuid(&self.user)?)
+        .bind(self.now)
+        .execute(&mut *self.tx)
+        .await?;
         for price in crate::postgres::active_product_prices(self.tx, "plan", &plan).await? {
             sqlx::query(
                 "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)",
@@ -241,10 +244,13 @@ impl Call<'_> {
                 let invitation: String = row.try_get(0)?;
                 let tenant: String = row.try_get(1)?;
                 let roles: Vec<i32> = row.try_get(2)?;
-                sqlx::query("INSERT INTO members VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
+                // An existing membership keeps its roles and its start; leaving deleted the row,
+                // so a rejoin inserts a new membership start.
+                sqlx::query("INSERT INTO members(tenant_id,user_id,roles,member_since) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
                     .bind(uuid(&tenant)?)
                     .bind(uuid(&self.user)?)
                     .bind(roles)
+                    .bind(self.now)
                     .execute(&mut *self.tx)
                     .await?;
                 sqlx::query("UPDATE invitations SET accepted_at=$2 WHERE id=$1")
