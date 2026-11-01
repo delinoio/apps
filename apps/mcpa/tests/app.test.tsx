@@ -3,6 +3,7 @@ import { describe, expect, it, rs } from "@rstest/core";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   ErrorDetailSchema,
   ErrorReason,
@@ -23,6 +24,17 @@ import {
 
 const resourcePath = (section = "") =>
   `/tenants/${TENANT_ID}/resources/${RESOURCE_ID}${section ? `/${section}` : ""}`;
+
+/** Serializes every cached mutation's variables and data. */
+const cachedMutationText = (queryClient: QueryClient) =>
+  JSON.stringify(
+    queryClient
+      .getMutationCache()
+      .getAll()
+      .map((mutation) => [mutation.state.variables, mutation.state.data]),
+    (_, value: unknown) =>
+      typeof value === "bigint" ? value.toString() : value,
+  );
 
 const reasonError = (code: Code, reason: ErrorReason, url = "") =>
   new ConnectError("denied", code, undefined, [
@@ -282,7 +294,7 @@ describe("call keys", () => {
       issuerUserId: "user-1",
       createTime: timestampFromDate(new Date("2026-10-31T00:00:00Z")),
     };
-    renderApp({
+    const { queryClient } = renderApp({
       path: resourcePath("keys"),
       service: {
         ...baseService(),
@@ -316,6 +328,33 @@ describe("call keys", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(await screen.findByText("mcpa_0192f000…")).toBeTruthy();
     expect(document.body.innerHTML).not.toContain(secret);
+    expect(cachedMutationText(queryClient)).not.toContain(secret);
+  });
+
+  it("drops the issued secret from the mutation cache when the page unmounts", async () => {
+    const secret = "mcpa_unmount_secret_value";
+    const { queryClient, unmount } = renderApp({
+      path: resourcePath("keys"),
+      service: {
+        ...baseService(),
+        issueCallKey: () => ({
+          callKey: { id: "key-1", name: "Backend", displayPrefix: "mcpa_01…" },
+          secret,
+        }),
+      },
+    });
+    fireEvent.click(
+      (await screen.findAllByRole("button", { name: "Issue call key" }))[0],
+    );
+    const form = await screen.findByRole("dialog");
+    fireEvent.change(within(form).getByLabelText("Name"), {
+      target: { value: "Backend" },
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "Issue key" }));
+    await screen.findByRole("dialog", { name: "Copy your call key" });
+    expect(cachedMutationText(queryClient)).toContain(secret);
+    unmount();
+    expect(cachedMutationText(queryClient)).not.toContain(secret);
   });
 
   it("lists key status and asks before revoking", async () => {
@@ -712,7 +751,7 @@ describe("OAuth connection", () => {
     const registerApiKeyCredential = rs.fn(() => {
       throw reasonError(Code.InvalidArgument, ErrorReason.INVALID_INPUT);
     });
-    renderApp({
+    const { queryClient } = renderApp({
       path: resourcePath("credentials"),
       service: { ...baseService(), registerApiKeyCredential },
     });
@@ -749,5 +788,34 @@ describe("OAuth connection", () => {
     expect(request.apiKey).toBe("sk-secret");
     expect(request.models).toEqual(["model-a", "model-b"]);
     expect(request.baseUrl).toBe("https://llm.example/v1");
+    // The failed request's variables must not keep the key in the cache.
+    expect(cachedMutationText(queryClient)).not.toContain("sk-secret");
+    expect(
+      within(dialog).getByText("For your security, enter the key again."),
+    ).toBeTruthy();
+  });
+
+  it("drops the API key from the mutation cache after registration", async () => {
+    const registerApiKeyCredential = rs.fn(() => ({
+      credential: { id: "cred-1", name: "Prod" },
+    }));
+    const { queryClient } = renderApp({
+      path: resourcePath("credentials"),
+      service: { ...baseService(), registerApiKeyCredential },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Add API key" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Name"), {
+      target: { value: "Prod" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("API key"), {
+      target: { value: "sk-registered" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add API key" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(registerApiKeyCredential).toHaveBeenCalledTimes(1);
+    expect(cachedMutationText(queryClient)).not.toContain("sk-registered");
   });
 });

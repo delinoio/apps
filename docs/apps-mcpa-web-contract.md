@@ -71,8 +71,8 @@ The console persists no account data. The session cookie belongs to the API orig
 ## Security
 
 - The bundle contains no service credentials or secrets.
-- API keys entered for registration are sent once and cleared from component state after submission.
-- Call key secrets are held only in the issuance dialog's state and discarded when it closes.
+- API keys entered for registration are sent once and cleared from component state after submission. The query client's mutation cache drops the request when it fails or when the dialog closes or unmounts.
+- Call key secrets are held only in the issuance dialog's state and discarded, including from the query client's mutation cache, when the dialog closes or unmounts.
 - The console sends CSRF headers on every Connect call and session mutation.
 - It does not log secrets or tokens to the browser console or telemetry.
 - Deployment credentials remain outside the repository.
@@ -88,7 +88,7 @@ Rsbuild reports startup and build failures. Runtime errors surface the Connect e
   - Session states (signed out, MFA required, signed in), CSRF headers and the refresh retry.
   - `Esc` closing dialogs and focus on single-input forms.
   - Empty, loading, error and permission states.
-  - One-time secret display.
+  - One-time secret display and secret removal from the mutation cache.
   - The OAuth flow states.
 - Affected CI runs these checks on Ubuntu. Cloudflare Pages publishes `apps/mcpa/dist` with repository `LICENSE` and `NOTICE`. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
 

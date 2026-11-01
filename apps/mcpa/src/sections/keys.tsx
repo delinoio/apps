@@ -7,7 +7,7 @@ import { Input } from "@packages/ui/components/input";
 import { NativeSelect } from "@packages/ui/components/native-select";
 import { ResourceRole, type CallKey } from "@repo/protos/mcpa/v1/mcpa_pb";
 import { useSession } from "../app";
-import { rpc, useInvalidate } from "../lib/hooks";
+import { rpc, useInvalidate, useSecretMutation } from "../lib/hooks";
 import { useCursorPager } from "../lib/pager";
 import { formatDateTime, toDate } from "../lib/format";
 import { uuidv7 } from "../lib/uuid";
@@ -207,14 +207,15 @@ function IssueKeyDialog({
   const [expiry, setExpiry] = useState(Expiry.Days90);
   const [custom, setCustom] = useState("");
   const [errors, setErrors] = useState<{ name?: string; expiry?: string }>({});
-  const issue = useMutation(rpc.issueCallKey, {
+  const issue = useSecretMutation(rpc.issueCallKey, {
     onSuccess: () => invalidate(rpc.listCallKeys),
   });
-  // The secret exists only in this dialog's mutation state. Closing the
-  // dialog resets the mutation, so the secret cannot be shown again.
+  // The secret exists only in this dialog's mutation state. Closing or
+  // unmounting the dialog discards the mutation from the query client too,
+  // so the secret cannot be shown again.
   const secret = issue.data?.secret;
   const close = () => {
-    issue.reset();
+    issue.discard();
     onClose();
   };
   const submit = (event: FormEvent) => {

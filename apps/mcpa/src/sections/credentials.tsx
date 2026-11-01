@@ -10,7 +10,7 @@ import {
   Provider,
   type Credential,
 } from "@repo/protos/mcpa/v1/mcpa_pb";
-import { rpc, useInvalidate } from "../lib/hooks";
+import { rpc, useInvalidate, useSecretMutation } from "../lib/hooks";
 import {
   apiKeyProviders,
   credentialKindLabel,
@@ -449,12 +449,14 @@ function ApiKeyDialog({
   const [models, setModels] = useState("");
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [resubmit, setResubmit] = useState(false);
-  const register = useMutation(rpc.registerApiKeyCredential, {
+  const [failure, setFailure] = useState<unknown>();
+  // The request carries the API key. Unmounting the dialog after success
+  // removes the mutation from the query client; a failure discards it at once.
+  const register = useSecretMutation(rpc.registerApiKeyCredential, {
     onSuccess: async () => {
       await invalidate(rpc.listCredentials);
       onClose();
     },
-    onError: () => setResubmit(true),
   });
   const compatible = provider === Provider.OPENAI_COMPATIBLE;
   const allowsBaseUrl = compatible || provider === Provider.VERTEX;
@@ -481,14 +483,22 @@ function ApiKeyDialog({
     // The key is sent once and not kept in component state.
     setApiKey("");
     setResubmit(false);
-    register.mutate({
-      resourceId,
-      provider,
-      name: name.trim(),
-      apiKey: secret,
-      baseUrl: allowsBaseUrl ? baseUrl.trim() : "",
-      models: compatible ? modelList : [],
-    });
+    setFailure(undefined);
+    register
+      .mutateAsync({
+        resourceId,
+        provider,
+        name: name.trim(),
+        apiKey: secret,
+        baseUrl: allowsBaseUrl ? baseUrl.trim() : "",
+        models: compatible ? modelList : [],
+      })
+      .catch((error: unknown) => {
+        // Keep only the error: the failed mutation's variables hold the key.
+        register.discard();
+        setFailure(error);
+        setResubmit(true);
+      });
   };
   return (
     <Modal
@@ -564,7 +574,7 @@ function ApiKeyDialog({
             />
           </Field>
         )}
-        {register.error && <ErrorState compact error={register.error} />}
+        {failure !== undefined && <ErrorState compact error={failure} />}
         <div className="form-actions">
           <Button type="submit" disabled={register.isPending}>
             {register.isPending ? "Adding…" : "Add API key"}
