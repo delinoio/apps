@@ -207,7 +207,8 @@ func (s *Sessions) Stored(ctx context.Context, cookie string) (store.Session, er
 func (s *Sessions) Refresh(ctx context.Context, id uuid.UUID) (*SessionState, error) {
 	var out *SessionState
 	// refreshErr is a refresh failure returned after the transaction commits,
-	// because a rotated refresh token must be stored despite the failure.
+	// because a rotated refresh token or a session deletion must be stored
+	// despite the failure.
 	var refreshErr error
 	err := s.db.InTx(ctx, func(tx pgx.Tx) error {
 		sess, err := store.LockSession(ctx, tx, id)
@@ -233,8 +234,15 @@ func (s *Sessions) Refresh(ctx context.Context, id uuid.UUID) (*SessionState, er
 		refreshed, mfa, expiry, err := s.refreshTokens(ctx, sess.Subject, tokens)
 		if err != nil {
 			if errors.Is(err, ErrInvalidGrant) {
-				_ = store.DeleteSession(ctx, tx, sess.ID)
-				return apperr.Unauthenticated("the session expired; sign in again")
+				// Commit the deletion before reporting the failure. Returning the
+				// error from this callback would roll the deletion back and leave
+				// the session usable until its access tokens expire.
+				if err := store.DeleteSession(ctx, tx, sess.ID); err != nil {
+					return apperr.DependencyUnavailable(err)
+				}
+				s.log.InfoContext(ctx, "console session ended because Logto rejected its refresh token", "session_id", sess.ID)
+				refreshErr = apperr.Unauthenticated("the session expired; sign in again")
+				return nil
 			}
 			var ae *apperr.Error
 			if !errors.As(err, &ae) {
