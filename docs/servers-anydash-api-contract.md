@@ -120,7 +120,7 @@ A user with several roles gets the union. Team-role edit permission never bypass
 ### Quotas and rate limits
 
 - Quotas, checked in the mutating transaction under a lock on the account or dashboard row: 20 collector devices and 50 external connections per user, 50 dashboards per space, 100 widgets per dashboard. Excess requests return `QUOTA_EXCEEDED` with `QuotaInfo`.
-- Rate limits: 600 requests per minute per user token (keyed by Delcore user ID) and 60 per minute per device token (keyed by device ID), counted in fixed 60-second windows in PostgreSQL so that every replica shares them. Unauthenticated enrollment limits are listed above. Excess requests return `RATE_LIMITED` with `retry_after` before the handler runs. One request body can be at most 1 MiB (`PAYLOAD_TOO_LARGE`).
+- Rate limits: 600 requests per minute per user token (keyed by Delcore user ID) and 60 per minute per device token (keyed by device ID), counted in fixed 60-second windows in PostgreSQL so that every replica shares them. `RefreshDeviceToken` and refresh-token `RevokeDeviceCredentials` count toward the device limit only after the current or a rotated refresh token of that device is authenticated; invalid refresh tokens count instead toward 60 per minute per client IP address, and once that window is full every refresh-token request from the address returns `RATE_LIMITED` with scope `DEVICE_TOKEN` before the token is checked. Unauthenticated enrollment limits are listed above. Excess requests return `RATE_LIMITED` with `retry_after` before the handler runs. One request body can be at most 1 MiB (`PAYLOAD_TOO_LARGE`).
 
 ### Minimum client version
 

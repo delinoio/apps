@@ -595,6 +595,45 @@ fn inactive() -> ApiError {
     )
 }
 
+/// Rejects a refresh-token request before the token is looked up when its client IP address
+/// has exhausted the invalid refresh-token limit.
+async fn refresh_token_gate(s: &Server, call: &Call) -> Result<()> {
+    rate::ensure_open(
+        &s.db,
+        RateLimitScope::DeviceToken,
+        &rate::invalid_refresh_subject(&call.client_ip),
+        rate::INVALID_REFRESH_TOKEN_LIMIT,
+    )
+    .await
+}
+
+/// Counts an invalid refresh token against its client IP address, never against the device
+/// whose ID the caller sent, and returns `UNAUTHENTICATED` or, over the limit, `RATE_LIMITED`.
+async fn invalid_refresh_token(s: &Server, call: &Call) -> ApiError {
+    match rate::check(
+        &s.db,
+        RateLimitScope::DeviceToken,
+        &rate::invalid_refresh_subject(&call.client_ip),
+        rate::INVALID_REFRESH_TOKEN_LIMIT,
+    )
+    .await
+    {
+        Ok(()) => ApiError::unauthenticated(),
+        Err(e) => e,
+    }
+}
+
+/// Charges a request whose refresh token was authenticated to the device token limit.
+async fn charge_device_token(s: &Server, device: Uuid) -> Result<()> {
+    rate::check(
+        &s.db,
+        RateLimitScope::DeviceToken,
+        &device.to_string(),
+        rate::DEVICE_TOKEN_LIMIT,
+    )
+    .await
+}
+
 pub async fn refresh_device_token(
     s: &Server,
     call: &Call,
@@ -605,13 +644,7 @@ pub async fn refresh_device_token(
         return Err(ApiError::unauthenticated());
     }
     call.note(|a| a.device = Some(device));
-    rate::check(
-        &s.db,
-        RateLimitScope::DeviceToken,
-        &device.to_string(),
-        rate::DEVICE_TOKEN_LIMIT,
-    )
-    .await?;
+    refresh_token_gate(s, call).await?;
     let digest = crate::sha256(q.refresh_token.as_bytes());
     let mut tx = s.db.begin().await?;
     let row: Option<(i16, Option<DateTime<Utc>>, Uuid)> = sqlx::query_as(
@@ -621,7 +654,8 @@ pub async fn refresh_device_token(
     .fetch_optional(&mut *tx)
     .await?;
     let Some((state, deleted, user)) = row else {
-        return Err(ApiError::unauthenticated());
+        drop(tx);
+        return Err(invalid_refresh_token(s, call).await);
     };
     let current: Option<DateTime<Utc>> = sqlx::query_scalar(
         "SELECT refresh_expires_at FROM device_credentials WHERE device_id=$1 AND refresh_token_sha256=$2",
@@ -631,6 +665,8 @@ pub async fn refresh_device_token(
     .fetch_optional(&mut *tx)
     .await?;
     if let Some(expires) = current {
+        // The token is authenticated; only now does the request count toward the device limit.
+        charge_device_token(s, device).await?;
         if deleted.is_some() || i32::from(state) != DeviceCredentialState::Active.to_i32() {
             return Err(inactive());
         }
@@ -665,8 +701,11 @@ pub async fn refresh_device_token(
     .fetch_one(&mut *tx)
     .await?;
     if !reused {
-        return Err(ApiError::unauthenticated());
+        drop(tx);
+        return Err(invalid_refresh_token(s, call).await);
     }
+    // A rotated token was issued for this device, so reuse detection counts toward its limit.
+    charge_device_token(s, device).await?;
     if deleted.is_some() || i32::from(state) != DeviceCredentialState::Active.to_i32() {
         return Err(inactive());
     }
@@ -707,13 +746,7 @@ pub async fn revoke_device_credentials(
             if !valid_token(&q.refresh_token, "adr_") {
                 return Err(ApiError::unauthenticated());
             }
-            rate::check(
-                &s.db,
-                RateLimitScope::DeviceToken,
-                &device.to_string(),
-                rate::DEVICE_TOKEN_LIMIT,
-            )
-            .await?;
+            refresh_token_gate(s, call).await?;
             let mut tx = s.db.begin().await?;
             let user: Option<Uuid> = sqlx::query_scalar(
                 "SELECT d.user_id FROM device_credentials c JOIN devices d ON d.id=c.device_id WHERE c.device_id=$1 AND c.refresh_token_sha256=$2 FOR UPDATE OF d",
@@ -723,8 +756,10 @@ pub async fn revoke_device_credentials(
             .fetch_optional(&mut *tx)
             .await?;
             let Some(user) = user else {
-                return Err(ApiError::unauthenticated());
+                drop(tx);
+                return Err(invalid_refresh_token(s, call).await);
             };
+            charge_device_token(s, device).await?;
             sqlx::query("DELETE FROM device_credentials WHERE device_id=$1")
                 .bind(device)
                 .execute(&mut *tx)

@@ -262,6 +262,61 @@ async fn enrollment_codes_and_device_credentials() {
     )
     .await;
 
+    // Invalid refresh tokens never count toward the device limit: they are authenticated first
+    // and counted per client address, so knowing a device ID cannot exhaust its quota.
+    let device_windows = format!(
+        "SELECT COALESCE(sum(count),0)::int8 FROM rate_limit_windows WHERE scope=2 AND subject='{device}'"
+    );
+    let charged = f.count(&device_windows).await;
+    let forged = format!("adr_{}", "A".repeat(43));
+    for _ in 0..5 {
+        f.fail(
+            &f.anonymous(),
+            "DeviceService/RefreshDeviceToken",
+            json!({"deviceId":device,"refreshToken":forged}),
+            "ERROR_REASON_UNAUTHENTICATED",
+        )
+        .await;
+    }
+    f.fail(
+        &f.anonymous(),
+        "DeviceService/RevokeDeviceCredentials",
+        json!({"deviceId":device,"refreshToken":forged}),
+        "ERROR_REASON_UNAUTHENTICATED",
+    )
+    .await;
+    assert_eq!(f.count(&device_windows).await, charged);
+    assert_eq!(
+        f.count("SELECT COALESCE(sum(count),0)::int8 FROM rate_limit_windows WHERE scope=2 AND subject='invalid-refresh:127.0.0.1'")
+            .await,
+        6
+    );
+    // Over the invalid-token limit, refresh-token requests from that address are rejected before
+    // the token is checked. Pre-fill the current and next windows to avoid a minute boundary.
+    f.exec(
+        "INSERT INTO rate_limit_windows(scope,subject,window_start,count) SELECT 2,'invalid-refresh:127.0.0.1',w,60 FROM \
+         (VALUES (date_bin('60 seconds', clock_timestamp(), TIMESTAMPTZ '2000-01-01')),(date_bin('60 seconds', clock_timestamp(), TIMESTAMPTZ '2000-01-01')+interval '60 seconds')) v(w) \
+         ON CONFLICT (scope,subject,window_start) DO UPDATE SET count=60",
+    )
+    .await;
+    for token in [&forged, &refresh] {
+        let e = f
+            .fail(
+                &f.anonymous(),
+                "DeviceService/RefreshDeviceToken",
+                json!({"deviceId":device,"refreshToken":token}),
+                "ERROR_REASON_RATE_LIMITED",
+            )
+            .await;
+        assert_eq!(
+            e.detail.rate_limit_scope,
+            delino_protocol::anydash::v1::RateLimitScope::DeviceToken
+        );
+    }
+    f.exec("DELETE FROM rate_limit_windows WHERE subject='invalid-refresh:127.0.0.1'")
+        .await;
+    assert_eq!(f.count(&device_windows).await, charged);
+
     // Refresh rotates both tokens; the old access token stops working.
     let rotated = f
         .ok(
