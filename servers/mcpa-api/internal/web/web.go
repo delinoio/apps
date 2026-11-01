@@ -267,9 +267,23 @@ type sessionBody struct {
 	ExpiresAt string `json:"expires_at"`
 }
 
+// mfaRequiredBody is the 403 session response of a session without MFA
+// evidence. It carries the CSRF token because the cookie is HttpOnly and
+// /auth/logout requires the token: without it the browser could not end
+// the restricted session. The token grants no management access, because
+// Connect calls and /auth/refresh reject a session without MFA evidence
+// before they check CSRF.
+type mfaRequiredBody struct {
+	Error               string `json:"error"`
+	ReauthenticationURL string `json:"reauthentication_url"`
+	CSRFToken           string `json:"csrf_token"`
+}
+
 func (h *Handler) writeSession(w http.ResponseWriter, st *auth.SessionState) {
 	if !st.Session.MFA {
-		WriteError(w, apperr.MFARequired(h.cfg.Authenticator.ReauthURL()))
+		writeJSON(w, http.StatusForbidden, mfaRequiredBody{
+			Error: "mfa_required", ReauthenticationURL: h.cfg.Authenticator.ReauthURL(), CSRFToken: st.Session.CSRFToken,
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, sessionBody{
