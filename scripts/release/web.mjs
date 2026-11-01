@@ -11,6 +11,7 @@ export const App = Object.freeze({
   Lane: "lane",
   DevBase: "devbase",
   DeliTools: "delitools",
+  Mcpa: "mcpa",
 });
 
 export async function prepareProject(env, fetcher = fetch) {
