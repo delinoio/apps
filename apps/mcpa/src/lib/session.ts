@@ -14,7 +14,15 @@ export type Session =
       expiresAt?: Date;
     }
   | { status: SessionStatus.SignedOut }
-  | { status: SessionStatus.MfaRequired; reauthenticationUrl: string };
+  | {
+      status: SessionStatus.MfaRequired;
+      reauthenticationUrl: string;
+      /**
+       * Accepted only by `POST /auth/logout`, so the console can end the
+       * restricted session before it starts a new login.
+       */
+      csrfToken?: string;
+    };
 
 export class SessionRequestError extends Error {
   constructor(
@@ -87,6 +95,9 @@ export function createSessionClient(
         return {
           status: SessionStatus.MfaRequired,
           reauthenticationUrl: String(body.reauthentication_url ?? ""),
+          ...(typeof body.csrf_token === "string"
+            ? { csrfToken: body.csrf_token }
+            : {}),
         };
       }
       if (

@@ -19,6 +19,7 @@ import {
   renderApp,
   RESOURCE_ID,
   resource,
+  signedIn,
   TENANT_ID,
 } from "./fixtures";
 
@@ -81,6 +82,33 @@ describe("session states", () => {
     ).toBe("https://id.example/mfa");
   });
 
+  it("ends the restricted session and signs in again after MFA setup", async () => {
+    const opened: string[] = [];
+    const { sessionClient } = renderApp({
+      path: "/tenants/tenant-1",
+      sessions: [
+        {
+          status: SessionStatus.MfaRequired,
+          reauthenticationUrl: "https://id.example/mfa",
+          csrfToken: "csrf-mfa",
+        },
+      ],
+      openUrl: (url) => opened.push(url),
+    });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "I've done this. Sign in again",
+      }),
+    );
+    await waitFor(() =>
+      expect(opened).toEqual([
+        `${API}/auth/login?return_to=${encodeURIComponent(`${window.location.origin}/`)}`,
+      ]),
+    );
+    expect(sessionClient.calls).toEqual(["session", "logout:csrf-mfa"]);
+    expect(sessionStorage.getItem("mcpa.returnPath")).toBe("/tenants/tenant-1");
+  });
+
   it("shows the tenant picker for a signed-in user", async () => {
     renderApp();
     expect(await screen.findByRole("link", { name: /Acme/ })).toBeTruthy();
@@ -111,7 +139,8 @@ describe("session states", () => {
   });
 
   it("routes an MFA_REQUIRED Connect error to the MFA screen", async () => {
-    renderApp({
+    const opened: string[] = [];
+    const { sessionClient } = renderApp({
       service: {
         getViewer: () => {
           throw reasonError(
@@ -121,12 +150,32 @@ describe("session states", () => {
           );
         },
       },
+      sessions: [
+        signedIn,
+        {
+          status: SessionStatus.MfaRequired,
+          reauthenticationUrl: "https://id.example/mfa",
+          csrfToken: "csrf-mfa",
+        },
+      ],
+      openUrl: (url) => opened.push(url),
     });
     expect(
       await screen.findByRole("heading", {
         name: "Turn on two-step verification",
       }),
     ).toBeTruthy();
+    // The Connect error carries no CSRF token, so signing in again reads it
+    // from the session before it ends the restricted session.
+    fireEvent.click(
+      screen.getByRole("button", { name: "I've done this. Sign in again" }),
+    );
+    await waitFor(() => expect(opened).toHaveLength(1));
+    expect(sessionClient.calls).toEqual([
+      "session",
+      "session",
+      "logout:csrf-mfa",
+    ]);
   });
 
   it("returns to sign-in when the session can't be recovered", async () => {
@@ -155,7 +204,7 @@ describe("session states", () => {
     const { sessionClient } = renderApp();
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     expect(await screen.findByRole("link", { name: "Sign in" })).toBeTruthy();
-    expect(sessionClient.calls).toContain("logout");
+    expect(sessionClient.calls).toContain("logout:csrf-1");
   });
 });
 

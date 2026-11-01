@@ -46,6 +46,7 @@ describe("session client", () => {
         json(403, {
           error: "mfa_required",
           reauthentication_url: "https://id.example/mfa",
+          csrf_token: "csrf-mfa",
         }),
       );
     const client = createSessionClient("https://api.test", fetchMock);
@@ -61,6 +62,7 @@ describe("session client", () => {
     expect(await client.getSession()).toEqual({
       status: SessionStatus.MfaRequired,
       reauthenticationUrl: "https://id.example/mfa",
+      csrfToken: "csrf-mfa",
     });
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.test/auth/session");
     expect(fetchMock.mock.calls[0][1]?.credentials).toBe("include");

@@ -43,8 +43,8 @@ export function fakeSessionClient(...sessions: Session[]): SessionClient & {
     refresh: async () => {
       calls.push("refresh");
     },
-    logout: async () => {
-      calls.push("logout");
+    logout: async (csrfToken) => {
+      calls.push(`logout:${csrfToken}`);
     },
     loginUrl: (returnTo) =>
       `${API}/auth/login?return_to=${encodeURIComponent(returnTo)}`,
@@ -100,10 +100,12 @@ export function renderApp({
   path = "/",
   sessions = [signedIn],
   service = baseService(),
+  openUrl = () => {},
 }: {
   path?: string;
   sessions?: Session[];
   service?: Partial<ServiceImpl<typeof McpaService>>;
+  openUrl?: (url: string) => void;
 } = {}) {
   window.history.replaceState(null, "", path);
   const sessionClient = fakeSessionClient(...sessions);
@@ -120,6 +122,7 @@ export function renderApp({
       sessionClient={sessionClient}
       transport={transport}
       queryClient={queryClient}
+      openUrl={openUrl}
     />,
   );
   return { ...view, sessionClient, queryClient };

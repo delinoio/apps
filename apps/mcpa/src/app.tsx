@@ -57,6 +57,8 @@ export type AppProps = {
   /** Overrides the management transport, for example in tests. */
   transport?: Transport;
   queryClient?: QueryClient;
+  /** Leaves the console for an absolute URL; tests replace it. */
+  openUrl?: (url: string) => void;
 };
 
 /**
@@ -108,7 +110,12 @@ export function App(props: AppProps) {
   );
 }
 
-function SessionGate({ apiUrl, sessionClient, transport }: AppProps) {
+function SessionGate({
+  apiUrl,
+  sessionClient,
+  transport,
+  openUrl = (url) => window.location.assign(url),
+}: AppProps) {
   const queryClient = useQueryClient();
   const { route, navigate } = useRouter();
   const sessionQuery = useQuery({
@@ -209,15 +216,31 @@ function SessionGate({ apiUrl, sessionClient, transport }: AppProps) {
   const loginUrl = sessionClient.loginUrl(consoleReturnUrl());
   if (session.status === SessionStatus.SignedOut)
     return <SignInPage loginUrl={loginUrl} />;
-  if (session.status === SessionStatus.MfaRequired)
+  if (session.status === SessionStatus.MfaRequired) {
+    // The server never adds MFA evidence to an existing session, so finishing
+    // enrollment cannot upgrade it. End the restricted session and start a
+    // new login, whose tokens carry the evidence.
+    const signInAgain = async () => {
+      rememberCurrentPage();
+      try {
+        // A Connect MFA error carries no CSRF token; GET /auth/session does.
+        const current = session.csrfToken
+          ? session
+          : await sessionClient.getSession();
+        if (current.status === SessionStatus.MfaRequired && current.csrfToken)
+          await sessionClient.logout(current.csrfToken);
+      } catch {
+        // The new login replaces the session cookie even if sign-out failed.
+      }
+      openUrl(loginUrl);
+    };
     return (
       <MfaRequiredPage
         reauthenticationUrl={session.reauthenticationUrl}
-        loginUrl={loginUrl}
-        onCheckAgain={() => void sessionQuery.refetch()}
-        checking={sessionQuery.isFetching}
+        onSignInAgain={signInAgain}
       />
     );
+  }
   return (
     <SessionContext.Provider value={value}>
       <TransportProvider transport={managementTransport}>
@@ -259,15 +282,17 @@ export function SignInPage({ loginUrl }: { loginUrl: string }) {
 
 export function MfaRequiredPage({
   reauthenticationUrl,
-  loginUrl,
-  onCheckAgain,
-  checking,
+  onSignInAgain,
 }: {
   reauthenticationUrl: string;
-  loginUrl: string;
-  onCheckAgain: () => void;
-  checking: boolean;
+  onSignInAgain: () => Promise<void>;
 }) {
+  const [signingIn, setSigningIn] = useState(false);
+  const signInAgain = () => {
+    setSigningIn(true);
+    // Stays pending while the browser leaves for the login page.
+    void onSignInAgain();
+  };
   return (
     <CenteredPage>
       <p className="eyebrow">Managed CPA</p>
@@ -277,20 +302,25 @@ export function MfaRequiredPage({
         only sign-ins that used two-step verification. Set it up for your Delino
         account, or sign in again with it.
       </p>
-      <Button asChild size="lg" className="full">
-        <a href={reauthenticationUrl || loginUrl} onClick={rememberCurrentPage}>
-          {reauthenticationUrl
-            ? "Set up two-step verification"
-            : "Sign in again"}
-        </a>
-      </Button>
+      {reauthenticationUrl && (
+        <Button asChild size="lg" className="full">
+          <a href={reauthenticationUrl} onClick={rememberCurrentPage}>
+            Set up two-step verification
+          </a>
+        </Button>
+      )}
       <Button
-        variant="ghost"
+        variant={reauthenticationUrl ? "ghost" : "default"}
+        size={reauthenticationUrl ? "default" : "lg"}
         className="full"
-        disabled={checking}
-        onClick={onCheckAgain}
+        disabled={signingIn}
+        onClick={signInAgain}
       >
-        {checking ? "Checking…" : "I've done this. Check again"}
+        {signingIn
+          ? "Signing in…"
+          : reauthenticationUrl
+            ? "I've done this. Sign in again"
+            : "Sign in again"}
       </Button>
     </CenteredPage>
   );
