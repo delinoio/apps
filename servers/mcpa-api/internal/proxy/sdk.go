@@ -20,6 +20,10 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/logging"
+	// The SDK registers its schema translators only through this package
+	// (cmd/server/main.go imports it the same way); without it some
+	// format pairs reach providers untranslated.
+	_ "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator/builtin"
 	"github.com/sirupsen/logrus"
 )
 
