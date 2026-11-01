@@ -407,7 +407,7 @@ Rules:
 
 ### LocalCollectorService
 
-Served only by the shared local collector process over local IPC; the [CLI contract](cmds-anydash-cli-contract.md#local-ipc) defines transport, ownership and access control. Requests carry no bearer token. Errors use `ErrorDetail` with a locally generated correlation ID.
+Served only by the shared local collector process over local IPC; the [CLI contract](cmds-anydash-cli-contract.md#local-ipc) defines transport, ownership and access control. Requests carry no bearer token. Errors use `ErrorDetail` with a locally generated correlation ID. `RotateKey` generates the new key inside the collector; a key from an environment variable is rotated only by direct CLI execution without a running collector, as the [CLI contract](cmds-anydash-cli-contract.md#command-surface) defines.
 
 | Method                       | Request fields in field-number order from 1                                                            | Response fields in field-number order from 1  |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
