@@ -10,7 +10,6 @@ test("isolated projects select only their validation", () => {
     git_tracker_api: false,
     git_tracker: false,
     devbase: false,
-    delino_console: false,
     delino_site: false,
     delino_docs: false,
     delidev: false,
@@ -29,7 +28,6 @@ test("isolated projects select only their validation", () => {
     git_tracker_api: true,
     git_tracker: true,
     devbase: false,
-    delino_console: false,
     delino_site: false,
     delino_docs: false,
     delidev: false,
@@ -48,7 +46,6 @@ test("isolated projects select only their validation", () => {
     git_tracker_api: true,
     git_tracker: true,
     devbase: true,
-    delino_console: true,
     delino_site: true,
     delino_docs: true,
     delidev: true,
@@ -79,7 +76,6 @@ for (const [project, key] of [
         git_tracker_api: false,
         git_tracker: false,
         devbase: key === "devbase",
-        delino_console: false,
         delino_site: key === "delino_site",
         delino_docs: key === "delino_docs",
         delidev: false,
@@ -103,7 +99,6 @@ test("consumer examples select protocol validation without native runners", () =
     git_tracker_api: false,
     git_tracker: false,
     devbase: false,
-    delino_console: false,
     delino_site: false,
     delino_docs: false,
     delidev: false,
@@ -179,7 +174,6 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       git_tracker_api: false,
       git_tracker: false,
       devbase: false,
-      delino_console: false,
       delino_site: false,
       delino_docs: false,
       delidev: true,
@@ -202,7 +196,6 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     git_tracker_api: false,
     git_tracker: false,
     devbase: false,
-    delino_console: false,
     delino_site: false,
     delino_docs: false,
     delidev: false,
@@ -389,10 +382,7 @@ for (const [paths, expected] of [
       "protocol",
     ],
   ],
-  [
-    ["scripts/localization/catalog.mjs"],
-    ["delino_console", "delino_site", "delino_docs"],
-  ],
+  [["scripts/localization/catalog.mjs"], ["delino_site", "delino_docs"]],
   [
     [
       "packages/ui/src/styles/globals.css",
@@ -653,20 +643,6 @@ test("Lane domain paths select owning validators and shared store consumers", ()
       database: "lane_api_test",
     },
   ]);
-});
-
-test("Delino Console owns its routes and translation validation", () => {
-  for (const path of ["apps/delino-console/src/main.tsx"]) {
-    assert.deepEqual(
-      Object.entries(select([path]))
-        .filter(([, selected]) => selected)
-        .map(([id]) => id),
-      ["delino_console"],
-    );
-  }
-  for (const path of ["scripts/localization/catalog.mjs"]) {
-    assert.equal(select([path]).delino_console, true);
-  }
 });
 
 const recoveryPolicyPaths = [
