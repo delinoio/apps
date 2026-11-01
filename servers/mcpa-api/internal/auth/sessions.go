@@ -183,6 +183,24 @@ func (s *Sessions) Lookup(ctx context.Context, cookie string) (*SessionState, er
 	return s.Refresh(ctx, sess.ID)
 }
 
+// Stored resolves a cookie value to its stored session without opening or
+// refreshing its tokens. Logout uses it so that ending a session never
+// depends on Logto. It returns an *apperr.Error for unauthenticated
+// sessions.
+func (s *Sessions) Stored(ctx context.Context, cookie string) (store.Session, error) {
+	if cookie == "" {
+		return store.Session{}, apperr.Unauthenticated("sign in to continue")
+	}
+	sess, err := store.SessionByTokenHash(ctx, s.db.Pool, Digest(cookie))
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Session{}, apperr.Unauthenticated("the session expired; sign in again")
+	}
+	if err != nil {
+		return store.Session{}, apperr.DependencyUnavailable(err)
+	}
+	return sess, nil
+}
+
 // Refresh renews the API and Delcore tokens of a session with its refresh
 // token and re-checks MFA evidence. A refreshed token without evidence
 // downgrades the session so the user must reauthenticate.

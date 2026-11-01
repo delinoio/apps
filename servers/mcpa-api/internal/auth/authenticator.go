@@ -13,6 +13,7 @@ import (
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/apperr"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/delcore"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
 
 // PersonalKeyPrefix starts every Delcore API key secret.
@@ -189,4 +190,14 @@ func (a *Authenticator) SessionFromHeader(ctx context.Context, h http.Header) (*
 		return nil, apperr.Unauthenticated("sign in to continue")
 	}
 	return a.sessions.Lookup(ctx, c.Value)
+}
+
+// StoredSessionFromHeader resolves the console session cookie in h without
+// refreshing its tokens.
+func (a *Authenticator) StoredSessionFromHeader(ctx context.Context, h http.Header) (store.Session, error) {
+	c, err := (&http.Request{Header: h}).Cookie(SessionCookie)
+	if err != nil {
+		return store.Session{}, apperr.Unauthenticated("sign in to continue")
+	}
+	return a.sessions.Stored(ctx, c.Value)
 }

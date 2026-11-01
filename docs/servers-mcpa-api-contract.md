@@ -77,7 +77,7 @@ The console uses a BFF cookie session that follows the Lane browser-session patt
 - The session cookie is `mcpa_session`: opaque, `HttpOnly`, `SameSite=Lax`, `Path=/` and `Secure`. Only loopback development omits `Secure`.
 - `GET /auth/session` returns 200 `{"user_id","csrf_token","expires_at"}`, where `user_id` is the Delcore internal user ID. Without a valid session it returns 401 `{"error":"unauthenticated"}`. When the token has no MFA evidence it returns 403 `{"error":"mfa_required","reauthentication_url"}`.
 - `POST /auth/refresh` refreshes the Logto tokens. A refreshed token without MFA evidence ends the session and returns the 403 `mfa_required` response.
-- `POST /auth/logout` deletes the server session and its stored tokens and clears the cookie.
+- `POST /auth/logout` deletes the server session and its stored tokens and clears the cookie. It checks `Origin` and CSRF but never refreshes the session tokens, so sign-out works while Logto is unavailable.
 - Mutations under `/auth/*` and all Connect calls with a cookie session require `X-Mcpa-CSRF` equal to the session CSRF token. When `Origin` is present it must equal `WEB_ORIGIN`. A rejected request runs no handler.
 - CORS allows only `WEB_ORIGIN`, with credentials, for `/auth/*` and Connect, and exposes the Connect response headers and `X-Mcpa-Request-Id`. The call surface and `/mcp` grant no credentialed CORS access.
 

@@ -288,6 +288,7 @@ func (h *Handler) session(w http.ResponseWriter, r *http.Request) {
 }
 
 // mutationSession resolves the session of a POST and checks Origin and CSRF.
+// It refreshes tokens that are about to expire.
 func (h *Handler) mutationSession(r *http.Request) (*auth.SessionState, error) {
 	if !auth.CheckOrigin(r.Header.Get("Origin"), h.cfg.Authenticator.WebOrigin()) {
 		return nil, apperr.PermissionDenied("origin is not allowed")
@@ -300,6 +301,22 @@ func (h *Handler) mutationSession(r *http.Request) (*auth.SessionState, error) {
 		return nil, apperr.PermissionDenied("missing or invalid CSRF token")
 	}
 	return st, nil
+}
+
+// storedMutationSession is mutationSession without the token refresh, so
+// the request does not depend on Logto.
+func (h *Handler) storedMutationSession(r *http.Request) (store.Session, error) {
+	if !auth.CheckOrigin(r.Header.Get("Origin"), h.cfg.Authenticator.WebOrigin()) {
+		return store.Session{}, apperr.PermissionDenied("origin is not allowed")
+	}
+	sess, err := h.cfg.Authenticator.StoredSessionFromHeader(r.Context(), r.Header)
+	if err != nil {
+		return store.Session{}, err
+	}
+	if !auth.CheckCSRF(r.Header.Get(auth.CSRFHeader), sess.CSRFToken) {
+		return store.Session{}, apperr.PermissionDenied("missing or invalid CSRF token")
+	}
+	return sess, nil
 }
 
 // refresh renews the session tokens and re-checks MFA evidence.
@@ -328,14 +345,15 @@ func (h *Handler) clearSession(w http.ResponseWriter) {
 	h.setCookie(w, &http.Cookie{Name: auth.SessionCookie, Value: "", Path: "/", MaxAge: -1})
 }
 
-// logout deletes the session.
+// logout deletes the session. It resolves the stored session without
+// refreshing tokens, so signing out works while Logto is unavailable.
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
-	st, err := h.mutationSession(r)
+	sess, err := h.storedMutationSession(r)
 	if err != nil {
 		WriteError(w, err)
 		return
 	}
-	if err := h.cfg.Authenticator.Sessions().Delete(r.Context(), st.Session.ID); err != nil {
+	if err := h.cfg.Authenticator.Sessions().Delete(r.Context(), sess.ID); err != nil {
 		WriteError(w, apperr.DependencyUnavailable(err))
 		return
 	}
