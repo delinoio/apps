@@ -8,7 +8,6 @@
 -- token for the MCP-only audience and an opaque refresh handle. Every bearer
 -- value is stored only as a SHA-256 digest.
 --
--- 0002 is reserved for the data plane layer; see store.reservedMigrations.
 -- Fix-forward only: never edit an applied migration or add reverse migrations.
 
 -- Pending authorizations between /oauth/authorize and /oauth/callback. The
