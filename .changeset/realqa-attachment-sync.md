@@ -8,5 +8,5 @@ Store capture problem descriptions only in the prompt in the Rust store. Treat a
 
 <!-- public-changelog:start -->
 
-A capture image that cannot synchronize no longer stops synchronization of your other Lane data. Lane shows the affected image so that you can retry it. Images saved on another device wait quietly until that device uploads them. Saving a capture from the CLI no longer repeats the problem description in the task description.
+A capture image that cannot synchronize no longer stops synchronization of your other Lane data. Settings lists the affected image so that you can retry it. Images saved on another device wait quietly until that device uploads them. Saving a capture from the CLI no longer repeats the problem description in the task description.
 <!-- public-changelog:end -->
