@@ -1,0 +1,739 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Collector behavior against a mocked AnyDash API: enrollment, device tokens, leases and
+//! epochs, snapshots, uploads, offline buffering, update-required handling and the shared
+//! process with its local IPC service.
+mod support;
+use anydash::{
+    collector,
+    core::{Core, Owner},
+    ipc,
+    pb::{
+        self, AcquireLeaseRequest, AcquireLeaseResponse, AddConnectionCredentialRequest,
+        BucketOutcome, BucketResult, CollectionStatus, CollectorRunState, Connection,
+        ConnectionAssignment, CreateConnectionRequest, CreateConnectionResponse, Device,
+        DeviceCredentials, EnrollmentState, ErrorDetail, ErrorReason, GetCollectorStatusRequest,
+        GetCollectorStatusResponse, HeartbeatRequest, HeartbeatResponse, Lease, LocalNotice,
+        PollEnrollmentResponse, Provider, QuitRequest, QuitResponse, RefreshDeviceTokenRequest,
+        RefreshDeviceTokenResponse, ReleaseLeaseResponse, RenewLeaseRequest, RenewLeaseResponse,
+        ReportParserStatusResponse, ReportSnapshotRequest, ReportSnapshotResponse,
+        RevokeDeviceCredentialsRequest, RevokeDeviceCredentialsResponse, StartEnrollmentRequest,
+        StartEnrollmentResponse, UnregisterConnectionDeviceResponse, UploadUsageRequest,
+        UploadUsageResponse,
+    },
+    store::Tokens,
+    time,
+};
+use prost::Message as _;
+use serde_json::json;
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use support::{Mock, Recorded, Reply};
+const DEVICE: &str = "01890000-0000-7000-8000-00000000d001";
+#[derive(Default)]
+struct Api {
+    approved: bool,
+    epoch: u64,
+    holder: String,
+    upload: Option<ErrorReason>,
+    report: Option<ErrorReason>,
+    access_expires: i64,
+    refreshes: u32,
+}
+fn creds(expires: i64, n: u32) -> DeviceCredentials {
+    DeviceCredentials {
+        access_token: format!("ada_{n}"),
+        access_token_expires_at: Some(time::timestamp(expires)),
+        refresh_token: format!("adr_{n}"),
+        refresh_token_expires_at: None,
+    }
+}
+#[expect(
+    clippy::too_many_lines,
+    reason = "The mock serves every collector-facing API method."
+)]
+fn api(state: Arc<Mutex<Api>>) -> impl Fn(&Recorded) -> Reply + Send + Sync + 'static {
+    move |r: &Recorded| {
+        // Mocked provider endpoints share the server.
+        match r.route() {
+            "/v2/teams/team_1" => {
+                return Reply::json(200, &json!({"name": "Team", "billing": {"plan": "pro"}}));
+            }
+            "/v10/projects" => return Reply::json(200, &json!({"projects": [], "pagination": {}})),
+            "/v1/billing/charges" => return Reply::text(200, ""),
+            _ => {}
+        }
+        assert_eq!(r.header("x-anydash-client-kind"), Some("CLIENT_KIND_CLI"));
+        assert_eq!(
+            r.header("x-anydash-client-version"),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
+        assert_eq!(r.header("content-type"), Some("application/proto"));
+        let mut s = state.lock().unwrap();
+        let method = r.route().trim_start_matches("/anydash.v1.");
+        match method {
+            "DeviceService/StartEnrollment" => Reply::proto(&StartEnrollmentResponse {
+                enrollment_id: "e1".into(),
+                device_code: "device-code".into(),
+                user_code: "BCDF-GHJK".into(),
+                verification_url: "https://anydash.delino.io/connect/e1".into(),
+                expires_at: Some(time::timestamp(time::now() + 600)),
+                poll_interval: Some(prost_types::Duration {
+                    seconds: 0,
+                    nanos: 50_000_000,
+                }),
+            }),
+            "DeviceService/PollEnrollment" if !s.approved => {
+                Reply::proto(&PollEnrollmentResponse {
+                    state: EnrollmentState::Pending.into(),
+                    ..Default::default()
+                })
+            }
+            "DeviceService/PollEnrollment" => Reply::proto(&PollEnrollmentResponse {
+                state: EnrollmentState::Consumed.into(),
+                device: Some(Device {
+                    id: DEVICE.into(),
+                    ..Default::default()
+                }),
+                credentials: Some(creds(
+                    if s.access_expires == 0 {
+                        time::now() + 3600
+                    } else {
+                        s.access_expires
+                    },
+                    0,
+                )),
+            }),
+            "DeviceService/RefreshDeviceToken" => {
+                s.refreshes += 1;
+                Reply::proto(&RefreshDeviceTokenResponse {
+                    credentials: Some(creds(time::now() + 3600, s.refreshes)),
+                })
+            }
+            "DeviceService/RevokeDeviceCredentials" => {
+                Reply::proto(&RevokeDeviceCredentialsResponse {})
+            }
+            "CollectorService/Heartbeat" => Reply::proto(&HeartbeatResponse {
+                server_time: Some(time::timestamp(time::now())),
+                version_status: Some(pb::ClientVersionStatus {
+                    minimum_version: "0.0.1".into(),
+                    latest_version: "9.9.9".into(),
+                    update_available: true,
+                    update_required: false,
+                }),
+                assignments: vec![ConnectionAssignment {
+                    connection_id: "c1".into(),
+                    provider: Provider::Vercel.into(),
+                    lease: (s.epoch > 0).then(|| Lease {
+                        connection_id: "c1".into(),
+                        holder_device_id: s.holder.clone(),
+                        epoch: s.epoch,
+                        ..Default::default()
+                    }),
+                    acquire_recommended: s.epoch == 0 || s.holder.is_empty(),
+                    refresh_requested: false,
+                }],
+                local_sync_requested: false,
+                heartbeat_interval: Some(prost_types::Duration {
+                    seconds: 60,
+                    nanos: 0,
+                }),
+            }),
+            "CollectorService/AcquireLease" => {
+                s.epoch += 1;
+                s.holder = DEVICE.into();
+                Reply::proto(&AcquireLeaseResponse {
+                    granted: true,
+                    lease: Some(Lease {
+                        connection_id: "c1".into(),
+                        holder_device_id: DEVICE.into(),
+                        epoch: s.epoch,
+                        ..Default::default()
+                    }),
+                })
+            }
+            "CollectorService/RenewLease" => {
+                let req: RenewLeaseRequest = support::decode(r);
+                if req.epoch == s.epoch && s.holder == DEVICE {
+                    Reply::proto(&RenewLeaseResponse {
+                        lease: None,
+                        refresh_requested: false,
+                    })
+                } else {
+                    Reply::connect_error(
+                        400,
+                        "failed_precondition",
+                        ErrorDetail {
+                            reason: ErrorReason::LeaseExpired.into(),
+                            correlation_id: "c".into(),
+                            current_lease_epoch: s.epoch,
+                            ..Default::default()
+                        },
+                    )
+                }
+            }
+            "CollectorService/ReleaseLease" => {
+                s.holder.clear();
+                Reply::proto(&ReleaseLeaseResponse {})
+            }
+            "CollectorService/ReportSnapshot" => s.report.map_or_else(
+                || {
+                    Reply::proto(&ReportSnapshotResponse {
+                        outcome: pb::SnapshotOutcome::LatestUpdated.into(),
+                    })
+                },
+                |reason| Reply::reason(400, "failed_precondition", reason),
+            ),
+            "CollectorService/UploadUsage" => upload(s.upload, r),
+            "CollectorService/ReportParserStatus" => Reply::proto(&ReportParserStatusResponse {}),
+            "ConnectionService/CreateConnection" => {
+                let req: CreateConnectionRequest = support::decode(r);
+                Reply::proto(&CreateConnectionResponse {
+                    connection: Some(Connection {
+                        id: "c1".into(),
+                        provider: req.provider,
+                        display_name: "Vercel".into(),
+                        account_fingerprint: req.account_fingerprint,
+                        ..Default::default()
+                    }),
+                })
+            }
+            "ConnectionService/UnregisterConnectionDevice" => {
+                Reply::proto(&UnregisterConnectionDeviceResponse { connection: None })
+            }
+            "ConnectionService/RequestConnectionRefresh" => {
+                Reply::proto(&pb::RequestConnectionRefreshResponse {
+                    next_allowed_at: Some(time::timestamp(time::now() + 60)),
+                })
+            }
+            other => panic!("unexpected request {other}"),
+        }
+    }
+}
+fn upload(failure: Option<ErrorReason>, r: &Recorded) -> Reply {
+    if let Some(reason) = failure {
+        let unavailable = reason == ErrorReason::DependencyUnavailable;
+        return Reply::reason(
+            if unavailable { 503 } else { 400 },
+            if unavailable {
+                "unavailable"
+            } else {
+                "failed_precondition"
+            },
+            reason,
+        );
+    }
+    let req: UploadUsageRequest = support::decode(r);
+    assert!(req.buckets.len() <= 2000 && r.body.len() <= 1 << 20);
+    Reply::proto(&UploadUsageResponse {
+        results: req
+            .buckets
+            .iter()
+            .map(|b| BucketResult {
+                key: None,
+                outcome: BucketOutcome::Applied.into(),
+                stored_version: b.version,
+            })
+            .collect(),
+        retention_start: None,
+    })
+}
+async fn logged_in(home: &Path, state: &Arc<Mutex<Api>>, owner: Owner) -> (Mock, Arc<Core>) {
+    let mock = Mock::start(api(state.clone())).await;
+    let core = support::core(home, &mock, owner, &[]);
+    let progress = core.start_login("laptop").await.unwrap();
+    assert_eq!(
+        (progress.user_code.as_str(), progress.state),
+        ("BCDF-GHJK", EnrollmentState::Pending as i32)
+    );
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    state.lock().unwrap().approved = true;
+    for _ in 0..50 {
+        if core.logged_in().unwrap() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(core.logged_in().unwrap());
+    assert_eq!(
+        core.login_progress().unwrap().state,
+        EnrollmentState::Consumed as i32
+    );
+    (mock, core)
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn enrollment_logout_keeps_registration_and_relogin_reattaches() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Direct).await;
+    let start: StartEnrollmentRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("StartEnrollment"))
+            .unwrap(),
+    );
+    assert_eq!(
+        (
+            start.device_name.as_str(),
+            start.previous_device_id.as_str()
+        ),
+        ("laptop", "")
+    );
+    assert_eq!(start.collector_kind, pb::CollectorKind::Cli as i32);
+    assert_eq!(core.status(false).unwrap().device_id, DEVICE);
+    assert_eq!(
+        core.start_login("again").await.unwrap_err().reason,
+        ErrorReason::AlreadyLoggedIn
+    );
+    core.logout().await.unwrap();
+    let revoke: RevokeDeviceCredentialsRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("RevokeDeviceCredentials"))
+            .unwrap(),
+    );
+    assert_eq!(
+        (revoke.device_id.as_str(), revoke.refresh_token.as_str()),
+        (DEVICE, "adr_0")
+    );
+    assert!(
+        mock.recorded()
+            .iter()
+            .find(|r| r.route().ends_with("RevokeDeviceCredentials"))
+            .unwrap()
+            .header("authorization")
+            .is_none()
+    );
+    let status = core.status(false).unwrap();
+    assert_eq!(
+        (status.run_state, status.device_id.as_str()),
+        (CollectorRunState::NotLoggedIn as i32, DEVICE)
+    );
+    state.lock().unwrap().approved = false;
+    mock.clear();
+    core.start_login("").await.unwrap();
+    let again: StartEnrollmentRequest = support::decode(&mock.recorded()[0]);
+    assert_eq!(
+        again.previous_device_id, DEVICE,
+        "re-login reattaches the retained device ID"
+    );
+    assert!(
+        !again.device_name.is_empty(),
+        "the default name is the host name"
+    );
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn access_token_is_refreshed_before_expiry_and_stored_first() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api {
+        access_expires: time::now() + 3600,
+        ..Api::default()
+    }));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Direct).await;
+    assert_eq!(core.access_token().await.unwrap(), "ada_0");
+    assert_eq!(
+        mock.count("/anydash.v1.DeviceService/RefreshDeviceToken"),
+        0
+    );
+    // A reader beside a running collector never rotates the refresh token.
+    let home2 = tempfile::tempdir().unwrap();
+    let state2 = Arc::new(Mutex::new(Api {
+        access_expires: time::now() + 120,
+        ..Api::default()
+    }));
+    let (mock2, core2) = logged_in(home2.path(), &state2, Owner::Direct).await;
+    let reader = support::core(home2.path(), &mock2, Owner::Reader, &[]);
+    assert_eq!(reader.access_token().await.unwrap(), "ada_0");
+    assert_eq!(
+        mock2.count("/anydash.v1.DeviceService/RefreshDeviceToken"),
+        0
+    );
+    assert_eq!(core2.access_token().await.unwrap(), "ada_1");
+    let refresh: RefreshDeviceTokenRequest = support::decode(
+        &mock2
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("RefreshDeviceToken"))
+            .unwrap(),
+    );
+    assert_eq!(refresh.refresh_token, "adr_0");
+    // The new pair is durable: a new process reads it without another refresh.
+    let reopened = support::core(home2.path(), &mock2, Owner::Direct, &[]);
+    assert_eq!(reopened.access_token().await.unwrap(), "ada_1");
+    assert_eq!(
+        mock2.count("/anydash.v1.DeviceService/RefreshDeviceToken"),
+        1
+    );
+    drop((core, mock));
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn refresh_token_reuse_requires_a_new_login() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api {
+        access_expires: time::now() + 60,
+        ..Api::default()
+    }));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    mock.set(|_| Reply::reason(401, "unauthenticated", ErrorReason::RefreshTokenReused));
+    assert_eq!(
+        core.access_token().await.unwrap_err().reason,
+        ErrorReason::RefreshTokenReused
+    );
+    assert_eq!(
+        core.status(true).unwrap().run_state,
+        CollectorRunState::CredentialsInactive as i32
+    );
+    assert!(!core.logged_in().unwrap());
+    let error = core.heartbeat(time::now()).await.unwrap_err();
+    assert_eq!(error.reason, ErrorReason::NotLoggedIn);
+}
+fn vercel_connection(
+    core: &Arc<Core>,
+) -> impl std::future::Future<Output = anydash::error::Result<Connection>> + '_ {
+    core.add_connection(AddConnectionCredentialRequest {
+        provider: Provider::Vercel.into(),
+        connection_id: String::new(),
+        display_name: String::new(),
+        secret: "vercel-token".into(),
+        scope_id: "team_1".into(),
+    })
+}
+#[tokio::test(flavor = "multi_thread")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One scenario follows a lease through its lifecycle."
+)]
+async fn lease_acquire_epoch_reports_and_loss() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    let connection = vercel_connection(&core).await.unwrap();
+    let create: CreateConnectionRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("CreateConnection"))
+            .unwrap(),
+    );
+    assert_eq!(
+        create.account_fingerprint,
+        anydash::providers::fingerprint(Provider::Vercel, "team_1")
+    );
+    assert!(
+        !String::from_utf8_lossy(
+            &mock
+                .recorded()
+                .iter()
+                .find(|r| r.route().ends_with("CreateConnection"))
+                .unwrap()
+                .body
+        )
+        .contains("vercel-token"),
+        "secrets never leave the device"
+    );
+    let now = time::now();
+    let heartbeat = core.heartbeat(now).await.unwrap();
+    assert_eq!(heartbeat.assignments.len(), 1);
+    let hb: HeartbeatRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("Heartbeat"))
+            .unwrap(),
+    );
+    assert_eq!(hb.ready_connection_ids, vec![connection.id.clone()]);
+    let acquire: AcquireLeaseRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("AcquireLease"))
+            .unwrap(),
+    );
+    assert_eq!(acquire.connection_id, "c1");
+    assert_eq!(
+        core.poll_connection("c1", now).await.unwrap(),
+        Some(CollectionStatus::Succeeded)
+    );
+    let report: ReportSnapshotRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("ReportSnapshot"))
+            .unwrap(),
+    );
+    assert_eq!(report.lease_epoch, 1);
+    let snapshot = report.snapshot.unwrap();
+    assert_eq!(snapshot.next_attempt_at.unwrap().seconds, now + 300);
+    let status = core.status(true).unwrap();
+    assert!(status.connections[0].lease_held && status.connections[0].credential_present);
+    assert_eq!(status.connections[0].lease_epoch, 1);
+    assert!(
+        status
+            .notices
+            .contains(&(LocalNotice::UpdateAvailable as i32))
+    );
+    // Another device took over: renewal fails, the lease is dropped and nothing is polled.
+    {
+        let mut s = state.lock().unwrap();
+        s.epoch = 2;
+        s.holder = "01890000-0000-7000-8000-00000000d002".into();
+    }
+    mock.clear();
+    assert_eq!(core.poll_connection("c1", now + 300).await.unwrap(), None);
+    assert!(!core.status(true).unwrap().connections[0].lease_held);
+    assert_eq!(mock.count("/v10/projects"), 0);
+    // A late report under a superseded epoch is discarded.
+    state.lock().unwrap().holder.clear();
+    core.heartbeat(now + 400).await.unwrap();
+    assert_eq!(core.status(true).unwrap().connections[0].lease_epoch, 3);
+    state.lock().unwrap().report = Some(ErrorReason::LeaseExpired);
+    assert_eq!(
+        core.poll_connection("c1", now + 400).await.unwrap(),
+        Some(CollectionStatus::Succeeded)
+    );
+    assert!(!core.status(true).unwrap().connections[0].lease_held);
+    // Release on quit, logout or uninstall.
+    state.lock().unwrap().report = None;
+    core.heartbeat(now + 500).await.unwrap();
+    core.release_all().await;
+    assert!(
+        mock.recorded()
+            .iter()
+            .any(|r| r.route().ends_with("ReleaseLease"))
+    );
+    // A manual local sync is allowed once per minute.
+    core.request_local_sync(now).unwrap();
+    let limited = core.request_local_sync(now + 20).unwrap_err();
+    assert_eq!(
+        (limited.reason, limited.retry_after),
+        (ErrorReason::RateLimited, Some(Duration::from_secs(40)))
+    );
+    // Disconnect unregisters this device and deletes the local credential.
+    core.remove_connection("c1").await.unwrap();
+    assert_eq!(core.status(true).unwrap().connections.len(), 0);
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn provider_backoff_and_official_auth_expiry_stop() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    let now = time::now();
+    core.heartbeat(now).await.unwrap();
+    let base = api(state.clone());
+    let failing = Arc::new(Mutex::new(503u16));
+    let f = failing.clone();
+    mock.set(move |r| {
+        if r.route() == "/v10/projects" {
+            Reply::text(*f.lock().unwrap(), "")
+        } else {
+            base(r)
+        }
+    });
+    assert_eq!(
+        core.poll_connection("c1", now).await.unwrap(),
+        Some(CollectionStatus::Failed)
+    );
+    let next = core.status(true).unwrap().connections[0]
+        .next_attempt_at
+        .unwrap()
+        .seconds;
+    assert!(
+        (now + 60..=now + 72).contains(&next),
+        "first failure waits 1 minute plus up to 20% jitter"
+    );
+    assert_ne!(
+        core.status(true).unwrap().connections[0]
+            .last_error_correlation_id
+            .len(),
+        0
+    );
+    assert_eq!(
+        core.poll_connection("c1", next).await.unwrap(),
+        Some(CollectionStatus::Failed)
+    );
+    let second = core.status(true).unwrap().connections[0]
+        .next_attempt_at
+        .unwrap()
+        .seconds;
+    assert!(
+        (next + 120..=next + 144).contains(&second),
+        "second failure waits 2 minutes plus jitter"
+    );
+    // Not due yet: nothing is polled.
+    assert_eq!(core.poll_connection("c1", second - 1).await.unwrap(), None);
+    *failing.lock().unwrap() = 401;
+    assert_eq!(
+        core.poll_connection("c1", second).await.unwrap(),
+        Some(CollectionStatus::AuthExpired)
+    );
+    let count = mock.count("/v10/projects");
+    // Official tokens stay stopped until the user reconnects.
+    assert_eq!(
+        core.poll_connection("c1", second + 3600).await.unwrap(),
+        None
+    );
+    assert_eq!(mock.count("/v10/projects"), count);
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn offline_buffering_update_required_and_chunked_upload() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api {
+        upload: Some(ErrorReason::DependencyUnavailable),
+        ..Api::default()
+    }));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    let now = time::now();
+    let claude = home.path().join(".claude/projects/p/s.jsonl");
+    let line = |ts: i64, id: &str| {
+        json!({"type": "assistant", "timestamp": time::rfc3339(ts), "sessionId": "s", "message": {"id": id, "model": "m", "usage": {"input_tokens": 1, "output_tokens": 1}}}).to_string()
+    };
+    // 2,100 distinct 15-minute buckets within the last 90 days.
+    let lines: String = (0..2100)
+        .map(|i| line(now - 3600 - i * 900, &format!("m{i}")) + "\n")
+        .collect();
+    support::write(&claude, &lines);
+    core.local_sync(now).unwrap();
+    let pending = core.status(true).unwrap().pending_bucket_count;
+    assert!(pending >= 2100);
+    // Offline: the upload fails transiently and the buckets stay buffered.
+    let error = core.upload(now).await.unwrap_err();
+    assert!(anydash::api::transient(&error));
+    assert_eq!(core.status(true).unwrap().pending_bucket_count, pending);
+    // UPDATE_REQUIRED stops uploads; aggregation continues locally.
+    state.lock().unwrap().upload = Some(ErrorReason::UpdateRequired);
+    assert_eq!(
+        core.upload(now).await.unwrap_err().reason,
+        ErrorReason::UpdateRequired
+    );
+    support::write(&claude, &(lines + &line(now - 60, "late") + "\n"));
+    core.local_sync(now).unwrap();
+    let status = core.status(true).unwrap();
+    assert_eq!(status.run_state, CollectorRunState::UpdateRequired as i32);
+    assert!(
+        status
+            .notices
+            .contains(&(LocalNotice::UpdateRequired as i32))
+    );
+    assert!(status.pending_bucket_count > pending);
+    mock.clear();
+    assert_eq!(
+        core.upload(now).await.unwrap_err().reason,
+        ErrorReason::UpdateRequired
+    );
+    assert!(
+        mock.recorded().is_empty(),
+        "no API calls until the executable is updated"
+    );
+    // After an update (a new version clears the flag), the buffer uploads in chunks.
+    let updated = support::core(home.path(), &mock, Owner::Foreground, &[]);
+    let store_flag_reset = updated.status(true).unwrap().run_state;
+    assert_eq!(
+        store_flag_reset,
+        CollectorRunState::UpdateRequired as i32,
+        "the same version keeps the flag"
+    );
+    drop(updated);
+    let db = rusqlite::Connection::open(home.path().join("anydash/data/collector.db")).unwrap();
+    db.execute(
+        "UPDATE meta SET value = '0.0.0-old' WHERE key = 'update_required'",
+        [],
+    )
+    .unwrap();
+    drop(db);
+    state.lock().unwrap().upload = None;
+    let updated = support::core(home.path(), &mock, Owner::Foreground, &[]);
+    let uploaded = updated.upload(now).await.unwrap();
+    assert!(uploaded > 2000);
+    assert!(mock.count("/anydash.v1.CollectorService/UploadUsage") >= 2);
+    assert_eq!(updated.status(true).unwrap().pending_bucket_count, 0);
+    let _ = Tokens::default();
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn one_shared_process_with_ipc_quit_and_service_ownership() {
+    let home = tempfile::tempdir().unwrap();
+    let mock = Mock::start(|_| Reply::text(500, "")).await;
+    let settings = support::settings(home.path(), &[("ANYDASH_API_URL", &mock.base)]);
+    let options = |owner| anydash::core::Options {
+        settings: settings.clone(),
+        endpoints: anydash::providers::Endpoints::mock(&mock.base, "grok"),
+        os: Arc::new(anydash::keys::MemoryStore::default()),
+        owner,
+    };
+    let running = collector::start(options(Owner::Desktop)).unwrap();
+    let task = tokio::spawn(running.run());
+    let dirs = settings.dirs();
+    let client = ipc::Client::connect(&dirs)
+        .await
+        .expect("the collector answers on local IPC");
+    // A second collector for the same OS user is refused; the app and the CLI share this one.
+    assert!(collector::try_lock(&dirs).unwrap().is_none());
+    assert!(collector::start(options(Owner::Foreground)).is_err());
+    let status: GetCollectorStatusResponse = client
+        .call("GetCollectorStatus", &GetCollectorStatusRequest {})
+        .await
+        .unwrap();
+    assert_eq!(
+        status.status.unwrap().owner_kind,
+        pb::CollectorKind::DesktopApp as i32
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(
+            std::fs::metadata(ipc::socket_path(&dirs))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+    // Closing the client (the app window) does not stop collection.
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(!task.is_finished());
+    let client = ipc::Client::connect(&dirs).await.unwrap();
+    // Unknown methods return Connect unimplemented.
+    let unknown = client
+        .call::<_, QuitResponse>("Teleport", &QuitRequest {})
+        .await
+        .unwrap_err();
+    assert!(unknown.message.contains("update the older"));
+    // The CLI uses the same process for commands.
+    let paths: pb::ListSourcePathsResponse = client
+        .call("ListSourcePaths", &pb::ListSourcePathsRequest {})
+        .await
+        .unwrap();
+    assert_ne!(paths.paths.len(), 0);
+    // An explicit quit stops a desktop collector.
+    let _: QuitResponse = client.call("Quit", &QuitRequest {}).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(collector::try_lock(&dirs).unwrap().is_some());
+    // A service collector refuses Quit.
+    let running = collector::start(options(Owner::Service)).unwrap();
+    let core = running.core.clone();
+    let task = tokio::spawn(running.run());
+    let client = ipc::Client::connect(&dirs).await.unwrap();
+    let refused = client
+        .call::<_, QuitResponse>("Quit", &QuitRequest {})
+        .await
+        .unwrap_err();
+    assert_eq!(refused.reason, ErrorReason::ServiceManaged);
+    let _ = core.stopped.send(true);
+    core.wake.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let _ = ReportSnapshotResponse::default().encode_to_vec();
+}
