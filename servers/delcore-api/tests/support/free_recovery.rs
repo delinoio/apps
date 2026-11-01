@@ -96,6 +96,12 @@ impl World {
             },
         }
     }
+    /// A request clock `days` into the current month, capped at the real clock. Accepted metering
+    /// work becomes available at the request clock and the worker claims only available work, so
+    /// on the first days of a month the uncapped clock would leave the work unprocessed.
+    fn accepted(&self, days: i64) -> DateTime<Utc> {
+        (self.cur + Duration::days(days)).min(Utc::now())
+    }
     /// Accepts an event occurring at `occurred`, as if the request arrived at `now`.
     async fn ingest(
         &self,
@@ -176,7 +182,7 @@ async fn skipped_month_usage_uses_a_recovered_baseline_instead_of_purchased_cred
     for delivered_late in [false, true] {
         let w = World::new().await;
         let (occurred, now) = if delivered_late {
-            (w.cur - Duration::days(2), w.cur + Duration::days(2))
+            (w.cur - Duration::days(2), w.accepted(2))
         } else {
             (w.prev + Duration::days(14), w.prev + Duration::days(14))
         };
@@ -228,13 +234,8 @@ async fn events_of_a_skipped_month_share_one_allowance_with_or_without_a_committ
         }
         for (index, quantity) in ["50", "50", "50"].iter().enumerate() {
             let at = w.prev + Duration::days(3 + index as i64);
-            w.ingest(
-                &format!("e{index}"),
-                quantity,
-                at,
-                w.cur + Duration::days(1),
-            )
-            .await;
+            w.ingest(&format!("e{index}"), quantity, at, w.accepted(1))
+                .await;
         }
         w.f.process_metering().await;
         let grants = w.grants(w.prev).await;
@@ -267,13 +268,8 @@ async fn the_recovered_baseline_follows_the_entitlements_held_at_the_month_bound
     .unwrap();
     sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2::text::uuid,$3::text::uuid,$4)")
         .bind(Uuid::now_v7()).bind(&w.tenant).bind(&raised).bind(w.prev + Duration::days(10)).execute(&w.f.db).await.unwrap();
-    w.ingest(
-        "late",
-        "150",
-        w.prev + Duration::days(20),
-        w.cur + Duration::days(1),
-    )
-    .await;
+    w.ingest("late", "150", w.prev + Duration::days(20), w.accepted(1))
+        .await;
     w.f.process_metering().await;
     let grants = w.grants(w.prev).await;
     assert_eq!(grants.len(), 1);
@@ -360,13 +356,8 @@ async fn recovery_never_fabricates_a_baseline() {
 #[ignore = "requires a disposable PostgreSQL database"]
 async fn malformed_history_is_reported_and_never_guessed() {
     let w = World::new().await;
-    w.ingest(
-        "february",
-        "50",
-        w.prev + Duration::days(14),
-        w.cur + Duration::days(1),
-    )
-    .await;
+    w.ingest("february", "50", w.prev + Duration::days(14), w.accepted(1))
+        .await;
     // A second plan selection that overlaps the month start.
     sqlx::query("INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at,ends_at) SELECT $2,cs.tenant_id,cs.product_id,cs.version_id,cs.starts_at,$3 FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id WHERE cs.tenant_id=$1::text::uuid AND ce.kind='plan' AND cs.ends_at IS NULL")
             .bind(&w.tenant).bind(Uuid::now_v7()).bind(w.prev + Duration::days(1)).execute(&w.f.db).await.unwrap();

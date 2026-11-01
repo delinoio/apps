@@ -1547,7 +1547,9 @@ async fn late_usage_in_a_recovered_period_resolves_against_that_period() {
     let s = scenario().await;
     s.allowance(10).await;
     s.pay_c("evt_c").await;
-    let usage_at = s.time.days(1);
+    // The service rejects future occurrences, so the usage time never runs ahead of the real
+    // clock on the first day of a month.
+    let usage_at = s.time.days(1).min(Utc::now());
     assert!(
         s.resolve(usage_at)
             .await
