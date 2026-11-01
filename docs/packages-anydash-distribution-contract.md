@@ -42,7 +42,7 @@ Users install the CLI by install script or npm, desktop apps by direct download,
 
 ### Mobile apps
 
-- The unified release produces signed iOS and Android builds with their widgets through the repository-wide `release-signing` environment, with optional TestFlight and Google Play internal-testing uploads through `release-publish`, following the [native publication handoff](repository-workflow-contract.md#native-publication-handoff). The iOS archive uses automatic signing with the App Store Connect API key and exports for App Store Connect; the Android App Bundle is signed with the upload key, whose certificate fingerprint the job checks. Both use the release version and the release run number as the build number (1 to 9999).
+- The unified release produces signed iOS and Android builds with their widgets through the repository-wide `release-signing` environment, with optional TestFlight and Google Play internal-testing uploads through `release-publish`, following the [native publication handoff](repository-workflow-contract.md#native-publication-handoff). The iOS archive uses automatic signing with the App Store Connect API key and exports for App Store Connect, and the job rejects an IPA without the compiled `AppIcon` asset catalog before any TestFlight upload; the Android App Bundle is signed with the upload key, whose certificate fingerprint the job checks. Both use the release version and the release run number as the build number (1 to 9999).
 - The maintainer handles store listings, review submission and the general public release. Automatic store submission is out of scope. Privacy policy and terms of service must exist before store publication; they are a separate legal deliverable.
 
 ### Release automation

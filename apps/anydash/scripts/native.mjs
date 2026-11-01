@@ -13,9 +13,9 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { png } from "./icons.mjs";
+import { iosAppIconCatalog, png } from "./icons.mjs";
 import {
   iosExportOptions,
   releaseAppxManifest,
@@ -132,6 +132,16 @@ function windowsWidgetAssets(cwd) {
     ["WidgetScreenshot.png", 300],
   ])
     writeFileSync(join(cwd, "Assets", name), png(size));
+}
+
+/** The iOS app icon catalog from the AnyDash mark; project.yml includes it. */
+function iosAppIcon(cwd) {
+  const catalog = join(cwd, "Generated/Assets.xcassets");
+  rmSync(catalog, { recursive: true, force: true });
+  for (const [path, contents] of Object.entries(iosAppIconCatalog())) {
+    mkdirSync(dirname(join(catalog, path)), { recursive: true });
+    writeFileSync(join(catalog, path), contents);
+  }
 }
 
 /** Signed builds for the unified release; outputs land in each host's build/release. */
@@ -319,6 +329,7 @@ try {
     requireMac("iOS");
     const cwd = join(root, "native/ios");
     if (action === "init") {
+      iosAppIcon(cwd);
       run("xcodegen", ["generate"], cwd);
       run("pod", ["install"], cwd);
     } else {

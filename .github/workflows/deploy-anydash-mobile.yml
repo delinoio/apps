@@ -163,6 +163,9 @@ jobs:
           unzip -q "mobile-artifacts/anydash-ios.ipa" -d "$RUNNER_TEMP/anydash-ipa"
           codesign --verify --deep --strict "$RUNNER_TEMP/anydash-ipa/Payload/"*.app
           test -d "$RUNNER_TEMP/anydash-ipa/Payload/AnyDash.app/PlugIns/AnyDashWidgets.appex"
+          # App Store Connect rejects an app without an app icon; fail before upload.
+          test -f "$RUNNER_TEMP/anydash-ipa/Payload/AnyDash.app/Assets.car"
+          [[ "$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconName raw "$RUNNER_TEMP/anydash-ipa/Payload/AnyDash.app/Info.plist")" == AppIcon ]]
           cp LICENSE NOTICE mobile-artifacts/
           printf 'revision=%s\nversion=%s\nbuild_number=%s\nplatform=ios\n' "$RELEASE_REVISION" "$ANYDASH_RELEASE_VERSION" "$ANYDASH_BUILD_NUMBER" > "mobile-artifacts/build.txt"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
