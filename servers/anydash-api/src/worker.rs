@@ -374,13 +374,15 @@ pub async fn purge(
     .bind(e16(SpaceKind::Personal))
     .execute(&mut *db)
     .await?;
+    // Every team widget the user owned at the request, whatever its sharing state: one that had
+    // already ended for another reason (revocation, source deletion, leaving) keeps that reason
+    // but must still be deleted. Widgets added after the request are new data and stay.
     sqlx::query(
-        "DELETE FROM widgets w USING dashboards d WHERE w.dashboard_id=d.id AND d.space_kind=$2 AND w.data_owner_user_id=$1 AND (w.sharing_end_reason=$3 OR $4)",
+        "DELETE FROM widgets w USING dashboards d WHERE w.dashboard_id=d.id AND d.space_kind=$2 AND w.data_owner_user_id=$1 AND w.created_at<=$3",
     )
     .bind(user)
     .bind(e16(SpaceKind::Team))
-    .bind(e16(SharingEndReason::OwnerDataDeleted))
-    .bind(withdrawal)
+    .bind(cutoff)
     .execute(&mut *db)
     .await?;
     // Activity visible only to the user; the deletion request event itself remains until expiry.

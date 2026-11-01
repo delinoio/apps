@@ -530,6 +530,108 @@ async fn deletion_deadlines_and_account_data_deletion() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn account_data_deletion_removes_previously_ended_team_widgets() {
+    let f = Fixture::setup().await;
+    let owner = f.person("owner");
+    let member = f.person("member");
+    let team = f.team(
+        "Acme",
+        &[(&owner, &["ROLE_OWNER"]), (&member, &["ROLE_MEMBER"])],
+    );
+    f.connect(&owner).await;
+    f.connect(&member).await;
+    let (o, m) = (f.user(&owner), f.user(&member));
+    f.enroll(&member, "laptop", "").await;
+    let dash = f
+        .ok(
+            &o,
+            "DashboardService/CreateDashboard",
+            json!({"requestId":id(),"spaceId":team,"name":"Team"}),
+        )
+        .await["dashboard"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let add = |version: &'static str| {
+        let (f, m, dash) = (&f, &m, dash.clone());
+        async move {
+            f.ok(
+                m,
+                "DashboardService/AddWidget",
+                json!({"dashboardId":dash,"expectedVersion":version,"requestId":id(),"type":"WIDGET_TYPE_LOCAL_USAGE_SUMMARY",
+                    "layout":{"x":0,"y":0,"width":3,"height":2,"presentation":"WIDGET_PRESENTATION_NUMBER"},"query":{"period":"QUERY_PERIOD_TODAY"},"source":{"allDevices":true}}),
+            )
+            .await["widgetId"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        }
+    };
+    let revoked = add("1").await;
+    let shared = add("2").await;
+    // One widget has already ended for another reason before the deletion request.
+    f.ok(
+        &m,
+        "DashboardService/RevokeWidgetSharing",
+        json!({"dashboardId":dash,"widgetId":revoked}),
+    )
+    .await;
+    f.ok(
+        &m,
+        "AccountService/DeleteAccountData",
+        json!({"confirm":true}),
+    )
+    .await;
+    // The ended widget keeps its original reason until the deletion job removes it.
+    assert_eq!(
+        f.count(&format!(
+            "SELECT count(*) FROM widgets WHERE id='{revoked}' AND sharing_end_reason=1"
+        ))
+        .await,
+        1
+    );
+    // A widget added after the request is new data and is not deleted by it.
+    f.enroll(&member, "again", "").await;
+    let version = f
+        .ok(
+            &m,
+            "DashboardService/GetDashboard",
+            json!({"dashboardId":dash}),
+        )
+        .await["dashboard"]["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let later = f
+        .ok(
+            &m,
+            "DashboardService/AddWidget",
+            json!({"dashboardId":dash,"expectedVersion":version,"requestId":id(),"type":"WIDGET_TYPE_LOCAL_USAGE_SUMMARY",
+                "layout":{"x":0,"y":0,"width":3,"height":2,"presentation":"WIDGET_PRESENTATION_NUMBER"},"query":{"period":"QUERY_PERIOD_TODAY"},"source":{"allDevices":true}}),
+        )
+        .await["widgetId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    f.job(Job::Deletion).await;
+    for widget in [&revoked, &shared] {
+        assert_eq!(
+            f.count(&format!("SELECT count(*) FROM widgets WHERE id='{widget}'"))
+                .await,
+            0,
+            "{widget}"
+        );
+    }
+    assert_eq!(
+        f.count(&format!("SELECT count(*) FROM widgets WHERE id='{later}'"))
+            .await,
+        1
+    );
+    f.cleanup().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn tenant_states_and_user_withdrawal() {
     let f = Fixture::setup().await;
     let owner = f.person("owner");
