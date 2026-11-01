@@ -293,6 +293,9 @@ test("source choice and initial approval retain identified host operations", asy
     run: async (action: () => Promise<unknown>) => {
       await action();
     },
+    captureSource: async (mode: string, sourceId: string) => {
+      calls.push({ op: "capture", mode, sourceId });
+    },
   };
   const view = bundle.runtime.mount(bundle.RealQADialogs, { controller });
   assert.match(view.tree().map(text).join(""), /Display A · 1920 × 1080/);
@@ -549,6 +552,41 @@ test("a failed capture offers an explicit retry of the same mode", async () => {
       .length,
     0,
   );
+  view.unmount();
+});
+
+test("a failed monitor or window capture offers a retry of that mode", async () => {
+  const bundle = await loadRealQA();
+  const calls: Record<string, unknown>[] = [];
+  bundle.captureHost.realqa = async (input) => {
+    calls.push(input);
+    if (input.op === "state") return { permission: "granted" };
+    if (input.op === "sources")
+      return {
+        sources: [{ id: "window-a", name: "Editor", width: 800, height: 600 }],
+      };
+    if (input.op === "capture") throw new Error("Window capture failed.");
+  };
+  let controller: any;
+  const Probe = () => {
+    controller = bundle.useRealQA();
+    return null;
+  };
+  const view = bundle.runtime.mount(Probe, {});
+  await view.settle();
+  await controller.capture("window");
+  await view.settle();
+  assert.equal(controller.sources?.mode, "window");
+  assert.equal(controller.retryMode, undefined);
+  await controller.captureSource("window", "window-a");
+  await view.settle();
+  assert.deepEqual(
+    calls.filter((call) => call.op === "capture"),
+    [{ op: "capture", mode: "window", sourceId: "window-a" }],
+  );
+  assert.equal(controller.sources, undefined);
+  assert.equal(controller.error, "Window capture failed.");
+  assert.equal(controller.retryMode, "window");
   view.unmount();
 });
 

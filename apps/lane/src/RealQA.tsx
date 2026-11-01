@@ -530,14 +530,7 @@ export function RealQADialogs({
               key={source.id}
               disabled={busy}
               onClick={() =>
-                void run(async () => {
-                  controller.setSources(undefined);
-                  await realqa({
-                    op: "capture",
-                    mode: sources.mode,
-                    sourceId: source.id,
-                  });
-                })
+                void controller.captureSource(sources.mode, source.id)
               }
             >{`${source.name} · ${source.width} × ${source.height}`}</Button>
           ))}

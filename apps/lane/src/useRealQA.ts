@@ -80,25 +80,36 @@ export function useRealQA() {
     });
     return run(() => realqa({ op: "updateDraft", ...patch }));
   };
-  const capture = (mode: CaptureMode) =>
+  const tracked = (mode: CaptureMode, action: () => Promise<unknown>) =>
     run(async () => {
       try {
-        if (mode === CaptureMode.Screen || mode === CaptureMode.Window) {
-          const result = await realqa<{
-            sources: {
-              id: string;
-              name: string;
-              width: number;
-              height: number;
-            }[];
-          }>({ op: "sources", mode });
-          setSources({ mode, sources: result.sources });
-        } else await realqa({ op: "capture", mode });
+        await action();
       } catch (e) {
         // The draft is unchanged; keep the failed mode for an explicit retry.
         if (active.current) setRetryMode(mode);
         throw e;
       }
+    });
+  const capture = (mode: CaptureMode) =>
+    tracked(mode, async () => {
+      if (mode === CaptureMode.Screen || mode === CaptureMode.Window) {
+        const result = await realqa<{
+          sources: {
+            id: string;
+            name: string;
+            width: number;
+            height: number;
+          }[];
+        }>({ op: "sources", mode });
+        setSources({ mode, sources: result.sources });
+      } else await realqa({ op: "capture", mode });
+    });
+  // Capture the monitor or window chosen from the enumerated sources. A failure
+  // offers the same retry as a failed enumeration.
+  const captureSource = (mode: CaptureMode, sourceId: string) =>
+    tracked(mode, async () => {
+      setSources(undefined);
+      await realqa({ op: "capture", mode, sourceId });
     });
   useEffect(() => {
     active.current = true;
@@ -144,6 +155,7 @@ export function useRealQA() {
     setSources,
     run,
     capture,
+    captureSource,
     refresh,
   };
 }
