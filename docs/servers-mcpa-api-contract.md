@@ -108,7 +108,7 @@ Console and interactive MCP access require Logto MFA evidence in the access toke
 
 Delcore stays service-neutral. This server never changes `servers/delcore-api` or `protos/delcore/v1` and calls Delcore only through its Connect API.
 
-Operators register the service with `PutService`. The service key is `mcpa`, with a Logto machine-to-machine application, the scopes `authorize` and `usage:write`, and these capabilities:
+Operators register the service with `PutService`. The service key is `mcpa`, with a Logto machine-to-machine application, the scopes `authorize`, `usage:write` and `usage:read`, and these capabilities:
 
 | Capability             | Purpose                                                                                |
 | ---------------------- | -------------------------------------------------------------------------------------- |
@@ -118,6 +118,8 @@ Operators register the service with `PutService`. The service key is `mcpa`, wit
 | `invoke_models`        | Required for the call key's issuer at model-call time.                                 |
 
 Delcore groups grant these capabilities. The service UUID v7 is configured as `MCPA_SERVICE_ID`.
+
+`ListMeterAggregates` supplies the billing period for every budget read and model-call budget check. Delcore permits it for a service only when both the service registration and the issued token hold `usage:read`. Without that scope, budget RPCs fail and calls on resources or tenants with a budget fail closed.
 
 Operators also register the traffic meter and price:
 
