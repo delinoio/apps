@@ -562,6 +562,12 @@ function usageView(
   };
 }
 
+/** Decimal strings as integer hundredths, the chart scale of money and percent. */
+const hundredths = (amount: string) => {
+  const value = Math.round(Number(amount) * 100);
+  return Number.isFinite(value) ? BigInt(value) : 0n;
+};
+
 const normalize = (values: bigint[]) => {
   const max = values.reduce((a, b) => (b > a ? b : a), 0n);
   return values.map((value) =>
@@ -660,8 +666,10 @@ export function widgetView(
           : point.value?.value.case === "integer"
             ? point.value.value.value
             : point.value?.value.case === "money"
-              ? BigInt(Math.round(Number(point.value.value.value.amount) * 100))
-              : 0n,
+              ? hundredths(point.value.value.value.amount)
+              : point.value?.value.case === "decimal"
+                ? hundredths(point.value.value.value)
+                : 0n,
       );
       if (!latest || !series)
         return finish(

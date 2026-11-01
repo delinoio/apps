@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "@rstest/core";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
-import { SharingState } from "@repo/protos/anydash/v1/anydash_pb";
+import { create } from "@bufbuild/protobuf";
+import {
+  MetricKind,
+  MetricState,
+  SharingState,
+  WidgetDataSchema,
+  WidgetType,
+} from "@repo/protos/anydash/v1/anydash_pb";
 import { Copy } from "../src/copy";
 import {
   BadgeTone,
@@ -181,5 +188,41 @@ describe("metric states", () => {
     expect(result.badges).toEqual([
       { tone: BadgeTone.Success, label: "2 projects ready" },
     ]);
+  });
+});
+
+describe("metric history", () => {
+  it("charts decimal readings on the same scale as the primary value", () => {
+    const widget = widgets[8];
+    const history = create(WidgetDataSchema, {
+      widgetId: widget.id,
+      type: WidgetType.DEPLOYMENT_USAGE,
+      sharingState: SharingState.PRIVATE,
+      content: {
+        case: "metricHistory",
+        value: {
+          series: [
+            {
+              kind: MetricKind.DEPLOYMENT_USAGE_QUANTITY,
+              dimension: "requests",
+              unit: "GB",
+              points: ["0.5", "1.25", "2.5"].map((value, index) => ({
+                observedAt: timestampFromDate(
+                  new Date(fixtures.NOW.getTime() - (3 - index) * 3_600_000),
+                ),
+                value: {
+                  state: MetricState.VALUE,
+                  value: { case: "decimal" as const, value },
+                },
+              })),
+            },
+          ],
+        },
+      },
+    });
+    const result = widgetView(widget, history, ctx());
+    expect(result.state).toBe(WidgetState.Value);
+    expect(result.primary?.text).toBe("2.50 GB");
+    expect(result.bars).toEqual([0.2, 0.5, 1]);
   });
 });
