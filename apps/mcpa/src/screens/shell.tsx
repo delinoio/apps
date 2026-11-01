@@ -112,7 +112,10 @@ export function ConsoleShell() {
       <main className="content">
         {route.name === RouteName.Home && <TenantPicker viewer={viewer} />}
         {route.name === RouteName.Tenant && (
+          // Remount per tenant: cursors, filters and dialogs belong to one
+          // tenant, and another tenant's cursor would skip its resources.
           <TenantPage
+            key={route.tenantId}
             tenantId={route.tenantId}
             tab={route.tab}
             tenant={tenant}

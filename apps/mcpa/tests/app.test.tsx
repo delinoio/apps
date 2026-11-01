@@ -425,6 +425,45 @@ describe("views", () => {
     expect(await screen.findByText("No credentials yet")).toBeTruthy();
   });
 
+  it("starts the resource list at the first page after a tenant switch", async () => {
+    const PERSONAL_ID = "tenant-personal";
+    const listResources = rs.fn(
+      (request: { tenantId: string; page?: { afterId: string } }) => {
+        const afterId = request.page?.afterId ?? "";
+        if (request.tenantId === PERSONAL_ID)
+          return {
+            resources: afterId
+              ? []
+              : [{ ...resource(), id: "personal-1", name: "Personal bot" }],
+          };
+        return afterId
+          ? { resources: [{ ...resource(), id: "acme-2", name: "Acme two" }] }
+          : {
+              resources: [{ ...resource(), id: "acme-1", name: "Acme one" }],
+              nextAfterId: "acme-1",
+            };
+      },
+    );
+    renderApp({
+      path: `/tenants/${TENANT_ID}`,
+      service: { ...baseService(), listResources },
+    });
+    expect(await screen.findByText("Acme one")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Acme two")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Active tenant"), {
+      target: { value: PERSONAL_ID },
+    });
+    expect(await screen.findByText("Personal bot")).toBeTruthy();
+    expect(window.location.pathname).toBe(`/tenants/${PERSONAL_ID}`);
+    const personalCalls = listResources.mock.calls
+      .map(([request]) => request)
+      .filter((request) => request.tenantId === PERSONAL_ID);
+    expect(personalCalls.map((request) => request.page?.afterId ?? "")).toEqual(
+      [""],
+    );
+  });
+
   it("shows a loading state while a request is pending", async () => {
     renderApp({
       path: resourcePath("audit"),

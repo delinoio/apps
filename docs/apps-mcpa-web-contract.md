@@ -29,7 +29,7 @@ TypeScript, React and Rsbuild follow the repository frontend stack. Node.js 24 r
 
 ### Navigation and tenancy
 
-- `GetViewer` lists the user's Delcore tenants. A tenant switcher selects the active tenant; personal tenants are labeled. The selected tenant scopes resource lists, tenant usage and the tenant budget.
+- `GetViewer` lists the user's Delcore tenants. A tenant switcher selects the active tenant; personal tenants are labeled. The selected tenant scopes resource lists, tenant usage and the tenant budget. Switching tenants opens the new tenant's views at their first page with default filters.
 - Each resource view shows the caller's effective role (`caller_role`) and hides or disables actions the role does not permit. Server responses remain authoritative.
 
 ### Screens
