@@ -5,6 +5,9 @@ package dataplane
 import (
 	"context"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
 	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
 
@@ -119,13 +122,19 @@ func (dp *DataPlane) LifecycleCycle(ctx context.Context) ([]string, error) {
 func (dp *DataPlane) deleteTenant(ctx context.Context, tenantID string) error {
 	stepCtx, cancel := context.WithTimeout(ctx, 4*dp.cfg.DependencyTimeout)
 	defer cancel()
-	d, err := dp.db.DeleteTenantData(stepCtx, tenantID)
+	d, err := dp.db.DeleteTenantData(stepCtx, tenantID, func(tx pgx.Tx, resourceIDs []uuid.UUID) error {
+		for _, id := range resourceIDs {
+			if err := dp.Sync.CredentialsChanging(stepCtx, tx, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
 	for _, id := range d.ResourceIDs {
 		dp.Engine.InvalidateResource(id.String())
-		dp.Sync.Notify(ctx, id)
 	}
 	dp.log.Info("deleted the data of a deleted tenant", "tenant_id", tenantID, "resources", len(d.ResourceIDs),
 		"call_records", d.CallRecords, "aggregates", d.Aggregates, "audit_events", d.AuditEvents, "outbox_rows", d.Outbox)

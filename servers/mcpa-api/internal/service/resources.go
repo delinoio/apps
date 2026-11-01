@@ -224,6 +224,9 @@ func (s *Service) DeleteResource(ctx context.Context, req *connect.Request[mcpav
 		if deleted, err = store.DeleteResource(ctx, tx, r.ID); err != nil {
 			return err
 		}
+		if err := s.credentialsChanging(ctx, tx, r.ID); err != nil {
+			return err
+		}
 		return WriteAudit(ctx, tx, p, AuditInput{
 			TenantID: r.TenantID, ResourceID: r.ID, Action: mcpav1.AuditAction_AUDIT_ACTION_RESOURCE_DELETED, TargetID: r.ID.String(),
 			Details: map[string]string{

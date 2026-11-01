@@ -198,6 +198,7 @@ Every request resolves to an actor kind (`ACTOR_KIND_CONSOLE`, `ACTOR_KIND_MCP` 
   - Claude, Codex and Kimi flows use the public client IDs of the pinned SDK. Gemini CLI and Antigravity flows use Google installed-app OAuth clients whose IDs and secrets come from operator configuration and never from repository source. Without a configured client, `StartProviderOAuth` for that provider returns `ERROR_REASON_FAILED_PRECONDITION`.
 - Token refresh uses a custom SDK token store that writes refreshed tokens back to PostgreSQL encrypted. The SDK file store is never used.
 - `RemoveCredential` deletes the credential and unregisters it from the in-process SDK auth state in the same operation. New calls never select it after the response. Calls already sent to the provider continue.
+- Other replicas learn about credential changes through PostgreSQL notifications. Registration, removal, refreshed OAuth tokens and resource and tenant deletion queue the notification in the transaction of the change. PostgreSQL delivers it when that transaction commits, so a committed change always notifies, and a change whose notification cannot be queued fails and commits nothing. A replica drops its cached credentials of the resource when the notification arrives, and drops all cached credentials when its listener reconnects.
 - No RPC, log, metric, trace, error or audit detail ever contains a provider token or API key.
 
 ### Credential encryption and master-key rotation
@@ -443,7 +444,7 @@ Tests cover these scenarios:
 - **Billing gates.** `paid=true` denial; `BLOCKED`, `DELETING` and `UNKNOWN` tenants; cache TTL expiry while Delcore is down; denials never cached.
 - **Routing.** Round-robin distribution, empty and non-empty allowlists, and no retry after provider failure.
 - **Budgets.** Resource and tenant limits each block new calls. An in-progress stream finishes after the limit. Spend resets at the Delcore billing period boundary.
-- **Credentials.** Encryption at rest with a key ID, AAD binding, master-key rotation with concurrent calls and refreshes, and immediate removal. No secrets appear in logs, metrics or traces.
+- **Credentials.** Encryption at rest with a key ID, AAD binding, master-key rotation with concurrent calls and refreshes, immediate removal, and removal propagation to other replicas through notifications that commit with the change. No secrets appear in logs, metrics or traces.
 - **Retention and deletion.** 30-day and 13-month pruning, resource deletion and tombstone visibility, and tenant cleanup only after `DELETED`.
 
 CI runs format, vet, unit tests, integration tests against a disposable PostgreSQL and `govulncheck` for affected changes on Ubuntu. Release image publication builds the OCI image. See the [workflow contract](repository-workflow-contract.md#managed-cpa-development-and-validation).

@@ -79,8 +79,9 @@ type TenantDeletion struct {
 
 // DeleteTenantData deletes every retained row of a tenant in one
 // transaction. Callers must only call it after Delcore reported the tenant
-// as DELETED.
-func (s *Store) DeleteTenantData(ctx context.Context, tenantID string) (TenantDeletion, error) {
+// as DELETED. When deleted is not nil it runs in that transaction with the
+// IDs of the deleted resources; an error rolls the deletion back.
+func (s *Store) DeleteTenantData(ctx context.Context, tenantID string, deleted func(tx pgx.Tx, resourceIDs []uuid.UUID) error) (TenantDeletion, error) {
 	var d TenantDeletion
 	err := s.InTx(ctx, func(tx pgx.Tx) error {
 		count := func(dst *int64, sql string) error {
@@ -113,8 +114,13 @@ func (s *Store) DeleteTenantData(ctx context.Context, tenantID string) (TenantDe
 		if err != nil {
 			return err
 		}
-		d.ResourceIDs, err = pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
-		return err
+		if d.ResourceIDs, err = pgx.CollectRows(rows, pgx.RowTo[uuid.UUID]); err != nil {
+			return err
+		}
+		if deleted != nil {
+			return deleted(tx, d.ResourceIDs)
+		}
+		return nil
 	})
 	return d, err
 }

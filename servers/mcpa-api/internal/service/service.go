@@ -70,10 +70,17 @@ type SpendReader interface {
 	TenantBilledBytes(ctx context.Context, tenantID string, start, end time.Time) (int64, error)
 }
 
-// CredentialListener is notified after credential changes commit so the
-// data plane can update its in-process provider auth state immediately.
-// Implementations must not block for long.
+// CredentialListener propagates credential changes to the data plane.
+//
+// CredentialsChanging runs inside the transaction of every credential
+// change of a resource, before it commits. What it writes through tx (the
+// data plane queues a PostgreSQL notification for other replicas) commits
+// or rolls back with the change; an error aborts the change. The other
+// methods run after the change commits so the data plane can update its
+// in-process provider auth state immediately. Implementations must not
+// block for long.
 type CredentialListener interface {
+	CredentialsChanging(ctx context.Context, tx pgx.Tx, resourceID uuid.UUID) error
 	CredentialRegistered(ctx context.Context, resourceID, credentialID uuid.UUID)
 	CredentialRemoved(ctx context.Context, resourceID, credentialID uuid.UUID)
 	ResourceDeleted(ctx context.Context, resourceID uuid.UUID, credentialIDs []uuid.UUID)
@@ -141,6 +148,15 @@ func (s *Service) getHooks() Hooks {
 	s.hooksMu.RLock()
 	defer s.hooksMu.RUnlock()
 	return s.hooks
+}
+
+// credentialsChanging runs the credential listener's in-transaction hook
+// for a credential change of resourceID.
+func (s *Service) credentialsChanging(ctx context.Context, tx pgx.Tx, resourceID uuid.UUID) error {
+	if l := s.getHooks().Credentials; l != nil {
+		return l.CredentialsChanging(ctx, tx, resourceID)
+	}
+	return nil
 }
 
 func principal(ctx context.Context) (*auth.Principal, error) {

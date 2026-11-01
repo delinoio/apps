@@ -89,6 +89,9 @@ func (s *Service) RegisterApiKeyCredential(ctx context.Context, req *connect.Req
 		if c, err = store.InsertCredential(ctx, tx, c, sealed); err != nil {
 			return err
 		}
+		if err := s.credentialsChanging(ctx, tx, r.ID); err != nil {
+			return err
+		}
 		return WriteAudit(ctx, tx, p, AuditInput{
 			TenantID: r.TenantID, ResourceID: r.ID, Action: mcpav1.AuditAction_AUDIT_ACTION_CREDENTIAL_REGISTERED, TargetID: c.ID.String(),
 			Details: map[string]string{"provider": c.Provider.String(), "kind": c.Kind.String()},
@@ -127,6 +130,9 @@ func (s *Service) RemoveCredential(ctx context.Context, req *connect.Request[mcp
 			return apperr.NotFound("credential not found")
 		}
 		if err != nil {
+			return err
+		}
+		if err := s.credentialsChanging(ctx, tx, r.ID); err != nil {
 			return err
 		}
 		return WriteAudit(ctx, tx, p, AuditInput{

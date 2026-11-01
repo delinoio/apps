@@ -118,7 +118,7 @@ func New(cfg Config) (*DataPlane, error) {
 	dp := &DataPlane{cfg: cfg, db: cfg.Store, log: log, now: cfg.Now, metrics: metrics}
 	creds := &Credentials{db: cfg.Store, keys: cfg.Keys, log: log}
 	dp.Sync = &CredentialSync{db: cfg.Store, keys: cfg.Keys, log: log, instance: store.NewID().String()}
-	creds.notify = dp.Sync.Notify
+	creds.notify = dp.Sync.notify
 	keys := NewKeyAuthenticator(cfg.Store, log, cfg.Now)
 	authorizer := NewCallAuthorizer(cfg.Store, cfg.Delcore, log, cfg.Now, cfg.CheckpointInterval)
 	engine, err := proxy.New(proxy.Options{

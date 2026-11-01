@@ -24,10 +24,12 @@ import (
 // Credentials loads decrypted credentials for the engine and re-encrypts
 // refreshed OAuth tokens.
 type Credentials struct {
-	db     *store.Store
-	keys   *crypto.Keyring
-	log    *slog.Logger
-	notify func(ctx context.Context, resourceID uuid.UUID)
+	db   *store.Store
+	keys *crypto.Keyring
+	log  *slog.Logger
+	// notify queues the credential change notification of a resource in
+	// the transaction of the change.
+	notify func(ctx context.Context, db store.DB, resourceID uuid.UUID) error
 }
 
 var (
@@ -81,7 +83,9 @@ func (c *Credentials) LoadResourceCredentials(ctx context.Context, resourceID st
 
 // PersistCredentialSecret stores a refreshed OAuth payload, re-encrypted
 // under the active master key. A credential removed in the meantime is not
-// recreated.
+// recreated. Other replicas are notified in the same transaction so they
+// reload the refreshed token and never reuse a rotated refresh token; on
+// failure nothing is stored and the engine retries.
 func (c *Credentials) PersistCredentialSecret(ctx context.Context, resourceID, credentialID string, secret []byte) error {
 	rid, err := uuid.Parse(resourceID)
 	if err != nil {
@@ -105,18 +109,19 @@ func (c *Credentials) PersistCredentialSecret(ctx context.Context, resourceID, c
 	if err != nil {
 		return err
 	}
-	if err := store.UpdateCredentialSecret(ctx, c.db.Pool, cid, stored.AccountLabel, sealed); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil
+	err = c.db.InTx(ctx, func(tx pgx.Tx) error {
+		if err := store.UpdateCredentialSecret(ctx, tx, cid, stored.AccountLabel, sealed); err != nil {
+			return err
 		}
-		return err
+		if c.notify != nil {
+			return c.notify(ctx, tx, rid)
+		}
+		return nil
+	})
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
 	}
-	if c.notify != nil {
-		// Other replicas reload the refreshed token so a rotated refresh
-		// token is not reused.
-		c.notify(ctx, rid)
-	}
-	return nil
+	return err
 }
 
 // credentialChannel is the PostgreSQL notification channel of credential
@@ -126,6 +131,13 @@ const credentialChannel = "mcpa_credential_changes"
 // CredentialSync applies credential changes to the engine immediately and
 // propagates them to other replicas with PostgreSQL notifications. It
 // implements service.CredentialListener.
+//
+// Each notification is queued with pg_notify in the transaction of the
+// change. PostgreSQL delivers it to every listening replica when, and only
+// when, that transaction commits, so a committed change cannot miss its
+// notification and a rolled-back change sends none. A replica that is not
+// listening at that moment drops all runtimes when its listener
+// reconnects.
 type CredentialSync struct {
 	db       *store.Store
 	keys     *crypto.Keyring
@@ -136,9 +148,14 @@ type CredentialSync struct {
 
 var _ service.CredentialListener = (*CredentialSync)(nil)
 
+// CredentialsChanging queues the change notification of a resource in the
+// transaction of a credential change.
+func (s *CredentialSync) CredentialsChanging(ctx context.Context, tx pgx.Tx, resourceID uuid.UUID) error {
+	return s.notify(ctx, tx, resourceID)
+}
+
 // CredentialRegistered registers a new credential with the engine.
 func (s *CredentialSync) CredentialRegistered(ctx context.Context, resourceID, credentialID uuid.UUID) {
-	defer s.Notify(ctx, resourceID)
 	stored, sealed, err := store.GetCredentialSealed(ctx, s.db.Pool, credentialID)
 	if err != nil {
 		s.log.Warn("loading a registered credential failed; the resource reloads instead", "resource_id", resourceID, "credential_id", credentialID, "error", err)
@@ -157,7 +174,6 @@ func (s *CredentialSync) CredentialRegistered(ctx context.Context, resourceID, c
 
 // CredentialRemoved stops new calls from selecting the credential.
 func (s *CredentialSync) CredentialRemoved(ctx context.Context, resourceID, credentialID uuid.UUID) {
-	defer s.Notify(ctx, resourceID)
 	if err := s.engine.RemoveCredential(ctx, resourceID.String(), credentialID.String()); err != nil {
 		// Removal is safety-critical: drop the runtime so the next call
 		// reloads the remaining credentials from PostgreSQL.
@@ -168,7 +184,6 @@ func (s *CredentialSync) CredentialRemoved(ctx context.Context, resourceID, cred
 
 // ResourceDeleted unregisters every credential of a deleted resource.
 func (s *CredentialSync) ResourceDeleted(ctx context.Context, resourceID uuid.UUID, credentialIDs []uuid.UUID) {
-	defer s.Notify(ctx, resourceID)
 	for _, id := range credentialIDs {
 		if err := s.engine.RemoveCredential(ctx, resourceID.String(), id.String()); err != nil {
 			s.log.Warn("removing a credential of a deleted resource failed", "resource_id", resourceID, "credential_id", id, "error", err)
@@ -177,15 +192,15 @@ func (s *CredentialSync) ResourceDeleted(ctx context.Context, resourceID uuid.UU
 	s.engine.InvalidateResource(resourceID.String())
 }
 
-// Notify tells other replicas that a resource's credentials changed.
-// Failures are logged; replicas also resynchronize when their listener
-// reconnects.
-func (s *CredentialSync) Notify(ctx context.Context, resourceID uuid.UUID) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	if _, err := s.db.Pool.Exec(ctx, `SELECT pg_notify($1, $2)`, credentialChannel, s.instance+":"+resourceID.String()); err != nil {
-		s.log.Warn("credential change notification failed", "resource_id", resourceID, "error", err)
+// notify queues a notification that a resource's credentials changed.
+// db must be the transaction of the change: PostgreSQL delivers the
+// notification on commit. An error must abort that transaction.
+func (s *CredentialSync) notify(ctx context.Context, db store.DB, resourceID uuid.UUID) error {
+	if _, err := db.Exec(ctx, `SELECT pg_notify($1, $2)`, credentialChannel, s.instance+":"+resourceID.String()); err != nil {
+		s.log.Warn("queueing a credential change notification failed; the change is rolled back", "resource_id", resourceID, "error", err)
+		return fmt.Errorf("queue credential change notification: %w", err)
 	}
+	return nil
 }
 
 // Listen applies credential changes of other replicas until ctx ends. On

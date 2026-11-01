@@ -40,8 +40,9 @@ const authorizationCodeLifetime = 10 * time.Minute
 type Options struct {
 	Store *store.Store
 	Keys  *crypto.Keyring
-	// Listener is notified after a credential is registered so the data
-	// plane can use it immediately.
+	// Listener propagates a registered credential to the data plane: inside
+	// the registration transaction for other replicas and after the commit
+	// for this process (see service.CredentialListener).
 	Listener service.CredentialListener
 	Log      *slog.Logger
 	// HTTPClient performs provider requests. Default: a client with Timeout.
@@ -536,9 +537,16 @@ func (b *Broker) register(ctx context.Context, p *auth.Principal, f store.OAuthF
 		}); err != nil {
 			return err
 		}
-		out, err = store.FinishOAuthFlow(ctx, tx, f.ID, mcpav1.OauthFlowState_OAUTH_FLOW_STATE_COMPLETED, c.ID, "")
-		registered = err == nil
-		return err
+		if out, err = store.FinishOAuthFlow(ctx, tx, f.ID, mcpav1.OauthFlowState_OAUTH_FLOW_STATE_COMPLETED, c.ID, ""); err != nil {
+			return err
+		}
+		if b.listener != nil {
+			if err := b.listener.CredentialsChanging(ctx, tx, c.ResourceID); err != nil {
+				return err
+			}
+		}
+		registered = true
+		return nil
 	})
 	if err != nil {
 		return nil, dbErr(err)

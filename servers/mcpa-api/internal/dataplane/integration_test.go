@@ -7,11 +7,13 @@ package dataplane
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
@@ -1183,5 +1185,184 @@ func TestIntegrationUsageSpendMigrationBackfill(t *testing.T) {
 	}
 	if err := db.CheckSchema(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// credentialNotifications listens on the credential change channel with its
+// own connection. Other tests share the database, so callers filter by
+// payload.
+type credentialNotifications struct {
+	t        *testing.T
+	payloads chan string
+}
+
+func listenCredentialChanges(e *itEnv) *credentialNotifications {
+	e.t.Helper()
+	conn, err := pgx.Connect(e.ctx, e.dbURL)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	if _, err := conn.Exec(e.ctx, "LISTEN "+pgx.Identifier{credentialChannel}.Sanitize()); err != nil {
+		e.t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(e.ctx)
+	done := make(chan struct{})
+	n := &credentialNotifications{t: e.t, payloads: make(chan string, 256)}
+	go func() {
+		defer close(done)
+		for {
+			msg, err := conn.WaitForNotification(ctx)
+			if err != nil {
+				return
+			}
+			n.payloads <- msg.Payload
+		}
+	}()
+	e.t.Cleanup(func() {
+		cancel()
+		<-done
+		_ = conn.Close(context.Background())
+	})
+	return n
+}
+
+// received waits for payload and reports whether it arrived within wait.
+func (n *credentialNotifications) received(payload string, wait time.Duration) bool {
+	timeout := time.After(wait)
+	for {
+		select {
+		case got := <-n.payloads:
+			if got == payload {
+				return true
+			}
+		case <-timeout:
+			return false
+		}
+	}
+}
+
+// Credential changes reach other replicas through notifications queued in
+// the transaction of the change: a committed change always notifies, a
+// rolled-back change never does, a failed notification rolls the change
+// back, and a replica that loaded a removed credential stops selecting it
+// without reconnecting its listener.
+func TestIntegrationCredentialChangesNotifyOtherReplicas(t *testing.T) {
+	e := newEnv(t)
+	notes := listenCredentialChanges(e)
+	payload := func(resourceID string) string { return e.dp.Sync.instance + ":" + resourceID }
+
+	id := e.resource("sync")
+	if !notes.received(payload(id), 5*time.Second) {
+		t.Fatal("registering a credential sent no notification")
+	}
+	rid := uuid.MustParse(id)
+	creds := mustDo(e, "owner", e.rpc.ListCredentials, &mcpav1.ListCredentialsRequest{ResourceId: id}).GetCredentials()
+	credID := uuid.MustParse(creds[0].GetId())
+
+	// Replica B shares the database and listens for changes.
+	appName := "mcpa-replica-" + store.NewID().String()
+	dbB, err := store.Open(e.ctx, e.dbURL+"&application_name="+appName, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(dbB.Close)
+	cfgB := e.dp.cfg
+	cfgB.Store, cfgB.Metrics = dbB, nil
+	replica, err := New(cfgB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = replica.Close() })
+	listenCtx, stopListen := context.WithCancel(e.ctx)
+	listening := make(chan struct{})
+	go func() {
+		defer close(listening)
+		_ = replica.Sync.Listen(listenCtx)
+	}()
+	t.Cleanup(func() {
+		stopListen()
+		<-listening
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for e.scalar(`SELECT count(*) FROM pg_stat_activity WHERE application_name = $1 AND query LIKE 'LISTEN %'`, appName) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("replica B does not listen for credential changes")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	srvB := httptest.NewServer(replica.Engine)
+	t.Cleanup(srvB.Close)
+	key, _ := e.callKey("owner", id)
+	// The listener is connected, so B only drops this runtime when a
+	// notification arrives.
+	if res := e.call(srvB.URL, id, key, "/v1/chat/completions", chatBody(false), nil); res.status != http.StatusOK {
+		t.Fatalf("replica B call: %d %s", res.status, res.body)
+	}
+
+	// A rolled-back change sends no notification.
+	errAbort := errors.New("abort")
+	if err := e.db.InTx(e.ctx, func(tx pgx.Tx) error {
+		if _, err := store.DeleteCredential(e.ctx, tx, rid, credID); err != nil {
+			return err
+		}
+		if err := e.dp.Sync.CredentialsChanging(e.ctx, tx, rid); err != nil {
+			return err
+		}
+		return errAbort
+	}); !errors.Is(err, errAbort) {
+		t.Fatalf("rolled-back change: %v", err)
+	}
+	if notes.received(payload(id), 300*time.Millisecond) {
+		t.Fatal("a rolled-back change sent a notification")
+	}
+
+	// A notification that cannot be queued rolls the change back.
+	oversized := &CredentialSync{db: e.db, log: e.dp.log, engine: e.dp.Engine, instance: strings.Repeat("x", 8000)}
+	if err := e.db.InTx(e.ctx, func(tx pgx.Tx) error {
+		if _, err := store.DeleteCredential(e.ctx, tx, rid, credID); err != nil {
+			return err
+		}
+		return oversized.CredentialsChanging(e.ctx, tx, rid)
+	}); err == nil {
+		t.Fatal("an oversized notification was queued")
+	}
+	if n := e.scalar(`SELECT count(*) FROM credentials WHERE id = $1`, credID); n != 1 {
+		t.Fatal("a change whose notification failed was committed")
+	}
+	if res := e.call(srvB.URL, id, key, "/v1/chat/completions", chatBody(false), nil); res.status != http.StatusOK {
+		t.Fatalf("replica B call after rolled-back changes: %d %s", res.status, res.body)
+	}
+
+	// Removal on replica A reaches replica B.
+	mustDo(e, "owner", e.rpc.RemoveCredential, &mcpav1.RemoveCredentialRequest{ResourceId: id, CredentialId: credID.String()})
+	if !notes.received(payload(id), 5*time.Second) {
+		t.Fatal("removing a credential sent no notification")
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		res := e.call(srvB.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+		if res.status == http.StatusBadRequest && gjson.GetBytes(res.body, "error.type").String() == "no_credential" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("replica B still serves the removed credential: %d %s", res.status, res.body)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Resource deletion and tenant deletion notify as well.
+	deleted := e.resource("deleted")
+	if !notes.received(payload(deleted), 5*time.Second) {
+		t.Fatal("registering a credential sent no notification")
+	}
+	mustDo(e, "owner", e.rpc.DeleteResource, &mcpav1.DeleteResourceRequest{ResourceId: deleted, ConfirmName: "deleted"})
+	if !notes.received(payload(deleted), 5*time.Second) {
+		t.Fatal("deleting a resource sent no notification")
+	}
+	if err := e.dp.deleteTenant(e.ctx, e.tenant); err != nil {
+		t.Fatal(err)
+	}
+	if !notes.received(payload(id), 5*time.Second) {
+		t.Fatal("deleting the tenant sent no notification")
 	}
 }
