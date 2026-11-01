@@ -145,10 +145,6 @@ export function select(paths, lockfiles) {
       repositoryShared ||
       shared.frontend ||
       paths.some((path) => /^apps\/devbase\//u.test(path)),
-    delino_console:
-      repositoryShared ||
-      shared.localization ||
-      paths.some((path) => /^apps\/delino-console\//u.test(path)),
     delino_site:
       repositoryShared ||
       shared.frontend ||
