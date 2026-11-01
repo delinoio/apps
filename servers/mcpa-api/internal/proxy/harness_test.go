@@ -462,3 +462,5 @@ func openAIUpstream(t *testing.T, text string) *upstream {
 		_, _ = io.WriteString(w, openAIChatResponse(model, text))
 	})
 }
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
