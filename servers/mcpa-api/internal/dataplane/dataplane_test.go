@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,6 +149,27 @@ func TestPublicTransportRefusesPrivateAddresses(t *testing.T) {
 	}
 	if PublicTransport().Proxy != nil {
 		t.Fatal("proxy environment variables must be ignored")
+	}
+}
+
+// PublicDialer guards the SDK Claude client, which dials through the engine's
+// upstream relay instead of PublicTransport.
+func TestPublicDialerRefusesPrivateAddresses(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := PublicDialer().DialContext(ctx, "tcp", srv.Listener.Addr().String())
+	if err == nil {
+		conn.Close()
+		t.Fatal("loopback dial succeeded")
+	}
+	if !errors.Is(err, errNonPublicAddress) {
+		t.Fatalf("loopback dial: %v", err)
+	}
+	if conn, err := PublicDialer().DialContext(ctx, "tcp", "localhost:"+strings.TrimPrefix(srv.URL, "http://127.0.0.1:")); err == nil {
+		conn.Close()
+		t.Fatal("a name that resolves to loopback was dialed")
 	}
 }
 

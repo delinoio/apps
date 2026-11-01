@@ -65,7 +65,10 @@ type resourceExecutor struct {
 	inner       coreauth.ProviderExecutor
 	resourceID  string
 	sdkProvider string
-	logger      *slog.Logger
+	// relayURL is the upstream relay that performs the dials of the SDK
+	// Claude client (see upstreamRelay).
+	relayURL string
+	logger   *slog.Logger
 }
 
 var (
@@ -123,6 +126,20 @@ func (e *resourceExecutor) begin(ctx context.Context, auth *coreauth.Auth, opts 
 	return ctx, call, nil
 }
 
+// guardedAuth returns the auth to pass to the inner executor. For the SDK
+// Claude executor it is a copy whose ProxyURL is the upstream relay, so every
+// dial of that executor's private client goes through Options.DialUpstream.
+// The SDK reads ProxyURL in helps.NewUtlsHTTPClient; mcpa never sets it
+// otherwise, and the copy keeps the registered auth unchanged.
+func (e *resourceExecutor) guardedAuth(auth *coreauth.Auth) *coreauth.Auth {
+	if e.sdkProvider != sdkProviderClaude || auth == nil {
+		return auth
+	}
+	out := auth.Clone()
+	out.ProxyURL = e.relayURL
+	return out
+}
+
 // traceMeteringBase reports whether the inner executor sends its requests
 // through the SDK Claude client, which ignores the metering transport, and
 // returns the base URL that client uses.
@@ -146,7 +163,7 @@ func (e *resourceExecutor) Execute(ctx context.Context, auth *coreauth.Auth, req
 	if err != nil {
 		return cliproxyexecutor.Response{}, err
 	}
-	resp, err := e.inner.Execute(ctx, auth, req, opts)
+	resp, err := e.inner.Execute(ctx, e.guardedAuth(auth), req, opts)
 	if call != nil {
 		call.observeExecutorResult(err)
 	}
@@ -158,7 +175,7 @@ func (e *resourceExecutor) CountTokens(ctx context.Context, auth *coreauth.Auth,
 	if err != nil {
 		return cliproxyexecutor.Response{}, err
 	}
-	resp, err := e.inner.CountTokens(ctx, auth, req, opts)
+	resp, err := e.inner.CountTokens(ctx, e.guardedAuth(auth), req, opts)
 	if call != nil {
 		call.observeExecutorResult(err)
 	}
@@ -170,7 +187,7 @@ func (e *resourceExecutor) ExecuteStream(ctx context.Context, auth *coreauth.Aut
 	if err != nil {
 		return nil, err
 	}
-	result, err := e.inner.ExecuteStream(ctx, auth, req, opts)
+	result, err := e.inner.ExecuteStream(ctx, e.guardedAuth(auth), req, opts)
 	if call == nil {
 		return result, err
 	}
@@ -208,7 +225,7 @@ func (e *resourceExecutor) HttpRequest(ctx context.Context, auth *coreauth.Auth,
 	if call := callFromContext(ctx); call != nil && call.resourceID != e.resourceID {
 		return nil, isolationError{}
 	}
-	return e.inner.HttpRequest(ctx, auth, req)
+	return e.inner.HttpRequest(ctx, e.guardedAuth(auth), req)
 }
 
 func drainStream(in <-chan cliproxyexecutor.StreamChunk) {

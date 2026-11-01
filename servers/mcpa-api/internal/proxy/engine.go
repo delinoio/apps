@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"sort"
 	"sync"
@@ -67,6 +68,11 @@ type Options struct {
 	// BaseTransport performs provider requests for executors that use the
 	// context RoundTripper. Default: a clone of http.DefaultTransport.
 	BaseTransport http.RoundTripper
+	// DialUpstream dials provider connections of the SDK Claude client,
+	// which ignores BaseTransport (see upstreamRelay). It must apply the same
+	// destination policy as BaseTransport. Default: a net.Dialer without
+	// destination restrictions.
+	DialUpstream DialFunc
 	// AutoRefreshInterval is the SDK auth refresh check interval. Default
 	// 15 minutes, matching cliproxy.Service. A negative value disables
 	// background refresh.
@@ -87,6 +93,7 @@ type Engine struct {
 	cfg       *config.Config
 	executors map[string]coreauth.ProviderExecutor
 	transport *meteringTransport
+	relay     *upstreamRelay
 	persister *asyncPersister
 	router    *gin.Engine
 	cp        *checkpointer
@@ -129,6 +136,9 @@ func New(opts Options) (*Engine, error) {
 	if opts.BaseTransport == nil {
 		opts.BaseTransport = http.DefaultTransport.(*http.Transport).Clone()
 	}
+	if opts.DialUpstream == nil {
+		opts.DialUpstream = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	}
 	if opts.AutoRefreshInterval == 0 {
 		opts.AutoRefreshInterval = 15 * time.Minute
 	}
@@ -146,6 +156,10 @@ func New(opts Options) (*Engine, error) {
 		return nil, fmt.Errorf("proxy: %w", err)
 	}
 	logger := opts.Logger.With(slog.String("component", "proxy"))
+	relay, err := startUpstreamRelay(opts.DialUpstream, logger)
+	if err != nil {
+		return nil, fmt.Errorf("proxy: %w", err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	e := &Engine{
 		opts:      opts,
@@ -153,6 +167,7 @@ func New(opts Options) (*Engine, error) {
 		cfg:       cfg,
 		executors: executors,
 		transport: &meteringTransport{base: opts.BaseTransport},
+		relay:     relay,
 		persister: newAsyncPersister(opts.Tokens, logger, opts.CheckpointTimeout),
 		cp: &checkpointer{
 			sink:          opts.Sink,
@@ -171,8 +186,8 @@ func New(opts Options) (*Engine, error) {
 	return e, nil
 }
 
-// Close stops background refresh and flushes queued token writes. In-flight
-// calls are not interrupted.
+// Close stops background refresh, flushes queued token writes and stops
+// accepting upstream relay connections. In-flight calls are not interrupted.
 func (e *Engine) Close() error {
 	e.mu.Lock()
 	if e.closed {
@@ -191,6 +206,9 @@ func (e *Engine) Close() error {
 	}
 	e.cancel()
 	e.persister.close()
+	if err := e.relay.Close(); err != nil {
+		e.logger.Warn("closing the upstream relay failed", slog.String("error", err.Error()))
+	}
 	return nil
 }
 
@@ -322,7 +340,7 @@ func (e *Engine) build(ctx context.Context, rt *resourceRuntime) {
 	manager.SetRetryConfig(0, 0, 1)
 	manager.SetRoundTripperProvider(roundTripperProvider{rt: e.transport})
 	for key, executor := range e.executors {
-		manager.RegisterExecutor(&resourceExecutor{inner: executor, resourceID: rt.id, sdkProvider: key, logger: rt.logger})
+		manager.RegisterExecutor(&resourceExecutor{inner: executor, resourceID: rt.id, sdkProvider: key, relayURL: e.relay.URL(), logger: rt.logger})
 	}
 	rt.manager = manager
 	base := handlers.NewBaseAPIHandlers(&e.cfg.SDKConfig, manager)

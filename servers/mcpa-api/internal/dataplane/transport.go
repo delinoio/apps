@@ -31,14 +31,20 @@ func publicOnly(_, address string, _ syscall.RawConn) error {
 	return nil
 }
 
+// PublicDialer returns the provider dialer. It refuses every non-public
+// destination after DNS resolution. The engine uses it for the SDK Claude
+// client, which does not use PublicTransport.
+func PublicDialer() *net.Dialer {
+	return &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: publicOnly}
+}
+
 // PublicTransport returns the provider transport. It dials only public
 // addresses and ignores proxy environment variables: an egress proxy would
 // hide the destination from the address check.
 func PublicTransport() *http.Transport {
-	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: publicOnly}
 	return &http.Transport{
 		Proxy:                 nil,
-		DialContext:           dialer.DialContext,
+		DialContext:           PublicDialer().DialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          200,
 		MaxIdleConnsPerHost:   32,

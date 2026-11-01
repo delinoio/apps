@@ -54,6 +54,10 @@ type Config struct {
 	// BaseTransport performs provider requests. The default refuses to dial
 	// private, loopback and link-local addresses.
 	BaseTransport http.RoundTripper
+	// DialUpstream dials provider connections of the SDK Claude client,
+	// which does not use BaseTransport. The default applies the same
+	// public-address guard as the default BaseTransport.
+	DialUpstream proxy.DialFunc
 	// Now defaults to time.Now.
 	Now func() time.Time
 }
@@ -97,6 +101,9 @@ func New(cfg Config) (*DataPlane, error) {
 	if cfg.BaseTransport == nil {
 		cfg.BaseTransport = PublicTransport()
 	}
+	if cfg.DialUpstream == nil {
+		cfg.DialUpstream = PublicDialer().DialContext
+	}
 	log := cfg.Log.With("component", "dataplane")
 	metrics, err := NewMetrics(cfg.Metrics)
 	if err != nil {
@@ -126,6 +133,7 @@ func New(cfg Config) (*DataPlane, error) {
 		CheckpointInterval: cfg.CheckpointInterval,
 		CheckpointTimeout:  cfg.DependencyTimeout,
 		BaseTransport:      cfg.BaseTransport,
+		DialUpstream:       cfg.DialUpstream,
 		Now:                cfg.Now,
 	})
 	if err != nil {
