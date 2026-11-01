@@ -226,7 +226,7 @@ export const ExtraCopy = {
     "Add connections from the AnyDash desktop app or the CLI. Credentials stay on that device.",
   apiToken: "API token",
   vercelTeam: "Vercel team ID",
-  vercelTeamHint: "Leave empty for a personal account.",
+  vercelTeamHint: "Required. Find it in your Vercel team settings.",
   localLoginDetail: (provider: string) =>
     `AnyDash reads your existing ${provider} CLI sign-in on this computer. Sign in to the CLI first.`,
   deleteConnectionTitle: (provider: string) =>
