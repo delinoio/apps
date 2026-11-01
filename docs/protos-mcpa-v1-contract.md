@@ -94,6 +94,7 @@ All RPCs are unary.
 | `GetUsage`                 | `tenant_id`, `filter`, `page`                                             | `summary`, `rows`, `next_after_id`                                |
 | `ListCallRecords`          | `tenant_id`, `filter`, `page`                                             | `records`, `next_after_id`                                        |
 | `ListAuditEvents`          | `resource_id`, `page`                                                     | `events`, `next_after_id`                                         |
+| `ListTenantAuditEvents`    | `tenant_id`, `page`                                                       | `events` (tenant-level events only), `next_after_id`              |
 
 Every response also carries `metadata`. The server contract owns the authorization requirement, validation bounds and error reasons of each RPC.
 
