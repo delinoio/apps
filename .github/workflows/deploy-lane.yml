@@ -97,6 +97,12 @@ jobs:
           pnpm --filter @delinoio/lane smoke
       - name: Build desktop with the matching packaged synchronization helper
         if: matrix.desktop
+        env:
+          # Repository variables hold the real development/published extension
+          # IDs. Empty values disable Chrome registration; the build rejects
+          # malformed IDs and never substitutes a placeholder.
+          LANE_CHROME_EXTENSION_IDS: ${{ vars.LANE_CHROME_EXTENSION_IDS }}
+          LANE_CHROME_WEB_STORE_EXTENSION_ID: ${{ vars.LANE_CHROME_WEB_STORE_EXTENSION_ID }}
         run: |
           pnpm --dir "apps/lane" test
           pnpm --dir "apps/lane" build:desktop

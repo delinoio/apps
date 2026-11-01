@@ -64,8 +64,13 @@ Lane. The build records the runtime version and verified archive checksum; this
 integrity check does not replace dependency security review.
 
 The desktop installer registers the exact installed relay path for the explicitly
-configured extension IDs. An empty ID list disables registration and connection
-service. Uninstall removes only the matching registration and preserves Lane data.
+configured extension IDs. Portable release archives have no installer step, so
+each start of a distribution package registers its own relay. The most
+recently started installation owns the registration. An empty ID list disables
+registration and connection service. Release builds take the IDs from the
+`LANE_CHROME_EXTENSION_IDS` and `LANE_CHROME_WEB_STORE_EXTENSION_ID`
+repository variables. Uninstall removes only the matching registration and preserves Lane data.
+Follow the [RealQA packaging rules](apps-lane-realqa-contract.md#chrome-companion-transport-and-packaging).
 Use the [application packaging procedure](apps-lane-foundation.md#desktop-capture-packaging-and-local-validation)
 for local builds and isolated installer checks. Fixture IDs and unsigned packages
 do not establish Chrome Web Store publication or native runtime acceptance.

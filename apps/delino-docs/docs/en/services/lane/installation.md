@@ -45,11 +45,11 @@ Lane has not been released, and earlier development data is not migrated to the 
 
 ## RealQA Chrome companion
 
-RealQA capture runs inside the Lane desktop app. Its Chrome extension connects to an already running Lane installation. Use the extension and native component from the same trusted distributor. Native Messaging registration is part of Lane installation and removal; there is no separate RealQA desktop app.
+RealQA capture runs inside the Lane desktop app. Its Chrome extension connects to an already running Lane installation. Use the extension and native component from the same trusted distributor. Each time Lane starts, it registers its Chrome Native Messaging component for that installation, so a downloaded desktop release needs no separate setup step. The most recently started Lane installation owns the registration. On macOS, move Lane to your Applications folder before you open it. Lane does not register a copy that macOS runs from a temporary location; in that case, Chrome cannot connect until you move Lane and open it again. There is no separate RealQA desktop app.
 
 A Chrome Web Store listing is not yet claimed by this guide. Until a reviewed listing is available, maintainers can supply a review build for **Load unpacked** in `chrome://extensions`. The exact extension ID must be registered by the matching Lane installation. An unpacked review build is not evidence of Chrome Web Store publication. Never use an arbitrary extension ID or grant access to an unrelated extension.
 
-After installation, open Lane and approve each normal Chrome profile on that device. See [Chrome element capture](./user-guide#chrome-element-capture). Removing the extension stops its access; disconnect the profile in Lane to remove its stored approval as well. Lane removal unregisters its Native Messaging component. Windows signed installation and runtime acceptance remain separate from build validation.
+After installation, open Lane and approve each normal Chrome profile on that device. See [Chrome element capture](./user-guide#chrome-element-capture). Removing the extension stops its access; disconnect the profile in Lane to remove its stored approval as well. If you delete a downloaded Lane app, its registration stays until another Lane installation starts. Chrome cannot start the deleted component, so the extension asks you to start Lane. Windows signed installation and runtime acceptance remain separate from build validation.
 
 ## Update the desktop app
 

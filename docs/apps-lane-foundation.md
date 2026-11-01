@@ -854,7 +854,10 @@ packaged relay for its configured extension IDs. It refuses to replace an
 existing installation. After quitting Lane, `node scripts/desktop.mjs uninstall`
 removes the matching registration and application; it preserves Lane user data.
 Registration removal verifies its owner so an obsolete installer cannot remove
-a newer installation's registration. The existing Windows signing/runtime
+a newer installation's registration. In that case, uninstall keeps the
+registration and still removes its own application. A started non-testing
+package also registers its own relay, so portable release archives need no
+installer step. Native-testing packages never change the user's registration. The existing Windows signing/runtime
 acceptance boundary still applies.
 
 Use a `LANE_NATIVE_TESTING=1` build with an absolute `LANE_NATIVE_TEST_ROOT` for
