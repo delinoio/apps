@@ -152,21 +152,34 @@ pub async fn heartbeat(s: &Server, call: &Call, q: HeartbeatRequest) -> Result<H
         .bind(call.now)
         .execute(&mut *tx)
         .await?;
+    // Lock every connection this heartbeat touches (registered or leased by this device) in ID
+    // order before changing any of them. Locking the device's own leases first and the other
+    // registered connections afterwards lets two devices that hold different leases on the same
+    // connections wait for each other.
+    let locked: Vec<(Uuid, bool)> = sqlx::query_as(
+        "SELECT c.id,EXISTS(SELECT 1 FROM connection_devices cd WHERE cd.connection_id=c.id AND cd.device_id=$1) \
+         FROM connections c WHERE c.user_id=$2 AND c.deleted_at IS NULL \
+         AND (c.lease_device_id=$1 OR EXISTS(SELECT 1 FROM connection_devices cd WHERE cd.connection_id=c.id AND cd.device_id=$1)) \
+         ORDER BY c.id FOR UPDATE OF c",
+    )
+    .bind(d.device_id)
+    .bind(d.user_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let all: Vec<Uuid> = locked.iter().map(|(id, _)| *id).collect();
     sqlx::query(
-        "UPDATE connections SET lease_expires_at=$2 WHERE lease_device_id=$1 AND lease_expires_at>$3 AND deleted_at IS NULL",
+        "UPDATE connections SET lease_expires_at=$2 WHERE id=ANY($4) AND lease_device_id=$1 AND lease_expires_at>$3",
     )
     .bind(d.device_id)
     .bind(call.now + lease_ttl())
     .bind(call.now)
+    .bind(&all)
     .execute(&mut *tx)
     .await?;
-    let ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT c.id FROM connections c JOIN connection_devices cd ON cd.connection_id=c.id \
-         WHERE cd.device_id=$1 AND c.deleted_at IS NULL ORDER BY c.id",
-    )
-    .bind(d.device_id)
-    .fetch_all(&mut *tx)
-    .await?;
+    let ids: Vec<Uuid> = locked
+        .into_iter()
+        .filter_map(|(id, registered)| registered.then_some(id))
+        .collect();
     let mut assignments = Vec::with_capacity(ids.len());
     for id in ids {
         let lease = lock_lease(&mut tx, &d, id).await?;

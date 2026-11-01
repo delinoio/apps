@@ -70,7 +70,7 @@ A user with several roles gets the union. Team-role edit permission never bypass
 
 ### Collector leases, heartbeat and failover
 
-- Each external connection has at most one valid lease, stored on the connection row with an increasing `lease_epoch`. All lease changes run in one transaction with `SELECT ... FOR UPDATE` on the connection row, so concurrent `AcquireLease` calls cannot grant two leases.
+- Each external connection has at most one valid lease, stored on the connection row with an increasing `lease_epoch`. All lease changes run in one transaction with `SELECT ... FOR UPDATE` on the connection row, so concurrent `AcquireLease` calls cannot grant two leases. A `Heartbeat` locks all connections it touches (registered for or leased by the device) in connection ID order before it extends any lease, so concurrent heartbeats of devices that hold different leases on the same connections cannot deadlock.
 - A lease is valid while `lease_expires_at` is in the future. Each `Heartbeat` and `RenewLease` by the holder sets `lease_expires_at` to 5 minutes later. Devices send a heartbeat every minute.
 - When the holder sends no heartbeat for 5 minutes, the lease expires and collection moves to another registered device at its next heartbeat: first the user's preferred device, otherwise the device with the most recent heartbeat, among registered, online, `ACTIVE` devices that report the connection as ready. Ties go to the lower device ID. A preferred-device change does not preempt a valid lease.
 - Results sent under an expired or superseded lease are rejected with `LEASE_EXPIRED`, including after the old device comes back. Deleting or unregistering a device, logout and connection deletion end its leases immediately.
@@ -258,7 +258,7 @@ Run `cargo fmt --manifest-path servers/Cargo.toml --all --check`, `cargo clippy 
 Required server integration tests on a disposable PostgreSQL database:
 
 - Versioned upload idempotency (same version ignored, newer replaces, older ignored), corrections within 90 days and the 90-day retention cleanup.
-- Lease epochs: concurrent acquisition grants one lease, 5-minute failover to the preferred device and otherwise the most recent heartbeat, rejection of an expired lease including after the old device returns.
+- Lease epochs: concurrent acquisition grants one lease, 5-minute failover to the preferred device and otherwise the most recent heartbeat, rejection of an expired lease including after the old device returns, and concurrent heartbeats of devices holding crossed leases on shared connections.
 - Hourly snapshot selection (last successful value in the hour) and late arrival by observation time; latest value changes only for a newer observation.
 - The LiteLLM daily sync: new version only on change, failed fetch and invalid JSON keep the previous version and record the failure; price version selection by bucket time; "cannot be calculated" for missing prices and breakdowns; no recalculation after a new version.
 - Quotas and rate limits, the minimum-version rejection before authentication, and 24-hour deletion completion for connections, devices, dashboards and account data.

@@ -838,3 +838,84 @@ async fn snapshots_hourly_history_and_late_arrival() {
     ));
     f.cleanup().await;
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn concurrent_heartbeats_with_crossed_leases_do_not_deadlock() {
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let (d1, t1, _) = f.enroll(&a, "one", "").await;
+    let (d2, t2, _) = f.enroll(&a, "two", "").await;
+    let (c1, c2) = (f.device(&t1), f.device(&t2));
+    let mut connections = Vec::new();
+    for provider in ["PROVIDER_CODEX", "PROVIDER_CLAUDE_CODE"] {
+        let conn = f
+            .ok(
+                &c1,
+                "ConnectionService/CreateConnection",
+                json!({"requestId":id(),"provider":provider}),
+            )
+            .await["connection"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        f.ok(
+            &c2,
+            "ConnectionService/RegisterConnectionDevice",
+            json!({"connectionId":conn}),
+        )
+        .await;
+        connections.push(conn);
+    }
+    connections.sort();
+    // Both devices are registered for both connections and each holds a different lease.
+    for (conn, holder) in connections.iter().zip([&d1, &d2]) {
+        f.exec(&format!(
+            "UPDATE connections SET lease_epoch=1,lease_device_id='{holder}',lease_acquired_at=now(),\
+             lease_expires_at=now()+interval '5 minutes',last_holder_device_id='{holder}' WHERE id='{conn}'"
+        ))
+        .await;
+    }
+    let ready = json!({"readyConnectionIds":connections}).to_string();
+    for _ in 0..25 {
+        let tasks: Vec<_> = [t1.clone(), t2.clone()]
+            .into_iter()
+            .map(|token| {
+                let (base, body) = (f.base.clone(), ready.clone());
+                tokio::spawn(async move {
+                    reqwest::Client::new()
+                        .post(format!("{base}/anydash.v1.CollectorService/Heartbeat"))
+                        .header("content-type", "application/json")
+                        .header("x-anydash-client-kind", "CLIENT_KIND_CLI")
+                        .header("x-anydash-client-version", "1.0.0")
+                        .bearer_auth(&token)
+                        .body(body)
+                        .send()
+                        .await
+                        .unwrap()
+                })
+            })
+            .collect();
+        for task in tasks {
+            let response = task.await.unwrap();
+            let status = response.status();
+            assert!(
+                status.is_success(),
+                "{status}: {}",
+                response.text().await.unwrap()
+            );
+        }
+    }
+    // Every heartbeat extended only the device's own lease.
+    for (conn, holder) in connections.iter().zip([&d1, &d2]) {
+        assert_eq!(
+            f.count(&format!(
+                "SELECT count(*) FROM connections WHERE id='{conn}' AND lease_device_id='{holder}' AND lease_expires_at>now()"
+            ))
+            .await,
+            1
+        );
+    }
+    f.cleanup().await;
+}
