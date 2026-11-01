@@ -153,6 +153,28 @@ try {
       target: "node22",
       external: ["lynxtron"],
     });
+    const chromeExtensionIds = (process.env.LANE_CHROME_EXTENSION_IDS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const chromeWebStoreExtensionId = (
+      process.env.LANE_CHROME_WEB_STORE_EXTENSION_ID || ""
+    ).trim();
+    // Chrome extension IDs are 32 characters from a to p. The published ID only
+    // enables Lane's Web Store listing link; it must be a real registered origin.
+    const chromeId = /^[a-p]{32}$/;
+    if (chromeExtensionIds.some((value) => !chromeId.test(value)))
+      throw new Error(
+        "LANE_CHROME_EXTENSION_IDS must contain only 32-character Chrome extension IDs.",
+      );
+    if (
+      chromeWebStoreExtensionId &&
+      (!chromeId.test(chromeWebStoreExtensionId) ||
+        !chromeExtensionIds.includes(chromeWebStoreExtensionId))
+    )
+      throw new Error(
+        "LANE_CHROME_WEB_STORE_EXTENSION_ID must be a published Chrome extension ID that is also listed in LANE_CHROME_EXTENSION_IDS.",
+      );
     writeFileSync(
       join(resources, "package.json"),
       JSON.stringify({
@@ -164,10 +186,8 @@ try {
         releaseTag: process.env.LANE_RELEASE_TAG || "",
         sourceRevision: process.env.LANE_SOURCE_REVISION || "",
         testing: process.env.LANE_NATIVE_TESTING === "1",
-        chromeExtensionIds: (process.env.LANE_CHROME_EXTENSION_IDS || "")
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean),
+        chromeExtensionIds,
+        chromeWebStoreExtensionId,
       }),
     );
     await build({

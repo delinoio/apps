@@ -3,12 +3,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RealQA } from "./realqa.mjs";
 import { encodeMessage, readMessages } from "./chrome-framing.mjs";
-import { connectChrome } from "./realqa-chrome.mjs";
+import { connectChrome, ChromeRecovery } from "./realqa-chrome.mjs";
+import { createChromeBridge } from "./chrome-bridge.mjs";
 const deferred = () => {
   let resolve;
   const promise = new Promise((done) => {
@@ -116,7 +117,7 @@ test(
     const result = JSON.parse(await exported);
     assert.equal(result.ok, true);
     assert.equal(result.value.images.length, 1);
-    await assert.rejects(host.capture(), /save to finish/);
+    await assert.rejects(host.capture(), /LANE_SAVING/);
     assert.equal(host.realqa.draft.images.length, 1);
   },
 );
@@ -302,4 +303,244 @@ test("actual bridge reconnect invalidates RealQA with connected state and no sta
   assert.equal(snapshots.at(-1).pending.length, 0);
   assert.equal(snapshots.at(-1).connections[0].connected, true);
   assert.deepEqual(requests, ["connect"], "no status or other request");
+});
+
+const extensionId = "a".repeat(32),
+  syntheticProfile = "01900000-0000-7000-8000-000000000002",
+  pngBase64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+const until = async (condition) => {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error("TIMEOUT");
+};
+// Synthetic relay client speaking the framed bridge protocol after the handshake.
+async function relayClient(dataRoot, sockets) {
+  const runtime = JSON.parse(
+    await readFile(join(dataRoot, "realqa-chrome-runtime.json"), "utf8"),
+  );
+  const socket = net.connect(runtime.endpoint);
+  sockets.push(socket);
+  await once(socket, "connect");
+  const pending = new Map();
+  let sequence = 0;
+  readMessages(
+    socket,
+    (message) => pending.get(message.id)?.(message),
+    () => {},
+  );
+  socket.write(
+    encodeMessage({ type: "relay", secret: runtime.secret, extensionId }),
+  );
+  return {
+    socket,
+    request(type, body = {}) {
+      const id = String(++sequence);
+      return new Promise((resolve) => {
+        pending.set(id, resolve);
+        socket.write(
+          encodeMessage({
+            id,
+            type,
+            profileId: syntheticProfile,
+            profileName: "Synthetic profile",
+            ...body,
+          }),
+        );
+      });
+    },
+  };
+}
+async function bridgeHost(t, realqa, options = {}) {
+  const dataRoot =
+    options.dataRoot ?? (await mkdtemp(join(tmpdir(), "lane-realqa-chrome-")));
+  const sockets = [];
+  const host = await connectChrome({
+    dataRoot,
+    extensionIds: [extensionId],
+    showWindow() {},
+    realqa,
+    ...options,
+  });
+  t.after(async () => {
+    for (const socket of sockets) socket.destroy();
+    await host.close();
+    await rm(dataRoot, { recursive: true, force: true });
+  });
+  return { host, dataRoot, client: () => relayClient(dataRoot, sockets) };
+}
+async function approvedClient(host, client) {
+  const connection = await client();
+  const reply = connection.request("connect");
+  await until(() => host.state().pending.length === 1);
+  await host.invoke({ op: "chrome.approve", id: host.state().pending[0].id });
+  const { token } = await reply;
+  return { ...connection, token };
+}
+
+test("Web Store listing appears only for a configured allowed extension ID", async () => {
+  const stub = { changed() {} };
+  const fake = async () => ({ listConnections: () => [], async close() {} });
+  const listing = async (extensionIds, listingExtensionId) =>
+    (
+      await connectChrome({
+        realqa: stub,
+        extensionIds,
+        listingExtensionId,
+        createBridge: fake,
+      })
+    ).state().listingUrl;
+  const published = "b".repeat(32);
+  assert.equal(
+    await listing([extensionId, published], published),
+    `https://chromewebstore.google.com/detail/${published}`,
+  );
+  assert.equal(await listing([extensionId], published), undefined);
+  assert.equal(await listing([extensionId], ""), undefined);
+  assert.equal(await listing(["z".repeat(32)], "z".repeat(32)), undefined);
+});
+
+test("closing the requesting connection removes its pending approval and blocks a late approval", async (t) => {
+  let changes = 0;
+  const { host, client } = await bridgeHost(t, {
+    changed() {
+      changes += 1;
+    },
+  });
+  const first = await client();
+  void first.request("connect");
+  await until(() => host.state().pending.length === 1);
+  const abandoned = host.state().pending[0].id;
+  const before = changes;
+  first.socket.destroy();
+  await until(() => host.state().pending.length === 0);
+  assert.ok(changes > before, "settings are invalidated");
+  assert.equal(host.state().state, "disconnected");
+  await assert.rejects(
+    host.invoke({ op: "chrome.approve", id: abandoned }),
+    /no longer pending/,
+  );
+  assert.deepEqual(host.state().connections, [], "no approval was stored");
+  // Reconnecting asks again instead of reporting APPROVAL_PENDING.
+  const second = await client();
+  const reply = second.request("connect");
+  await until(() => host.state().pending.length === 1);
+  await host.invoke({ op: "chrome.approve", id: host.state().pending[0].id });
+  const granted = await reply;
+  assert.equal(granted.ok, true);
+  assert.equal(host.state().state, "connected");
+});
+
+test("bridge startup failures report an error state with explicit recovery", async (t) => {
+  const dataRoot = await mkdtemp(join(tmpdir(), "lane-realqa-chrome-"));
+  await writeFile(
+    join(dataRoot, "realqa-chrome-connections.json"),
+    "{not json",
+    { mode: 0o600 },
+  );
+  const events = [];
+  const { host } = await bridgeHost(
+    t,
+    { changed() {} },
+    { dataRoot, log: (event, result) => events.push([event, result]) },
+  );
+  const failed = host.state();
+  assert.equal(failed.state, "error");
+  assert.equal(failed.recovery, ChromeRecovery.ResetApprovals);
+  assert.match(failed.message, /Reset Chrome approvals/);
+  assert.doesNotMatch(failed.message, new RegExp(dataRoot));
+  assert.deepEqual(events, [
+    ["lane_chrome_connection_unavailable", "CHROME_APPROVALS_INVALID"],
+  ]);
+  await assert.rejects(host.startDOMCapture(), /Reset Chrome approvals/);
+  await assert.rejects(host.invoke({ op: "chrome.retry" }), /Reset Chrome/);
+  assert.equal(host.state().state, "error", "retry alone keeps the file");
+  await host.invoke({ op: "chrome.resetApprovals" });
+  assert.equal(host.state().state, "disconnected");
+  assert.equal(
+    (
+      await stat(join(dataRoot, "realqa-chrome-connections.json.invalid"))
+    ).isFile(),
+    true,
+    "the unreadable file is moved aside, not parsed",
+  );
+  await assert.rejects(
+    host.invoke({ op: "chrome.resetApprovals" }),
+    /do not need to be reset/,
+  );
+});
+
+test("an endpoint already in use reports an error that retry recovers", async (t) => {
+  const dataRoot = await mkdtemp(join(tmpdir(), "lane-realqa-chrome-"));
+  const other = await createChromeBridge({
+    dataRoot,
+    extensionIds: [extensionId],
+    requestApproval: async () => false,
+    acceptCapture: async () => {},
+  });
+  const { host } = await bridgeHost(t, { changed() {} }, { dataRoot });
+  assert.equal(host.state().state, "error");
+  assert.equal(host.state().recovery, ChromeRecovery.Retry);
+  assert.match(host.state().message, /Another copy of Lane/);
+  await other.close();
+  assert.deepEqual(await host.invoke({ op: "chrome.retry" }), {});
+  assert.equal(host.state().state, "disconnected");
+});
+
+test("post-selection failures reach Lane as specific guidance without page content", async (t) => {
+  const emitted = [];
+  const logs = [];
+  const realqa = {
+    saving: false,
+    changed() {},
+    emit: (name, value) => emitted.push([name, value]),
+    enqueue: (action) => action(),
+  };
+  const { host, client } = await bridgeHost(t, realqa, {
+    log: (event, result) => logs.push([event, result]),
+  });
+  const connection = await approvedClient(host, client);
+  const reported = await connection.request("captureFailed", {
+    token: connection.token,
+    reason: "PAGE_CHANGED",
+  });
+  assert.equal(reported.ok, true);
+  assert.deepEqual(emitted.at(-1), [
+    "lane.realqa.error",
+    {
+      reason: "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+      message:
+        "The Chrome page moved or changed during capture. Your draft is unchanged. Select the element again.",
+      retryable: true,
+    },
+  ]);
+  await connection.request("captureFailed", {
+    token: connection.token,
+    reason: "https://example.test/secret",
+  });
+  assert.match(emitted.at(-1)[1].message, /could not be added/);
+  realqa.saving = true;
+  const rejected = await connection.request("capture", {
+    token: connection.token,
+    pngBase64,
+    width: 1,
+    height: 1,
+    metadata: {
+      pageUrl: "https://example.test/page",
+      pageTitle: "",
+      cssSelector: "#a",
+    },
+  });
+  assert.equal(rejected.reason, "LANE_SAVING");
+  assert.equal(emitted.at(-1)[1].reason, "ERROR_REASON_CONFLICT");
+  assert.match(emitted.at(-1)[1].message, /Wait for the save to finish/);
+  const unauthenticated = await connection.request("captureFailed", {
+    token: "wrong",
+    reason: "PAGE_CHANGED",
+  });
+  assert.equal(unauthenticated.reason, "REVOKED");
+  assert.equal(emitted.length, 3, "unauthenticated reports are ignored");
+  assert.equal(JSON.stringify(logs).includes("example.test"), false);
 });

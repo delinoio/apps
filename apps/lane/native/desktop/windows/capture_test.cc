@@ -116,8 +116,14 @@ void Run() {
         "Malformed PNG accepted");
   Check(!call({{"op", "render"}, {"png", "YWJj"}, {"layers", CaptureJSON::array()}})["ok"],
         "Non-image bytes accepted");
-  Check(!call({{"op", "shortcut"}, {"mode", "region"}, {"accelerator", "Ctrl+Q"}})["ok"],
-        "Reserved Lane shortcut accepted");
+  for (auto accelerator : {"Ctrl+Q", "Ctrl+C", "Ctrl+V", "Ctrl+Y", "ctrl+shift+z"}) {
+    auto reply = call({{"op", "shortcut"}, {"mode", "region"}, {"accelerator", accelerator}});
+    Check(!reply["ok"] && reply["error"]["reason"] == "ERROR_REASON_CONFLICT",
+          "Reserved Lane shortcut accepted");
+  }
+  auto invalid = call({{"op", "shortcut"}, {"mode", "region"}, {"accelerator", "Shift+A"}});
+  Check(!invalid["ok"] && invalid["error"]["reason"] == "ERROR_REASON_INVALID_INPUT",
+        "Shift-only shortcut must be rejected as invalid input");
   Check(call({{"op", "permission"}})["ok"], "Capture queue failed after an error");
   OnCaptureThread(host, [&] {
     host.selecting = true;

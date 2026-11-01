@@ -27,7 +27,11 @@ import {
 const resources = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const config = require("./package.json");
-const { scheme, chromeExtensionIds = [] } = config;
+const {
+  scheme,
+  chromeExtensionIds = [],
+  chromeWebStoreExtensionId = "",
+} = config;
 const native = require("./lane_host.node");
 let window, windowSession, tray, poller, composer, realqa, updater;
 let captureWindows = [];
@@ -452,12 +456,16 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
       });
       await realqa.start();
       if (chromeExtensionIds.length) {
+        // Bridge startup failures are reported as the Chrome `error` state with a
+        // retry/reset action instead of hiding the Chrome section.
         try {
           realqa.extension = await connectChrome({
             realqa,
             dataRoot,
             extensionIds: chromeExtensionIds,
+            listingExtensionId: chromeWebStoreExtensionId,
             showWindow,
+            log: (event, result) => log(event, result),
           });
         } catch {
           log("lane_chrome_connection_unavailable");
