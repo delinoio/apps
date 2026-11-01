@@ -12,6 +12,8 @@ Add explicit workspace members as each service or shared crate is implemented. E
 
 The workspace contains `delcore-api`, `devbase-api`, `git-tracker-api`, `delitools-api`, `lane-api`, `crates/server-common` and `crates/delino-protos`. Shared authentication, configuration, HTTP policy, rate limits and telemetry belong to `server-common`. The root Go module and generated Go clients remain available for protocol consumers. Delcore, DevBase and Git Tracker keep only Rust runtime source and tests; their Go service implementations, Go test oracles and Air configurations are removed. SQL migrations remain canonical inputs to the Rust binaries. DeliTools has never had a Go implementation: it is a Rust service from the start and follows the same layout.
 
+`servers/mcpa-api` is a documented Go exception: it embeds the Go CLIProxyAPI SDK, lives in the root Go module and is not a member of this workspace. Its build, launcher input and validation are defined by the [Managed CPA API contract](servers-mcpa-api-contract.md); the shared Cargo build does not build it.
+
 Each port must update its project index and domain contracts, add its explicit workspace member and applicable validation and packaging integration. Run server Cargo commands from the root with `--manifest-path servers/Cargo.toml`. Root Cargo commands continue to own client packages. Rust protocol bindings are owned by the server workspace package `servers/crates/delino-protos`. Its build script generates bindings from the existing schemas into Cargo output; no schema or generated source is copied into server source directories. Install `protoc` before compiling.
 
 ## Development execution

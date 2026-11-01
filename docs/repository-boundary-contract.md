@@ -24,6 +24,10 @@ Server changes require the owning server Cargo checks from the [server workspace
 
 Record the source revision, commands, results and unperformed platform/account checks in review or CI records. Builds and fixtures do not establish live provider, deployment or native acceptance. No credentials or account state move through Git.
 
+## Go server exception
+
+`servers/mcpa-api` is the documented Go exception among FSL servers: it embeds the Go CLIProxyAPI SDK. It is a package tree inside the root `github.com/delinoio/apps` Go module and consumes `protos/mcpa/v1` and `protos/delcore/v1` directly. It uses no separate Go module, `go.work` or local `replace` directive, and it stays outside the server Cargo workspace. Its files remain FSL-1.1-ALv2 under `servers/` even though the root Go module also contains Apache-2.0 protocol packages; sharing a module does not relicense either side. Server changes for it run Go format, vet, unit tests, PostgreSQL integration tests and `govulncheck` from the root instead of Cargo checks. See the [Managed CPA API contract](servers-mcpa-api-contract.md).
+
 ## Server Rust workspace
 
 `servers/Cargo.toml` owns an independent Cargo workspace for server ports. Shared server Rust modules belong in `servers/crates/` under FSL-1.1-ALv2, separate from the Apache-2.0 client workspace and root `crates/`. See the [server Rust workspace contract](servers-rust-workspace-contract.md).

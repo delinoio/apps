@@ -45,6 +45,7 @@ enum ProjectId {
   DeliDev = "delidev",
   DeliTools = "delitools",
   Ui = "ui",
+  Mcpa = "mcpa",
 }
 ```
 
@@ -58,7 +59,7 @@ enum ProjectId {
 
 ## Existing project choices
 
-Delcore, DevBase and Git Tracker APIs use Rust, Connect RPC and PostgreSQL. DeliDev and DeliTools use React/Rsbuild and the pinned Rust Tauri runtime as specified by their project contracts. Node.js 24 is selected by `.nvmrc`; Go and Rust versions are selected by `go.mod` and `rust-toolchain`. Run root `pnpm dev` for all workspace development servers, or run `pnpm dev` and `pnpm dev:desktop` in the owning app, on its documented fixed port. See the [workflow contract](repository-workflow-contract.md) for participants and separate server startup.
+Delcore, DevBase and Git Tracker APIs use Rust, Connect RPC and PostgreSQL. The Managed CPA API uses Go in the root Go module, Connect RPC and PostgreSQL because it embeds the Go CLIProxyAPI SDK; its console uses React/Rsbuild on Cloudflare Pages. See the [Managed CPA project](project-mcpa.md). DeliDev and DeliTools use React/Rsbuild and the pinned Rust Tauri runtime as specified by their project contracts. Node.js 24 is selected by `.nvmrc`; Go and Rust versions are selected by `go.mod` and `rust-toolchain`. Run root `pnpm dev` for all workspace development servers, or run `pnpm dev` and `pnpm dev:desktop` in the owning app, on its documented fixed port. See the [workflow contract](repository-workflow-contract.md) for participants and separate server startup.
 
 ## Development server ports
 
@@ -77,6 +78,8 @@ All addresses below use the loopback host `127.0.0.1`. Frontend servers fail on 
 | Perfine API          | `46323` | Owning API development launcher                                                 | [Server](servers-perfine-api-contract.md)              |
 | Lane frontend        | `46325` | `apps/lane/lynx.config.ts`                                                      | [Application foundation](apps-lane-foundation.md)      |
 | Lane API             | `46326` | Owning API development launcher                                                 | [Server](servers-lane-api-contract.md)                 |
+| Managed CPA frontend | `46328` | `apps/mcpa/rsbuild.config.ts`                                                   | [Web console](apps-mcpa-web-contract.md)               |
+| Managed CPA API      | `46329` | `LISTEN` in `servers/mcpa-api/.env.example`; runtime default matches            | [Server](servers-mcpa-api-contract.md)                 |
 | Delcore API          | `8080`  | `LISTEN` in `servers/delcore-api/.env.example`; explicit configuration required | [Server](servers-delcore-api-contract.md)              |
 
 Git Tracker's frontend API URL and API web-origin example point to `http://127.0.0.1:46321` and `http://127.0.0.1:46320`, respectively. Delcore's consumer example defaults to `http://127.0.0.1:8080`. Database and telemetry endpoints retain their service-specific configuration.

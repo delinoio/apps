@@ -290,7 +290,7 @@ Service contracts own migration commands, schema checks, backup and restore proc
 
 ## Server image publication
 
-`deploy-images.yml` publishes all selected server images in parallel with `fail-fast: false`. Images use `ghcr.io/<owner>/<server>:sha-<release-commit>`. Dockerfiles belong to `servers/delcore-api`, `servers/devbase-api`, `servers/git-tracker-api`, `servers/delitools-api`, `servers/perfine-api` and `servers/lane-api`. Only image jobs hold `packages: write`; they use `GITHUB_TOKEN` and retain repository, source revision, version identity and FSL-1.1-ALv2 labels. Retries reuse an existing immutable image for the same commit.
+`deploy-images.yml` publishes all selected server images in parallel with `fail-fast: false`. Images use `ghcr.io/<owner>/<server>:sha-<release-commit>`. Dockerfiles belong to `servers/delcore-api`, `servers/devbase-api`, `servers/git-tracker-api`, `servers/delitools-api`, `servers/perfine-api`, `servers/lane-api` and `servers/mcpa-api`. The Managed CPA image is built from the root Go module rather than the server Cargo workspace. Only image jobs hold `packages: write`; they use `GITHUB_TOKEN` and retain repository, source revision, version identity and FSL-1.1-ALv2 labels. Retries reuse an existing immutable image for the same commit.
 
 Image publication completes the preparation phase. Server runtime deployment and deployment-specific monitoring settings are maintained in private operator automation, outside this repository. Server code, migrations, Dockerfiles, safe service configuration examples and reusable monitoring assets with their validation remain here. Operators apply explicit migrations and verify the deployed revision and readiness under the owning server contracts before authorizing component publication. There is no server mock deployment workflow.
 
@@ -369,6 +369,38 @@ Run `pnpm dev:db:up` to prepare the local databases. Run the Lane binary's `migr
 The [Lane project](project-lane.md) and [API contract](servers-lane-api-contract.md) own product scope and service configuration. Native build/install/behavior acceptance remains separate from frontend compilation and fixture checks.
 
 Lane CI uses the existing `lane-frontend` job, an affected `lane-cli` job, and a `lane-api` entry in both Rust server matrices. CLI/package changes select Rust tests and package tests/builds for the Linux amd64 host on Ubuntu; full six-target packaging requires the corresponding Rust target, linker and native SDK toolchains. Root Cargo changes also select CLI validation; local-store schema changes select both CLI and frontend consumers. Lane protocol changes select its app, CLI and server consumers plus protocol validation. Shared Lynx UI changes select Lane frontend validation. The result gate rejects failed, canceled or skipped selected Lane jobs. The API matrix uses disposable database `lane_api_test` on port `55437`. Its existing integration step invokes `servers/lane-api/tests/integration_fixture.py` to supply a pinned disposable loopback S3 mock while running all Lane ignored tests. See the [server fixture procedure](servers-lane-api-contract.md#disposable-s3-integration-fixture) for prerequisites and cleanup. These checks do not add macOS runners, a full manual mode or production publication.
+
+## Managed CPA development and validation
+
+Managed CPA has three components: the `mcpa` console route, the `mcpa-api` Go service route, and the `protos/mcpa/v1` protocol. The [project](project-mcpa.md) and [API contract](servers-mcpa-api-contract.md) own product scope and service configuration.
+
+### Development
+
+- The console uses fixed loopback port `46328` and the API uses `46329`. Their Portless routes are `https://mcpa.localhost` and `https://mcpa-api.localhost` in the main checkout.
+- Root Compose includes `mcpa-postgres` on loopback port `${MCPA_POSTGRES_PORT:-55438}`, with database and user `mcpa` and disposable password `local-mcpa`. Its named volume is independent of other services. These values are local development defaults only. Root development resolves its URL into the `mcpa` entry of `DEV_COMPOSE_DATABASE_URLS`, and only the Managed CPA API task receives it, after service-local Infisical injection.
+- The API is a Go package in the root module, not a Cargo workspace member. Its Turbo `dev` task depends on its own `build` task, which runs `go build` to write `servers/target/debug/mcpa-api`. The shared launcher then executes that binary like the Rust APIs. The shared Cargo `//#server-build` task does not build it, and the launcher does not build or watch. Restart `pnpm dev` after server changes.
+- Run `pnpm dev:db:up`, then run `mcpa-api migrate` explicitly before serving. Startup checks the schema and never migrates. Root `pnpm dev:db:reset` includes the Managed CPA database and applies its migrations explicitly after building the Go binary.
+
+### CI
+
+Managed CPA CI runs on Ubuntu with these jobs:
+
+- An affected `mcpa-api` job runs the package scripts `ci:format`, `ci:vet`, `ci:unit`, `ci:integration` and `ci:vuln`. The integration step uses the disposable PostgreSQL database `mcpa_api_test` on port `55438` through `TEST_DATABASE_URL`.
+- An affected `mcpa-frontend` job runs the console `pnpm test` and removes generated `dist`.
+- An `ops` check validates the Prometheus rules under `servers/mcpa-api/ops/` with rule tests.
+
+Affected-path selection works as follows:
+
+- Changes under `servers/mcpa-api/` select the API job.
+- Changes under `apps/mcpa/` select the console job.
+- Changes under `protos/mcpa/v1` select protocol validation, the API job and the console job. Delcore protocol changes and `servers/scripts/` changes also select the API job.
+- Root `go.mod` and `go.sum` changes select the API job in addition to protocol validation.
+- The existing Rust server matrices, their entries and their images are unchanged by Managed CPA. The `ci-result` gate rejects failed, canceled or skipped selected Managed CPA jobs.
+- These checks add no macOS runners and no full manual mode. Ordinary CI does not build the OCI image.
+
+### Release
+
+Release image publication builds `servers/mcpa-api/Dockerfile` from the root checkout and publishes `ghcr.io/<owner>/mcpa-api:sha-<release-commit>` with FSL-1.1-ALv2 labels through `deploy-images.yml`. The console publishes to Cloudflare Pages through the shared web publication workflow. Runtime rollout belongs to private operator automation.
 
 ## Pending changesets
 
