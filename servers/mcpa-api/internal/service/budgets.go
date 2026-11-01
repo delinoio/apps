@@ -132,7 +132,7 @@ func (s *Service) SetResourceBudget(ctx context.Context, req *connect.Request[mc
 	if err != nil {
 		return nil, err
 	}
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleManage, func(tx pgx.Tx, r store.Resource, _ mcpav1.ResourceRole) error {
 		if err := store.SetResourceBudgetLimit(ctx, tx, r.ID, limit, p.UserID); err != nil {
 			return err
 		}

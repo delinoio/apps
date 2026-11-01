@@ -173,7 +173,7 @@ func (s *Service) UpdateResource(ctx context.Context, req *connect.Request[mcpav
 		return nil, err
 	}
 	var out store.Resource
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleManage, func(tx pgx.Tx, r store.Resource, _ mcpav1.ResourceRole) error {
 		if err := store.UpdateResource(ctx, tx, r.ID, m.GetName(), m.GetDescription()); err != nil {
 			return nameConflict(err)
 		}
@@ -210,7 +210,7 @@ func (s *Service) DeleteResource(ctx context.Context, req *connect.Request[mcpav
 		return nil, err
 	}
 	var deleted store.DeletedResource
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleManage, func(tx pgx.Tx, r store.Resource, _ mcpav1.ResourceRole) error {
 		if req.Msg.GetConfirmName() != r.Name {
 			return apperr.FailedPrecondition("confirm_name must equal the resource name")
 		}
@@ -266,7 +266,7 @@ func (s *Service) UpdateRouting(ctx context.Context, req *connect.Request[mcpav1
 		return nil, err
 	}
 	var out store.Resource
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleManage, func(tx pgx.Tx, r store.Resource, _ mcpav1.ResourceRole) error {
 		if err := store.UpdateRouting(ctx, tx, r.ID, lb, allowlist); err != nil {
 			return err
 		}

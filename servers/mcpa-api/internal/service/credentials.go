@@ -84,7 +84,7 @@ func (s *Service) RegisterApiKeyCredential(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, apperr.Internal(err)
 	}
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleManage, func(tx pgx.Tx, r store.Resource, _ mcpav1.ResourceRole) error {
 		var err error
 		if c, err = store.InsertCredential(ctx, tx, c, sealed); err != nil {
 			return err
@@ -120,7 +120,7 @@ func (s *Service) RemoveCredential(ctx context.Context, req *connect.Request[mcp
 		return nil, err
 	}
 	var removed store.Credential
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleManage, func(tx pgx.Tx, r store.Resource, _ mcpav1.ResourceRole) error {
 		var err error
 		removed, err = store.DeleteCredential(ctx, tx, r.ID, credID)
 		if errors.Is(err, store.ErrNotFound) {

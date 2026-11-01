@@ -234,8 +234,14 @@ func WriteAudit(ctx context.Context, tx store.DB, p *auth.Principal, in AuditInp
 	return err
 }
 
-// mutate locks a live resource and runs fn in one transaction.
-func (s *Service) mutate(ctx context.Context, resourceID uuid.UUID, fn func(tx pgx.Tx, r store.Resource) error) error {
+// mutate locks a live resource, rechecks that p still holds need on it and
+// runs fn in one transaction. fn receives the role read under the lock.
+//
+// Handlers authorize with authz.Resource before calling mutate, outside the
+// lock. ACL changes also run under this lock, so the recheck rejects a
+// mutation whose caller lost the role after that first check: for example, a
+// pending PutAclEntry of a manager who was removed meanwhile.
+func (s *Service) mutate(ctx context.Context, p *auth.Principal, resourceID uuid.UUID, need mcpav1.ResourceRole, fn func(tx pgx.Tx, r store.Resource, role mcpav1.ResourceRole) error) error {
 	err := s.db.InTx(ctx, func(tx pgx.Tx) error {
 		r, err := store.LockResource(ctx, tx, resourceID)
 		if err != nil {
@@ -244,10 +250,20 @@ func (s *Service) mutate(ctx context.Context, resourceID uuid.UUID, fn func(tx p
 			}
 			return err
 		}
+		role, err := s.authz.EffectiveRole(ctx, tx, r.TenantID, r.ID, p.UserID)
+		if err != nil {
+			return err
+		}
+		if role == mcpav1.ResourceRole_RESOURCE_ROLE_UNSPECIFIED {
+			return apperr.NotFound("resource not found")
+		}
+		if !authz.Satisfies(role, need) {
+			return apperr.PermissionDenied("this action requires the " + authz.RoleName(need) + " role on the resource")
+		}
 		if r.Deleted() {
 			return apperr.FailedPrecondition("the resource was deleted")
 		}
-		return fn(tx, r)
+		return fn(tx, r, role)
 	})
 	return dbErr(err)
 }

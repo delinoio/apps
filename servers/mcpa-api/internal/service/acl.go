@@ -65,7 +65,7 @@ func (s *Service) PutAclEntry(ctx context.Context, req *connect.Request[mcpav1.P
 		return nil, err
 	}
 	var entry store.ACLEntry
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleManage, func(tx pgx.Tx, r store.Resource, _ mcpav1.ResourceRole) error {
 		entries, err := store.ListACL(ctx, tx, r.ID)
 		if err != nil {
 			return err
@@ -104,7 +104,7 @@ func (s *Service) RemoveAclEntry(ctx context.Context, req *connect.Request[mcpav
 	if err != nil {
 		return nil, err
 	}
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleManage, func(tx pgx.Tx, r store.Resource, _ mcpav1.ResourceRole) error {
 		entries, err := store.ListACL(ctx, tx, r.ID)
 		if err != nil {
 			return err

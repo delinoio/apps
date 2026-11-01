@@ -60,7 +60,7 @@ func (s *Service) IssueCallKey(ctx context.Context, req *connect.Request[mcpav1.
 	fp := fingerprint("IssueCallKey", acc.Resource.ID.String(), m.GetName(), expireField)
 	var stored store.CallKey
 	secret := key.Secret
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleInvoke, func(tx pgx.Tx, r store.Resource, _ mcpav1.ResourceRole) error {
 		rec, claimed, err := store.ClaimIdempotency(ctx, tx, "IssueCallKey", p.UserID, requestKey, fp, key.ID)
 		if err != nil {
 			return err
@@ -146,7 +146,7 @@ func (s *Service) RevokeCallKey(ctx context.Context, req *connect.Request[mcpav1
 		return nil, err
 	}
 	var out store.CallKey
-	err = s.mutate(ctx, acc.Resource.ID, func(tx pgx.Tx, r store.Resource) error {
+	err = s.mutate(ctx, p, acc.Resource.ID, roleInvoke, func(tx pgx.Tx, r store.Resource, role mcpav1.ResourceRole) error {
 		k, err := store.GetCallKey(ctx, tx, r.ID, keyID)
 		if errors.Is(err, store.ErrNotFound) {
 			return apperr.NotFound("call key not found")
@@ -154,7 +154,7 @@ func (s *Service) RevokeCallKey(ctx context.Context, req *connect.Request[mcpav1
 		if err != nil {
 			return err
 		}
-		if !authz.Satisfies(acc.Role, roleManage) && k.IssuerUserID != p.UserID {
+		if !authz.Satisfies(role, roleManage) && k.IssuerUserID != p.UserID {
 			return apperr.NotFound("call key not found")
 		}
 		var changed bool
