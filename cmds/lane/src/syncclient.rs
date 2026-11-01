@@ -104,6 +104,14 @@ pub fn run(auth: &Auth, s: &Store, endpoint: &str, once: bool, retry_blocked: bo
                 "UPDATE outbox SET state=1,error_reason=NULL WHERE state=2",
                 [],
             )?;
+            c.execute(
+                "UPDATE attachments SET synchronized=? WHERE synchronized IN (?,?)",
+                params![
+                    ATTACHMENT_PENDING,
+                    ATTACHMENT_BLOCKED_TOO_LARGE,
+                    ATTACHMENT_BLOCKED_INVALID
+                ],
+            )?;
             Ok(())
         })?;
     }
@@ -840,6 +848,32 @@ struct AttachmentIo<'a> {
     rpc: &'a dyn Fn(&str, &Value) -> Result<Value>,
     object: &'a dyn Fn(reqwest::RequestBuilder, usize) -> Result<crate::network::Response>,
 }
+/// Values of the shared `attachments.synchronized` column.
+///
+/// PENDING holds local bytes awaiting upload; SYNCHRONIZED has accepted remote
+/// content (local bytes are absent until downloaded). The BLOCKED values keep local bytes after a
+/// permanent rejection: they are reported per item, never retried implicitly and
+/// return to PENDING only through an explicit blocked-item retry or reconnection.
+pub const ATTACHMENT_PENDING: i64 = 0;
+pub const ATTACHMENT_SYNCHRONIZED: i64 = 1;
+pub const ATTACHMENT_BLOCKED_TOO_LARGE: i64 = 2;
+pub const ATTACHMENT_BLOCKED_INVALID: i64 = 3;
+/// The item-error reason reported for a blocked attachment state.
+#[must_use]
+pub const fn blocked_attachment_reason(state: i64) -> Option<&'static str> {
+    match state {
+        ATTACHMENT_BLOCKED_TOO_LARGE => Some("ERROR_REASON_ITEM_TOO_LARGE"),
+        ATTACHMENT_BLOCKED_INVALID => Some("ERROR_REASON_INVALID_INPUT"),
+        _ => None,
+    }
+}
+/// Result of one attachment transfer attempt.
+enum Transfer {
+    /// Content was uploaded or downloaded and validated.
+    Done(Vec<u8>),
+    /// Another device or the owning task has not synchronized yet. Pending, not failed.
+    Waiting,
+}
 fn attachments_with_io(
     s: &Store,
     owner: &str,
@@ -847,18 +881,36 @@ fn attachments_with_io(
     epoch: &str,
     io: &AttachmentIo<'_>,
 ) -> Result<()> {
+    // Uploads wait until the owning task's creation is accepted; the server has no
+    // attachment manifest before that, and a blocked creation must not fail the cycle.
     let pending = s.with(false, |c| {
-        let mut stmt = c.prepare("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE e.deleted=0 AND (a.synchronized=0 OR a.png_base64 IS NULL) ORDER BY a.id")?;
+        let mut stmt = c.prepare("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE e.deleted=0 AND ((a.synchronized=0 AND a.png_base64 IS NOT NULL AND NOT EXISTS(SELECT 1 FROM outbox o WHERE o.entity_id=a.task_id AND json_extract(o.request_json,'$.kind')='MUTATION_KIND_CREATE')) OR (a.synchronized=1 AND a.png_base64 IS NULL)) ORDER BY a.id")?;
         let items = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,i64>(5)?,r.get::<_,Option<String>>(6)?)))?.collect::<std::result::Result<Vec<_>,_>>()?;
         Ok(items)
     })?;
     let mut failure = None;
     for (attachment, task, hash, width, height, size, png) in pending {
         lease(s, owner, Some(identity))?;
+        let started = Instant::now();
+        let operation = if png.is_some() {
+            "AttachmentUpload"
+        } else {
+            "AttachmentDownload"
+        };
         let reference = json!({"attachmentId":attachment,"sha256":hash,"width":width,"height":height,"byteSize":size.to_string()});
         let result = transfer_attachment(io, epoch, &task, &reference, png.as_deref());
+        // A permanent rejection of locally saved content blocks only this item.
+        let blocked = match &result {
+            Err(e) if png.is_some() && e.reason == "ERROR_REASON_ITEM_TOO_LARGE" => {
+                Some(ATTACHMENT_BLOCKED_TOO_LARGE)
+            }
+            Err(e) if png.is_some() && e.reason == LOCAL_CONTENT_INVALID => {
+                Some(ATTACHMENT_BLOCKED_INVALID)
+            }
+            _ => None,
+        };
         match result {
-            Ok(bytes) => {
+            Ok(Transfer::Done(bytes)) => {
                 use base64::Engine;
                 lease(s, owner, Some(identity))?;
                 s.with(true, |c| {
@@ -870,6 +922,13 @@ fn attachments_with_io(
                     Ok(())
                 })?;
             }
+            Ok(Transfer::Waiting) => {
+                tracing::debug!(
+                    operation,
+                    result = "WAITING",
+                    "Lane attachment waits for synchronization"
+                );
+            }
             Err(e) => {
                 if matches!(
                     e.reason.as_str(),
@@ -880,20 +939,63 @@ fn attachments_with_io(
                 ) {
                     return Err(e);
                 }
-                tracing::warn!(reason=%e.reason, "Lane attachment synchronization failed");
-                failure = Some(e);
+                if let Some(state) = blocked {
+                    lease(s, owner, Some(identity))?;
+                    s.with(true, |c| {
+                        guard(s, c, owner)?;
+                        if meta(c, "account_epoch")? != epoch
+                            || meta(c, "reconnect_required")? == "1"
+                        {
+                            return Err(auth::reconnect_error());
+                        }
+                        c.execute(
+                            "UPDATE attachments SET synchronized=? WHERE id=? AND task_id=? AND synchronized=0 AND png_base64 IS NOT NULL",
+                            params![state, attachment, task],
+                        )?;
+                        c.execute("INSERT INTO changes(entity_id,change_kind) VALUES(?,4)", [&task])?;
+                        Ok(())
+                    })?;
+                }
+                let reason = blocked
+                    .and_then(blocked_attachment_reason)
+                    .unwrap_or(e.reason.as_str());
+                // Category, correlation and timing only: never URLs, image bytes or task text.
+                tracing::warn!(
+                    operation,
+                    result = reason,
+                    blocked = blocked.is_some(),
+                    correlation_id = %e.correlation_id,
+                    "Lane attachment synchronization failed"
+                );
+                if crate::locallog::record(
+                    &s.root,
+                    operation,
+                    reason,
+                    &e.correlation_id,
+                    started.elapsed(),
+                )
+                .is_err()
+                {
+                    tracing::warn!("Local diagnostic log could not be retained");
+                }
+                if blocked.is_none() {
+                    failure = Some(e);
+                }
             }
         }
     }
     failure.map_or(Ok(()), Err)
 }
+/// Reason marker for locally stored bytes that can never be uploaded. Retrying
+/// cannot repair immutable content, so the item is blocked instead of failing sync.
+const LOCAL_CONTENT_INVALID: &str = "ERROR_REASON_INVALID_INPUT_LOCAL_CONTENT";
 fn transfer_attachment(
     io: &AttachmentIo<'_>,
     epoch: &str,
     task: &str,
     reference: &Value,
     png: Option<&str>,
-) -> Result<Vec<u8>> {
+) -> Result<Transfer> {
     use base64::{Engine, engine::general_purpose::STANDARD};
     let request = json!({"taskId":task,"attachmentId":reference["attachmentId"],"epoch":epoch});
     let unavailable = || {
@@ -903,11 +1005,18 @@ fn transfer_attachment(
         )
     };
     let bytes = if let Some(png) = png {
-        let bytes = STANDARD
-            .decode(png)
-            .map_err(|_| invalid("Invalid stored attachment encoding."))?;
-        crate::capture::validate_png(reference, &bytes)?;
-        let begin = (io.rpc)("BeginAttachmentUpload", &request)?;
+        let local_invalid = || {
+            let mut failure = invalid("Stored attachment content is invalid.");
+            failure.reason = LOCAL_CONTENT_INVALID.into();
+            failure
+        };
+        let bytes = STANDARD.decode(png).map_err(|_| local_invalid())?;
+        crate::capture::validate_png(reference, &bytes).map_err(|_| local_invalid())?;
+        let begin = match (io.rpc)("BeginAttachmentUpload", &request) {
+            // The owning task is not accepted by the server yet.
+            Err(e) if e.reason == "ERROR_REASON_NOT_FOUND" => return Ok(Transfer::Waiting),
+            other => other?,
+        };
         if begin["state"] != "ATTACHMENT_STATE_AVAILABLE" {
             let url = signed_url(&begin, "uploadUrl")?;
             let mut put = io.client.put(url).body(bytes.clone());
@@ -928,7 +1037,14 @@ fn transfer_attachment(
                     );
                 }
             }
-            if !(io.object)(put, 16 << 20)?.status().is_success() {
+            let status = (io.object)(put, 16 << 20)?.status();
+            if status == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
+                return Err(Failure::new(
+                    "ITEM_TOO_LARGE",
+                    "Attachment exceeds the server byte limit.",
+                ));
+            }
+            if !status.is_success() {
                 return Err(unavailable());
             }
             let mut complete = request;
@@ -941,10 +1057,21 @@ fn transfer_attachment(
         }
         bytes
     } else {
-        let response = (io.rpc)(
+        let response = match (io.rpc)(
             "GetAttachment",
             &json!({"taskId":task,"attachmentId":reference["attachmentId"]}),
-        )?;
+        ) {
+            Err(e) if e.reason == "ERROR_REASON_NOT_FOUND" => return Ok(Transfer::Waiting),
+            other => other?,
+        };
+        // Another device has not uploaded the content yet, or the owner was deleted
+        // remotely and the deletion arrives with a later pull.
+        if matches!(
+            strv(&response, "state"),
+            "ATTACHMENT_STATE_WAITING_FOR_SYNC" | "ATTACHMENT_STATE_DELETED"
+        ) {
+            return Ok(Transfer::Waiting);
+        }
         if response["state"] != "ATTACHMENT_STATE_AVAILABLE" {
             return Err(unavailable());
         }
@@ -964,7 +1091,7 @@ fn transfer_attachment(
         }
     };
     crate::capture::validate_png(reference, &bytes)?;
-    Ok(bytes)
+    Ok(Transfer::Done(bytes))
 }
 
 #[cfg(test)]

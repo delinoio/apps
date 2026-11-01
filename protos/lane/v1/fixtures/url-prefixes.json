@@ -1,0 +1,723 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "normalize-host-case",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://EXAMPLE.com/app"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/app"
+      }
+    },
+    {
+      "id": "normalize-scheme-case",
+      "input": {
+        "operation": "normalize",
+        "prefix": "HTTPS://example.com/app"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/app"
+      }
+    },
+    {
+      "id": "normalize-https-default-port",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com:443/app"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/app"
+      }
+    },
+    {
+      "id": "normalize-http-default-port",
+      "input": {
+        "operation": "normalize",
+        "prefix": "http://example.com:80/app"
+      },
+      "expected": {
+        "normalizedPrefix": "http://example.com/app"
+      }
+    },
+    {
+      "id": "normalize-non-default-port",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com:8443/app"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com:8443/app"
+      }
+    },
+    {
+      "id": "normalize-http-port-443-kept",
+      "input": {
+        "operation": "normalize",
+        "prefix": "http://example.com:443/app"
+      },
+      "expected": {
+        "normalizedPrefix": "http://example.com:443/app"
+      }
+    },
+    {
+      "id": "normalize-empty-port",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com:/app"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/app"
+      }
+    },
+    {
+      "id": "normalize-path-case-preserved",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/App/Page"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/App/Page"
+      }
+    },
+    {
+      "id": "normalize-query-fragment-removed",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/app?x=1#frag"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/app"
+      }
+    },
+    {
+      "id": "normalize-trailing-slash",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/app/"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/app"
+      }
+    },
+    {
+      "id": "normalize-trailing-slashes",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/app///"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/app"
+      }
+    },
+    {
+      "id": "normalize-origin-root",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/"
+      }
+    },
+    {
+      "id": "normalize-origin-root-slash",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/"
+      }
+    },
+    {
+      "id": "normalize-origin-root-query",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/?q=1"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/"
+      }
+    },
+    {
+      "id": "normalize-idn-host",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://BÜCHER.example/app"
+      },
+      "expected": {
+        "normalizedPrefix": "https://xn--bcher-kva.example/app"
+      }
+    },
+    {
+      "id": "normalize-dot-segments",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/a/../app/./x"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/app/x"
+      }
+    },
+    {
+      "id": "normalize-non-ascii-path",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/café"
+      },
+      "expected": {
+        "normalizedPrefix": "https://example.com/caf%C3%A9"
+      }
+    },
+    {
+      "id": "normalize-ipv6-default-port",
+      "input": {
+        "operation": "normalize",
+        "prefix": "http://[::1]:80/app"
+      },
+      "expected": {
+        "normalizedPrefix": "http://[::1]/app"
+      }
+    },
+    {
+      "id": "normalize-scheme-ftp",
+      "input": {
+        "operation": "normalize",
+        "prefix": "ftp://example.com/app"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-scheme-file",
+      "input": {
+        "operation": "normalize",
+        "prefix": "file:///app"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-scheme-browser",
+      "input": {
+        "operation": "normalize",
+        "prefix": "chrome://extensions"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-credentials",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://user:secret@example.com/app"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-username",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://user@example.com/app"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-leading-space",
+      "input": {
+        "operation": "normalize",
+        "prefix": " https://example.com/app"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-trailing-space",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/app "
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-backslash",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com\\app"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-control-character",
+      "input": {
+        "operation": "normalize",
+        "prefix": "https://example.com/a\tb"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-relative",
+      "input": {
+        "operation": "normalize",
+        "prefix": "example.com/app"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "normalize-empty",
+      "input": {
+        "operation": "normalize",
+        "prefix": ""
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT"
+      }
+    },
+    {
+      "id": "select-exact",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/app",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-descendant",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/app/child",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-path-boundary",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/apple",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": null
+      }
+    },
+    {
+      "id": "select-path-case-sensitive",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/App",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": null
+      }
+    },
+    {
+      "id": "select-query-fragment-ignored",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/app?x=1#y",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-page-trailing-slash",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/app/",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-page-host-case-default-port",
+      "input": {
+        "operation": "select",
+        "page": "https://EXAMPLE.com:443/app/x",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-other-scheme",
+      "input": {
+        "operation": "select",
+        "page": "http://example.com/app",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": null
+      }
+    },
+    {
+      "id": "select-other-port",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com:8443/app",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": null
+      }
+    },
+    {
+      "id": "select-subdomain",
+      "input": {
+        "operation": "select",
+        "page": "https://sub.example.com/app",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": null
+      }
+    },
+    {
+      "id": "select-other-host",
+      "input": {
+        "operation": "select",
+        "page": "https://elsewhere.example/app",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": null
+      }
+    },
+    {
+      "id": "select-unsupported-page-scheme",
+      "input": {
+        "operation": "select",
+        "page": "chrome://newtab",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": null
+      }
+    },
+    {
+      "id": "select-page-credentials",
+      "input": {
+        "operation": "select",
+        "page": "https://user@example.com/app",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": null
+      }
+    },
+    {
+      "id": "select-longest-prefix",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/app/page/x",
+        "rules": [
+          {
+            "prefix": "https://example.com/",
+            "repository": "a"
+          },
+          {
+            "prefix": "https://example.com/app",
+            "repository": "b"
+          },
+          {
+            "prefix": "https://example.com/app/page",
+            "repository": "c"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "c"
+      }
+    },
+    {
+      "id": "select-longer-prefix",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/app/other",
+        "rules": [
+          {
+            "prefix": "https://example.com/",
+            "repository": "a"
+          },
+          {
+            "prefix": "https://example.com/app",
+            "repository": "b"
+          },
+          {
+            "prefix": "https://example.com/app/page",
+            "repository": "c"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "b"
+      }
+    },
+    {
+      "id": "select-origin-root-rule",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/other",
+        "rules": [
+          {
+            "prefix": "https://example.com/",
+            "repository": "a"
+          },
+          {
+            "prefix": "https://example.com/app",
+            "repository": "b"
+          },
+          {
+            "prefix": "https://example.com/app/page",
+            "repository": "c"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-origin-root-rule-without-slash",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com",
+        "rules": [
+          {
+            "prefix": "https://example.com/",
+            "repository": "a"
+          },
+          {
+            "prefix": "https://example.com/app",
+            "repository": "b"
+          },
+          {
+            "prefix": "https://example.com/app/page",
+            "repository": "c"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-conflict-excluded",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/app/page",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          },
+          {
+            "prefix": "https://example.com/app/page",
+            "repository": "b",
+            "conflict": true
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-idn-page-host",
+      "input": {
+        "operation": "select",
+        "page": "https://BÜCHER.example/app/x",
+        "rules": [
+          {
+            "prefix": "https://xn--bcher-kva.example/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-page-dot-segments",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/x/../app/y",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-page-non-ascii-path",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com/café/x",
+        "rules": [
+          {
+            "prefix": "https://example.com/caf%C3%A9",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "select-page-empty-port",
+      "input": {
+        "operation": "select",
+        "page": "https://example.com:/app",
+        "rules": [
+          {
+            "prefix": "https://example.com/app",
+            "repository": "a"
+          }
+        ]
+      },
+      "expected": {
+        "repository": "a"
+      }
+    },
+    {
+      "id": "duplicate-normalized-equal",
+      "input": {
+        "operation": "create",
+        "prefixes": [
+          "https://example.com/app",
+          "HTTPS://EXAMPLE.COM:443/app/?x=1#y"
+        ]
+      },
+      "expected": {
+        "duplicateRejected": true
+      }
+    },
+    {
+      "id": "duplicate-path-case-distinct",
+      "input": {
+        "operation": "create",
+        "prefixes": [
+          "https://example.com/app",
+          "https://example.com/App"
+        ]
+      },
+      "expected": {
+        "duplicateRejected": false
+      }
+    },
+    {
+      "id": "duplicate-port-distinct",
+      "input": {
+        "operation": "create",
+        "prefixes": [
+          "https://example.com/app",
+          "https://example.com:8443/app"
+        ]
+      },
+      "expected": {
+        "duplicateRejected": false
+      }
+    }
+  ]
+}

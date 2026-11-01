@@ -75,7 +75,7 @@ Release with an error reason to permit immediate reclaim. Expired/released token
 
 Only newly proposed tasks created through MCP trigger OS notices. Progress changes and app/CLI proposals do not. Notification preferences and permission are per device; generic content is available. Preserve in-app proposal indications when push is unsupported. Windows has no remote WNS support; Android without required Play services may lack remote push. Do not promise delivery.
 
-There are no decision items, assignees, bulk edits, saved views, time tracking, external tracker integration, teams, billing, import/export, or Lane-run agent automation. Pace remains a Coming soon page. RealQA captures are created in the desktop app and read through existing tasks. Read [user workflows](guides/user-guide.md) and [troubleshooting](guides/troubleshooting.md) when those details affect the request.
+There are no decision items, assignees, bulk edits, saved views, time tracking, external tracker integration, teams, billing, import/export, or Lane-run agent automation. Pace remains a Coming soon page. The desktop app captures and edits RealQA screenshots. CLI and MCP save already-final PNG images as a new capture task (the problem description becomes the prompt), and every client reads saved captures through existing tasks; no client captures the screen or edits images. Read [user workflows](guides/user-guide.md) and [troubleshooting](guides/troubleshooting.md) when those details affect the request.
 
 ## RealQA attachments
 

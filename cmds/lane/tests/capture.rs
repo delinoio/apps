@@ -35,6 +35,13 @@ fn atomic_capture_replay_history_move_and_deletion() {
     let task = id();
     let q = json!({"meta":{"requestId":id()},"id":task,"repositoryId":repository,"title":"Fix the button","description":"The label is clipped.","images":[{"capture":{"attachmentId":attachment,"width":1,"height":1,"sha256":protocol::hash(&image),"byteSize":image.len().to_string(),"pageTitle":"Example"},"png":STANDARD.encode(&image)}]});
     let first = call(&s, "CreateCaptureTask", q.clone()).unwrap();
+    // The problem description is the prompt; native and server writers leave
+    // the task description empty for the same request.
+    assert_eq!(first["result"]["version"]["task"]["description"], "");
+    assert_eq!(
+        first["result"]["version"]["task"]["prompt"],
+        "The label is clipped."
+    );
     let replay = call(&s, "CreateCaptureTask", q.clone()).unwrap();
     assert_eq!(
         first["result"]["version"]["versionId"],

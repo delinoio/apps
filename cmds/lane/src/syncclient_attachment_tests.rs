@@ -44,6 +44,8 @@ impl Fixture {
         store
             .with(true, |db| {
                 put_meta(db, "account_epoch", &epoch)?;
+                // Model the accepted task push; uploads wait for an unsent creation.
+                db.execute("DELETE FROM outbox", [])?;
                 if downloaded {
                     db.execute("UPDATE attachments SET png_base64=NULL,synchronized=1", [])?;
                 }
@@ -59,7 +61,7 @@ impl Fixture {
             attachments,
         }
     }
-    fn state(&self, attachment: &str) -> (Option<String>, bool) {
+    fn state(&self, attachment: &str) -> (Option<String>, i64) {
         self.store
             .with(false, |db| {
                 Ok(db.query_row(
@@ -137,9 +139,9 @@ fn put_headers_bytes_and_complete_failure_preserve_retry_content() {
         object: &object,
     };
     assert!(f.run(&io).is_err());
-    assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), false));
+    assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), 0));
     f.run(&io).unwrap();
-    assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), true));
+    assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), 1));
     assert_eq!(*uploads.borrow(), vec![STANDARD.decode(PNG).unwrap(); 2]);
     assert_eq!(completions.get(), 2);
 }
@@ -179,18 +181,190 @@ fn rejected_or_disconnected_put_does_not_block_another_image() {
                 Ok(response(200, vec![]))
             }
         };
-        assert!(
-            f.run(&AttachmentIo {
-                client: &client,
-                rpc: &rpc,
-                object: &object
-            })
-            .is_err()
+        let result = f.run(&AttachmentIo {
+            client: &client,
+            rpc: &rpc,
+            object: &object,
+        });
+        // A payload-size refusal is permanent and blocks only that image; transport
+        // failures remain retryable cycle failures with the local bytes preserved.
+        let blocked = status == Some(413);
+        assert_eq!(result.is_ok(), blocked);
+        assert_eq!(
+            f.state(&f.attachments[0]),
+            (
+                Some(PNG.into()),
+                if blocked {
+                    ATTACHMENT_BLOCKED_TOO_LARGE
+                } else {
+                    ATTACHMENT_PENDING
+                }
+            )
         );
-        assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), false));
-        assert_eq!(f.state(&f.attachments[1]), (Some(PNG.into()), true));
+        assert_eq!(f.state(&f.attachments[1]), (Some(PNG.into()), 1));
         assert_eq!(*completed.borrow(), vec![f.attachments[1].clone()]);
     }
+}
+fn status(f: &Fixture) -> Value {
+    f.store.invoke("GetLocalStatus", &json!({})).unwrap()
+}
+#[test]
+fn oversized_upload_blocks_only_that_item_and_is_not_retried_implicitly() {
+    let f = Fixture::new(2, false);
+    let client = object_client().unwrap();
+    let begins = RefCell::new(Vec::new());
+    let rpc = |method: &str, q: &Value| {
+        let attachment = strv(q, "attachmentId").to_owned();
+        if method == "BeginAttachmentUpload" {
+            begins.borrow_mut().push(attachment.clone());
+            if attachment == f.attachments[0] {
+                return Err(Failure::new("ITEM_TOO_LARGE", "Mock byte limit."));
+            }
+            let mut begin = access("uploadUrl", &attachment);
+            begin["state"] = "ATTACHMENT_STATE_WAITING_FOR_SYNC".into();
+            begin["uploadId"] = attachment.into();
+            Ok(begin)
+        } else {
+            Ok(json!({"state":"ATTACHMENT_STATE_AVAILABLE"}))
+        }
+    };
+    let object = |_: reqwest::RequestBuilder, _| Ok(response(200, vec![]));
+    let io = AttachmentIo {
+        client: &client,
+        rpc: &rpc,
+        object: &object,
+    };
+    f.run(&io).unwrap();
+    assert_eq!(
+        f.state(&f.attachments[0]),
+        (Some(PNG.into()), ATTACHMENT_BLOCKED_TOO_LARGE)
+    );
+    assert_eq!(f.state(&f.attachments[1]), (Some(PNG.into()), 1));
+    let reported = status(&f);
+    assert_eq!(reported["pendingItemCount"], "1");
+    assert_eq!(reported["itemErrors"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        reported["itemErrors"][0]["attachmentId"],
+        f.attachments[0].as_str()
+    );
+    assert_eq!(
+        reported["itemErrors"][0]["reason"],
+        "ERROR_REASON_ITEM_TOO_LARGE"
+    );
+    // Locally saved content stays readable while synchronization is blocked.
+    let task: String = f
+        .store
+        .with(false, |db| {
+            Ok(db.query_row(
+                "SELECT task_id FROM attachments WHERE id=?",
+                [&f.attachments[0]],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(
+        f.store
+            .invoke(
+                "GetAttachment",
+                &json!({"taskId":task,"attachmentId":f.attachments[0]})
+            )
+            .unwrap()["png"],
+        PNG
+    );
+    f.run(&io).unwrap();
+    assert_eq!(
+        *begins.borrow(),
+        vec![f.attachments[0].clone(), f.attachments[1].clone()]
+    );
+}
+#[test]
+fn invalid_local_content_is_blocked_without_network_access() {
+    let f = Fixture::new(1, false);
+    f.store
+        .with(true, |db| {
+            db.execute(
+                "UPDATE attachments SET png_base64=? WHERE id=?",
+                params![STANDARD.encode(b"not a png"), f.attachments[0]],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let client = object_client().unwrap();
+    let rpc =
+        |_: &str, _: &Value| -> Result<Value> { panic!("Invalid content reached the server") };
+    let object = |_: reqwest::RequestBuilder, _| -> Result<Response> {
+        panic!("Invalid content reached object storage")
+    };
+    f.run(&AttachmentIo {
+        client: &client,
+        rpc: &rpc,
+        object: &object,
+    })
+    .unwrap();
+    assert_eq!(f.state(&f.attachments[0]).1, ATTACHMENT_BLOCKED_INVALID);
+    assert_eq!(
+        status(&f)["itemErrors"][0]["reason"],
+        "ERROR_REASON_INVALID_INPUT"
+    );
+}
+#[test]
+fn content_waiting_on_another_device_or_task_push_is_pending_not_failed() {
+    // Download: another device has not uploaded the bytes yet.
+    for answer in ["waiting", "not-found"] {
+        let f = Fixture::new(1, true);
+        let client = object_client().unwrap();
+        let rpc = |method: &str, _: &Value| {
+            assert_eq!(method, "GetAttachment");
+            if answer == "waiting" {
+                Ok(json!({"state":"ATTACHMENT_STATE_WAITING_FOR_SYNC"}))
+            } else {
+                Err(Failure::new("NOT_FOUND", "Mock unknown task."))
+            }
+        };
+        let object = |_: reqwest::RequestBuilder, _| -> Result<Response> {
+            panic!("Waiting content has no object access")
+        };
+        f.run(&AttachmentIo {
+            client: &client,
+            rpc: &rpc,
+            object: &object,
+        })
+        .unwrap();
+        assert_eq!(f.state(&f.attachments[0]), (None, 1));
+        let reported = status(&f);
+        assert_eq!(reported["itemErrors"], json!([]));
+        assert_eq!(reported["pendingItemCount"], "1");
+    }
+    // Upload: the owning task's creation has not been accepted by the server.
+    let f = Fixture::new(1, false);
+    let task: String = f
+        .store
+        .with(false, |db| {
+            Ok(db.query_row("SELECT task_id FROM attachments", [], |r| r.get(0))?)
+        })
+        .unwrap();
+    let creation = json!({"meta":{"requestId":id()},"kind":"MUTATION_KIND_CREATE","version":{"entityId":task}});
+    f.store
+        .with(true, |db| {
+            db.execute(
+                "INSERT INTO outbox(request_id,entity_id,request_json,state,created_at_us) VALUES(?,?,?,2,0)",
+                params![id(), task, creation.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let client = object_client().unwrap();
+    let rpc = |_: &str, _: &Value| -> Result<Value> { panic!("Upload ran before its task") };
+    let object = |_: reqwest::RequestBuilder, _| -> Result<Response> {
+        panic!("Upload ran before its task")
+    };
+    f.run(&AttachmentIo {
+        client: &client,
+        rpc: &rpc,
+        object: &object,
+    })
+    .unwrap();
+    assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), 0));
 }
 #[test]
 fn signed_get_validates_exact_size_digest_and_status_before_cache() {
@@ -319,6 +493,6 @@ fn upload_rejects_auth_cookie_and_host_headers_before_object_request() {
             })
             .is_err()
         );
-        assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), false));
+        assert_eq!(f.state(&f.attachments[0]), (Some(PNG.into()), 0));
     }
 }
