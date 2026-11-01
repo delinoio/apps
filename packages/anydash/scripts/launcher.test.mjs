@@ -447,15 +447,14 @@ test("CLI archives are deterministic ustar archives with executable modes", (t) 
   const extracted = resolve(root, "out");
   mkdirSync(extracted);
   writeFileSync(resolve(root, "archive.tar.gz"), first);
-  const result = spawnSync(
-    "tar",
-    ["-xzf", resolve(root, "archive.tar.gz"), "-C", extracted],
-    {
-      encoding: "utf8",
-    },
-  );
+  // Relative archive names: GNU tar on Windows reads `C:` as a remote host.
+  const result = spawnSync("tar", ["-xzf", "archive.tar.gz", "-C", "out"], {
+    cwd: root,
+    encoding: "utf8",
+  });
   assert.equal(result.status, 0, result.stderr);
-  const listing = spawnSync("tar", ["-tvzf", resolve(root, "archive.tar.gz")], {
+  const listing = spawnSync("tar", ["-tvzf", "archive.tar.gz"], {
+    cwd: root,
     encoding: "utf8",
   }).stdout;
   assert.match(listing, /^-rwxr-xr-x .*anydash-linux-x64\/anydash\r?$/m);

@@ -87,8 +87,13 @@ function Install-AnyDash {
     if ((Get-AnyDashDigest -Path (Join-Path $work $archive)) -ne $expected) { throw "checksum mismatch for $archive" }
     $extract = Join-Path $work 'extract'
     New-Item -ItemType Directory -Path $extract | Out-Null
-    # Windows 10 and later include tar.exe.
-    & tar -xzf (Join-Path $work $archive) -C $extract
+    # Windows 10 and later include tar.exe. Prefer it over other tar commands on
+    # PATH: GNU tar reads drive-qualified archive paths as remote hosts.
+    $tar = 'tar'
+    if ($env:SystemRoot -and (Test-Path -LiteralPath (Join-Path $env:SystemRoot 'System32\tar.exe'))) {
+      $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+    }
+    & $tar -xzf (Join-Path $work $archive) -C $extract
     if ($LASTEXITCODE -ne 0) { throw "cannot extract $archive" }
     $package = Join-Path $extract "anydash-$Target"
     $executable = Join-Path $package 'anydash.exe'

@@ -27,7 +27,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifySums } from "../../apps/anydash/native/desktop/updater.mjs";
 import {
@@ -407,7 +407,10 @@ export function collectCandidate(destination, identity = releaseIdentity()) {
 
 function extract(archive, directory) {
   mkdirSync(directory, { recursive: true });
-  run("tar", ["-xzf", archive, "-C", directory]);
+  // A relative archive name keeps GNU tar on Windows from reading `C:` as a host.
+  run("tar", ["-xzf", basename(archive), "-C", directory], {
+    cwd: dirname(archive),
+  });
   return directory;
 }
 

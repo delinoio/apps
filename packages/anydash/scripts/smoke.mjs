@@ -109,12 +109,10 @@ try {
     const entry = build.artifacts[key];
     const extracted = resolve(temporary, `archive-${key}`);
     mkdirSync(extracted);
-    execFileSync("tar", [
-      "-xzf",
-      resolve(dist, archiveName(key, version)),
-      "-C",
-      extracted,
-    ]);
+    // Relative archive names: GNU tar on Windows reads `C:` as a remote host.
+    execFileSync("tar", ["-xzf", archiveName(key, version), "-C", extracted], {
+      cwd: dist,
+    });
     const root = resolve(extracted, `anydash-${key}`);
     assert.deepEqual(readdirSync(extracted), [`anydash-${key}`]);
     assert.equal(sha256File(resolve(root, executableName(key))), entry.sha256);
@@ -132,12 +130,11 @@ try {
       assert.ok(lstatSync(resolve(root, notice)).isFile(), `missing ${notice}`);
     const packed = resolve(temporary, `npm-${key}`);
     mkdirSync(packed);
-    execFileSync("tar", [
-      "-xzf",
-      resolve(dist, platformArchiveName(key, version)),
-      "-C",
-      packed,
-    ]);
+    execFileSync(
+      "tar",
+      ["-xzf", platformArchiveName(key, version), "-C", packed],
+      { cwd: dist },
+    );
     const metadata = JSON.parse(
       readFileSync(resolve(packed, "package/package.json"), "utf8"),
     );
