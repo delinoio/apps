@@ -99,6 +99,16 @@ export function stripEnded(
   ended: string[],
 ) {
   if (!response) return response;
+  const stale = response.widgets.some(
+    (entry) =>
+      ended.includes(entry.widgetId) &&
+      (entry.sharingState !== SharingState.ENDED ||
+        entry.summary !== undefined ||
+        entry.notices.length > 0 ||
+        entry.content.case !== undefined),
+  );
+  // Unchanged responses keep their identity so callers can skip cache writes.
+  if (!stale) return response;
   return {
     ...response,
     widgets: response.widgets.map((entry) =>
@@ -213,9 +223,11 @@ export function DashboardScreen({
         for (const id of ended) next.delete(id);
         return next;
       });
-      queryClient.setQueryData(dataKey, (previous) =>
-        stripEnded(previous, ended),
-      );
+      // setQueryData always bumps dataUpdatedAt, which re-runs this effect;
+      // write only when ended data remains, or the purge never settles.
+      const stripped = stripEnded(dataQuery.data, ended);
+      if (stripped !== dataQuery.data)
+        queryClient.setQueryData(dataKey, stripped);
     }
     void writeCachedWidgets(session.userKey, dataQuery.data.widgets);
     void publishSnapshots(

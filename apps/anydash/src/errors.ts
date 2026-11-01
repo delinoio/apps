@@ -38,7 +38,11 @@ export interface Problem {
   rateLimitScope?: RateLimitScope;
   quotaKind?: QuotaKind;
   quotaLimit?: number;
-  currentVersion?: bigint;
+  /**
+   * Decimal string, not bigint: problems travel through ReactLynx state,
+   * which serializes values with JSON.stringify.
+   */
+  currentVersion?: string;
   field?: string;
 }
 
@@ -126,7 +130,9 @@ export function toProblem(error: unknown): Problem {
     rateLimitScope: detail?.rateLimitScope,
     quotaKind: detail?.quota?.kind,
     quotaLimit: detail?.quota?.limit,
-    currentVersion: detail?.currentVersion,
+    currentVersion: detail?.currentVersion
+      ? detail.currentVersion.toString()
+      : undefined,
     field: detail?.field || undefined,
   };
 }

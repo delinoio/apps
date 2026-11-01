@@ -79,3 +79,20 @@ if (typeof globalThis.Headers === "undefined") {
     writable: true,
   });
 }
+
+// Workaround: Lynx for Web reports profile recording whenever the browser has
+// User Timing, so ReactLynx's setState profiler JSON-stringifies every hook
+// state. React Query keeps Protobuf messages with int64 (bigint) fields in hook
+// state, and JSON.stringify throws on bigint, dropping that state update.
+// Serialize bigint as a decimal string only when no toJSON exists. Remove when
+// the ReactLynx profiler tolerates bigint or web-core profiles only on request.
+type JsonBigInt = { toJSON?: () => string };
+if (typeof BigInt !== "undefined" && !(BigInt.prototype as JsonBigInt).toJSON) {
+  Object.defineProperty(BigInt.prototype, "toJSON", {
+    value(this: bigint) {
+      return this.toString();
+    },
+    configurable: true,
+    writable: true,
+  });
+}

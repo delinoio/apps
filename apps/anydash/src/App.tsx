@@ -129,6 +129,8 @@ export function App({
   return (
     <UIProvider
       theme={theme}
+      // A bounded root lets the page scroll view take the overflow.
+      style={{ height: "100%" }}
       onHostError={(error) =>
         logError("anydash_host_method_failed", { ...error })
       }

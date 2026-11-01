@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="anydash-api" content="%ANYDASH_API_URL%" />
+<meta name="anydash-logto-endpoint" content="%LOGTO_ENDPOINT%" />
+<meta name="anydash-logto-app-id" content="%LOGTO_APP_ID%" />
+<meta name="anydash-resource" content="%ANYDASH_RESOURCE%" />
+<meta name="delcore-resource" content="%DELCORE_RESOURCE%" />
+<meta name="anydash-version" content="%ANYDASH_VERSION%" />
+<title>AnyDash</title>
+<link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+<link rel="stylesheet" href="/runtime/static/css/client.css" />
+<style>
+html,body{margin:0;height:100%;min-height:100%;background:#fff;color:#202124;font:14px/1.5 -apple-system,"Segoe UI",system-ui,sans-serif}
+@media (prefers-color-scheme:dark){html,body{background:#1b1d20;color:#f5f6f7}}
+lynx-view{display:block;width:100%;height:100%}
+#boot{display:flex;align-items:center;justify-content:center;min-height:100%;margin:0}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<p id="boot" role="status">Loading…</p>
+<script type="module" src="/host.js"></script>
+</body>
+</html>

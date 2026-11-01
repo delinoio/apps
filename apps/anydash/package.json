@@ -8,8 +8,9 @@
     "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name anydash --app-port 46328 rspeedy dev",
     "build": "rspeedy build",
     "build:frontend": "pnpm build",
-    "typecheck": "tsc --noEmit",
-    "test": "pnpm typecheck && rstest && pnpm build"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
+    "test": "pnpm typecheck && rstest && pnpm build",
+    "test:browser": "pnpm build && node tests/browser.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.16.0",

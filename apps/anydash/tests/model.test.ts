@@ -253,7 +253,7 @@ describe("transport", () => {
       );
       expect(problem.retryAfterSeconds).toBe(42);
       expect(problem.quotaLimit).toBe(100);
-      expect(problem.currentVersion).toBe(9n);
+      expect(problem.currentVersion).toBe("9");
       // Quota, update, conflict and rate-limit errors never retry automatically.
       expect(shouldRetry(0, error)).toBe(false);
     },

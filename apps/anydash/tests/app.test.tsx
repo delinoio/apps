@@ -267,6 +267,15 @@ describe("sharing ended", () => {
     expect(
       app.host.cache.has(widgetKey("user-key", fixtures.ids.widget(2))),
     ).toBe(true);
+    // The purge settles: stripping ended data must not re-trigger itself.
+    const writes = () =>
+      app!.host.api.calls.filter(
+        (call) => call.method === "PutNativeWidgetSnapshots",
+      ).length;
+    const settled = writes();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(writes()).toBe(settled);
+    expect(settled).toBeLessThanOrEqual(2);
   });
 
   it("writes ENDED snapshots for mobile widget extensions", async () => {
