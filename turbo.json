@@ -187,7 +187,13 @@
         "protos/**/*.rs",
         "protos/**/Cargo.toml",
         "servers/scripts/build-rust.mjs",
-        "scripts/spawn-dev-server.mjs"
+        "scripts/spawn-dev-server.mjs",
+        "servers/mcpa-api/**/*.go",
+        "servers/mcpa-api/migrations/**",
+        "go.mod",
+        "go.sum",
+        "protos/**/*.go",
+        "servers/scripts/build-go.mjs"
       ],
       "passThroughEnv": [
         "CARGO_*",
@@ -202,7 +208,9 @@
         "PKG_CONFIG*",
         "PROTOC",
         "PROTOC_INCLUDE",
-        "NO_COLOR"
+        "NO_COLOR",
+        "GO*",
+        "CGO_*"
       ]
     },
     "@servers/perfine-api#dev": {
@@ -272,6 +280,35 @@
         "CARGO_TARGET_DIR",
         "AUTH_REQUESTS_PER_MINUTE",
         "LOGTO_ISSUER"
+      ],
+      "inputs": [
+        "package.json",
+        "$TURBO_ROOT$/servers/scripts/dev-api.mjs",
+        "$TURBO_ROOT$/scripts/dev.mjs",
+        "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
+      ]
+    },
+    "@servers/mcpa-api#dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["//#server-build"],
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "LISTEN",
+        "MCPA_*",
+        "WEB_ORIGIN",
+        "DELCORE_URL",
+        "DELCORE_RESOURCE",
+        "LOGTO_TOKEN_URL",
+        "LOGTO_ISSUER",
+        "CLIENT_ID",
+        "CLIENT_SECRET",
+        "DEPENDENCY_TIMEOUT",
+        "LOG_FORMAT",
+        "OTEL_*",
+        "NO_COLOR",
+        "DEV_COMPOSE_DATABASE_URLS",
+        "CARGO_TARGET_DIR"
       ],
       "inputs": [
         "package.json",
