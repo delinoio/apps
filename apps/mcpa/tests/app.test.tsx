@@ -357,6 +357,76 @@ describe("call keys", () => {
     expect(cachedMutationText(queryClient)).not.toContain(secret);
   });
 
+  it("resends the first expiry on retry and explains a replayed key", async () => {
+    const issueCallKey = rs.fn(
+      (request: { requestKey: string; expireTime?: { seconds: bigint } }) => {
+        if (issueCallKey.mock.calls.length === 1)
+          throw new ConnectError("lost", Code.Unavailable);
+        // A replay of the committed request key returns no secret.
+        return {
+          callKey: {
+            id: "key-1",
+            resourceId: RESOURCE_ID,
+            name: "Backend",
+            displayPrefix: "mcpa_0192f000…",
+            expireTime: request.expireTime,
+          },
+          secret: "",
+        };
+      },
+    );
+    const revokeCallKey = rs.fn(() => ({}));
+    const now = rs.spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+    try {
+      renderApp({
+        path: resourcePath("keys"),
+        service: { ...baseService(), issueCallKey, revokeCallKey },
+      });
+      fireEvent.click(
+        (await screen.findAllByRole("button", { name: "Issue call key" }))[0],
+      );
+      const form = await screen.findByRole("dialog");
+      fireEvent.change(within(form).getByLabelText("Name"), {
+        target: { value: "Backend" },
+      });
+      fireEvent.click(within(form).getByRole("button", { name: "Issue key" }));
+      await waitFor(() => expect(issueCallKey).toHaveBeenCalledTimes(1));
+      await within(form).findByRole("button", { name: "Issue key" });
+      now.mockReturnValue(1_800_000_060_000);
+      fireEvent.click(within(form).getByRole("button", { name: "Issue key" }));
+      const created = await screen.findByRole("dialog", {
+        name: "Your call key was created",
+      });
+      const [first, retry] = issueCallKey.mock.calls.map(
+        ([request]) => request,
+      );
+      expect(retry.requestKey).toBe(first.requestKey);
+      expect(retry.expireTime?.seconds).toBe(first.expireTime?.seconds);
+      expect(first.expireTime?.seconds).toBe(
+        BigInt((1_800_000_000_000 + 90 * 86_400_000) / 1000),
+      );
+      expect(within(created).queryByLabelText("Call key")).toBeNull();
+      expect(within(created).getByText("mcpa_0192f000…")).toBeTruthy();
+      fireEvent.click(
+        within(created).getByRole("button", { name: "Revoke key" }),
+      );
+      const confirm = await screen.findByRole("dialog", {
+        name: "Revoke Backend?",
+      });
+      fireEvent.click(
+        within(confirm).getByRole("button", { name: "Revoke key" }),
+      );
+      await waitFor(() => expect(revokeCallKey).toHaveBeenCalledTimes(1));
+      expect(revokeCallKey.mock.calls[0]).toBeDefined();
+      const [revoked] = revokeCallKey.mock.calls[0] as unknown as [
+        { callKeyId: string },
+      ];
+      expect(revoked.callKeyId).toBe("key-1");
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("lists key status and asks before revoking", async () => {
     const revokeCallKey = rs.fn(() => ({}));
     renderApp({

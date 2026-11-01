@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { Button } from "@packages/ui/components/button";
@@ -181,6 +181,10 @@ export function KeysView({
         <IssueKeyDialog
           resourceId={resourceId}
           onClose={() => setIssuing(false)}
+          onRevoke={(key) => {
+            setIssuing(false);
+            setRevoking(key);
+          }}
         />
       )}
       {revoking && (
@@ -194,15 +198,25 @@ export function KeysView({
   );
 }
 
+/** The expiry sent with the dialog's request key, and the choice behind it. */
+type SubmittedExpiry = { choice: string; expireAt: Date | undefined };
+
 function IssueKeyDialog({
   resourceId,
   onClose,
+  onRevoke,
 }: {
   resourceId: string;
   onClose: () => void;
+  onRevoke: (key: CallKey) => void;
 }) {
   const invalidate = useInvalidate();
+  // One idempotency key per opened form, so a retried submit is safe.
   const [requestKey] = useState(() => uuidv7());
+  // The server fingerprints the request key with the exact expiry. A retry
+  // with an unchanged expiry choice resends the first timestamp instead of
+  // recomputing it from the current time, so the server replays the result.
+  const submitted = useRef<SubmittedExpiry | undefined>(undefined);
   const [name, setName] = useState("");
   const [expiry, setExpiry] = useState(Expiry.Days90);
   const [custom, setCustom] = useState("");
@@ -220,7 +234,11 @@ function IssueKeyDialog({
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const expireAt = expiryDate(expiry, custom);
+    const choice = expiry === Expiry.Custom ? `${expiry}:${custom}` : expiry;
+    const expireAt =
+      submitted.current?.choice === choice
+        ? submitted.current.expireAt
+        : expiryDate(expiry, custom);
     const next = {
       name: name.trim()
         ? undefined
@@ -229,6 +247,7 @@ function IssueKeyDialog({
     };
     setErrors(next);
     if (next.name || next.expiry) return;
+    submitted.current = { choice, expireAt: expireAt ?? undefined };
     issue.mutate({
       requestKey,
       resourceId,
@@ -236,6 +255,43 @@ function IssueKeyDialog({
       expireTime: expireAt ? timestampFromDate(expireAt) : undefined,
     });
   };
+  // A replayed request key returns the key without its secret: an earlier
+  // attempt created it, but its response did not arrive.
+  const replayed = issue.isSuccess && !secret ? issue.data?.callKey : undefined;
+  if (replayed)
+    return (
+      <Modal
+        open
+        onClose={close}
+        title="Your call key was created"
+        description="An earlier attempt created this key, but its response didn't arrive. The full key can't be shown again."
+        footer={
+          <>
+            <Button variant="outline" onClick={close}>
+              Close
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                issue.discard();
+                onRevoke(replayed);
+              }}
+            >
+              Revoke key
+            </Button>
+          </>
+        }
+      >
+        <div className="notice notice-warning" role="note">
+          <strong>Revoke it and issue a new key</strong>
+          <p>
+            Revoke <span className="mono">{replayed.displayPrefix}</span> (
+            {replayed.name || "Untitled key"}) so it can't be used, then issue a
+            new key you can copy.
+          </p>
+        </div>
+      </Modal>
+    );
   if (secret)
     return (
       <Modal
