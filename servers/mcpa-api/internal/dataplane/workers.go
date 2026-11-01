@@ -134,7 +134,7 @@ func (dp *DataPlane) deleteTenant(ctx context.Context, tenantID string) error {
 		return err
 	}
 	for _, id := range d.ResourceIDs {
-		dp.Engine.InvalidateResource(id.String())
+		dp.Sync.invalidateResource(id)
 	}
 	dp.log.Info("deleted the data of a deleted tenant", "tenant_id", tenantID, "resources", len(d.ResourceIDs),
 		"call_records", d.CallRecords, "aggregates", d.Aggregates, "audit_events", d.AuditEvents, "outbox_rows", d.Outbox)

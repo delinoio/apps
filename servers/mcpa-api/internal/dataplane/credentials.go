@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -138,12 +139,77 @@ const credentialChannel = "mcpa_credential_changes"
 // notification and a rolled-back change sends none. A replica that is not
 // listening at that moment drops all runtimes when its listener
 // reconnects.
+//
+// Engine updates of a resource are serialized with lockResource.
+// CredentialRegistered applies a snapshot that it reads from PostgreSQL;
+// holding the resource lock from that read until the engine update makes
+// every later removal or invalidation of the resource, whether local or
+// from a notification, apply after the snapshot. Without the lock, a
+// concurrent removal could finish first and the stale snapshot would then
+// restore the removed credential.
 type CredentialSync struct {
 	db       *store.Store
 	keys     *crypto.Keyring
 	log      *slog.Logger
 	engine   *proxy.Engine
 	instance string
+
+	// all is held shared by every resource lock and exclusively while all
+	// runtimes are dropped.
+	all     sync.RWMutex
+	locksMu sync.Mutex
+	locks   map[uuid.UUID]*resourceLock
+	// afterLoad, when set by tests, runs in CredentialRegistered between
+	// reading the credential and applying it to the engine.
+	afterLoad func()
+}
+
+// resourceLock serializes the engine updates of one resource. refs counts
+// holders and waiters so unused locks are deleted.
+type resourceLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lockResource locks the engine state of a resource against concurrent
+// credential synchronization and returns the unlock function.
+func (s *CredentialSync) lockResource(resourceID uuid.UUID) func() {
+	s.all.RLock()
+	s.locksMu.Lock()
+	if s.locks == nil {
+		s.locks = map[uuid.UUID]*resourceLock{}
+	}
+	l := s.locks[resourceID]
+	if l == nil {
+		l = &resourceLock{}
+		s.locks[resourceID] = l
+	}
+	l.refs++
+	s.locksMu.Unlock()
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		s.locksMu.Lock()
+		if l.refs--; l.refs == 0 {
+			delete(s.locks, resourceID)
+		}
+		s.locksMu.Unlock()
+		s.all.RUnlock()
+	}
+}
+
+// invalidateResource drops the runtime of a resource after any engine
+// update of the resource in progress.
+func (s *CredentialSync) invalidateResource(resourceID uuid.UUID) {
+	defer s.lockResource(resourceID)()
+	s.engine.InvalidateResource(resourceID.String())
+}
+
+// invalidateAll drops every runtime after the engine updates in progress.
+func (s *CredentialSync) invalidateAll() {
+	s.all.Lock()
+	defer s.all.Unlock()
+	s.engine.InvalidateAll()
 }
 
 var _ service.CredentialListener = (*CredentialSync)(nil)
@@ -156,7 +222,11 @@ func (s *CredentialSync) CredentialsChanging(ctx context.Context, tx pgx.Tx, res
 
 // CredentialRegistered registers a new credential with the engine.
 func (s *CredentialSync) CredentialRegistered(ctx context.Context, resourceID, credentialID uuid.UUID) {
+	defer s.lockResource(resourceID)()
 	stored, sealed, err := store.GetCredentialSealed(ctx, s.db.Pool, credentialID)
+	if s.afterLoad != nil {
+		s.afterLoad()
+	}
 	if err != nil {
 		s.log.Warn("loading a registered credential failed; the resource reloads instead", "resource_id", resourceID, "credential_id", credentialID, "error", err)
 		s.engine.InvalidateResource(resourceID.String())
@@ -174,6 +244,7 @@ func (s *CredentialSync) CredentialRegistered(ctx context.Context, resourceID, c
 
 // CredentialRemoved stops new calls from selecting the credential.
 func (s *CredentialSync) CredentialRemoved(ctx context.Context, resourceID, credentialID uuid.UUID) {
+	defer s.lockResource(resourceID)()
 	if err := s.engine.RemoveCredential(ctx, resourceID.String(), credentialID.String()); err != nil {
 		// Removal is safety-critical: drop the runtime so the next call
 		// reloads the remaining credentials from PostgreSQL.
@@ -184,6 +255,7 @@ func (s *CredentialSync) CredentialRemoved(ctx context.Context, resourceID, cred
 
 // ResourceDeleted unregisters every credential of a deleted resource.
 func (s *CredentialSync) ResourceDeleted(ctx context.Context, resourceID uuid.UUID, credentialIDs []uuid.UUID) {
+	defer s.lockResource(resourceID)()
 	for _, id := range credentialIDs {
 		if err := s.engine.RemoveCredential(ctx, resourceID.String(), id.String()); err != nil {
 			s.log.Warn("removing a credential of a deleted resource failed", "resource_id", resourceID, "credential_id", id, "error", err)
@@ -236,7 +308,7 @@ func (s *CredentialSync) listenOnce(ctx context.Context) error {
 	if _, err := raw.Exec(ctx, "LISTEN "+pgx.Identifier{credentialChannel}.Sanitize()); err != nil {
 		return err
 	}
-	s.engine.InvalidateAll()
+	s.invalidateAll()
 	for {
 		n, err := raw.WaitForNotification(ctx)
 		if err != nil {
@@ -246,9 +318,10 @@ func (s *CredentialSync) listenOnce(ctx context.Context) error {
 		if !ok || instance == s.instance {
 			continue
 		}
-		if _, err := uuid.Parse(resourceID); err != nil {
+		id, err := uuid.Parse(resourceID)
+		if err != nil {
 			continue
 		}
-		s.engine.InvalidateResource(resourceID)
+		s.invalidateResource(id)
 	}
 }

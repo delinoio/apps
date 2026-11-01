@@ -1196,6 +1196,46 @@ type credentialNotifications struct {
 	payloads chan string
 }
 
+// startReplica starts a second data plane on the database of e that listens
+// for credential changes, and serves its engine.
+func startReplica(e *itEnv) (*DataPlane, *httptest.Server) {
+	t := e.t
+	t.Helper()
+	appName := "mcpa-replica-" + store.NewID().String()
+	db, err := store.Open(e.ctx, e.dbURL+"&application_name="+appName, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	cfg := e.dp.cfg
+	cfg.Store, cfg.Metrics = db, nil
+	replica, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = replica.Close() })
+	listenCtx, stopListen := context.WithCancel(e.ctx)
+	listening := make(chan struct{})
+	go func() {
+		defer close(listening)
+		_ = replica.Sync.Listen(listenCtx)
+	}()
+	t.Cleanup(func() {
+		stopListen()
+		<-listening
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for e.scalar(`SELECT count(*) FROM pg_stat_activity WHERE application_name = $1 AND query LIKE 'LISTEN %' AND state = 'idle'`, appName) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the replica does not listen for credential changes")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	srv := httptest.NewServer(replica.Engine)
+	t.Cleanup(srv.Close)
+	return replica, srv
+}
+
 func listenCredentialChanges(e *itEnv) *credentialNotifications {
 	e.t.Helper()
 	conn, err := pgx.Connect(e.ctx, e.dbURL)
@@ -1260,38 +1300,7 @@ func TestIntegrationCredentialChangesNotifyOtherReplicas(t *testing.T) {
 	credID := uuid.MustParse(creds[0].GetId())
 
 	// Replica B shares the database and listens for changes.
-	appName := "mcpa-replica-" + store.NewID().String()
-	dbB, err := store.Open(e.ctx, e.dbURL+"&application_name="+appName, 5*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(dbB.Close)
-	cfgB := e.dp.cfg
-	cfgB.Store, cfgB.Metrics = dbB, nil
-	replica, err := New(cfgB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = replica.Close() })
-	listenCtx, stopListen := context.WithCancel(e.ctx)
-	listening := make(chan struct{})
-	go func() {
-		defer close(listening)
-		_ = replica.Sync.Listen(listenCtx)
-	}()
-	t.Cleanup(func() {
-		stopListen()
-		<-listening
-	})
-	deadline := time.Now().Add(5 * time.Second)
-	for e.scalar(`SELECT count(*) FROM pg_stat_activity WHERE application_name = $1 AND query LIKE 'LISTEN %'`, appName) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("replica B does not listen for credential changes")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	srvB := httptest.NewServer(replica.Engine)
-	t.Cleanup(srvB.Close)
+	_, srvB := startReplica(e)
 	key, _ := e.callKey("owner", id)
 	// The listener is connected, so B only drops this runtime when a
 	// notification arrives.
@@ -1338,7 +1347,7 @@ func TestIntegrationCredentialChangesNotifyOtherReplicas(t *testing.T) {
 	if !notes.received(payload(id), 5*time.Second) {
 		t.Fatal("removing a credential sent no notification")
 	}
-	deadline = time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for {
 		res := e.call(srvB.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
 		if res.status == http.StatusBadRequest && gjson.GetBytes(res.body, "error.type").String() == "no_credential" {
@@ -1364,5 +1373,114 @@ func TestIntegrationCredentialChangesNotifyOtherReplicas(t *testing.T) {
 	}
 	if !notes.received(payload(id), 5*time.Second) {
 		t.Fatal("deleting the tenant sent no notification")
+	}
+}
+
+// pauseRegistration makes the next CredentialRegistered of s wait after it
+// read the credential. It returns a channel closed at that point and the
+// function that lets the registration continue.
+func pauseRegistration(s *CredentialSync) (<-chan struct{}, func()) {
+	loaded, resume := make(chan struct{}), make(chan struct{})
+	s.afterLoad = func() {
+		close(loaded)
+		<-resume
+	}
+	var once sync.Once
+	return loaded, func() { once.Do(func() { close(resume) }) }
+}
+
+// servesNoCredential reports whether a call through base finds no
+// credential for the resource.
+func servesNoCredential(e *itEnv, base, resourceID, key string) bool {
+	res := e.call(base, resourceID, key, "/v1/chat/completions", chatBody(false), nil)
+	return res.status == http.StatusBadRequest && gjson.GetBytes(res.body, "error.type").String() == "no_credential"
+}
+
+// A registration callback that read its credential before a concurrent
+// removal does not restore the credential after the removal: neither on
+// the replica that removed it nor on a replica that learns of the removal
+// from a notification.
+func TestIntegrationLateRegistrationDoesNotRestoreRemovedCredential(t *testing.T) {
+	e := newEnv(t)
+	credentialOf := func(id string) uuid.UUID {
+		creds := mustDo(e, "owner", e.rpc.ListCredentials, &mcpav1.ListCredentialsRequest{ResourceId: id}).GetCredentials()
+		return uuid.MustParse(creds[0].GetId())
+	}
+
+	// Same replica: the removal callback runs after the late registration.
+	local := e.resource("local")
+	localCred := credentialOf(local)
+	localKey, _ := e.callKey("owner", local)
+	if res := e.call(e.srv.URL, local, localKey, "/v1/chat/completions", chatBody(false), nil); res.status != http.StatusOK {
+		t.Fatalf("call before removal: %d %s", res.status, res.body)
+	}
+	loaded, resume := pauseRegistration(e.dp.Sync)
+	t.Cleanup(resume)
+	registered := make(chan struct{})
+	go func() {
+		defer close(registered)
+		e.dp.Sync.CredentialRegistered(e.ctx, uuid.MustParse(local), localCred)
+	}()
+	<-loaded
+	removed := make(chan error, 1)
+	go func() {
+		_, err := do(e, "owner", e.rpc.RemoveCredential, &mcpav1.RemoveCredentialRequest{ResourceId: local, CredentialId: localCred.String()})
+		removed <- err
+	}()
+	// Give an unserialized removal time to finish before the stale
+	// registration applies.
+	var removeErr error
+	removeDone := false
+	select {
+	case removeErr = <-removed:
+		removeDone = true
+	case <-time.After(300 * time.Millisecond):
+	}
+	resume()
+	<-registered
+	if !removeDone {
+		removeErr = <-removed
+	}
+	if removeErr != nil {
+		t.Fatalf("remove credential: %v", removeErr)
+	}
+	e.dp.Sync.afterLoad = nil
+	if !servesNoCredential(e, e.srv.URL, local, localKey) {
+		t.Fatal("a late registration restored a removed credential")
+	}
+
+	// Other replica: the notification of the removal drops the runtime
+	// after the late registration.
+	remote := e.resource("remote")
+	remoteCred := credentialOf(remote)
+	remoteKey, _ := e.callKey("owner", remote)
+	replica, srvB := startReplica(e)
+	if res := e.call(srvB.URL, remote, remoteKey, "/v1/chat/completions", chatBody(false), nil); res.status != http.StatusOK {
+		t.Fatalf("replica call before removal: %d %s", res.status, res.body)
+	}
+	loaded, resume = pauseRegistration(replica.Sync)
+	t.Cleanup(resume)
+	registered = make(chan struct{})
+	go func() {
+		defer close(registered)
+		replica.Sync.CredentialRegistered(e.ctx, uuid.MustParse(remote), remoteCred)
+	}()
+	<-loaded
+	mustDo(e, "owner", e.rpc.RemoveCredential, &mcpav1.RemoveCredentialRequest{ResourceId: remote, CredentialId: remoteCred.String()})
+	// Give an unserialized listener time to drop the runtime and a call
+	// time to rebuild it before the stale registration applies.
+	for deadline := time.Now().Add(300 * time.Millisecond); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if servesNoCredential(e, srvB.URL, remote, remoteKey) {
+			break
+		}
+	}
+	resume()
+	<-registered
+	deadline := time.Now().Add(5 * time.Second)
+	for !servesNoCredential(e, srvB.URL, remote, remoteKey) {
+		if time.Now().After(deadline) {
+			t.Fatal("a late registration restored a credential removed on another replica")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
