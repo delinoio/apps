@@ -319,6 +319,7 @@ func TestToolAnnotations(t *testing.T) {
 		"get_usage":                read,
 		"list_call_records":        read,
 		"list_audit_events":        read,
+		"list_tenant_audit_events": read,
 	}
 	tools, _, err := mcp.Tools(&fakeService{}, discard())
 	if err != nil {

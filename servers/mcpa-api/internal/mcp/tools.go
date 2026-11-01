@@ -156,6 +156,8 @@ var rpcs = []rpc{
 		bind(mcpav1connect.McpaServiceHandler.ListCallRecords)},
 	{"ListAuditEvents", effectRead, "List the audit events of a resource. Requires the manage role.",
 		bind(mcpav1connect.McpaServiceHandler.ListAuditEvents)},
+	{"ListTenantAuditEvents", effectRead, "List the tenant-level audit events of a tenant, such as tenant budget changes. Requires the manage_tenant_budget capability.",
+		bind(mcpav1connect.McpaServiceHandler.ListTenantAuditEvents)},
 }
 
 // ToolName returns the snake_case tool name of an RPC method name, for
