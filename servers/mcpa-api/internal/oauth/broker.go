@@ -81,12 +81,12 @@ type Store interface {
 	InsertAuthRequest(ctx context.Context, r store.MCPAuthRequest) error
 	TakeAuthRequest(ctx context.Context, stateHash []byte) (store.MCPAuthRequest, error)
 	InsertGrant(ctx context.Context, g store.MCPGrant, c store.MCPCode) error
-	RedeemCode(ctx context.Context, codeHash []byte) (store.MCPCode, error)
+	LookupCode(ctx context.Context, codeHash []byte) (store.MCPCode, error)
 	RefreshHandleGrant(ctx context.Context, handleHash []byte) (uuid.UUID, bool, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (store.MCPGrant, error)
 	GrantByAccessToken(ctx context.Context, tokenHash []byte) (store.MCPGrant, error)
 	GrantIDByAccessToken(ctx context.Context, tokenHash []byte) (uuid.UUID, error)
-	UpdateGrant(ctx context.Context, id uuid.UUID, handle []byte, fn func(store.MCPGrant) (store.MCPGrantChange, error)) error
+	UpdateGrant(ctx context.Context, id uuid.UUID, use store.MCPGrantUse, fn func(store.MCPGrant) (store.MCPGrantChange, error)) error
 	DeleteGrant(ctx context.Context, id uuid.UUID) (store.MCPGrant, error)
 	DeleteExpired(ctx context.Context) (int64, error)
 }
@@ -252,7 +252,7 @@ func (b *Broker) ResolveMCPToken(ctx context.Context, tok *auth.VerifiedToken) (
 // grant.
 func (b *Broker) refreshDelcoreToken(ctx context.Context, id uuid.UUID) (string, error) {
 	var token string
-	err := b.cfg.Store.UpdateGrant(ctx, id, nil, func(g store.MCPGrant) (store.MCPGrantChange, error) {
+	err := b.cfg.Store.UpdateGrant(ctx, id, store.MCPGrantUse{}, func(g store.MCPGrant) (store.MCPGrantChange, error) {
 		t, err := b.open(g)
 		if err != nil {
 			return store.MCPGrantChange{}, apperr.Internal(fmt.Errorf("open grant tokens: %w", err))

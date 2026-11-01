@@ -76,7 +76,7 @@ func (f *fakeStore) InsertGrant(_ context.Context, g store.MCPGrant, c store.MCP
 	return nil
 }
 
-func (f *fakeStore) RedeemCode(_ context.Context, codeHash []byte) (store.MCPCode, error) {
+func (f *fakeStore) LookupCode(_ context.Context, codeHash []byte) (store.MCPCode, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	c, ok := f.codes[string(codeHash)]
@@ -84,12 +84,11 @@ func (f *fakeStore) RedeemCode(_ context.Context, codeHash []byte) (store.MCPCod
 		return store.MCPCode{}, store.ErrNotFound
 	}
 	if c.used {
-		return store.MCPCode{GrantID: c.code.GrantID}, store.ErrCodeReused
+		return store.MCPCode{CodeHash: codeHash, GrantID: c.code.GrantID}, store.ErrCodeReused
 	}
 	if !c.code.ExpireTime.After(f.now()) {
 		return store.MCPCode{}, store.ErrNotFound
 	}
-	c.used = true
 	return c.code, nil
 }
 
@@ -143,7 +142,7 @@ func (f *fakeStore) GrantIDByAccessToken(_ context.Context, tokenHash []byte) (u
 }
 
 // UpdateGrant holds the store lock while fn runs, like the row lock.
-func (f *fakeStore) UpdateGrant(_ context.Context, id uuid.UUID, handle []byte, fn func(store.MCPGrant) (store.MCPGrantChange, error)) error {
+func (f *fakeStore) UpdateGrant(_ context.Context, id uuid.UUID, use store.MCPGrantUse, fn func(store.MCPGrant) (store.MCPGrantChange, error)) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	g, ok := f.liveGrant(id)
@@ -151,10 +150,22 @@ func (f *fakeStore) UpdateGrant(_ context.Context, id uuid.UUID, handle []byte, 
 		return store.ErrNotFound
 	}
 	var h *fakeHandle
-	if handle != nil {
-		h = f.handles[string(handle)]
+	if use.Handle != nil {
+		h = f.handles[string(use.Handle)]
 		if h == nil || h.grant != id || h.retired {
 			return store.ErrHandleRetired
+		}
+	}
+	var c *fakeCode
+	if use.Code != nil {
+		c = f.codes[string(use.Code)]
+		switch {
+		case c == nil || c.code.GrantID != id:
+			return store.ErrNotFound
+		case c.used:
+			return store.ErrCodeReused
+		case !c.code.ExpireTime.After(f.now()):
+			return store.ErrNotFound
 		}
 	}
 	ch, err := fn(g)
@@ -163,7 +174,8 @@ func (f *fakeStore) UpdateGrant(_ context.Context, id uuid.UUID, handle []byte, 
 		return err
 	}
 	if err != nil {
-		// Only replaced tokens survive a failed fn; the handle stays active.
+		// Only replaced tokens survive a failed fn; the handle stays active
+		// and the code stays unused.
 		if ch.Tokens != nil {
 			g.Tokens = *ch.Tokens
 			g.UpdateTime = f.now()
@@ -177,6 +189,9 @@ func (f *fakeStore) UpdateGrant(_ context.Context, id uuid.UUID, handle []byte, 
 	}
 	if h != nil {
 		h.retired = true
+	}
+	if c != nil {
+		c.used = true
 	}
 	if ch.Tokens != nil {
 		g.Tokens = *ch.Tokens

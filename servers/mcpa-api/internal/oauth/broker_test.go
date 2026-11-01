@@ -108,6 +108,9 @@ type upstream struct {
 	// unverifiable makes the next MCP-audience refresh rotate the refresh
 	// token but return an access token that fails verification.
 	unverifiable bool
+	// unavailable makes the next MCP-audience refresh fail with a server
+	// error and leave the refresh token unchanged.
+	unavailable bool
 }
 
 func (u *upstream) mcpToken() string {
@@ -149,6 +152,10 @@ func (u *upstream) handle(form url.Values) (int, any) {
 			u.n++
 			return http.StatusOK, map[string]any{"access_token": fmt.Sprintf("dc-token-%d", u.n), "refresh_token": u.rotate(), "expires_in": 3600}
 		case mcpResource:
+			if u.unavailable {
+				u.unavailable = false
+				return http.StatusServiceUnavailable, map[string]string{"error": "server_error"}
+			}
 			if u.unverifiable {
 				u.unverifiable = false
 				return http.StatusOK, map[string]any{"access_token": "not-a-jwt", "refresh_token": u.rotate(), "expires_in": 3600}
@@ -692,6 +699,74 @@ func TestCodeIsOneTimeUse(t *testing.T) {
 	}
 	if len(e.logto.Revoked()) == 0 {
 		t.Fatal("upstream refresh token not revoked")
+	}
+}
+
+// An exchange that fails before issuing tokens does not consume the code: the
+// client retries with it instead of signing in again. Once the code issued
+// tokens, presenting it again is a replay that revokes the grant.
+func TestCodeExchangeRetriesAfterRecoverableFailure(t *testing.T) {
+	for name, fail := range map[string]func(*upstream){
+		"logto unavailable":            func(u *upstream) { u.unavailable = true },
+		"rotated token not verifiable": func(u *upstream) { u.unverifiable = true },
+	} {
+		e := newEnv(t)
+		code := e.code()
+		e.up.set(fail)
+		status, r := e.exchange(code, nil)
+		if status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" || r.AccessToken != "" {
+			t.Fatalf("%s: failed exchange: %d %+v", name, status, r)
+		}
+		if e.store.grantCount() != 1 {
+			t.Fatalf("%s: grant removed after a recoverable failure", name)
+		}
+		status, tok := e.exchange(code, nil)
+		if status != http.StatusOK || tok.AccessToken == "" || tok.RefreshToken == "" {
+			t.Fatalf("%s: retry: %d %+v", name, status, tok)
+		}
+		if g, err := e.resolve(tok.AccessToken); err != nil || g.UserID != delcoreUserID {
+			t.Fatalf("%s: resolve retried token: %v", name, err)
+		}
+		if status, again := e.exchange(code, nil); status != http.StatusBadRequest || again.Error != "invalid_grant" {
+			t.Fatalf("%s: replay after success: %d %+v", name, status, again)
+		}
+		if e.store.grantCount() != 0 {
+			t.Fatalf("%s: grant kept after replay", name)
+		}
+		if _, err := e.resolve(tok.AccessToken); err == nil {
+			t.Fatalf("%s: token of a revoked grant resolved", name)
+		}
+	}
+}
+
+// Concurrent exchanges of one code issue tokens at most once.
+func TestConcurrentCodeExchangesIssueOnce(t *testing.T) {
+	e := newEnv(t)
+	code := e.code()
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI}, "code_verifier": {e.verifier}, "client_id": {clientID}}
+	recs := make([]*httptest.ResponseRecorder, 4)
+	var wg sync.WaitGroup
+	for i := range recs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			recs[i] = e.post(oauth.TokenPath, form)
+		}()
+	}
+	wg.Wait()
+	issued := 0
+	for _, rec := range recs {
+		b := decodeToken(t, rec)
+		switch {
+		case rec.Code == http.StatusOK && b.AccessToken != "":
+			issued++
+		case rec.Code == http.StatusBadRequest && b.Error == "invalid_grant":
+		default:
+			t.Fatalf("exchange: %d %+v", rec.Code, b)
+		}
+	}
+	if issued != 1 {
+		t.Fatalf("%d exchanges issued tokens", issued)
 	}
 }
 

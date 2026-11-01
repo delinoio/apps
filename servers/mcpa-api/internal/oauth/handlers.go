@@ -573,7 +573,9 @@ func (b *Broker) exchangeCode(ctx context.Context, clientID, code, redirectURI, 
 	if code == "" || redirectURI == "" || verifier == "" {
 		return nil, newOAuthError(errInvalidRequest, "code, redirect_uri and code_verifier are required")
 	}
-	c, err := b.cfg.Store.RedeemCode(ctx, auth.Digest(code))
+	// The code is consumed by issue together with the tokens it issues, so an
+	// exchange that fails before issuing tokens can be retried with it.
+	c, err := b.cfg.Store.LookupCode(ctx, auth.Digest(code))
 	switch {
 	case errors.Is(err, store.ErrCodeReused):
 		// A replayed code revokes everything issued from it (RFC 6749 4.1.2).
@@ -586,11 +588,11 @@ func (b *Broker) exchangeCode(ctx context.Context, clientID, code, redirectURI, 
 		return nil, newOAuthError(errTemporarilyUnavailable, "retry later")
 	}
 	if c.ClientID != clientID || c.RedirectURI != redirectURI || !VerifyPKCE(verifier, c.CodeChallenge) {
-		// The code is spent; its grant can never issue tokens.
+		// Revoking the grant removes the code, so it can never issue tokens.
 		_ = b.revokeGrant(ctx, c.GrantID, "authorization code binding mismatch")
 		return nil, newOAuthError(errInvalidGrant, "the authorization code does not match this request")
 	}
-	return b.issue(ctx, c.GrantID, clientID, nil)
+	return b.issue(ctx, c.GrantID, clientID, store.MCPGrantUse{Code: c.CodeHash})
 }
 
 func (b *Broker) exchangeRefresh(ctx context.Context, clientID, handle string) (*tokenResponse, *oauthError) {
@@ -609,23 +611,25 @@ func (b *Broker) exchangeRefresh(ctx context.Context, clientID, handle string) (
 		_ = b.revokeGrant(ctx, grantID, "refresh token reused")
 		return nil, newOAuthError(errInvalidGrant, "the refresh token is invalid")
 	}
-	return b.issue(ctx, grantID, clientID, hash)
+	return b.issue(ctx, grantID, clientID, store.MCPGrantUse{Handle: hash})
 }
 
 var errClientMismatch = errors.New("grant belongs to another client")
 
 // issue obtains a new MCP-audience token with the grant's upstream refresh
 // token, re-checks MFA evidence, records the token and rotates the refresh
-// handle. A rejected upstream refresh, a changed subject or a token without
-// MFA evidence revokes the grant. When issuance fails for a recoverable
-// reason after Logto rotated the upstream refresh token, the replacement is
-// stored without issuing a token and the client's handle stays active, so a
-// retry does not present the consumed upstream token.
-func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, oldHandle []byte) (*tokenResponse, *oauthError) {
+// handle. use names the presented authorization code or refresh handle,
+// which is consumed only when tokens are issued. A rejected upstream
+// refresh, a changed subject or a token without MFA evidence revokes the
+// grant. When issuance fails for a recoverable reason, the presented code or
+// handle stays usable; if Logto rotated the upstream refresh token, the
+// replacement is stored without issuing a token, so a retry does not present
+// the consumed upstream token.
+func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, use store.MCPGrantUse) (*tokenResponse, *oauthError) {
 	var resp *tokenResponse
 	var lostRefresh string
 	keptRotation := false
-	err := b.cfg.Store.UpdateGrant(ctx, grantID, oldHandle, func(g store.MCPGrant) (store.MCPGrantChange, error) {
+	err := b.cfg.Store.UpdateGrant(ctx, grantID, use, func(g store.MCPGrant) (store.MCPGrantChange, error) {
 		if g.ClientID != clientID {
 			return store.MCPGrantChange{}, errClientMismatch
 		}
@@ -687,11 +691,16 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 	}
 	switch {
 	case err == nil:
-		b.cfg.Log.InfoContext(ctx, "mcp tokens issued", "grant_id", grantID, "client_id", clientID, "rotated", oldHandle != nil)
+		b.cfg.Log.InfoContext(ctx, "mcp tokens issued", "grant_id", grantID, "client_id", clientID, "rotated", use.Handle != nil)
 		return resp, nil
 	case errors.Is(err, store.ErrHandleRetired):
 		_ = b.revokeGrant(ctx, grantID, "refresh token reused")
 		return nil, newOAuthError(errInvalidGrant, "the refresh token is invalid")
+	case errors.Is(err, store.ErrCodeReused):
+		// A concurrent exchange of the code issued tokens first; this is a
+		// replay (RFC 6749 4.1.2).
+		_ = b.revokeGrant(ctx, grantID, "authorization code reused")
+		return nil, newOAuthError(errInvalidGrant, "the authorization code is invalid")
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, errClientMismatch):
 		return nil, newOAuthError(errInvalidGrant, "the grant is invalid or expired")
 	case errors.Is(err, auth.ErrInvalidGrant):

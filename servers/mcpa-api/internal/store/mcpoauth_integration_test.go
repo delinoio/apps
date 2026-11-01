@@ -9,9 +9,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -115,28 +118,60 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// One-time use: the second redemption reports reuse with the grant ID.
-	c, err := m.RedeemCode(ctx, code.CodeHash)
-	if err != nil || c.GrantID != g.ID || c.CodeChallenge != "c" {
-		t.Fatalf("redeem = %+v, %v", c, err)
+	// Lookup does not consume the code.
+	for range 2 {
+		c, err := m.LookupCode(ctx, code.CodeHash)
+		if err != nil || c.GrantID != g.ID || c.CodeChallenge != "c" || c.ClientID != "client" {
+			t.Fatalf("lookup = %+v, %v", c, err)
+		}
 	}
-	c, err = m.RedeemCode(ctx, code.CodeHash)
-	if !errors.Is(err, store.ErrCodeReused) || c.GrantID != g.ID {
-		t.Fatalf("reuse = %+v, %v", c, err)
-	}
-	if _, err := m.RedeemCode(ctx, digest("unknown")); !errors.Is(err, store.ErrNotFound) {
+	if _, err := m.LookupCode(ctx, digest("unknown")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("unknown code: %v", err)
 	}
+	codeUse := store.MCPGrantUse{Code: code.CodeHash}
+	// A failed issuance leaves the code unused, even when it keeps tokens.
+	boom := errors.New("boom")
+	kept, err := kr.Seal([]byte(`{"refresh_token":"rt-kept"}`), crypto.MCPGrantAAD(g.ID.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+		return store.MCPGrantChange{Tokens: &kept, NewHandle: digest("h0"), AccessToken: digest("at0"), AccessExpire: time.Now().Add(time.Hour)}, boom
+	}); !errors.Is(err, boom) {
+		t.Fatalf("failed issuance = %v", err)
+	}
+	if _, err := m.LookupCode(ctx, code.CodeHash); err != nil {
+		t.Fatalf("code after failed issuance: %v", err)
+	}
+	if _, _, err := m.RefreshHandleGrant(ctx, digest("h0")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("h0 after failed issuance = %v", err)
+	}
+	if _, err := m.GrantByAccessToken(ctx, digest("at0")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("at0 after failed issuance = %v", err)
+	}
 
-	// Issue an access token and the first handle.
+	// Issue an access token and the first handle; this consumes the code.
 	accessExpire := time.Now().Add(time.Hour)
-	if err := m.UpdateGrant(ctx, g.ID, nil, func(got store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(got store.MCPGrant) (store.MCPGrantChange, error) {
 		if got.UserID != "user" {
 			t.Errorf("locked grant = %+v", got)
 		}
 		return store.MCPGrantChange{NewHandle: digest("h1"), AccessToken: digest("at1"), AccessExpire: accessExpire, ExpireTime: time.Now().Add(2 * time.Hour)}, nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+	// One-time use: a used code reports reuse with the grant ID and cannot
+	// issue again.
+	c, err := m.LookupCode(ctx, code.CodeHash)
+	if !errors.Is(err, store.ErrCodeReused) || c.GrantID != g.ID {
+		t.Fatalf("reuse = %+v, %v", c, err)
+	}
+	called := false
+	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+		called = true
+		return store.MCPGrantChange{}, nil
+	}); !errors.Is(err, store.ErrCodeReused) || called {
+		t.Fatalf("issue with used code = %v, called %v", err, called)
 	}
 	if got, err := m.GrantByAccessToken(ctx, digest("at1")); err != nil || got.ID != g.ID {
 		t.Fatalf("grant by token = %+v, %v", got, err)
@@ -146,7 +181,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	}
 
 	// Rotation retires h1 and adds h2; reusing h1 fails without calling fn.
-	if err := m.UpdateGrant(ctx, g.ID, digest("h1"), func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h1")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{NewHandle: digest("h2")}, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -154,8 +189,8 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	if _, retired, _ := m.RefreshHandleGrant(ctx, digest("h1")); !retired {
 		t.Fatal("h1 not retired")
 	}
-	called := false
-	err = m.UpdateGrant(ctx, g.ID, digest("h1"), func(store.MCPGrant) (store.MCPGrantChange, error) {
+	called = false
+	err = m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h1")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
 		called = true
 		return store.MCPGrantChange{}, nil
 	})
@@ -164,8 +199,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	}
 
 	// A failing fn rolls back unless it deletes.
-	boom := errors.New("boom")
-	if err := m.UpdateGrant(ctx, g.ID, digest("h2"), func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h2")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{NewHandle: digest("h3")}, boom
 	}); !errors.Is(err, boom) {
 		t.Fatalf("fn error = %v", err)
@@ -186,7 +220,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.UpdateGrant(ctx, g.ID, digest("h2"), func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h2")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{
 			Tokens: &replaced, NewHandle: digest("h3"), AccessToken: digest("at3"), AccessExpire: accessExpire,
 			ExpireTime: time.Now().Add(48 * time.Hour),
@@ -213,7 +247,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	if _, err := m.GrantByAccessToken(ctx, digest("at3")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("at3 after kept tokens = %v", err)
 	}
-	if err := m.UpdateGrant(ctx, g.ID, nil, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{Delete: true}, boom
 	}); !errors.Is(err, boom) {
 		t.Fatalf("delete error = %v", err)
@@ -228,8 +262,52 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	if _, _, err := m.RefreshHandleGrant(ctx, digest("h2")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("handle after delete: %v", err)
 	}
-	if _, err := m.RedeemCode(ctx, code.CodeHash); !errors.Is(err, store.ErrNotFound) {
+	if _, err := m.LookupCode(ctx, code.CodeHash); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("code after delete: %v", err)
+	}
+}
+
+// Concurrent issuances with one code serialize on the grant lock: exactly one
+// issues and consumes the code, and the others see ErrCodeReused without
+// running fn.
+func TestMCPOAuthConcurrentCodeUse(t *testing.T) {
+	s := openTestStore(t)
+	m := store.NewMCPOAuth(s)
+	ctx := context.Background()
+	kr := testKeys(t, "k1")
+	g := newGrant(t, kr, time.Now().Add(time.Hour))
+	code := store.MCPCode{CodeHash: digest("code"), ClientID: "client", RedirectURI: "r", CodeChallenge: "c", ExpireTime: time.Now().Add(time.Minute)}
+	if err := m.InsertGrant(ctx, g, code); err != nil {
+		t.Fatal(err)
+	}
+	const n = 4
+	var calls atomic.Int32
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Code: code.CodeHash}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+				calls.Add(1)
+				// Hold the lock like an upstream refresh does.
+				time.Sleep(50 * time.Millisecond)
+				return store.MCPGrantChange{AccessToken: digest(fmt.Sprintf("at-%d", i)), AccessExpire: time.Now().Add(time.Hour)}, nil
+			})
+		}()
+	}
+	wg.Wait()
+	issued := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			issued++
+		case !errors.Is(err, store.ErrCodeReused):
+			t.Fatalf("concurrent use: %v", err)
+		}
+	}
+	if issued != 1 || calls.Load() != 1 {
+		t.Fatalf("issued %d times, fn called %d times", issued, calls.Load())
 	}
 }
 
@@ -244,10 +322,16 @@ func TestMCPOAuthExpiry(t *testing.T) {
 		ExpireTime: time.Now().Add(-time.Second)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.RedeemCode(ctx, digest("expired-code")); !errors.Is(err, store.ErrNotFound) {
+	if _, err := m.LookupCode(ctx, digest("expired-code")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expired code: %v", err)
 	}
-	if err := m.UpdateGrant(ctx, live.ID, nil, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, live.ID, store.MCPGrantUse{Code: digest("expired-code")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+		t.Error("fn called for an expired code")
+		return store.MCPGrantChange{}, nil
+	}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("issue with expired code: %v", err)
+	}
+	if err := m.UpdateGrant(ctx, live.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{AccessToken: digest("old-token"), AccessExpire: time.Now().Add(-time.Second)}, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -264,7 +348,7 @@ func TestMCPOAuthExpiry(t *testing.T) {
 	if _, err := m.GetGrant(ctx, dead.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expired grant visible: %v", err)
 	}
-	if err := m.UpdateGrant(ctx, dead.ID, nil, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, dead.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{}, nil
 	}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expired grant locked: %v", err)

@@ -76,6 +76,17 @@ type MCPGrantChange struct {
 	AccessExpire time.Time
 }
 
+// MCPGrantUse names the one-use credentials that UpdateGrant consumes when
+// its change succeeds. Nil members consume nothing.
+type MCPGrantUse struct {
+	// Handle is the digest of an active refresh handle of the grant; a
+	// successful change retires it.
+	Handle []byte
+	// Code is the digest of an unused, unexpired authorization code of the
+	// grant; a successful change marks it used.
+	Code []byte
+}
+
 // MCPOAuth stores MCP OAuth broker state in PostgreSQL.
 type MCPOAuth struct {
 	s *Store
@@ -128,34 +139,29 @@ func (m *MCPOAuth) InsertGrant(ctx context.Context, g MCPGrant, c MCPCode) error
 	})
 }
 
-// RedeemCode marks an unexpired, unused code as used and returns it. A code
-// that was already used returns ErrCodeReused with its grant ID; an unknown
-// or expired code returns ErrNotFound.
-func (m *MCPOAuth) RedeemCode(ctx context.Context, codeHash []byte) (MCPCode, error) {
+// LookupCode returns an unexpired, unused code without consuming it.
+// UpdateGrant consumes the code together with the first successful token
+// issuance, so an exchange that fails before issuing tokens leaves the code
+// usable for a retry. A code that was already used returns ErrCodeReused
+// with its grant ID; an unknown or expired code returns ErrNotFound.
+func (m *MCPOAuth) LookupCode(ctx context.Context, codeHash []byte) (MCPCode, error) {
 	c := MCPCode{CodeHash: codeHash}
-	err := m.s.Pool.QueryRow(ctx, `UPDATE mcp_authorization_codes SET use_time = now()
-		WHERE code_hash = $1 AND use_time IS NULL AND expire_time > now()
-		RETURNING grant_id, client_id, redirect_uri, code_challenge, expire_time`, codeHash).
-		Scan(&c.GrantID, &c.ClientID, &c.RedirectURI, &c.CodeChallenge, &c.ExpireTime)
-	if err == nil {
-		return c, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	var used, live bool
+	err := m.s.Pool.QueryRow(ctx, `SELECT grant_id, client_id, redirect_uri, code_challenge, expire_time,
+			use_time IS NOT NULL, expire_time > now()
+		FROM mcp_authorization_codes WHERE code_hash = $1`, codeHash).
+		Scan(&c.GrantID, &c.ClientID, &c.RedirectURI, &c.CodeChallenge, &c.ExpireTime, &used, &live)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return MCPCode{}, ErrNotFound
+	case err != nil:
 		return MCPCode{}, err
-	}
-	var used bool
-	err = m.s.Pool.QueryRow(ctx, `SELECT grant_id, use_time IS NOT NULL FROM mcp_authorization_codes WHERE code_hash = $1`, codeHash).
-		Scan(&c.GrantID, &used)
-	if errors.Is(err, pgx.ErrNoRows) {
+	case used:
+		return MCPCode{CodeHash: codeHash, GrantID: c.GrantID}, ErrCodeReused
+	case !live:
 		return MCPCode{}, ErrNotFound
 	}
-	if err != nil {
-		return MCPCode{}, err
-	}
-	if used {
-		return c, ErrCodeReused
-	}
-	return MCPCode{}, ErrNotFound
+	return c, nil
 }
 
 // RefreshHandleGrant returns the grant of a refresh handle and whether the
@@ -199,15 +205,20 @@ func (m *MCPOAuth) GrantByAccessToken(ctx context.Context, tokenHash []byte) (MC
 }
 
 // UpdateGrant locks an unexpired grant and applies the change that fn
-// returns. When handle is non-nil it must be an active refresh handle of the
-// grant, or ErrHandleRetired is returned without calling fn; the handle is
-// retired in the same transaction when fn succeeds.
+// returns. When use.Handle is non-nil it must be an active refresh handle of
+// the grant, or ErrHandleRetired is returned without calling fn. When
+// use.Code is non-nil it must be an unexpired authorization code of the
+// grant: a used code returns ErrCodeReused and an unknown or expired code
+// returns ErrNotFound, both without calling fn. The handle is retired and
+// the code is marked used in the same transaction when fn succeeds, so a
+// credential is consumed only together with the tokens it issues.
 //
 // When fn also returns an error, only the Delete and Tokens parts of its
-// change are applied, the handle stays active and the error is returned. A
-// failed issuance can so keep a rotated upstream refresh token, which the
-// upstream refresh already consumed, without issuing a handle or token.
-func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, handle []byte, fn func(MCPGrant) (MCPGrantChange, error)) error {
+// change are applied, the handle stays active, the code stays unused and the
+// error is returned. A failed issuance can so keep a rotated upstream refresh
+// token, which the upstream refresh already consumed, without issuing a
+// handle or token, and the client can retry with the same credential.
+func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, use MCPGrantUse, fn func(MCPGrant) (MCPGrantChange, error)) error {
 	var fnErr error
 	err := m.s.InTx(ctx, func(tx pgx.Tx) error {
 		g, err := scanMCPGrant(tx.QueryRow(ctx, `SELECT `+mcpGrantColumns+` FROM mcp_grants WHERE id = $1 AND expire_time > now() FOR UPDATE`, id))
@@ -215,15 +226,32 @@ func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, handle []byte,
 			return err
 		}
 		// The grant row lock serializes every update of the grant, so the
-		// handle cannot be retired between this check and the retirement.
-		if handle != nil {
+		// handle or code cannot be consumed between this check and the
+		// consumption below. Concurrent exchanges of one code therefore issue
+		// tokens at most once; the later one sees ErrCodeReused.
+		if use.Handle != nil {
 			var active bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mcp_refresh_handles
-				WHERE handle_hash = $1 AND grant_id = $2 AND retire_time IS NULL)`, handle, id).Scan(&active); err != nil {
+				WHERE handle_hash = $1 AND grant_id = $2 AND retire_time IS NULL)`, use.Handle, id).Scan(&active); err != nil {
 				return err
 			}
 			if !active {
 				return ErrHandleRetired
+			}
+		}
+		if use.Code != nil {
+			var used, live bool
+			err := tx.QueryRow(ctx, `SELECT use_time IS NOT NULL, expire_time > now() FROM mcp_authorization_codes
+				WHERE code_hash = $1 AND grant_id = $2`, use.Code, id).Scan(&used, &live)
+			switch {
+			case errors.Is(err, pgx.ErrNoRows):
+				return ErrNotFound
+			case err != nil:
+				return err
+			case used:
+				return ErrCodeReused
+			case !live:
+				return ErrNotFound
 			}
 		}
 		ch, err := fn(g)
@@ -234,14 +262,24 @@ func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, handle []byte,
 			fnErr = err
 			return applyMCPGrantChange(ctx, tx, id, MCPGrantChange{Delete: ch.Delete, Tokens: ch.Tokens})
 		}
-		if handle != nil {
+		if use.Handle != nil {
 			tag, err := tx.Exec(ctx, `UPDATE mcp_refresh_handles SET retire_time = now()
-				WHERE handle_hash = $1 AND grant_id = $2 AND retire_time IS NULL`, handle, id)
+				WHERE handle_hash = $1 AND grant_id = $2 AND retire_time IS NULL`, use.Handle, id)
 			if err != nil {
 				return err
 			}
 			if tag.RowsAffected() != 1 {
 				return ErrHandleRetired
+			}
+		}
+		if use.Code != nil {
+			tag, err := tx.Exec(ctx, `UPDATE mcp_authorization_codes SET use_time = now()
+				WHERE code_hash = $1 AND grant_id = $2 AND use_time IS NULL`, use.Code, id)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() != 1 {
+				return ErrCodeReused
 			}
 		}
 		return applyMCPGrantChange(ctx, tx, id, ch)
