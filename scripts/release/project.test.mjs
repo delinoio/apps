@@ -284,7 +284,26 @@ test("release credentials stay in the three repository-wide environments", () =>
   assert.equal(anydash.native.environment, "release-signing");
   assert.equal(anydash.assemble.environment, "release-signing");
   assert.equal(anydash.publish.environment, "release-publish");
-  assert.equal(anydash.publish.if, "inputs.publish");
+  assert.match(anydash.publish.if, /^\$\{\{ inputs\.publish && !cancelled\(\)/);
+  // A repeated dispatch publishes the set an earlier run assembled instead of
+  // rebuilding signed artifacts that can never match uploaded assets.
+  for (const name of ["cli-linux", "native", "assemble"])
+    assert.equal(anydash[name].if, "needs.source.outputs.retained-run == ''");
+  assert.match(
+    anydash.publish.if,
+    /needs\.assemble\.result == 'skipped' && needs\.source\.outputs\.retained-run != ''/,
+  );
+  const retained = anydash.publish.steps.find(
+    (step) => step.with?.["run-id"] !== undefined,
+  );
+  assert.equal(
+    retained.with["run-id"],
+    "${{ needs.source.outputs.retained-run }}",
+  );
+  assert.equal(retained.with.name, "anydash-release-${{ inputs.revision }}");
+  assert.equal(anydash.source.permissions.actions, "read");
+  assert.equal(anydash.source.permissions.contents, "read");
+  assert.equal(anydash.publish.permissions.actions, "read");
   assert.equal(
     anydash["cli-linux"].environment,
     undefined,

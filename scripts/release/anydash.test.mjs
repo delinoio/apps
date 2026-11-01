@@ -37,6 +37,7 @@ import {
   releaseIdentity,
   signChecksums,
   signMacApp,
+  retainedRelease,
   signingOrder,
   verifyRelease,
   windowsSigningFiles,
@@ -466,6 +467,85 @@ test(
     }
   },
 );
+
+test("a repeated dispatch reuses the earliest release set assembled on main", () => {
+  const name = `anydash-release-${identity.revision}`;
+  const artifact = (id, runId, created, extra = {}) => ({
+    id,
+    name,
+    expired: false,
+    created_at: created,
+    workflow_run: {
+      id: runId,
+      head_branch: "main",
+      repository_id: 1,
+      head_repository_id: 1,
+    },
+    ...extra,
+  });
+  const runs = {
+    10: {
+      id: 10,
+      path: ".github/workflows/release.yml",
+      event: "repository_dispatch",
+      head_branch: "main",
+    },
+    11: {
+      id: 11,
+      path: ".github/workflows/release.yml",
+      event: "repository_dispatch",
+      head_branch: "main",
+    },
+    12: {
+      id: 12,
+      path: ".github/workflows/ci.yml",
+      event: "pull_request",
+      head_branch: "main",
+    },
+  };
+  const requested = [];
+  const api = (artifacts) => (path) => {
+    requested.push(path);
+    if (path.includes("/actions/artifacts?"))
+      return [{ total_count: artifacts.length, artifacts }];
+    return [runs[path.split("/").at(-1)]];
+  };
+  const pages = [
+    artifact(3, 11, "2026-10-02T00:00:00Z"),
+    artifact(2, 10, "2026-10-01T00:00:00Z"),
+    artifact(4, 12, "2026-09-30T00:00:00Z"),
+    artifact(5, 9, "2026-09-29T00:00:00Z", { expired: true }),
+    artifact(6, 8, "2026-09-28T00:00:00Z", {
+      workflow_run: {
+        id: 8,
+        head_branch: "main",
+        repository_id: 1,
+        head_repository_id: 2,
+      },
+    }),
+    artifact(7, 7, "2026-09-27T00:00:00Z", { name: `${name}-x` }),
+  ];
+  assert.equal(
+    retainedRelease(identity, { currentRunId: "99", api: api(pages) }),
+    "10",
+  );
+  assert.match(requested[0], new RegExp(`name=${name}&`));
+  // Run 12 is not a unified release run; the expired, fork and other-name
+  // artifacts are never fetched.
+  assert.ok(!requested.some((path) => /runs\/(9|8|7)$/.test(path)));
+  // The current run assembles its own set; no earlier set means build.
+  assert.equal(
+    retainedRelease(identity, {
+      currentRunId: "10",
+      api: api(pages.slice(1, 3)),
+    }),
+    undefined,
+  );
+  assert.equal(
+    retainedRelease(identity, { currentRunId: "99", api: api([]) }),
+    undefined,
+  );
+});
 
 test("npm publication reuses identical versions, rejects different bytes and publishes the rest", (t) => {
   const root = temporary(t, "anydash-npm-");

@@ -26,8 +26,12 @@ jobs:
     if: github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       version: ${{ steps.source.outputs.version }}
+      retained-run: ${{ steps.retained.outputs.run-id }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -40,11 +44,20 @@ jobs:
       - name: Require the release version in the launcher, platform packages and CLI
         id: source
         run: node "scripts/release/anydash.mjs" source
+      # Signed and notarized builds are not reproducible, so a repeated
+      # dispatch of this publication identity publishes the set an earlier
+      # run assembled instead of rebuilding over already uploaded assets.
+      - name: Find the release set an earlier dispatch assembled
+        id: retained
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "scripts/release/anydash.mjs" retained
 
   # Linux builds run in Debian 12, the oldest supported glibc, so the
   # executables also run on Ubuntu 24.04 and 26.04 and Debian 13.
   cli-linux:
     needs: source
+    if: needs.source.outputs.retained-run == ''
     strategy:
       fail-fast: false
       matrix:
@@ -104,6 +117,7 @@ jobs:
   # Ubuntu.
   native:
     needs: source
+    if: needs.source.outputs.retained-run == ''
     strategy:
       fail-fast: false
       matrix:
@@ -386,6 +400,7 @@ jobs:
 
   assemble:
     needs: [source, cli-linux, native]
+    if: needs.source.outputs.retained-run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release-signing
@@ -416,12 +431,16 @@ jobs:
           name: anydash-release-${{ inputs.revision }}
           path: packages/anydash/dist/release/
           if-no-files-found: error
-          retention-days: 7
+          # Repeated dispatches of this identity reuse the set while it is retained.
+          retention-days: 30
       - if: always()
         run: rm -rf "packages/anydash/dist"
 
   publish:
-    if: inputs.publish
+    if: >-
+      ${{ inputs.publish && !cancelled() && needs.source.result == 'success' &&
+      (needs.assemble.result == 'success' ||
+      (needs.assemble.result == 'skipped' && needs.source.outputs.retained-run != '')) }}
     needs: [source, assemble]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -429,6 +448,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      actions: read
     env:
       ANYDASH_UPDATE_PUBLIC_KEY: ${{ vars.ANYDASH_UPDATE_PUBLIC_KEY }}
     steps:
@@ -441,10 +461,20 @@ jobs:
           node-version-file: .nvmrc
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      - name: Download the release set assembled in this run
+        if: needs.source.outputs.retained-run == ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: anydash-release-${{ inputs.revision }}
           path: packages/anydash/dist/release/
+      - name: Download the release set an earlier dispatch assembled
+        if: needs.source.outputs.retained-run != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: anydash-release-${{ inputs.revision }}
+          path: packages/anydash/dist/release/
+          run-id: ${{ needs.source.outputs.retained-run }}
+          github-token: ${{ github.token }}
       - name: Upload the verified set to the draft GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

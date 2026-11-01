@@ -677,6 +677,66 @@ export function verifyRelease(
 
 const repo = "delinoio/apps";
 const gh = (...args) => run("gh", args);
+const ghJson = (path) =>
+  JSON.parse(gh("api", "--paginate", "--slurp", path)).flat();
+
+/** Workflow artifact holding the assembled, signed release set of a revision. */
+export const releaseArtifactName = (revision) => `anydash-release-${revision}`;
+
+/**
+ * Finds the release set an earlier dispatch of the same publication identity
+ * assembled. macOS and Windows signatures carry timestamps and the desktop
+ * archives are packaged again, so a rebuild never matches assets that were
+ * already uploaded; a repeated dispatch must publish the original set instead.
+ * Only unexpired artifacts from unified release runs on main qualify, and the
+ * earliest one wins because it is the set that publication may have started.
+ * The publish job still verifies the record, checksums and update-key
+ * signature before it uses the set. Returns the run ID, or undefined to build.
+ */
+export function retainedRelease(
+  identity = releaseIdentity(),
+  { currentRunId = process.env.GITHUB_RUN_ID, api = ghJson } = {},
+) {
+  const name = releaseArtifactName(identity.revision);
+  const candidates = api(
+    `repos/${repo}/actions/artifacts?name=${encodeURIComponent(name)}&per_page=100`,
+  )
+    .flatMap((page) => page.artifacts ?? [])
+    .filter(
+      (artifact) =>
+        artifact.name === name &&
+        !artifact.expired &&
+        String(artifact.workflow_run?.id) !== String(currentRunId) &&
+        artifact.workflow_run?.head_branch === "main" &&
+        artifact.workflow_run?.head_repository_id ===
+          artifact.workflow_run?.repository_id,
+    )
+    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  for (const artifact of candidates) {
+    const [workflowRun] = api(
+      `repos/${repo}/actions/runs/${artifact.workflow_run.id}`,
+    );
+    if (
+      workflowRun?.path === ".github/workflows/release.yml" &&
+      workflowRun.event === "repository_dispatch" &&
+      workflowRun.head_branch === "main"
+    ) {
+      log("anydash_release_retained", {
+        tag: identity.tag,
+        revision: identity.revision,
+        runId: workflowRun.id,
+        artifactId: artifact.id,
+      });
+      return String(workflowRun.id);
+    }
+  }
+  log("anydash_release_build", {
+    tag: identity.tag,
+    revision: identity.revision,
+    candidates: candidates.length,
+  });
+  return undefined;
+}
 
 /** Uploads to a draft GitHub Release; existing assets must match byte for byte. */
 export function publishRelease(
@@ -849,7 +909,11 @@ if (
       "apps/anydash/native/desktop/release.entitlements",
     ),
   };
-  if (command === "source") {
+  if (command === "retained") {
+    const runId = retainedRelease(releaseIdentity()) ?? "";
+    if (env.GITHUB_OUTPUT)
+      appendFileSync(env.GITHUB_OUTPUT, `run-id=${runId}\n`);
+  } else if (command === "source") {
     const identity = checkSource(releaseIdentity());
     if (env.GITHUB_OUTPUT)
       appendFileSync(env.GITHUB_OUTPUT, `version=${identity.version}\n`);
@@ -883,6 +947,6 @@ if (
     publishNpm(resolve(args[0]), env.ANYDASH_UPDATE_PUBLIC_KEY);
   } else
     throw new Error(
-      "Expected source, sign-macos-files, sign-macos-app, notarize, windows-signing-files, candidate, desktop, assemble, sign-checksums, verify, publish or publish-npm",
+      "Expected source, retained, sign-macos-files, sign-macos-app, notarize, windows-signing-files, candidate, desktop, assemble, sign-checksums, verify, publish or publish-npm",
     );
 }

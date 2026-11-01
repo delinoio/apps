@@ -66,9 +66,11 @@ jobs:
   anydash:
     needs: status
     if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).component == 'anydash' && fromJSON(inputs.component).binaries
+    # actions: read finds and downloads the release set of an earlier dispatch.
     permissions:
       contents: write
       id-token: write
+      actions: read
     uses: ./.github/workflows/deploy-anydash.yml
     with:
       revision: ${{ inputs.revision }}
