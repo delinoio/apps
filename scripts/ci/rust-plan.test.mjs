@@ -203,6 +203,25 @@ test("Lane schemas and packages select the root Rust CLI", () => {
   }
 });
 
+test("AnyDash schemas select the root Rust CLI", () => {
+  const result = selectRust(
+    base,
+    ["protos/anydash/v1/anydash.proto"],
+    (command) =>
+      command === "list"
+        ? {
+            packages: ["anydash", "lane", "delitools-shell"].map((name) => ({
+              name,
+            })),
+          }
+        : { merge_base: base, packages: [] },
+  );
+  assert.deepEqual(result, {
+    rust_clippy: ["anydash"],
+    rust_test: ["anydash"],
+  });
+});
+
 test("internal documentation skips Rust allocation without cargo-mono", () => {
   for (const path of [
     "docs/project-perfine.md",

@@ -707,6 +707,16 @@ test("AnyDash server paths select only the AnyDash server validator", () => {
   }
 });
 
+test("AnyDash CLI paths use only Rust package validation", () => {
+  for (const path of ["cmds/anydash/src/main.rs", "cmds/anydash/Cargo.toml"]) {
+    assert.deepEqual(selectedJobs([path]), [], path);
+    assert.ok(
+      Object.values(selectChecks([path])).every((value) => !value),
+      path,
+    );
+  }
+});
+
 const recoveryPolicyPaths = [
   "AGENTS.md",
   "docs/apps-lane-foundation.md",

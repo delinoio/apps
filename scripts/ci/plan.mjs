@@ -63,7 +63,7 @@ function classifyShared(paths) {
       // Namespace metadata has no runtime consumers. Keep this list exact so
       // future Apache service code retains fallback until its CI is registered.
       !/^oss\/(?:LICENSE|NOTICE|servers\/\.gitkeep)$/u.test(path) &&
-      !/^(crates\/perfine-core\/|cmds\/(?:perfine|lane)\/|packages\/(?:perfine|lane)\/)/u.test(
+      !/^(crates\/perfine-core\/|cmds\/(?:perfine|lane|anydash)\/|packages\/(?:perfine|lane)\/)/u.test(
         path,
       ) &&
       !/^(apps|actions|protos|examples|docs|servers)\//u.test(path),
