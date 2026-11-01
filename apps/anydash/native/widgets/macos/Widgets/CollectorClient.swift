@@ -13,9 +13,10 @@ public enum CollectorError: Error, Equatable {
 
 public enum CollectorClient {
   /// `~/Library/Application Support/io.delino.anydash/collector.sock`, or
-  /// `$ANYDASH_HOME/collector.sock` when the collector runs with a custom home.
+  /// `$ANYDASH_HOME/data/collector.sock` when the collector runs with a custom
+  /// home (the collector's data and runtime directory is `$ANYDASH_HOME/data`).
   public static func socketPath(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
-    if let home = environment["ANYDASH_HOME"], !home.isEmpty { return (home as NSString).appendingPathComponent("collector.sock") }
+    if let home = environment["ANYDASH_HOME"], !home.isEmpty { return (home as NSString).appendingPathComponent("data/collector.sock") }
     // Sandboxed extensions see a container home; the collector lives in the real one.
     let user = getpwuid(getuid()).flatMap { String(validatingUTF8: $0.pointee.pw_dir) } ?? NSHomeDirectory()
     return (user as NSString).appendingPathComponent("Library/Application Support/io.delino.anydash/collector.sock")

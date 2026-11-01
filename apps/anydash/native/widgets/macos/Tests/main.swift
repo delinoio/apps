@@ -22,7 +22,7 @@ do {
 } catch let error as CollectorError {
   check(error == .status(503), "status error")
 }
-check(CollectorClient.socketPath(environment: ["ANYDASH_HOME": "/tmp/x"]) == "/tmp/x/collector.sock", "custom home")
+check(CollectorClient.socketPath(environment: ["ANYDASH_HOME": "/tmp/x"]) == "/tmp/x/data/collector.sock", "custom home")
 check(CollectorClient.socketPath(environment: [:]).hasSuffix("Library/Application Support/io.delino.anydash/collector.sock"), "default path")
 do {
   _ = try CollectorClient.listSnapshots(path: "/nonexistent/anydash/collector.sock", timeout: 1)
