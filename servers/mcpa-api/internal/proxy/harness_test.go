@@ -3,7 +3,6 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -21,6 +20,7 @@ import (
 
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 	"github.com/google/uuid"
+	"github.com/tidwall/gjson"
 )
 
 // countingListener counts the raw bytes the server reads from its clients,
@@ -444,8 +444,8 @@ func openAIChunk(model, text string, finish bool) string {
 func openAIUpstream(t *testing.T, text string) *upstream {
 	return newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		model := extractJSONString(body, "model")
-		if bytes.Contains(body, []byte(`"stream":true`)) {
+		model := gjson.GetBytes(body, "model").String()
+		if gjson.GetBytes(body, "stream").Bool() {
 			w.Header().Set("Content-Type", "text/event-stream")
 			flusher := w.(http.Flusher)
 			for i, part := range strings.Split(text, " ") {
@@ -461,18 +461,4 @@ func openAIUpstream(t *testing.T, text string) *upstream {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, openAIChatResponse(model, text))
 	})
-}
-
-func extractJSONString(body []byte, field string) string {
-	marker := []byte(`"` + field + `":"`)
-	start := bytes.Index(body, marker)
-	if start < 0 {
-		return ""
-	}
-	rest := body[start+len(marker):]
-	end := bytes.IndexByte(rest, '"')
-	if end < 0 {
-		return ""
-	}
-	return string(rest[:end])
 }
