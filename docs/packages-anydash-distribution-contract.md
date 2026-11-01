@@ -61,13 +61,16 @@ The unified release publishes the `anydash-api` OCI image to GHCR through the [s
 
 ### Public documentation
 
-Public pages in `apps/delino-docs`, curated from these contracts without repository-internal details:
+Public pages in `apps/delino-docs` (`implemented`) under `/services/anydash/`, curated from these contracts without repository-internal details:
 
-- Getting started and device connection.
-- CLI reference.
-- Provider connection guides: required tokens, permissions, provided and "Not provided" metrics, and the Vercel write-capable token warning.
-- Data and troubleshooting: uploaded data, retention and deletion, team sharing scope, meaning of estimated cost, cross-device duplication and common errors.
-- Support: public GitHub Issues without personal data, and GitHub private vulnerability reporting for security reports.
+- `index`: overview.
+- `getting-started`: sign-in, personal and team spaces, the supported platforms matrix, desktop app, install-script and npm installation, the connection code and approval flow, collector operation, logout and reattachment.
+- `cli`: every command and option, JSON output and exit codes, the status fields, user service install and uninstall, credential storage and key rotation, source paths, file locations, environment variables, logs and the color opt-out.
+- `providers`: per provider, the required token or CLI sign-in and its permissions, provided and "Not provided" metrics, the Vercel write-capable token warning, refresh, backoff and collection-device behavior, and the rule that AnyDash never refreshes CLI sign-ins and resumes after the user signs in to that CLI again.
+- `data`: uploaded data, retention and deletion deadlines, account data deletion, team sharing scope and revocation, the meaning of estimated cost, cross-device duplication, quotas and rate limits.
+- `troubleshooting`: the correlation ID, common errors (update required, rate limited, quota exceeded, authentication expired, partial aggregation, version conflict and the other approved states), collector problems and support: public GitHub Issues without personal data, and GitHub private vulnerability reporting for security reports.
+
+The pages are English-only, because the AnyDash product is English-only and localization beyond English is out of scope. They and their dedicated navigation labels are declared as English-only units, and the AnyDash entry of the shared service directory is a registered English-only section, as the [localization contract](apps-delino-site-localization-contract.md#english-only-documentation-coverage) defines. The pages use the approved UI copy for state names. They describe supported behavior and do not announce that an artifact, store listing or deployment is available. Update them together with the CLI, provider adapter, application and server contracts when user-visible behavior changes.
 
 ### Changesets
 
