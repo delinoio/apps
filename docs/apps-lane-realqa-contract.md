@@ -59,7 +59,7 @@ only for the behavior specified here; Pace remains outside this scope.
 - When another capture matches a different repository, retain the composer's current repository and show a warning. The user can change the repository explicitly.
 - Concurrent changes to a rule preserve both alternatives and require explicit resolution. Exclude unresolved rules from automatic selection and show the conflict.
 - During a URL-rule create, save, or conflict-resolution request, disable the fields and choices that define the submitted rule or resolution. A successful reply may close only the unchanged submitted draft. Keep a later accepted edit visible and unsaved; do not submit it automatically. On rejection or conflict, keep the draft, show the error, and allow an explicit retry with the same request identity when the submitted values are unchanged.
-- Deleting the target repository deletes its rules. An open composer referencing that repository must require repository reselection before saving.
+- Deleting the target repository deletes its rules. Deletion follows a rule's current target. A conflict alternative that targets a deleted repository stays visible as a conflict, cannot be chosen in resolution, and the rule can still be deleted. An open composer referencing that repository must require repository reselection before saving.
 
 ### Approved design A: floating composer and image editor
 
