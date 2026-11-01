@@ -99,6 +99,12 @@ func (s *Service) CreateResource(ctx context.Context, req *connect.Request[mcpav
 		if role, err = s.authz.EffectiveRole(ctx, s.db.Pool, res.TenantID, res.ID, p.UserID); err != nil {
 			return nil, dbErr(err)
 		}
+		// A replay returns the resource's current state. The request key is
+		// not a read grant: a creator who has since lost every role gets the
+		// same NOT_FOUND as GetResource.
+		if role == mcpav1.ResourceRole_RESOURCE_ROLE_UNSPECIFIED {
+			return nil, apperr.NotFound("resource not found")
+		}
 	} else {
 		s.log.InfoContext(ctx, "resource created", "resource_id", res.ID, "actor_kind", p.Kind.String())
 	}

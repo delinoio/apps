@@ -176,7 +176,7 @@ Every request resolves to an actor kind (`ACTOR_KIND_CONSOLE`, `ACTOR_KIND_MCP` 
 ### Resources and endpoints
 
 - A resource has a UUID v7 ID, its tenant, a name, a description, routing settings, its creator and timestamps. Names are 1 to 100 bytes, not blank, and unique among the tenant's live resources (`ERROR_REASON_ALREADY_EXISTS`). Descriptions are at most 1,000 bytes.
-- `CreateResource` and `IssueCallKey` take a client-generated UUID v7 `request_key`. A replay with the same input within 30 days returns the original result. A replay with different input fails with `ERROR_REASON_IDEMPOTENCY_CONFLICT`. Replays do not extend the 30-day window.
+- `CreateResource` and `IssueCallKey` take a client-generated UUID v7 `request_key`. A replay with the same input within 30 days returns the original result. A replay with different input fails with `ERROR_REASON_IDEMPOTENCY_CONFLICT`. Replays do not extend the 30-day window. A `CreateResource` replay returns the resource's current state with the caller's current role; a caller who no longer holds a role on the resource receives `ERROR_REASON_NOT_FOUND`.
 - Each resource reports one `Endpoint` per supported format, derived from `MCPA_PUBLIC_URL`:
 
 | Format | Base URL               | Routes under the resource prefix                                                                                                     |

@@ -185,3 +185,46 @@ func TestMutationRechecksRoleUnderResourceLock(t *testing.T) {
 		t.Fatalf("PutAclEntry by a current manager: %v", err)
 	}
 }
+
+func TestCreateResourceReplayRequiresCurrentRole(t *testing.T) {
+	e := newEnv(t)
+	alice, bob := newUser(), newUser()
+	key := store.NewID().String()
+	res := e.createResource(alice, key)
+
+	// The creator's replay returns the original resource with the creator's role.
+	again := e.createResource(alice, key)
+	if again.GetId() != res.GetId() || again.GetCallerRole() != mcpav1.ResourceRole_RESOURCE_ROLE_MANAGE {
+		t.Fatalf("replay returned %s with %v, want %s with MANAGE", again.GetId(), again.GetCallerRole(), res.GetId())
+	}
+
+	if err := e.putACL(alice, res.GetId(), bob, mcpav1.ResourceRole_RESOURCE_ROLE_MANAGE); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.UpdateRouting(e.as(bob), connect.NewRequest(&mcpav1.UpdateRoutingRequest{
+		ResourceId: res.GetId(), Routing: &mcpav1.RoutingSettings{ModelAllowlist: []string{"secret-model"}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	e.removeUserACL(res.GetId(), alice)
+
+	// After losing every role, the replay must not disclose the resource.
+	_, err := e.svc.CreateResource(e.as(alice), connect.NewRequest(&mcpav1.CreateResourceRequest{
+		RequestKey: key, TenantId: testTenant, Name: "res-" + key,
+	}))
+	if reason(err) != mcpav1.ErrorReason_ERROR_REASON_NOT_FOUND {
+		t.Fatalf("replay without a role returned %v, want NOT_FOUND", err)
+	}
+	_, err = e.svc.GetResource(e.as(alice), connect.NewRequest(&mcpav1.GetResourceRequest{ResourceId: res.GetId()}))
+	if reason(err) != mcpav1.ErrorReason_ERROR_REASON_NOT_FOUND {
+		t.Fatalf("GetResource without a role returned %v, want NOT_FOUND", err)
+	}
+
+	// An INVOKE role restores the replay with that role.
+	if err := e.putACL(bob, res.GetId(), alice, mcpav1.ResourceRole_RESOURCE_ROLE_INVOKE); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.createResource(alice, key); got.GetCallerRole() != mcpav1.ResourceRole_RESOURCE_ROLE_INVOKE {
+		t.Fatalf("replay with INVOKE returned role %v", got.GetCallerRole())
+	}
+}
