@@ -272,7 +272,12 @@ queues all provider objects before erasing manifests. Garbage work survives
 account clearing and provider outages. Temporary keys are queued when allocated;
 the worker deletes them after the PUT capability expires, including abandoned
 and completed uploads. Failed provider work remains in the queue. Inspect queue
-counts without exporting PNG bytes, signed URLs or capture metadata. Restore
+counts without exporting PNG bytes, signed URLs or capture metadata. The
+`lane_attachment_pending_publications` and `lane_attachment_pending_deletions`
+gauges project these database-global queues; deduplicate them by maximum like the
+other queue gauges. CaptureService successes are logged with service, operation,
+result and duration, and each attachment worker iteration that performs work logs
+its counts only. Restore
 provider connectivity and valid bucket credentials to drain pending work; do not
 purge pending rows as a recovery shortcut.
 

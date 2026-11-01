@@ -143,6 +143,30 @@ void capture_upload_handoff() {
   require(after+1==before,"pending status includes image work");
 }
 
+// A permanently rejected image (written by the Rust CLI synchronizer into the
+// shared file) is reported per item, never re-enumerated and retried only by
+// the explicit blocked-item retry.
+void capture_blocked_attachment_status_and_retry() {
+  Fixture f;RemoteProposals remote(f);
+  auto q=captureRequest(f,remote.repository["entityId"]);
+  auto v=f.call("CreateCaptureTask",q)["result"]["version"];
+  require(v["task"]["description"]=="","capture leaves the task description empty");
+  auto aid=q["images"][0]["capture"]["attachmentId"].get<std::string>();
+  Sql db(f.database());
+  db.exec("UPDATE attachments SET synchronized=2");
+  require(success(f.store.pendingSync(f.space,remote.owner))["attachments"].empty(),"blocked image is not uploaded implicitly");
+  auto status=f.call("GetLocalStatus");
+  J blocked;
+  for(const auto &e:status["itemErrors"]) if(e.value("attachmentId","")==aid) blocked=e;
+  require(blocked.is_object() && blocked["entityId"]==q["id"] && blocked["reason"]=="ERROR_REASON_ITEM_TOO_LARGE","blocked image item error");
+  require(f.call("GetAttachment",{{"taskId",q["id"]},{"attachmentId",aid}})["png"]==q["images"][0]["png"],"blocked image stays readable");
+  db.exec("UPDATE attachments SET synchronized=3");
+  for(const auto &e:f.call("GetLocalStatus")["itemErrors"]) if(e.value("attachmentId","")==aid) require(e["reason"]=="ERROR_REASON_INVALID_INPUT","invalid image item error");
+  f.call("RetryBlockedItems",J::object());
+  require(db.scalar("SELECT synchronized FROM attachments")=="0","explicit retry returns the image to pending");
+  require(success(f.store.pendingSync(f.space,remote.owner))["attachments"].size()==1,"retried image uploads again");
+}
+
 void moved_capture_survives_deleted_repository_replay() {
   Fixture f; RemoteProposals remote(f);
   auto source = remote.repository["entityId"];

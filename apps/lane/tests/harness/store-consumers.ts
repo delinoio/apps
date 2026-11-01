@@ -20,10 +20,10 @@ const stubs: Record<string, string> = {
   // The capture host is replaced; tests observe and answer its operations.
   "src/realqa-host.ts": `export const host = { realqa: async () => undefined };
 export const realqa = (input) => host.realqa(input);
-export const EditTool = { Crop: "crop", Draw: "draw", Arrow: "arrow", Rectangle: "rectangle", Text: "text" };
+export const EditTool = { Crop: "crop", Draw: "draw", Arrow: "arrow", Rectangle: "rectangle", Text: "text", Blur: "blur", Cover: "cover" };
 export const CaptureMode = { Screen: "screen", Window: "window", Region: "region", DOM: "dom" };
 export const captureModes = [];`,
-  "src/RealQA.tsx": `export const CaptureActions = () => null; export const RealQADialogs = () => null;`,
+  "src/RealQA.tsx": `export const CaptureActions = () => null; export const RealQADialogs = () => null; export const RetryCapture = () => null;`,
   "src/runtime.ts": `export const hostAction = () => Promise.reject(new Error("host unavailable in tests")); export const listenReauthentication = () => () => {};`,
 };
 const plugin: Plugin = {

@@ -253,7 +253,15 @@ version 1. Schema 2 added entity kind 3 for URL connections and an `attachments`
 table keyed by attachment UUID, with owning task, SHA-256, dimensions, byte size,
 optional final PNG bytes encoded as base64, and synchronization state. Empty
 image bytes mean synchronization is pending, not an empty image. Attachment
-content is immutable. Per-image browser metadata remains in the versioned task.
+content is immutable. `attachments.synchronized` is PENDING=0, SYNCHRONIZED=1,
+BLOCKED_ITEM_TOO_LARGE=2 or BLOCKED_INVALID_INPUT=3. A blocked row keeps its
+local bytes and remains readable, is not uploaded, counts in `pendingItemCount`
+and appears in `GetLocalStatus.itemErrors` with the attachment ID as `requestId`,
+the owning task as `entityId`, an `attachmentId` field and reason
+`ERROR_REASON_ITEM_TOO_LARGE` or `ERROR_REASON_INVALID_INPUT`. It returns to
+PENDING only through `RetryBlockedItems`, `lane sync run --retry-blocked` or a
+reconnection. `CreateCaptureTask` stores the problem description only as the
+prompt; the task description is empty in every writer. Per-image browser metadata remains in the versioned task.
 
 Save the task, final images, receipt, outbox and change notification in one
 transaction. Retain images after removal from the current prompt while history
@@ -269,4 +277,4 @@ readable without rewriting immutable versions; new envelopes use format 3.
 Synchronization negotiation must prevent older clients from dropping capture references,
 URL connections or planning fields.
 
-Attachment deletion retains `attachment_identities` rows containing only immutable IDs, owner IDs, dimensions, byte counts and SHA-256 digests. Reusing an attachment ID for another owner or content is rejected even after deletion and account-space imports. Local physical removal deletes these records with the space. No image bytes or browser metadata belong in the identity table.
+Attachment deletion retains `attachment_identities` rows containing only immutable IDs, owner IDs, dimensions, byte counts and SHA-256 digests. Reusing an attachment ID for another owner or content is rejected even after deletion and account-space imports. Local physical removal deletes these records with the space. No image bytes or browser metadata belong in the identity table. Operation logs name the invoked store method, including `AcknowledgeAttachment`, and never contain image bytes, prompt text or capture metadata.

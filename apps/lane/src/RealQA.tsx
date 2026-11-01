@@ -5,6 +5,11 @@ import type { UI } from "./serializable";
 import type { LaneAdapter } from "./adapter";
 import { Button, Dialog, Field, Notice } from "./components";
 import { captureModes, realqa, CaptureMode } from "./realqa-host";
+import {
+  chromeConnectionLabel,
+  chromeListingUrl,
+  permissionLabel,
+} from "./realqa-status";
 import type { RealQAController } from "./useRealQA";
 import { URLConnections } from "./URLConnections";
 import { hostAction } from "./runtime";
@@ -54,6 +59,21 @@ export function CaptureActions({
     </view>
   );
 }
+// Repeats the most recent failed in-app capture. The current draft is retained.
+export function RetryCapture({ controller }: { controller: RealQAController }) {
+  const mode = controller.retryMode;
+  if (!mode || !controller.error) return null;
+  const label = captureModes.find(([value]) => value === mode)?.[1] ?? mode;
+  return (
+    <Button
+      disabled={controller.busy}
+      label={`Retry ${label} capture`}
+      onClick={() => void controller.capture(mode)}
+    >
+      Retry capture
+    </Button>
+  );
+}
 export function RealQA({
   controller,
   adapter,
@@ -69,17 +89,29 @@ export function RealQA({
 }) {
   const [shortcut, setShortcut] = useState<{
     mode: CaptureMode;
+    initial: string;
     value: string;
   }>();
+  const [discardShortcut, setDiscardShortcut] = useState(false);
   const [urlDirty, setUrlDirty] = useState(false);
   const [narrow, setNarrow] = useState(false);
+  const shortcutChanged = !!shortcut && shortcut.value !== shortcut.initial;
   useEffect(() => {
-    dirty(urlDirty || !!shortcut);
+    dirty(urlDirty || shortcutChanged);
     return () => dirty(false);
-  }, [dirty, urlDirty, shortcut]);
+  }, [dirty, urlDirty, shortcutChanged]);
   const [disconnect, setDisconnect] = useState<string>();
+  const [resetApprovals, setResetApprovals] = useState(false);
   const { state, busy, run } = controller;
   const chrome = state?.chrome;
+  const listingUrl = chromeListingUrl(state);
+  const closeShortcut = () => {
+    if (shortcutChanged) setDiscardShortcut(true);
+    else setShortcut(undefined);
+  };
+  // The host check runs on the background thread; render nothing until it
+  // settles instead of flashing the mobile read-only entry on desktop.
+  if (controller.available === undefined) return null;
   if (!controller.available)
     return (
       <view className="coming-soon">
@@ -110,9 +142,12 @@ export function RealQA({
         </view>
         <CaptureActions controller={controller} />
         <view className="realqa-permission-row">
-          <text>
-            Screen capture permission: {state?.permission || "Loading…"}
-          </text>
+          <view className="realqa-row-value">
+            <text>Screen capture permission: {permissionLabel(state)}</text>
+            {state?.message && (
+              <text className="muted realqa-long-value">{state.message}</text>
+            )}
+          </view>
           <Button
             disabled={busy}
             onClick={() =>
@@ -123,6 +158,7 @@ export function RealQA({
           </Button>
         </view>
         {controller.error && <Notice>{controller.error}</Notice>}
+        <RetryCapture controller={controller} />
         <view className="realqa-section">
           <text className="heading" accessibility-heading>
             Keyboard shortcuts
@@ -142,10 +178,12 @@ export function RealQA({
                 </view>
                 <view className="realqa-row-actions">
                   <Button
+                    id={`realqa-shortcut-${mode}`}
                     disabled={busy || !state}
-                    onClick={() =>
-                      setShortcut({ mode, value: state?.shortcuts[mode] || "" })
-                    }
+                    onClick={() => {
+                      const current = state?.shortcuts[mode] || "";
+                      setShortcut({ mode, initial: current, value: current });
+                    }}
                   >
                     {state?.shortcuts[mode] ? "Change" : "Assign"}
                   </Button>
@@ -185,8 +223,25 @@ export function RealQA({
             Chrome connection
           </text>
           <text className="muted">Approvals are local to this device.</text>
-          <text>{chrome?.state || (state ? "Disconnected" : "Loading…")}</text>
+          <text>{chromeConnectionLabel(state)}</text>
           {chrome?.message && <Notice>{chrome.message}</Notice>}
+          {chrome?.recovery === "retry" && (
+            <Button
+              disabled={busy}
+              onClick={() => void run(() => realqa({ op: "chrome.retry" }))}
+            >
+              Retry Chrome connection
+            </Button>
+          )}
+          {chrome?.recovery === "resetApprovals" && (
+            <Button
+              id="realqa-reset-approvals"
+              disabled={busy}
+              onClick={() => setResetApprovals(true)}
+            >
+              Reset Chrome approvals
+            </Button>
+          )}
           {chrome?.profile && (
             <text className="realqa-long-value">Profile: {chrome.profile}</text>
           )}
@@ -243,6 +298,7 @@ export function RealQA({
                     </text>
                   </view>
                   <Button
+                    id={`realqa-disconnect-${connection.profileId}`}
                     disabled={busy}
                     onClick={() => setDisconnect(connection.profileId)}
                   >
@@ -252,12 +308,10 @@ export function RealQA({
               ))}
             </view>
           )}
-          {chrome?.listingUrl ? (
+          {listingUrl ? (
             <Button
               disabled={busy}
-              onClick={() =>
-                void run(() => hostAction("openURL", chrome.listingUrl!))
-              }
+              onClick={() => void run(() => hostAction("openURL", listingUrl))}
             >
               Install extension
             </Button>
@@ -275,7 +329,8 @@ export function RealQA({
           <Dialog
             className="realqa-dialog"
             title="Assign keyboard shortcut"
-            onClose={() => setShortcut(undefined)}
+            returnFocusId={`realqa-shortcut-${shortcut.mode}`}
+            onClose={closeShortcut}
           >
             <Field
               label="Shortcut (for example Command+Shift+S or Ctrl+Shift+S)"
@@ -287,8 +342,9 @@ export function RealQA({
               If the shortcut is unavailable, the previous binding is retained.
             </text>
             {controller.error && <Notice>{controller.error}</Notice>}
-            <Button onClick={() => setShortcut(undefined)}>Cancel</Button>
+            <Button onClick={closeShortcut}>Cancel</Button>
             <Button
+              id="realqa-shortcut-save"
               primary
               disabled={busy || !shortcut.value.trim()}
               onClick={() =>
@@ -299,6 +355,7 @@ export function RealQA({
                     accelerator: shortcut.value,
                   });
                   setShortcut(undefined);
+                  setDiscardShortcut(false);
                 })
               }
             >
@@ -306,10 +363,60 @@ export function RealQA({
             </Button>
           </Dialog>
         )}
+        {shortcut && discardShortcut && (
+          <Dialog
+            className="realqa-dialog"
+            title="Discard shortcut change?"
+            returnFocusId="realqa-shortcut-save"
+            onClose={() => setDiscardShortcut(false)}
+          >
+            <text>The typed shortcut is not saved.</text>
+            <Button focusOnShow onClick={() => setDiscardShortcut(false)}>
+              Keep editing
+            </Button>
+            <Button
+              onClick={() => {
+                setShortcut(undefined);
+                setDiscardShortcut(false);
+              }}
+            >
+              Discard change
+            </Button>
+          </Dialog>
+        )}
+        {resetApprovals && (
+          <Dialog
+            className="realqa-dialog"
+            title="Reset Chrome approvals?"
+            returnFocusId="realqa-reset-approvals"
+            onClose={() => setResetApprovals(false)}
+          >
+            <text>
+              Lane cannot read its saved Chrome approvals. Resetting sets them
+              aside, and every Chrome profile must be approved again.
+            </text>
+            {controller.error && <Notice>{controller.error}</Notice>}
+            <Button focusOnShow onClick={() => setResetApprovals(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await realqa({ op: "chrome.resetApprovals" });
+                  setResetApprovals(false);
+                })
+              }
+            >
+              Reset approvals
+            </Button>
+          </Dialog>
+        )}
         {disconnect && (
           <Dialog
             className="realqa-dialog"
             title="Disconnect Chrome?"
+            returnFocusId={`realqa-disconnect-${disconnect}`}
             onClose={() => setDisconnect(undefined)}
           >
             <text>
@@ -423,14 +530,7 @@ export function RealQADialogs({
               key={source.id}
               disabled={busy}
               onClick={() =>
-                void run(async () => {
-                  controller.setSources(undefined);
-                  await realqa({
-                    op: "capture",
-                    mode: sources.mode,
-                    sourceId: source.id,
-                  });
-                })
+                void controller.captureSource(sources.mode, source.id)
               }
             >{`${source.name} · ${source.width} × ${source.height}`}</Button>
           ))}

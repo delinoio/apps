@@ -30,6 +30,18 @@ int main() {
     for(auto type:{"draw","arrow","rectangle","text","blur","cover"})tools.push_back({{"type",type},{"x",2},{"y",2},{"width",10},{"height",10},{"text","QA"},{"color","#0000FF"}});
     Check(call({{"op","render"},{"png",png},{"layers",tools}})["ok"],"editor tool failed");
     Check(!call({{"op","render"},{"png","bad data"},{"layers",CaptureJSON::array()}})["ok"],"malformed image accepted");
+    // Edit-menu chords are Lane's own shortcuts; invalid grammar is distinct from a conflict.
+    for(auto accelerator:{"Command+C","command+v","Command+Shift+Z","Command+Option+Shift+V"}) {
+      auto reply=call({{"op","shortcut"},{"mode","region"},{"accelerator",accelerator}});
+      Check(!reply["ok"]&&reply["error"]["reason"]=="ERROR_REASON_CONFLICT","reserved Edit shortcut accepted");
+    }
+    auto shiftOnly=call({{"op","shortcut"},{"mode","region"},{"accelerator","Shift+A"}});
+    Check(!shiftOnly["ok"]&&shiftOnly["error"]["reason"]=="ERROR_REASON_INVALID_INPUT","Shift-only shortcut accepted");
+    // N and M map to Carbon key codes; lowercase input matches the Windows grammar.
+    for(auto accelerator:{"command+control+option+shift+n","Command+Control+Option+Shift+M"}) {
+      Check(call({{"op","shortcut"},{"mode","region"},{"accelerator",accelerator}})["ok"],"letter shortcut rejected");
+      Check(call({{"op","shortcut"},{"mode","region"},{"accelerator",""}})["ok"],"shortcut clear failed");
+    }
     std::cout<<"Lane RealQA memory renderer tests passed\n";return 0;
   }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}
  }

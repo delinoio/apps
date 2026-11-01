@@ -504,3 +504,98 @@ fn standalone_import_projects_only_current_repository_heads() {
         .unwrap();
     }
 }
+
+/// Shared `RealQA` URL-prefix vectors: normalization, boundary-aware longest-prefix
+/// selection excluding conflicted rules, and duplicate normalized rejection.
+#[test]
+fn url_prefix_vectors() {
+    let root = tempfile::tempdir().unwrap();
+    let s = Store::open(root.path(), "", false).unwrap();
+    let repository = |label: &str| {
+        format!(
+            "019a0000-0000-7000-8000-0000000000{:02x}",
+            label.as_bytes()[0]
+        )
+    };
+    for case in fixture("url-prefixes")["cases"].as_array().unwrap() {
+        let input = &case["input"];
+        let expected = &case["expected"];
+        match strv(input, "operation") {
+            "normalize" => {
+                let result = lane::capture::normalize_prefix(strv(input, "prefix"));
+                if expected.get("reason").is_some() {
+                    assert!(result.is_err(), "{}", case["id"]);
+                } else {
+                    assert_eq!(
+                        result.unwrap(),
+                        strv(expected, "normalizedPrefix"),
+                        "{}",
+                        case["id"]
+                    );
+                }
+            }
+            "select" => {
+                let rules: Vec<Value> = input["rules"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|rule| {
+                        let mut result = json!({"version":{"urlConnection":{"prefix":rule["prefix"],"repositoryId":repository(strv(rule,"repository"))}}});
+                        if rule["conflict"] == true {
+                            result["result"] = "RESULT_KIND_CONFLICT".into();
+                        }
+                        result
+                    })
+                    .collect();
+                let selected = lane::capture::select_repository(strv(input, "page"), &rules)
+                    .unwrap()
+                    .map(str::to_owned);
+                let want = expected["repository"].as_str().map(repository);
+                assert_eq!(selected, want, "{}", case["id"]);
+            }
+            "create" => {
+                let repo = id();
+                call(
+                    &s,
+                    "CreateRepository",
+                    json!({"id":repo,"url":format!("https://example.com/{repo}")}),
+                )
+                .unwrap();
+                let prefixes = input["prefixes"].as_array().unwrap();
+                let first = call(
+                    &s,
+                    "CreateURLConnection",
+                    json!({"connection":{"prefix":prefixes[0],"repositoryId":repo}}),
+                )
+                .unwrap();
+                let second = call(
+                    &s,
+                    "CreateURLConnection",
+                    json!({"connection":{"prefix":prefixes[1],"repositoryId":repo}}),
+                );
+                assert_eq!(
+                    second.is_err(),
+                    expected["duplicateRejected"] == true,
+                    "{}",
+                    case["id"]
+                );
+                // Remove the rules so later vectors start from an empty rule set.
+                call(
+                    &s,
+                    "DeleteURLConnection",
+                    json!({"id":first["result"]["version"]["entityId"]}),
+                )
+                .unwrap();
+                if let Ok(second) = second {
+                    call(
+                        &s,
+                        "DeleteURLConnection",
+                        json!({"id":second["result"]["version"]["entityId"]}),
+                    )
+                    .unwrap();
+                }
+            }
+            other => panic!("unknown URL-prefix operation {other}"),
+        }
+    }
+}

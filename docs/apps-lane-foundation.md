@@ -808,7 +808,11 @@ This private runtime does not update Lynxtron's separately embedded runtime. The
 Lynxtron or the Lane application. `LANE_CHROME_EXTENSION_IDS` supplies exact,
 comma-separated development or published extension IDs at build time. An empty
 value leaves Chrome registration and the connection service disabled; it does
-not produce a placeholder store listing.
+not produce a placeholder store listing. `LANE_CHROME_WEB_STORE_EXTENSION_ID`
+optionally names the published extension. It must also appear in
+`LANE_CHROME_EXTENSION_IDS`; only then does RealQA offer `Install extension`
+for its Chrome Web Store listing. The build rejects malformed IDs in both
+variables.
 
 Windows builds require Node 24, CMake, Visual Studio with the MSVC C++ desktop
 toolchain, and a Windows 10/11 SDK containing `Windows.winmd`. Native shortcut

@@ -5,6 +5,8 @@ import {
   safeMetadata,
   visibleRect,
   remedies,
+  remedy,
+  localCaptureFailure,
 } from "./protocol.js";
 // Chromium rejects service workers whose module graph uses top-level await, so the
 // trusted-context restriction is started here without awaiting it. Every handler is
@@ -49,12 +51,12 @@ function connection() {
       return;
     }
     if (message.type === "select") {
-      void select({ activate: message.activate === true })
+      void select({ activate: message.activate === true, lane: true })
         .then(
           () =>
             request("selectionResult", { selectionId: message.selectionId }),
           async (error) => {
-            await showStatus(remedies[error.message] || error.message);
+            await showStatus(remedy(error.message));
             await request("selectionResult", {
               selectionId: message.selectionId,
               reason: error.message,
@@ -96,21 +98,27 @@ async function identity() {
   }
   return value;
 }
-async function request(type, body = {}) {
+// `timeout: 0` waits until Lane replies or the native port disconnects. Profile
+// approval uses it: a user may answer Lane's prompt at any time, and abandoning the
+// request while the port stays open would let Lane grant a token nobody receives.
+async function request(type, body = {}, { timeout = 120000 } = {}) {
   await ensureAccess();
   const credentials = await identity();
   const p = connection(),
     id = String(++serial);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(id);
-      reject(new Error("CONNECTION_TIMEOUT"));
-    }, 120000);
+    const timer =
+      timeout > 0
+        ? setTimeout(() => {
+            pending.delete(id);
+            reject(new Error("CONNECTION_TIMEOUT"));
+          }, timeout)
+        : undefined;
     pending.set(id, { resolve, reject, timer });
     p.postMessage({ id, type, ...credentials, ...body });
   });
 }
-async function select({ activate = false } = {}) {
+async function select({ activate = false, lane = false } = {}) {
   await ensureAccess();
   const [tab] = await chrome.tabs.query({
     active: true,
@@ -133,7 +141,7 @@ async function select({ activate = false } = {}) {
   }
   if (!(await chrome.windows.get(tab.windowId)).focused)
     throw new Error("CHROME_NOT_AVAILABLE");
-  selections.set(tab.id, { url: tab.url, windowId: tab.windowId });
+  selections.set(tab.id, { url: tab.url, windowId: tab.windowId, lane });
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -148,6 +156,29 @@ async function capture(message, sender) {
   const tab = sender.tab,
     selection = tab && selections.get(tab.id);
   selections.delete(tab?.id);
+  let payload;
+  try {
+    payload = await crop(message, sender, selection);
+  } catch (error) {
+    // Lane started this selection from its own window, which cannot see the
+    // badge. Report only the enumerated failure code over the approved connection;
+    // Lane reports rejections of sent captures itself.
+    if (selection?.lane)
+      void request("captureFailed", {
+        reason: localCaptureFailure(error.message),
+      }).catch(() => {});
+    throw error;
+  }
+  await request("capture", payload);
+  await chrome.action.setBadgeText({ text: "" });
+  return {
+    ok: true,
+    message: "Capture added to Lane. Review metadata before saving.",
+  };
+}
+// Validates the bound selection and crops the visible element in worker memory.
+async function crop(message, sender, selection) {
+  const tab = sender.tab;
   if (
     !selection ||
     sender.frameId !== 0 ||
@@ -232,17 +263,12 @@ async function capture(message, sender) {
   let binary = "";
   for (let i = 0; i < bytes.length; i += 8192)
     binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  await request("capture", {
+  return {
     pngBase64: btoa(binary),
     width: canvas.width,
     height: canvas.height,
     metadata,
     clipped: rect.clipped || message.clipped === true,
-  });
-  await chrome.action.setBadgeText({ text: "" });
-  return {
-    ok: true,
-    message: "Capture added to Lane. Review metadata before saving.",
   };
 }
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
@@ -259,7 +285,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
           80,
         ),
       });
-      const result = await request("connect");
+      const result = await request("connect", {}, { timeout: 0 });
       await chrome.storage.local.set({ token: result.token });
       return { ok: true, message: "Connected. Select an element to capture." };
     }
@@ -282,9 +308,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     throw new Error("UNSUPPORTED_REQUEST");
   };
   void operation().then(reply, (error) => {
-    const message =
-      remedies[error.message] ||
-      "Capture failed. Your Lane draft is unchanged. Retry manually.";
+    const message = remedy(error.message);
     void showStatus(message);
     reply({ ok: false, message });
   });
@@ -292,12 +316,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
 });
 chrome.commands.onCommand.addListener((command) => {
   if (command === "select-element")
-    void select().catch((error) =>
-      showStatus(
-        remedies[error.message] ||
-          "Capture unavailable. Click RealQA on this page.",
-      ),
-    );
+    void select().catch((error) => showStatus(remedy(error.message)));
 });
 chrome.tabs.onRemoved.addListener((id) => selections.delete(id));
 // A native port keeps the worker alive while Lane runs. Reconnect only on explicit

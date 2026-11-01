@@ -38,6 +38,8 @@ export function URLConnections({
     prefix: string;
     repositoryId: string;
     requestId: string;
+    // Control that receives focus when the editor closes.
+    trigger: string;
   }>();
   const [deleting, setDeleting] = useState<string>();
   const [resolution, setResolution] = useState<{
@@ -125,13 +127,18 @@ export function URLConnections({
       ? repositoryName(repository.version)
       : "Repository unavailable";
   };
+  // A stopped connection (reconnection required or no usable credentials) can
+  // never be reported as synchronized.
   const syncLabel = !status
     ? loading || !loadError
       ? "Checking synchronization…"
       : "Synchronization status unavailable"
     : !status.syncEnabled
       ? "Local only"
-      : status.syncErrorReason || status.itemErrors?.length
+      : status.reconnectRequired ||
+          status.connected === false ||
+          status.syncErrorReason ||
+          status.itemErrors?.length
         ? "Synchronization failed"
         : status.pendingItemCount !== "0"
           ? "Synchronization pending"
@@ -146,6 +153,7 @@ export function URLConnections({
           <text className="muted">{syncLabel}</text>
         </view>
         <Button
+          id="url-connection-add"
           disabled={busy}
           onClick={() =>
             setEditing({
@@ -154,6 +162,7 @@ export function URLConnections({
               prefix: "",
               repositoryId: "",
               requestId: newId(),
+              trigger: "url-connection-add",
             })
           }
         >
@@ -189,6 +198,7 @@ export function URLConnections({
               </view>
               <view className="realqa-row-actions">
                 <Button
+                  id={`url-connection-edit-${item.version?.entityId}`}
                   disabled={busy || conflicted(item)}
                   onClick={() =>
                     setEditing({
@@ -198,12 +208,14 @@ export function URLConnections({
                       prefix: connectionOf(item.version)!.prefix,
                       repositoryId: connectionOf(item.version)!.repositoryId,
                       requestId: newId(),
+                      trigger: `url-connection-edit-${item.version!.entityId}`,
                     })
                   }
                 >
                   Edit
                 </Button>
                 <Button
+                  id={`url-connection-delete-${item.version?.entityId}`}
                   disabled={busy}
                   onClick={() => setDeleting(item.version!.entityId)}
                 >
@@ -211,6 +223,7 @@ export function URLConnections({
                 </Button>
                 {conflicted(item) && (
                   <Button
+                    id={`url-connection-resolve-${item.version?.entityId}`}
                     disabled={busy}
                     onClick={() => {
                       setResolution({
@@ -235,6 +248,7 @@ export function URLConnections({
         <Dialog
           className="realqa-dialog"
           title={editing.base ? "Edit URL connection" : "Add URL connection"}
+          returnFocusId={editing.trigger}
           onClose={() => setDiscard(true)}
         >
           <Field
@@ -261,6 +275,7 @@ export function URLConnections({
           />
           <Choices
             label="Repository"
+            exclusive
             value={editing.repositoryId}
             options={options}
             disabled={busy}
@@ -284,6 +299,7 @@ export function URLConnections({
             </Button>
           )}
           <Button
+            id="url-connection-save"
             disabled={busy}
             primary
             onClick={() =>
@@ -345,6 +361,7 @@ export function URLConnections({
         <Dialog
           className="realqa-dialog"
           title="Discard URL connection changes?"
+          returnFocusId="url-connection-save"
           onClose={() => setDiscard(false)}
         >
           <Button focusOnShow onClick={() => setDiscard(false)}>
@@ -364,6 +381,7 @@ export function URLConnections({
         <Dialog
           className="realqa-dialog"
           title="Discard conflict resolution?"
+          returnFocusId="url-connection-resolution-save"
           onClose={() => setDiscardConflict(false)}
         >
           <Button primary focusOnShow onClick={() => setDiscardConflict(false)}>
@@ -383,6 +401,7 @@ export function URLConnections({
         <Dialog
           className="realqa-dialog"
           title="Delete URL connection?"
+          returnFocusId={`url-connection-delete-${deleting}`}
           onClose={() => setDeleting(undefined)}
         >
           <text>This removes the matching rule. Saved tasks are retained.</text>
@@ -415,6 +434,7 @@ export function URLConnections({
         <Dialog
           className="realqa-dialog"
           title="Resolve URL connection conflict"
+          returnFocusId={`url-connection-resolve-${resolution.conflict.version?.entityId}`}
           onClose={() => {
             if (resolution.chosen) setDiscardConflict(true);
             else setResolution(undefined);
@@ -433,7 +453,7 @@ export function URLConnections({
                 {displayRepository(connectionOf(version)?.repositoryId)}
               </text>
               <Button
-                primary={resolution.chosen?.versionId === version.versionId}
+                pressed={resolution.chosen?.versionId === version.versionId}
                 disabled={busy}
                 onClick={() => {
                   if (lock.current) return;
@@ -452,6 +472,7 @@ export function URLConnections({
           {resolution.chosen && (
             <Choices
               label="Resolved repository"
+              exclusive
               value={connectionOf(resolution.chosen)!.repositoryId}
               options={options}
               disabled={busy}
@@ -495,6 +516,7 @@ export function URLConnections({
             </Button>
           )}
           <Button
+            id="url-connection-resolution-save"
             primary
             disabled={busy || !resolution.chosen}
             onClick={() =>
@@ -548,6 +570,7 @@ export function URLConnections({
                     prefix: retained.prefix,
                     repositoryId: retained.repositoryId,
                     requestId: current.requestId,
+                    trigger: `url-connection-edit-${savedVersion.entityId}`,
                   });
                 }
                 setResolution((active) =>

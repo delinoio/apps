@@ -294,9 +294,13 @@ impl Server {
             .await
         {
             Ok(output) => {
-                if matches!(service, "LaneService" | "PlanningService") {
-                    // Content-free: never log task text, names, descriptions or relationship titles.
-                    tracing::info!(correlation_id=%trace,operation=method,result="ok",duration_ms=started.elapsed().as_millis() as u64,"Lane operation completed");
+                if matches!(
+                    service,
+                    "LaneService" | "PlanningService" | "CaptureService"
+                ) {
+                    // Content-free: never log task text, names, descriptions, relationship titles,
+                    // URLs or URL prefixes, signed object URLs, capture metadata or image bytes.
+                    tracing::info!(correlation_id=%trace,service,operation=method,result="ok",duration_ms=started.elapsed().as_millis() as u64,"Lane operation completed");
                 }
                 if matches!(
                     service,

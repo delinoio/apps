@@ -151,7 +151,18 @@ export function violationFromReason(text: string): string | undefined {
   return /^CONSTRAINT_VIOLATION:([A-Z_]+)$/.exec(text.trim())?.[1];
 }
 /** Explains a rejected synchronization item (local reason text CONSTRAINT_VIOLATION:<VIOLATION>). */
-export function describeItemError(reason: string): string {
+const attachmentReasonText: Record<string, string> = {
+  ERROR_REASON_ITEM_TOO_LARGE:
+    "This capture image exceeds the server size limit. It remains on this device.",
+  ERROR_REASON_INVALID_INPUT:
+    "The server rejected this capture image as invalid. It remains on this device.",
+};
+export function describeItemError(
+  reason: string,
+  attachmentId?: string,
+): string {
+  if (attachmentId)
+    return `${attachmentReasonText[reason] ?? `This capture image could not synchronize (${reason}). It remains on this device.`} Retry the blocked items after the cause is resolved.`;
   const violation = violationFromReason(reason);
   const text = violation ? violationText[violation] : undefined;
   return text

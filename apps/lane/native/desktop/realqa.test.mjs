@@ -309,3 +309,45 @@ test("cancelled and failed captures preserve existing draft, source choice does 
     t.cleanup();
   }
 });
+
+test("browser captures keep empty metadata, expose clipping in the draft and omit it from export", async () => {
+  const t = setup();
+  try {
+    const clipped = t.host.appendCapture({
+      ...image,
+      metadata: {
+        pageUrl: "https://example.test/",
+        pageTitle: "",
+        cssSelector: "#target",
+      },
+      clipped: true,
+    });
+    const whole = t.host.appendCapture({ ...image, metadata: {} });
+    const state = (await t.invoke({ op: "state" })).value;
+    assert.equal(state.draft.images[0].clipped, true);
+    assert.equal("clipped" in state.draft.images[1], false);
+    assert.deepEqual(state.draft.images[0].metadata, {
+      pageUrl: "https://example.test/",
+      pageTitle: "",
+      cssSelector: "#target",
+    });
+    // An edited-to-empty value is retained; only an omitted key is removed.
+    await t.invoke({
+      op: "updateDraft",
+      title: "Bug",
+      repositoryId: "repo",
+      imageId: clipped.id,
+      metadata: { pageTitle: "", cssSelector: "" },
+    });
+    const exported = (await t.invoke({ op: "export" })).value;
+    assert.deepEqual(exported.images[0].metadata, {
+      pageTitle: "",
+      cssSelector: "",
+    });
+    assert.equal(exported.images[1].id, whole.id);
+    for (const item of exported.images)
+      assert.equal("clipped" in item, false, "clipping is draft-only");
+  } finally {
+    t.cleanup();
+  }
+});

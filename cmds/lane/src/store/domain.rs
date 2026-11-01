@@ -512,8 +512,15 @@ repo=Some(result(&[rv]));
 return Err(invalid("Creation requires regular or pending proposal."));
 }
 v["kind"]="ENTITY_KIND_TASK".into();
+// A capture's problem description becomes its prompt only; native and
+// server peers leave the task description empty for the same request.
+let description=if method=="CreateCaptureTask"{
+json!("")}
+else{
+q["description"].clone()}
+;
 v["task"]=json!({
-"repositoryId":rid,"title":q["title"],"description":q["description"],"progress":q["progress"],"proposal":q["proposal"]}
+"repositoryId":rid,"title":q["title"],"description":description,"progress":q["progress"],"proposal":q["proposal"]}
 );
 if let Some(p)=q.get("prompt"){
 v["task"]["prompt"]=p.clone();

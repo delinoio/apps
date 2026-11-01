@@ -20,7 +20,12 @@ function shortcutMethod(platform) {
     join(desktop, platform, "capture." + (platform === "macos" ? "mm" : "cc")),
     "utf8",
   );
-  const start = source.indexOf("  CaptureJSON Shortcut(");
+  // The macOS Shortcut method uses the key-code table declared before it.
+  const keyCodes = source.indexOf(
+    "  static const std::map<char,UInt32>& KeyCodes(",
+  );
+  const start =
+    keyCodes >= 0 ? keyCodes : source.indexOf("  CaptureJSON Shortcut(");
   const end = source.indexOf("  CaptureJSON Call(", start);
   assert.ok(
     start >= 0 && end > start,
@@ -76,17 +81,19 @@ int main() {
   for (const char* mode : {"screen", "window", "region", "dom"}) {
     Win host;
     for (const char* prefix : {"Ctrl+", "Control+"}) {
-      for (const char* key : {"K", "Q", "O", "T", "W", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
+      for (const char* key : {"K", "Q", "O", "T", "W", "Z", "X", "C", "V", "A", "Y", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
         conflict(host, mode, std::string(prefix) + key);
       conflict(host, mode, std::string(prefix) + "Shift+T");
+      conflict(host, mode, std::string(prefix) + "Shift+Z");
       assert(host.shortcuts.empty());
     }
     host.Shortcut({{"mode", mode}, {"accelerator", "Ctrl+Shift+8"}});
     const int original = host.shortcuts.at(mode);
     for (const char* prefix : {"Ctrl+", "Control+"}) {
-      for (const char* key : {"K", "Q", "O", "T", "W", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
+      for (const char* key : {"K", "Q", "O", "T", "W", "Z", "X", "C", "V", "A", "Y", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
         conflict(host, mode, std::string(prefix) + key);
       conflict(host, mode, std::string(prefix) + "Shift+T");
+      conflict(host, mode, std::string(prefix) + "Shift+Z");
       assert(host.shortcuts.at(mode) == original);
     }
     allowRegistration = false;
@@ -131,17 +138,19 @@ int main() { @autoreleasepool {
   for (const char* mode : {"screen", "window", "region", "dom"}) {
     Mac host;
     for (const char* prefix : {"Command+", "Cmd+", "Meta+"}) {
-      for (const char* key : {"K", "Q", "O", "T", "W", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
+      for (const char* key : {"K", "Q", "O", "T", "W", "Z", "X", "C", "V", "A", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
         conflict(host, mode, std::string(prefix) + key);
       conflict(host, mode, std::string(prefix) + "Shift+T");
+      conflict(host, mode, std::string(prefix) + "Shift+Z");
       assert(host.shortcuts.empty());
     }
     host.Shortcut({{"mode", mode}, {"accelerator", "Command+Shift+8"}});
     auto original = host.shortcuts.at(mode);
     for (const char* prefix : {"Command+", "Cmd+", "Meta+"}) {
-      for (const char* key : {"K", "Q", "O", "T", "W", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
+      for (const char* key : {"K", "Q", "O", "T", "W", "Z", "X", "C", "V", "A", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
         conflict(host, mode, std::string(prefix) + key);
       conflict(host, mode, std::string(prefix) + "Shift+T");
+      conflict(host, mode, std::string(prefix) + "Shift+Z");
       assert(host.shortcuts.at(mode) == original);
     }
     allowRegistration = false;
@@ -151,11 +160,14 @@ int main() { @autoreleasepool {
     catch (const CaptureError& error) { osConflict = error.reason == "ERROR_REASON_CONFLICT"; }
     assert(osConflict && releases == before && host.shortcuts.at(mode) == original);
     allowRegistration = true;
+    host.Shortcut({{"mode", mode}, {"accelerator", "Command+Option+N"}});
+    host.Shortcut({{"mode", mode}, {"accelerator", "command+option+m"}});
+    operations.clear();
     host.Shortcut({{"mode", mode}, {"accelerator", "Command+Option+K"}});
     assert(operations.at(operations.size() - 2) == "register");
     assert(operations.back() == "release");
     host.Shortcut({{"mode", mode}, {"accelerator", ""}});
-    assert(host.shortcuts.empty() && releases == before + 2);
+    assert(host.shortcuts.empty() && releases == before + 4);
   }
 } }
 `;

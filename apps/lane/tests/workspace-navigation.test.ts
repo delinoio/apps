@@ -96,7 +96,13 @@ test("a composer initialized before tab reads loads every repository page itself
     completions[0]({ items: [], nextCursor: "" });
     await view.settle();
     const nodes = visibleNodes(view.tree());
-    assert.ok(nodes.some((n) => n.props["accessibility-label"] === "repo-b"));
+    assert.ok(
+      nodes.some(
+        (n) =>
+          n.props["accessibility-label"] === "Repository: repo-b" &&
+          n.props["accessibility-value"] === "Selected",
+      ),
+    );
     const save = nodes.find(
       (n) => n.props["accessibility-label"] === "Save to Lane",
     );
@@ -150,6 +156,11 @@ async function realqaMain() {
   tap(view.tree(), "RealQA");
   await view.settle();
   tap(view.tree(), "Assign");
+  await view.settle();
+  // An unchanged shortcut dialog is not an edit; type a value to make it one.
+  const input = visibleNodes(view.tree()).find((n) => n.type === "input");
+  assert.ok(input, "shortcut input");
+  input.props.bindinput({ detail: { value: "Command+Shift+1" } });
   await view.settle();
   return Object.assign(view, { host: bundle.host });
 }
@@ -759,6 +770,75 @@ test("ordinary navigation leaves Settings and cancels an in-progress desktop upd
     );
     assert.ok(
       !nodes().some((n) => n.props["data-workspace-tab"] === "page-Settings"),
+    );
+  } finally {
+    view.unmount();
+  }
+});
+
+test("a failed in-app capture keeps the draft and retries the same mode", async () => {
+  const bundle = await loadApp();
+  const requests: Record<string, unknown>[] = [];
+  let failures = 1;
+  (globalThis as any).NativeModules = {
+    bridge: {},
+    LaneHost: {
+      realqa: (raw: string, callback: (raw: string) => void) => {
+        const request = JSON.parse(raw);
+        requests.push(request);
+        if (request.op === "capture" && failures-- > 0)
+          return callback(
+            JSON.stringify({
+              ok: false,
+              error: { message: "Region capture failed." },
+            }),
+          );
+        callback(
+          JSON.stringify({
+            ok: true,
+            value: { window: "main", shortcuts: {}, draft: null },
+          }),
+        );
+      },
+    },
+  };
+  const view = bundle.runtime.mount(bundle.App, {
+    providedAdapter: {
+      mode: "web",
+      open: async () => {},
+      close() {},
+      subscribe: () => () => {},
+      call: async () => ({ items: [], nextCursor: "" }),
+      local: async () => ({}),
+    },
+  });
+  try {
+    await view.settle();
+    tap(view.tree(), "New tab");
+    await view.settle();
+    tap(view.tree(), "RealQA");
+    await view.settle();
+    tap(view.tree(), "Region. Select an area");
+    await view.settle();
+    const shown = () =>
+      visibleNodes(view.tree())
+        .filter((node) => node.type === "text")
+        .map((node) => node.children.join(""))
+        .join(" ");
+    assert.match(shown(), /Region capture failed\./);
+    tap(view.tree(), "Retry Region capture");
+    await view.settle();
+    assert.deepEqual(
+      requests
+        .filter((request) => request.op === "capture")
+        .map((request) => request.mode),
+      ["region", "region"],
+    );
+    assert.doesNotMatch(shown(), /Region capture failed\./);
+    assert.ok(
+      !visibleNodes(view.tree()).some(
+        (node) => node.props["accessibility-label"] === "Retry Region capture",
+      ),
     );
   } finally {
     view.unmount();

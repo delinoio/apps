@@ -1505,6 +1505,14 @@ struct Store::Impl {
                          "WHERE state=2 ORDER BY created_at_us"))
       errors.push_back(
           {{"requestId", r[0]}, {"entityId", r[1]}, {"reason", r[2]}});
+    // attachments.synchronized: 0 pending, 1 synchronized, 2 blocked as too
+    // large, 3 blocked as invalid content. Image transfer has no mutation
+    // request, so a blocked attachment reports its attachment ID as requestId.
+    for (auto &r : d.run("SELECT id,task_id,synchronized FROM attachments "
+                         "WHERE synchronized IN (2,3) ORDER BY id"))
+      errors.push_back({{"requestId", r[0]}, {"entityId", r[1]}, {"attachmentId", r[0]},
+                        {"reason", r[2] == "2" ? "ERROR_REASON_ITEM_TOO_LARGE"
+                                               : "ERROR_REASON_INVALID_INPUT"}});
     J r = {{"spaceId", s},
            {"deviceId", device()},
            {"syncEnabled", enabled(s)},
@@ -1512,7 +1520,7 @@ struct Store::Impl {
             registry->one("SELECT account_id FROM spaces WHERE id=?", {s})},
            {"reconnectRequired", meta(d, "reconnect_required", "0") == "1"},
            {"connected", enabled(s) && meta(d, "connected") == "1"},
-           {"pendingItemCount", d.one("SELECT (SELECT count(*) FROM outbox)+(SELECT count(*) FROM attachments WHERE synchronized=0)")},
+           {"pendingItemCount", d.one("SELECT (SELECT count(*) FROM outbox)+(SELECT count(*) FROM attachments WHERE synchronized IN (0,2,3))")},
            {"itemErrors", errors},
            {"notificationPreferences", prefs(d)}};
     auto syncError = meta(d, "sync_error_reason");
@@ -3401,6 +3409,7 @@ std::string Store::invoke(std::string m, std::string text) {
       Tx tx(d);
       compatibility(d);
       d.run("UPDATE outbox SET state=1,error_reason=NULL WHERE state=2");
+      d.run("UPDATE attachments SET synchronized=0 WHERE synchronized IN (2,3)");
       changed(d, "", 4);
       tx.commit();
       return success({{"completed", true}}, sequence(d));
@@ -3563,7 +3572,21 @@ std::string Store::invoke(std::string m, std::string text) {
     }
     fail("INVALID_INPUT", "Unknown Lane method.");
   });
-  writeLog(impl_->root, m == "ResetDevelopmentData" ? m : "Invoke", parse(response),
+  // Log the operation name only for the fixed public method set; any other
+  // host-supplied text is reduced to a generic category.
+  static const std::set<std::string> logged = {
+      "CreateRepository", "SaveRepository", "DeleteRepository", "CreateTask",
+      "SaveTask", "SetProgress", "SetProposal", "RestorePrompt", "DeleteTask",
+      "ResolveConflict", "CreateCaptureTask", "CreateURLConnection",
+      "SaveURLConnection", "DeleteURLConnection", "CreatePlanningItem",
+      "SavePlanningItem", "DeletePlanningItem", "GetAttachment",
+      "ListURLConnections", "GetRepository", "GetPlanningItem",
+      "ListPlanningItems", "GetTask", "ListRepositories", "ListTasks",
+      "ListHistory", "GetLocalStatus", "GetNotificationPreferences",
+      "SetNotificationPreferences", "ListEvents", "GetEvent",
+      "RetryBlockedItems", "RemoveDeviceData", "ResetDevelopmentData",
+      "DisconnectSync", "ConnectSync"};
+  writeLog(impl_->root, logged.count(m) ? m : "Invoke", parse(response),
            now() - started);
   return response;
 }
@@ -3754,7 +3777,8 @@ std::string Store::pendingSync(std::string s, std::string owner) {
 }
 std::string Store::acknowledgeAttachment(std::string s, std::string owner,
     std::string epoch, std::string task, std::string attachment) {
-  return protect([&] {
+  auto started = now();
+  auto response = protect([&] {
     impl_->ready();
     id(task); id(attachment);
     auto &d = impl_->db(s);
@@ -3771,6 +3795,8 @@ std::string Store::acknowledgeAttachment(std::string s, std::string owner,
     tx.commit();
     return success({{"completed",true}},sequence(d));
   });
+  writeLog(impl_->root,"AcknowledgeAttachment",parse(response),now()-started);
+  return response;
 }
 std::string Store::cacheAttachment(std::string s, std::string task,
                                     std::string attachment, std::string png) {

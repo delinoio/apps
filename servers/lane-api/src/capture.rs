@@ -600,9 +600,25 @@ impl ObjectStore {
     }
 }
 
+/// Counts of one attachment worker iteration. Counts only: no keys, IDs or content.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TickSummary {
+    pub published: u64,
+    pub publish_deferred: u64,
+    pub deleted: u64,
+    pub delete_deferred: u64,
+    pub expired_uploads: u64,
+}
+impl TickSummary {
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
 /// Each iteration commits durable progress independently. Account locking serializes
 /// object publication with task/account deletion, including across worker replicas.
-pub async fn tick(pool: &sqlx::PgPool, storage: &ObjectStore) -> Result<()> {
+pub async fn tick(pool: &sqlx::PgPool, storage: &ObjectStore) -> Result<TickSummary> {
+    let started = std::time::Instant::now();
+    let mut summary = TickSummary::default();
     let pending:Vec<(String,String)>=sqlx::query_as("SELECT account_id,id FROM lane_attachments WHERE pending_png IS NOT NULL AND NOT available AND attempt_after<=now() ORDER BY attempt_after,account_id,id LIMIT 16").fetch_all(pool).await?;
     for (account, attachment) in pending {
         let mut tx = pool.begin().await?;
@@ -615,8 +631,10 @@ pub async fn tick(pool: &sqlx::PgPool, storage: &ObjectStore) -> Result<()> {
                 Ok(()) => {
                     sqlx::query("UPDATE lane_attachments SET available=true,pending_png=NULL WHERE account_id=$1 AND id=$2").bind(&account).bind(&attachment).execute(&mut *tx).await?;
                     e::emit(&mut tx,&account,&row.get::<String,_>("task_id")).await?;
+                    summary.published += 1;
                 }
                 Err(_) => {
+                    summary.publish_deferred += 1;
                     sqlx::query("UPDATE lane_attachments SET attempt_after=now()+interval '30 seconds' WHERE account_id=$1 AND id=$2").bind(&account).bind(&attachment).execute(&mut *tx).await?;
                     tracing::warn!(category="attachment_upload", "provider transfer remains pending");
                 }
@@ -631,7 +649,9 @@ pub async fn tick(pool: &sqlx::PgPool, storage: &ObjectStore) -> Result<()> {
                 .bind(key)
                 .execute(pool)
                 .await?;
+            summary.deleted += 1;
         } else {
+            summary.delete_deferred += 1;
             sqlx::query("UPDATE lane_attachment_garbage SET delete_after=now()+interval '30 seconds' WHERE object_key=$1").bind(key).execute(pool).await?;
             tracing::warn!(
                 category = "attachment_delete",
@@ -639,12 +659,27 @@ pub async fn tick(pool: &sqlx::PgPool, storage: &ObjectStore) -> Result<()> {
             );
         }
     }
-    sqlx::query(
+    summary.expired_uploads = sqlx::query(
         "DELETE FROM lane_attachment_uploads WHERE expires_at + interval '1 minute' <= now()",
     )
     .execute(pool)
-    .await?;
-    Ok(())
+    .await?
+    .rows_affected();
+    // Idle iterations run every second; log only iterations that did work.
+    if !summary.is_empty() {
+        tracing::info!(
+            category = "attachments",
+            operation = "AttachmentWorkerTick",
+            published = summary.published,
+            publish_deferred = summary.publish_deferred,
+            deleted = summary.deleted,
+            delete_deferred = summary.delete_deferred,
+            expired_uploads = summary.expired_uploads,
+            duration_ms = started.elapsed().as_millis() as u64,
+            "attachment work completed"
+        );
+    }
+    Ok(summary)
 }
 
 #[cfg(test)]
@@ -705,6 +740,37 @@ mod tests {
         manifest["byteSize"] = json!(invalid.len().to_string());
         manifest["sha256"] = json!(hash(&invalid));
         assert!(validate_png(&manifest, &invalid, 1024 * 1024).is_err());
+    }
+    /// Shared RealQA normalization vectors. Selection runs in clients; duplicate
+    /// vectors need PostgreSQL and run in `realqa_rule_duplicate_vectors`.
+    #[test]
+    fn url_prefix_normalization_vectors() {
+        let suite: Value = serde_json::from_str(include_str!(
+            "../../../protos/lane/v1/fixtures/url-prefixes.json"
+        ))
+        .unwrap();
+        let mut executed = 0;
+        for case in suite["cases"].as_array().unwrap() {
+            if case["input"]["operation"] != "normalize" {
+                continue;
+            }
+            executed += 1;
+            let result = rule_body(
+                &json!({"prefix":case["input"]["prefix"],"repositoryId":"019a0000-0000-7000-8000-000000000001"}),
+            );
+            if case["expected"].get("reason").is_some() {
+                let error = result.expect_err(string(case, "id"));
+                assert_eq!(error.reason, 1, "{}", case["id"]);
+            } else {
+                assert_eq!(
+                    result.unwrap()["prefix"],
+                    case["expected"]["normalizedPrefix"],
+                    "{}",
+                    case["id"]
+                );
+            }
+        }
+        assert!(executed > 0);
     }
     #[test]
     fn signature_matches_independent_botocore_sigv4_vector() {

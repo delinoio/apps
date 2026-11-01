@@ -24,6 +24,44 @@ export function chromeEndpoint(dataRoot, platform = process.platform) {
 }
 const validId = (value) =>
   typeof value === "string" && /^[a-p]{32}$/.test(value);
+export const chromeApprovalsFile = "realqa-chrome-connections.json";
+// Reasons the extension may report after a Lane-initiated selection. Any other
+// value is collapsed to CAPTURE_FAILED so Lane never echoes arbitrary text.
+export const chromeCaptureFailureReasons = new Set([
+  "PAGE_CHANGED",
+  "ELEMENT_NOT_VISIBLE",
+  "UNSUPPORTED_PAGE",
+  "PERMISSION_REQUIRED",
+  "CHROME_NOT_AVAILABLE",
+  "LANE_SAVING",
+  "INVALID_CAPTURE",
+  "INVALID_METADATA",
+  "REVOKED",
+  "CAPTURE_FAILED",
+]);
+function validApprovals(value) {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.values(value).every(
+      (entry) =>
+        !!entry &&
+        typeof entry === "object" &&
+        validId(entry.extensionId) &&
+        typeof entry.profileName === "string" &&
+        typeof entry.tokenHash === "string",
+    )
+  );
+}
+// Explicit user recovery for an unreadable approvals file. The file is moved aside,
+// never parsed or merged, so every Chrome profile must be approved again.
+export async function resetChromeApprovals(dataRoot) {
+  const statePath = join(dataRoot, chromeApprovalsFile);
+  await rename(statePath, `${statePath}.invalid`).catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+}
 function validateCapture(message) {
   const { pngBase64, width, height, metadata, clipped } = message;
   if (
@@ -79,6 +117,7 @@ export async function createChromeBridge({
   requestApproval,
   acceptCapture,
   onStatus = () => {},
+  onCaptureFailed = () => {},
 }) {
   if (
     !Array.isArray(extensionIds) ||
@@ -92,16 +131,25 @@ export async function createChromeBridge({
   )
     throw new Error("CHROME_CALLBACK_REQUIRED");
   await mkdir(dataRoot, { recursive: true, mode: 0o700 });
-  const statePath = join(dataRoot, "realqa-chrome-connections.json"),
+  const statePath = join(dataRoot, chromeApprovalsFile),
     endpoint = chromeEndpoint(dataRoot),
     discovery = join(dataRoot, "realqa-chrome-runtime.json");
   let approvals = {};
+  let stored;
   try {
-    approvals = JSON.parse(await readFile(statePath, "utf8"));
-    if (!approvals || Array.isArray(approvals) || typeof approvals !== "object")
-      throw new Error("INVALID_STATE");
+    stored = await readFile(statePath, "utf8");
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
+  }
+  if (stored !== undefined) {
+    try {
+      approvals = JSON.parse(stored);
+    } catch {
+      approvals = undefined;
+    }
+    // Never start with partially trusted approvals. The host reports this code and
+    // offers an explicit reset instead of silently discarding device approvals.
+    if (!validApprovals(approvals)) throw new Error("CHROME_APPROVALS_INVALID");
   }
   const persist = async () => {
     const temporary = `${statePath}.tmp`;
@@ -144,11 +192,15 @@ export async function createChromeBridge({
       onStatus();
     });
   const server = net.createServer((socket) => {
-    const client = { socket, origin: null, profileId: null };
+    const client = { socket, origin: null, profileId: null, approval: null };
     connections.add(client);
     socket.on("error", () => {});
     socket.on("close", () => {
       connections.delete(client);
+      // A pending approval belongs to the socket that requested it. Once the
+      // extension gives up or its relay exits, Lane must not grant a token that
+      // nobody receives and then report that profile as connected.
+      client.approval?.abort();
       onStatus();
     });
     const send = (value) => {
@@ -191,19 +243,25 @@ export async function createChromeBridge({
             throw new Error("APPROVAL_PENDING");
           approving.add(message.profileId);
           const epoch = approvalEpoch.get(message.profileId) || 0;
+          const approval = new AbortController();
+          client.approval = approval;
           try {
             const profileName =
               typeof message.profileName === "string"
                 ? message.profileName.slice(0, 80)
                 : "Chrome profile";
-            const approved = await requestApproval({
-              extensionId: client.origin,
-              profileId: message.profileId,
-              profileName,
-            });
+            const approved = await requestApproval(
+              {
+                extensionId: client.origin,
+                profileId: message.profileId,
+                profileName,
+              },
+              approval.signal,
+            );
             if (
               !approved ||
               closed ||
+              approval.signal.aborted ||
               socket.destroyed ||
               (approvalEpoch.get(message.profileId) || 0) !== epoch
             )
@@ -212,6 +270,7 @@ export async function createChromeBridge({
             await mutate(async () => {
               if (
                 closed ||
+                approval.signal.aborted ||
                 socket.destroyed ||
                 (approvalEpoch.get(message.profileId) || 0) !== epoch
               )
@@ -227,6 +286,7 @@ export async function createChromeBridge({
             send({ id, ok: true, token });
             onStatus();
           } finally {
+            if (client.approval === approval) client.approval = null;
             approving.delete(message.profileId);
           }
           return;
@@ -244,6 +304,17 @@ export async function createChromeBridge({
         }
         if (message.type === "status") {
           send({ id, ok: true });
+          return;
+        }
+        if (message.type === "captureFailed") {
+          // The extension reports failures after a Lane-initiated selection so the
+          // in-app action can explain them. Only the enumerated code crosses.
+          send({ id, ok: true });
+          onCaptureFailed(
+            chromeCaptureFailureReasons.has(message.reason)
+              ? message.reason
+              : "CAPTURE_FAILED",
+          );
           return;
         }
         if (message.type === "revoke") {
@@ -272,12 +343,18 @@ export async function createChromeBridge({
           "INVALID_CAPTURE",
           "INVALID_METADATA",
           "UNSUPPORTED_REQUEST",
+          "LANE_SAVING",
         ]);
-        send({
-          id,
-          ok: false,
-          reason: allowed.has(error.message) ? error.message : "CAPTURE_FAILED",
-        });
+        const reason = allowed.has(error.message)
+          ? error.message
+          : "CAPTURE_FAILED";
+        send({ id, ok: false, reason });
+        // Lane rejected a capture itself, so it reports the failure locally; the
+        // extension reports only failures that happen before it sends pixels.
+        if (message.type === "capture" && !closed)
+          onCaptureFailed(
+            chromeCaptureFailureReasons.has(reason) ? reason : "CAPTURE_FAILED",
+          );
       }
     };
     readMessages(
