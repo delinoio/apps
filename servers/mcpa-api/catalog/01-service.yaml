@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Managed CPA service registration. Merge these files into the Delcore
+# catalog directory (CATALOG_DIR) of a development Delcore. Production
+# registration stays with operators.
+kind: service
+key: mcpa
+name: Managed CPA
+client_id: mcpa-api-local
+capabilities:
+  - create_resources
+  - access_resources
+  - manage_tenant_budget
+  - invoke_models
+scopes:
+  - authorize
+  - usage:write
