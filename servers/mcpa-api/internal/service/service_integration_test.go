@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	delcorev1 "github.com/delinoio/apps/protos/delcore/v1"
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
@@ -295,5 +296,68 @@ func TestListTenantAuditEventsReturnsTenantLevelEvents(t *testing.T) {
 		if _, err := list(user, ""); reason(err) != mcpav1.ErrorReason_ERROR_REASON_PERMISSION_DENIED {
 			t.Fatalf("%s without capability: %v", user, err)
 		}
+	}
+}
+
+func TestIssueCallKeyReplayAfterExpiry(t *testing.T) {
+	e := newEnv(t)
+	alice := newUser()
+	res := e.createResource(alice, store.NewID().String())
+	issue := func(requestKey string, expire time.Time) (*mcpav1.IssueCallKeyResponse, error) {
+		resp, err := e.svc.IssueCallKey(e.as(alice), connect.NewRequest(&mcpav1.IssueCallKeyRequest{
+			RequestKey: requestKey, ResourceId: res.GetId(), Name: "ci", ExpireTime: timestamppb.New(expire),
+		}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+	claims := func(requestKey string) int {
+		t.Helper()
+		var n int
+		if err := e.db.Pool.QueryRow(e.ctx, `SELECT count(*) FROM idempotency_records WHERE operation = 'IssueCallKey' AND request_key = $1`,
+			uuid.MustParse(requestKey)).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	start := time.Now()
+	expire := start.Add(time.Hour).Truncate(time.Second)
+	key := store.NewID().String()
+	first, err := issue(key, expire)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if first.GetSecret() == "" {
+		t.Fatal("the first execution returned no secret")
+	}
+
+	// The key has expired, but the request key is still inside its
+	// idempotency window: the replay returns the original key without a secret.
+	e.svc.SetClock(func() time.Time { return start.Add(2 * time.Hour) })
+	again, err := issue(key, expire)
+	if err != nil {
+		t.Fatalf("replay after expiry: %v", err)
+	}
+	if again.GetCallKey().GetId() != first.GetCallKey().GetId() || again.GetSecret() != "" {
+		t.Fatalf("replay returned %s with secret %t, want %s without a secret",
+			again.GetCallKey().GetId(), again.GetSecret() != "", first.GetCallKey().GetId())
+	}
+	if !again.GetCallKey().GetExpireTime().AsTime().Equal(expire) {
+		t.Fatalf("replay expire_time = %v, want %v", again.GetCallKey().GetExpireTime().AsTime(), expire)
+	}
+
+	// A new request key with a past expiry is rejected and leaves no claim,
+	// so the key can still issue a valid request.
+	fresh := store.NewID().String()
+	if _, err := issue(fresh, expire); reason(err) != mcpav1.ErrorReason_ERROR_REASON_INVALID_INPUT {
+		t.Fatalf("new issuance with a past expiry returned %v, want INVALID_INPUT", err)
+	}
+	if n := claims(fresh); n != 0 {
+		t.Fatalf("the rejected issuance left %d idempotency records", n)
+	}
+	if _, err := issue(fresh, start.Add(3*time.Hour)); err != nil {
+		t.Fatalf("issue after a rejected request with the same key: %v", err)
 	}
 }

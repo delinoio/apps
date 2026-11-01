@@ -43,9 +43,6 @@ func (s *Service) IssueCallKey(ctx context.Context, req *connect.Request[mcpav1.
 			return nil, apperr.InvalidInput("expire_time is not a valid timestamp")
 		}
 		t := m.GetExpireTime().AsTime()
-		if !t.After(s.now()) {
-			return nil, apperr.InvalidInput("expire_time must be in the future")
-		}
 		expire = &t
 		expireField = t.UTC().Format(time.RFC3339Nano)
 	}
@@ -75,6 +72,12 @@ func (s *Service) IssueCallKey(ctx context.Context, req *connect.Request[mcpav1.
 				return apperr.NotFound("call key not found")
 			}
 			return err
+		}
+		// Only a new issuance needs a future expiry: a replay returns the
+		// original key even after it expired. Returning the error rolls back
+		// the transaction, so the rejected request leaves no claim behind.
+		if expire != nil && !expire.After(s.now()) {
+			return apperr.InvalidInput("expire_time must be in the future")
 		}
 		stored, err = store.InsertCallKey(ctx, tx, store.CallKey{
 			ID: key.ID, ResourceID: r.ID, TenantID: r.TenantID, Name: m.GetName(), SecretHash: key.Hash,

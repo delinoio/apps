@@ -230,7 +230,7 @@ Master-key rotation replaces the master key without customer-visible downtime:
 - Managed CPA issues and verifies its own call keys. Each key is bound to one resource, so verification needs no Delcore round trip for the key itself.
 - The format is `mcpa_<32 lowercase hexadecimal characters of the key UUID v7 without hyphens>_<43 base64url characters of 32 random bytes>`. The server stores only the SHA-256 hash of the full secret and compares in constant time.
 - The full secret is returned once, by the first execution of the `IssueCallKey` request key. A replay returns an empty `secret`. After issuance only `display_prefix` (`mcpa_` plus the first 8 hexadecimal characters and `…`) is shown.
-- A key has a name of 1 to 100 bytes, an optional future `expire_time` and a `last_used_time`. The server updates `last_used_time` at most once per minute per key.
+- A key has a name of 1 to 100 bytes, an optional `expire_time` and a `last_used_time`. A new issuance requires a future `expire_time`; a replay returns the original key even after it expired. The server updates `last_used_time` at most once per minute per key.
 - The call surface accepts the key from `Authorization: Bearer`, `x-api-key`, `x-goog-api-key` or the Gemini `?key=` query parameter.
 - A key is valid only when all of these conditions hold:
   - It is not revoked and not expired.
