@@ -161,7 +161,10 @@ func (c RejectionCode) String() string {
 	}
 }
 
-// HTTPStatus returns the status code used for the rejection.
+// HTTPStatus returns the status code used for the rejection. The call-path
+// statuses follow the server contract: 401 invalid_call_key, 403
+// tenant_inactive and model_not_allowed, 429 budget_exhausted, 503
+// dependency_unavailable and 400 no_credential.
 func (c RejectionCode) HTTPStatus() int {
 	switch c {
 	case RejectionInvalidCallKey:
@@ -169,10 +172,12 @@ func (c RejectionCode) HTTPStatus() int {
 	case RejectionModelNotAllowed, RejectionTenantInactive:
 		return http.StatusForbidden
 	case RejectionBudgetExhausted:
-		return http.StatusPaymentRequired
+		return http.StatusTooManyRequests
 	case RejectionDependencyUnavailable:
 		return http.StatusServiceUnavailable
-	case RejectionNoCredential, RejectionNotFound:
+	case RejectionNoCredential:
+		return http.StatusBadRequest
+	case RejectionNotFound:
 		return http.StatusNotFound
 	case RejectionRequestTooLarge:
 		return http.StatusRequestEntityTooLarge

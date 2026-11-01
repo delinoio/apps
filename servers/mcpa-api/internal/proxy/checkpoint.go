@@ -118,7 +118,10 @@ func (cp *checkpointer) send(ctx context.Context, call *callState, state *checkp
 			return true
 		}
 		cp.metrics.checkpointFailure()
-		cp.logger.Warn("metering checkpoint failed",
+		// Uncommitted bytes are lost if the process stops before a later
+		// checkpoint commits them, so every failure alerts.
+		cp.logger.Error("metering checkpoint failed",
+			slog.Bool("alert", true),
 			slog.String("call_id", call.id),
 			slog.Int64("checkpoint_seq", p.record.CheckpointSeq),
 			slog.Bool("final", p.final),

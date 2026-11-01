@@ -199,7 +199,7 @@ func TestCrossResourceIsolation(t *testing.T) {
 	}
 	// B cannot reach a model only A's credentials serve.
 	res = h.call(http.MethodPost, "/r/"+resourceB+"/v1/chat/completions", keyB, `{"model":"only-a","messages":[]}`, nil)
-	if res.resp.StatusCode != http.StatusNotFound || gjson.GetBytes(res.body, "error.type").String() != "no_credential" {
+	if res.resp.StatusCode != http.StatusBadRequest || gjson.GetBytes(res.body, "error.type").String() != "no_credential" {
 		t.Fatalf("model of another resource: %d %s", res.resp.StatusCode, res.body)
 	}
 	if upA.hits.Load() != 0 || upB.hits.Load() != 0 {
@@ -310,7 +310,7 @@ func TestRemoveCredentialTakesEffectImmediately(t *testing.T) {
 	}
 	hits := up.hits.Load()
 	res := call()
-	if res.resp.StatusCode != http.StatusNotFound || up.hits.Load() != hits {
+	if res.resp.StatusCode != http.StatusBadRequest || up.hits.Load() != hits {
 		t.Fatalf("after removing all credentials: %d %s", res.resp.StatusCode, res.body)
 	}
 	if record := h.sink.waitFinal(t, res.callID); record.Status != mcpav1.CallStatus_CALL_STATUS_NO_CREDENTIAL {
@@ -397,7 +397,7 @@ func TestRejectionsUseClientFormatShapes(t *testing.T) {
 		call   mcpav1.CallStatus
 	}{
 		{Reject(RejectionTenantInactive, "tenant is blocked"), 403, "tenant_inactive", mcpav1.CallStatus_CALL_STATUS_REJECTED_TENANT},
-		{&Rejection{Code: RejectionBudgetExhausted, Message: "budget exhausted", BudgetScope: BudgetScopeTenant}, 402, "budget_exhausted", mcpav1.CallStatus_CALL_STATUS_REJECTED_BUDGET},
+		{&Rejection{Code: RejectionBudgetExhausted, Message: "budget exhausted", BudgetScope: BudgetScopeTenant}, 429, "budget_exhausted", mcpav1.CallStatus_CALL_STATUS_REJECTED_BUDGET},
 		{errors.New("delcore timeout"), 503, "dependency_unavailable", mcpav1.CallStatus_CALL_STATUS_REJECTED_DEPENDENCY},
 	}
 	for _, c := range checks {

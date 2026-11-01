@@ -229,12 +229,30 @@ func (e *Engine) RemoveCredential(ctx context.Context, resourceID, credentialID 
 
 // InvalidateResource drops a resource's runtime, for example after resource
 // deletion. A later call rebuilds it from CredentialSource.
+//
+// The old runtime shuts down while e.mu is held so a replacement runtime,
+// which registers the same credential IDs in the SDK's global model
+// registry, cannot be built before the old one unregisters them. Holding
+// e.mu while waiting for an in-progress build is safe: build closes ready
+// before it takes e.mu.
 func (e *Engine) InvalidateResource(resourceID string) {
 	e.mu.Lock()
-	rt := e.runtimes[resourceID]
-	delete(e.runtimes, resourceID)
-	e.mu.Unlock()
-	if rt != nil {
+	defer e.mu.Unlock()
+	if rt := e.runtimes[resourceID]; rt != nil {
+		delete(e.runtimes, resourceID)
+		rt.shutdown()
+	}
+}
+
+// InvalidateAll drops every loaded runtime, for example after the process
+// may have missed a credential change made by another replica. Later calls
+// rebuild runtimes from CredentialSource.
+// It holds e.mu during shutdown for the same reason as InvalidateResource.
+func (e *Engine) InvalidateAll() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for id, rt := range e.runtimes {
+		delete(e.runtimes, id)
 		rt.shutdown()
 	}
 }
