@@ -206,6 +206,9 @@ func (s *Sessions) Stored(ctx context.Context, cookie string) (store.Session, er
 // downgrades the session so the user must reauthenticate.
 func (s *Sessions) Refresh(ctx context.Context, id uuid.UUID) (*SessionState, error) {
 	var out *SessionState
+	// refreshErr is a refresh failure returned after the transaction commits,
+	// because a rotated refresh token must be stored despite the failure.
+	var refreshErr error
 	err := s.db.InTx(ctx, func(tx pgx.Tx) error {
 		sess, err := store.LockSession(ctx, tx, id)
 		if errors.Is(err, store.ErrNotFound) {
@@ -234,10 +237,27 @@ func (s *Sessions) Refresh(ctx context.Context, id uuid.UUID) (*SessionState, er
 				return apperr.Unauthenticated("the session expired; sign in again")
 			}
 			var ae *apperr.Error
-			if errors.As(err, &ae) {
+			if !errors.As(err, &ae) {
+				ae = apperr.DependencyUnavailable(err)
+			}
+			if refreshed.RefreshToken == "" || refreshed.RefreshToken == tokens.RefreshToken {
 				return ae
 			}
-			return apperr.DependencyUnavailable(err)
+			// Logto rotated the refresh token before a later step failed, so
+			// the stored one is no longer valid. Store the replacement and keep
+			// the current access tokens and expiry, so that the next request
+			// retries the refresh instead of forcing a new sign-in.
+			tokens.RefreshToken = refreshed.RefreshToken
+			sealed, err := s.seal(sess, tokens)
+			if err != nil {
+				return apperr.Internal(err)
+			}
+			if err := store.UpdateSessionTokens(ctx, tx, sess.ID, sess.MFA, sess.AccessExpireTime, sealed); err != nil {
+				return apperr.DependencyUnavailable(err)
+			}
+			s.log.WarnContext(ctx, "console session refresh failed after Logto rotated the refresh token; stored the rotated token", "session_id", sess.ID, "error", ae)
+			refreshErr = ae
+			return nil
 		}
 		if !mfa {
 			refreshed = SessionTokens{}
@@ -261,6 +281,9 @@ func (s *Sessions) Refresh(ctx context.Context, id uuid.UUID) (*SessionState, er
 	if err != nil {
 		return nil, err
 	}
+	if refreshErr != nil {
+		return nil, refreshErr
+	}
 	return out, nil
 }
 
@@ -272,7 +295,9 @@ func ForceRefresh(ctx context.Context) context.Context {
 }
 
 // refreshTokens obtains a new API token, then a Delcore token, carrying
-// forward a rotated refresh token.
+// forward a rotated refresh token. When a step fails after Logto rotated the
+// refresh token, the returned tokens carry only that rotated refresh token so
+// the caller can store it.
 func (s *Sessions) refreshTokens(ctx context.Context, subject string, t SessionTokens) (SessionTokens, bool, time.Time, error) {
 	if t.RefreshToken == "" {
 		return SessionTokens{}, false, time.Time{}, ErrInvalidGrant
@@ -287,14 +312,14 @@ func (s *Sessions) refreshTokens(ctx context.Context, subject string, t SessionT
 	}
 	apiTok, err := s.logto.VerifyAccessToken(ctx, api.AccessToken, s.apiResource)
 	if err != nil {
-		return SessionTokens{}, false, time.Time{}, fmt.Errorf("%w: refreshed token: %v", ErrLogtoUnavailable, err)
+		return SessionTokens{RefreshToken: refresh}, false, time.Time{}, fmt.Errorf("%w: refreshed token: %v", ErrLogtoUnavailable, err)
 	}
 	if apiTok.Subject != subject {
 		return SessionTokens{}, false, time.Time{}, ErrInvalidGrant
 	}
 	dc, err := s.logto.RefreshForResource(ctx, refresh, s.delcoreRes)
 	if err != nil {
-		return SessionTokens{}, false, time.Time{}, err
+		return SessionTokens{RefreshToken: refresh}, false, time.Time{}, err
 	}
 	if dc.RefreshToken != "" {
 		refresh = dc.RefreshToken
