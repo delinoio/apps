@@ -127,6 +127,7 @@ async function provision() {
       const device = {
         id: polled.device.id,
         access: polled.credentials.accessToken,
+        accessExpiresAt: polled.credentials.accessTokenExpiresAt,
         refresh: polled.credentials.refreshToken,
         connections: [],
       };
@@ -218,8 +219,31 @@ async function userLoop(user, until) {
   }
 }
 
+// Refresh this long before the access token expires, so a slow cycle never uses an expired one.
+const refreshMarginMs = 10 * 60_000;
+
+// Rotates the device credentials. Provisioning 5,000 devices takes hours and access tokens are
+// valid for one hour, so saved access tokens are usually expired when `run` starts.
+async function refreshCredentials(device) {
+  const refreshed = await call("DeviceService/RefreshDeviceToken", {
+    deviceId: device.id,
+    refreshToken: device.refresh,
+  });
+  if (!refreshed) return;
+  device.access = refreshed.credentials.accessToken;
+  device.accessExpiresAt = refreshed.credentials.accessTokenExpiresAt;
+  device.refresh = refreshed.credentials.refreshToken;
+}
+
+function credentialsDue(device) {
+  const expires = Date.parse(device.accessExpiresAt ?? "");
+  return !Number.isFinite(expires) || Date.now() >= expires - refreshMarginMs;
+}
+
 async function deviceLoop(device, until) {
   await sleep(Math.random() * 60_000);
+  // Always rotate before the first authenticated request, then follow the returned expiry.
+  await refreshCredentials(device);
   const leases = new Map();
   let bucketVersion = Date.now() * 1000;
   let minute = 0;
@@ -296,16 +320,7 @@ async function deviceLoop(device, until) {
         );
       }
     }
-    if (minute % 50 === 49) {
-      const refreshed = await call("DeviceService/RefreshDeviceToken", {
-        deviceId: device.id,
-        refreshToken: device.refresh,
-      });
-      if (refreshed) {
-        device.access = refreshed.credentials.accessToken;
-        device.refresh = refreshed.credentials.refreshToken;
-      }
-    }
+    if (credentialsDue(device)) await refreshCredentials(device);
     minute += 1;
     await sleep(60_000 - (Date.now() - now));
   }
@@ -314,7 +329,12 @@ async function deviceLoop(device, until) {
 async function run() {
   const state = JSON.parse(readFileSync(args.state, "utf8"));
   const until = Date.now() + minutes * 60_000;
+  // Rotated refresh tokens replace the saved ones; presenting a rotated token again revokes the
+  // device, so the state file is saved every minute in case the run is interrupted.
+  const save = () =>
+    writeFileSync(args.state, JSON.stringify(state), { mode: 0o600 });
   const report = setInterval(() => {
+    save();
     console.log(
       JSON.stringify({
         event: "progress",
@@ -329,7 +349,7 @@ async function run() {
   ]);
   clearInterval(report);
   // Rotated tokens must be persisted for a later run.
-  writeFileSync(args.state, JSON.stringify(state), { mode: 0o600 });
+  save();
   const methods = Object.fromEntries(stats.byMethod);
   console.log(
     JSON.stringify({
