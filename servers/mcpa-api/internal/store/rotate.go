@@ -26,6 +26,7 @@ var sealedTables = []sealedTable{
 	{name: "credentials", resourceColumn: "resource_id::text", aad: crypto.CredentialAAD},
 	{name: "provider_oauth_flows", resourceColumn: "resource_id::text", aad: crypto.OAuthFlowAAD},
 	{name: "console_sessions", resourceColumn: "''", aad: func(id, _ string) []byte { return crypto.SessionAAD(id) }},
+	{name: "mcp_grants", resourceColumn: "''", aad: func(id, _ string) []byte { return crypto.MCPGrantAAD(id) }},
 }
 
 // RotationReport summarizes a master-key rotation.

@@ -95,12 +95,21 @@ type Migration struct {
 var migrationName = regexp.MustCompile(`^(\d{4})_([a-z0-9_]+)\.sql$`)
 
 // Migrations returns the embedded migrations in order. Numbers must be
-// contiguous from 1.
+// contiguous from 1, except for reserved numbers.
 func Migrations() ([]Migration, error) {
-	return loadMigrations(migrations.FS)
+	return loadMigrations(migrations.FS, reservedMigrations)
 }
 
-func loadMigrations(fsys fs.FS) ([]Migration, error) {
+// reservedMigrations are numbers held for server layers that are developed in
+// parallel and have not landed yet. Workaround: the MCP OAuth broker migration
+// (0003) landed before the data-plane migration (0002). A reserved number may
+// be absent; when present it is applied in order like any other migration.
+// Remove an entry in the change that adds its migration file.
+var reservedMigrations = map[int]string{
+	2: "data plane (call records, daily aggregates, metering outbox)",
+}
+
+func loadMigrations(fsys fs.FS, reserved map[int]string) ([]Migration, error) {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil, err
@@ -125,10 +134,18 @@ func loadMigrations(fsys fs.FS) ([]Migration, error) {
 		out = append(out, Migration{Version: v, Name: m[2], SQL: string(body)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Version < out[j].Version })
-	for i, m := range out {
-		if m.Version != i+1 {
-			return nil, fmt.Errorf("store: migration numbers must be contiguous from 0001; found %04d at position %d", m.Version, i+1)
+	want := 1
+	for _, m := range out {
+		for m.Version > want {
+			if _, ok := reserved[want]; !ok {
+				return nil, fmt.Errorf("store: migration numbers must be contiguous from 0001; %04d is missing before %04d", want, m.Version)
+			}
+			want++
 		}
+		if m.Version != want {
+			return nil, fmt.Errorf("store: migration %04d is duplicated", m.Version)
+		}
+		want++
 	}
 	if len(out) == 0 {
 		return nil, errors.New("store: no migrations embedded")
