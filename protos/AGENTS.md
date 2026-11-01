@@ -29,3 +29,5 @@
 - Perfine ownership: [project](../docs/project-perfine.md); [protocol contract](../docs/protos-perfine-v1-contract.md).
 
 - Planned `protos/lane/v1` owns Lane schemas, generated bindings and cross-language conformance fixtures. Read the [Lane project](../docs/project-lane.md) and [Lane protocol contract](../docs/protos-lane-v1-contract.md).
+
+- Planned `protos/anydash/v1` owns AnyDash schemas and generated bindings. Read the [AnyDash project](../docs/project-anydash.md) and [AnyDash protocol contract](../docs/protos-anydash-v1-contract.md).
