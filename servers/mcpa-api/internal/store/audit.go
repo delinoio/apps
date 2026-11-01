@@ -54,9 +54,22 @@ func InsertAudit(ctx context.Context, db DB, e AuditEvent) (AuditEvent, error) {
 // ListAudit returns a resource's events newest first. before is the cursor
 // (uuid.Nil for the first page).
 func ListAudit(ctx context.Context, db DB, resourceID, before uuid.UUID, limit int) ([]AuditEvent, error) {
-	rows, err := db.Query(ctx, `SELECT id, tenant_id, resource_id, action, actor_kind, actor_user_id, target_id, details, occur_time
+	return queryAudit(ctx, db, `SELECT id, tenant_id, resource_id, action, actor_kind, actor_user_id, target_id, details, occur_time
 		FROM audit_events WHERE resource_id = $1 AND ($2 = '00000000-0000-0000-0000-000000000000'::uuid OR id < $2)
 		ORDER BY id DESC LIMIT $3`, resourceID, before, limit)
+}
+
+// ListTenantAudit returns a tenant's tenant-level events (those without a
+// resource, such as tenant budget changes) newest first. before is the
+// cursor (uuid.Nil for the first page).
+func ListTenantAudit(ctx context.Context, db DB, tenantID string, before uuid.UUID, limit int) ([]AuditEvent, error) {
+	return queryAudit(ctx, db, `SELECT id, tenant_id, resource_id, action, actor_kind, actor_user_id, target_id, details, occur_time
+		FROM audit_events WHERE tenant_id = $1 AND resource_id IS NULL AND ($2 = '00000000-0000-0000-0000-000000000000'::uuid OR id < $2)
+		ORDER BY id DESC LIMIT $3`, tenantID, before, limit)
+}
+
+func queryAudit(ctx context.Context, db DB, query string, args ...any) ([]AuditEvent, error) {
+	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

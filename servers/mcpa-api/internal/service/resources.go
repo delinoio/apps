@@ -322,5 +322,36 @@ func (s *Service) ListAuditEvents(ctx context.Context, req *connect.Request[mcpa
 	return connect.NewResponse(out), nil
 }
 
+// ListTenantAuditEvents lists a tenant's tenant-level audit events (tenant
+// budget changes), newest first. They have no owning resource, so the tenant
+// budget capability governs them and no resource access is granted.
+func (s *Service) ListTenantAuditEvents(ctx context.Context, req *connect.Request[mcpav1.ListTenantAuditEventsRequest]) (*connect.Response[mcpav1.ListTenantAuditEventsResponse], error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, err := ParsePage(req.Msg.GetPage())
+	if err != nil {
+		return nil, err
+	}
+	tenant := req.Msg.GetTenantId()
+	if err := s.authz.Capability(ctx, p, tenant, delcore.CapabilityManageTenantBudget); err != nil {
+		return nil, err
+	}
+	events, err := store.ListTenantAudit(ctx, s.db.Pool, tenant, page.After, page.Size+1)
+	if err != nil {
+		return nil, dbErr(err)
+	}
+	out := &mcpav1.ListTenantAuditEventsResponse{Metadata: apperr.Metadata(ctx)}
+	if len(events) > page.Size {
+		events = events[:page.Size]
+		out.NextAfterId = events[len(events)-1].ID.String()
+	}
+	for _, e := range events {
+		out.Events = append(out.Events, auditProto(e))
+	}
+	return connect.NewResponse(out), nil
+}
+
 // parseOptionalID parses a canonical UUID field.
 func parseID(v, field string) (uuid.UUID, error) { return authz.ParseID(v, field) }

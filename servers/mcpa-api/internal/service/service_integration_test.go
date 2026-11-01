@@ -35,17 +35,20 @@ const testTenant = "tenant-it"
 type fakeDelcore struct {
 	mu          sync.Mutex
 	onAuthorize func()
+	// denied lists users that hold no Delcore capability.
+	denied map[string]bool
 }
 
-func (f *fakeDelcore) Authorize(context.Context, string, string, delcore.Capability, bool) (delcore.Decision, error) {
+func (f *fakeDelcore) Authorize(_ context.Context, _ string, userID string, _ delcore.Capability, _ bool) (delcore.Decision, error) {
 	f.mu.Lock()
 	hook := f.onAuthorize
 	f.onAuthorize = nil
+	denied := f.denied[userID]
 	f.mu.Unlock()
 	if hook != nil {
 		hook()
 	}
-	return delcore.Decision{Allowed: true}, nil
+	return delcore.Decision{Allowed: !denied}, nil
 }
 
 func (f *fakeDelcore) AuthorizeAPIKey(context.Context, string, delcore.Capability, bool) (delcore.KeyDecision, error) {
@@ -226,5 +229,71 @@ func TestCreateResourceReplayRequiresCurrentRole(t *testing.T) {
 	}
 	if got := e.createResource(alice, key); got.GetCallerRole() != mcpav1.ResourceRole_RESOURCE_ROLE_INVOKE {
 		t.Fatalf("replay with INVOKE returned role %v", got.GetCallerRole())
+	}
+}
+
+func TestListTenantAuditEventsReturnsTenantLevelEvents(t *testing.T) {
+	e := newEnv(t)
+	owner, outsider := newUser(), newUser()
+	// The resource's creation event is resource-level and must be excluded.
+	e.createResource(owner, store.NewID().String())
+	var tenantEvents []uuid.UUID
+	for range 3 {
+		ev, err := store.InsertAudit(e.ctx, e.db.Pool, store.AuditEvent{
+			TenantID: testTenant, Action: mcpav1.AuditAction_AUDIT_ACTION_TENANT_BUDGET_CHANGED,
+			ActorKind: mcpav1.ActorKind_ACTOR_KIND_CONSOLE, ActorUserID: owner, TargetID: testTenant,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tenantEvents = append(tenantEvents, ev.ID)
+	}
+	if _, err := store.InsertAudit(e.ctx, e.db.Pool, store.AuditEvent{
+		TenantID: "tenant-other", Action: mcpav1.AuditAction_AUDIT_ACTION_TENANT_BUDGET_CHANGED,
+		ActorKind: mcpav1.ActorKind_ACTOR_KIND_CONSOLE, ActorUserID: owner, TargetID: "tenant-other",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The tenant budget holder reads only this tenant's tenant-level events,
+	// newest first and paged.
+	list := func(user, after string) (*mcpav1.ListTenantAuditEventsResponse, error) {
+		resp, err := e.svc.ListTenantAuditEvents(e.as(user), connect.NewRequest(&mcpav1.ListTenantAuditEventsRequest{
+			TenantId: testTenant, Page: &mcpav1.Page{Size: 2, AfterId: after},
+		}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+	first, err := list(owner, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := list(owner, first.GetNextAfterId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, ev := range append(first.GetEvents(), second.GetEvents()...) {
+		if ev.GetResourceId() != "" || ev.GetTenantId() != testTenant || ev.GetAction() != mcpav1.AuditAction_AUDIT_ACTION_TENANT_BUDGET_CHANGED {
+			t.Fatalf("unexpected event %v", ev)
+		}
+		got = append(got, ev.GetId())
+	}
+	want := []string{tenantEvents[2].String(), tenantEvents[1].String(), tenantEvents[0].String()}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] || second.GetNextAfterId() != "" {
+		t.Fatalf("events = %v (next %q), want %v", got, second.GetNextAfterId(), want)
+	}
+
+	// Without the tenant budget capability the query is denied, even for a
+	// resource manager.
+	e.dc.mu.Lock()
+	e.dc.denied = map[string]bool{owner: true, outsider: true}
+	e.dc.mu.Unlock()
+	for _, user := range []string{owner, outsider} {
+		if _, err := list(user, ""); reason(err) != mcpav1.ErrorReason_ERROR_REASON_PERMISSION_DENIED {
+			t.Fatalf("%s without capability: %v", user, err)
+		}
 	}
 }
