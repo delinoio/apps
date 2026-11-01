@@ -34,6 +34,12 @@ Only trusted main push and main manual frontend preparation jobs receive the tok
 
 Rust API development launchers pass the internal `--dev-env` flag to the compiled binary. The binary reads only the service-local `.env` at the exact working-directory path with dotenvy expansion and never searches ancestor directories, so an absent local file is optional and an ancestor `.env` is neither imported nor parsed, and it preserves injected and explicitly empty process values. Compose and fixed listener overrides are already applied before that read. Normal Rust startup, migration and audit commands do not read environment files.
 
+## AnyDash development environment
+
+AnyDash API settings belong to `servers/anydash-api` and the `/anydash-api` Infisical development folder. The `@servers/anydash-api#dev` task depends on the shared server build and launches the compiled binary through Portless at `https://anydash-api.localhost`. The launcher fixes `LISTEN` to `127.0.0.1:46329` and applies the AnyDash Compose database URL after Infisical injection. Direct service-local development uses its configured database URL. Root database reset includes AnyDash and runs its migrations explicitly.
+
+Only the AnyDash API task receives its identity settings (`LOGTO_ISSUER`, `LOGTO_TOKEN_URL`, `DELCORE_URL`, `DELCORE_RESOURCE`, `CLIENT_ID`, `CLIENT_SECRET`), `WEB_ORIGIN` and `ANYDASH_*` settings, including the metrics token. External provider credentials never reach the server; collectors keep them on the device. Follow the [AnyDash API contract](servers-anydash-api-contract.md#configuration) for startup validation.
+
 ## Lane development environment
 
 Lane API settings belong to `servers/lane-api` and the `/lane-api` Infisical development folder. The `@servers/lane-api#dev` task depends on the shared server build and launches the compiled binary through Portless at `https://lane-api.localhost`. The launcher fixes `LISTEN` to `127.0.0.1:46326` and applies the Lane Compose database URL after Infisical injection. Direct service-local development uses its configured database URL. Root database reset includes Lane and runs migrations explicitly.

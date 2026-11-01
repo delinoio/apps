@@ -757,6 +757,18 @@ test("Perfine jobs use owned package contracts and real fixture interfaces", () 
   );
 });
 
+test("AnyDash server validation checks its monitoring rules on Linux", () => {
+  const job = workflow.jobs["rust-servers"];
+  const step = job.steps.find((step) => step.id === "anydash-monitoring");
+  assert.equal(step.if, "matrix.service == 'anydash-api'");
+  assert.equal(step.run, "servers/anydash-api/ops/check.sh");
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  const unit = job.steps.findIndex((step) => step.id === "unit");
+  const database = job.steps.findIndex((step) => step.id === "postgres");
+  const index = job.steps.indexOf(step);
+  assert.ok(unit < index && index < database);
+});
+
 test("Lane integration owns a pinned disposable loopback S3 fixture", () => {
   const job = workflow.jobs["rust-servers"];
   const step = job.steps.find((step) => step.id === "integration");

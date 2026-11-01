@@ -134,6 +134,7 @@ The root pins Portless as a development dependency. Run `pnpm dev` from the repo
 | DeliTools API   | `https://delitools-api.localhost`   | `127.0.0.1:46322` |
 | Lane            | `https://lane.localhost`            | `127.0.0.1:46325` |
 | Perfine API     | `https://perfine-api.localhost`     | `127.0.0.1:46323` |
+| AnyDash API     | `https://anydash-api.localhost`     | `127.0.0.1:46329` |
 
 Portless prefixes names with the branch in linked Git worktrees. Use the URLs printed at startup. Upstream ports remain fixed to preserve native shell development URLs and strict conflict handling; different worktrees cannot serve the same app concurrently on those ports.
 
@@ -404,6 +405,14 @@ Affected-path selection works as follows:
 ### Release
 
 Release image publication builds `servers/mcpa-api/Dockerfile` from the root checkout and publishes `ghcr.io/<owner>/mcpa-api:sha-<release-commit>` with FSL-1.1-ALv2 labels through `deploy-images.yml`. The console publishes to Cloudflare Pages through the shared web publication workflow. Runtime rollout belongs to private operator automation.
+
+## AnyDash development and validation
+
+AnyDash participates in root development through the `anydash-api` Rust service route. The API uses fixed loopback port `46329` and fails on a port conflict. Root Compose includes `anydash-postgres` (PostgreSQL 17), with loopback port `${ANYDASH_POSTGRES_PORT:-55438}`, database and user `anydash` and disposable password `local-anydash`. Its named `anydash-postgres-data` volume is independent of other services. These values are local development defaults only.
+
+Run `pnpm dev:db:up` to prepare the local databases. Run `anydash-api migrate` explicitly before serving; application startup only verifies the schema. Root `pnpm dev` waits for Compose, then runs Turbo directly. Only the AnyDash API task receives its resolved database URL, after service-local Infisical injection from `/anydash-api`. Root `pnpm dev:db:reset` includes the AnyDash database in its build, reset and explicit migration procedure. Local development uses mocked Delcore and Logto where real development credentials are unavailable.
+
+AnyDash CI uses an `anydash-api` entry in both Rust server matrices with disposable database `anydash_api_test` on port `55438`. The test job also runs `servers/anydash-api/ops/check.sh` with disposable Prometheus and Alertmanager tool containers plus the Node configuration tests, and runs the ignored PostgreSQL integration tests with mocked Logto, Delcore and pricing sources. AnyDash protocol changes and shared server crate changes select it. These checks do not add macOS runners, a full manual mode or production publication. The unified release does not select the `anydash-api` image until the AnyDash release component is registered together with the AnyDash distribution; until then, record `@servers/anydash-api` changes with the `none` release type. The [AnyDash project](project-anydash.md) and [API contract](servers-anydash-api-contract.md) own product scope and service configuration.
 
 ## Pending changesets
 
