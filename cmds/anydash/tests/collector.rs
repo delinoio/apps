@@ -699,6 +699,43 @@ async fn offline_buffering_update_required_and_chunked_upload() {
     let _ = Tokens::default();
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn local_sync_requests_do_not_bypass_upload_rate_limits() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    let now = time::now();
+    let claude = home.path().join(".claude/projects/p/s.jsonl");
+    let line = |ts: i64, id: &str| {
+        json!({"type": "assistant", "timestamp": time::rfc3339(ts), "sessionId": "s", "message": {"id": id, "model": "m", "usage": {"input_tokens": 1, "output_tokens": 1}}}).to_string() + "\n"
+    };
+    support::write(&claude, &line(now - 600, "m1"));
+    let base = api(state.clone());
+    mock.set(move |r| {
+        if r.route().ends_with("UploadUsage") {
+            Reply::reason(429, "resource_exhausted", ErrorReason::RateLimited)
+                .with_header("retry-after", "600")
+        } else {
+            base(r)
+        }
+    });
+    let uploads = || mock.count("/anydash.v1.CollectorService/UploadUsage");
+    core.cycle(now).await;
+    assert_eq!(uploads(), 1);
+    // A manual local sync aggregates new usage but waits for the upload deadline.
+    support::write(&claude, &(line(now - 600, "m1") + &line(now - 300, "m2")));
+    core.request_local_sync(now + 10).unwrap();
+    core.cycle(now + 10).await;
+    // Scheduled syncs also wait.
+    core.cycle(now + 70).await;
+    assert_eq!(uploads(), 1, "no upload before Retry-After elapses");
+    assert!(core.status(true).unwrap().pending_bucket_count >= 1);
+    let base = api(state.clone());
+    mock.set(base);
+    core.cycle(now + 600).await;
+    assert_eq!(uploads(), 2);
+    assert_eq!(core.status(true).unwrap().pending_bucket_count, 0);
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn one_shared_process_with_ipc_quit_and_service_ownership() {
     let home = tempfile::tempdir().unwrap();
     let mock = Mock::start(|_| Reply::text(500, "")).await;

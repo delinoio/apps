@@ -79,6 +79,9 @@ struct State {
     next_heartbeat: i64,
     upload_failures: u32,
     next_upload: i64,
+    /// `UploadUsage` rate-limit deadline (`Retry-After`). Local and scheduled syncs still
+    /// aggregate before it but do not upload.
+    upload_retry_at: i64,
     api_failures: u32,
     next_api: i64,
     passive: Option<(i64, serde_json::Value)>,
@@ -1339,16 +1342,26 @@ impl Core {
                     .map_or(schedule::HEARTBEAT_INTERVAL, Duration::from_secs);
                 lock(&self.state).next_heartbeat = now + schedule::seconds(interval);
             }
-            if sync_due || lock(&self.state).next_upload <= now {
+            let upload_due = {
+                let s = lock(&self.state);
+                (sync_due || s.next_upload <= now) && s.upload_retry_at <= now
+            };
+            if upload_due {
                 match self.upload(now).await {
                     Ok(_) => {
                         let mut s = lock(&self.state);
                         s.upload_failures = 0;
+                        s.upload_retry_at = 0;
                         s.next_upload = now + schedule::seconds(schedule::LOCAL_SYNC_INTERVAL);
                     }
                     Err(f) if f.reason == ErrorReason::RateLimited => {
-                        lock(&self.state).next_upload =
-                            now + schedule::seconds(api::wait_for(&f, 1));
+                        let retry_at = now + schedule::seconds(api::wait_for(&f, 1));
+                        {
+                            let mut s = lock(&self.state);
+                            s.upload_retry_at = retry_at;
+                            s.next_upload = retry_at;
+                        }
+                        tracing::info!(event = "upload_rate_limited", correlation_id = %f.correlation_id, next_attempt = %time::rfc3339(retry_at));
                     }
                     Err(f) => return Err(f),
                 }
