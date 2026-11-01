@@ -706,16 +706,42 @@ async fn snapshots_hourly_history_and_late_arrival() {
         json!({"resourceId":rid,"kind":"RESOURCE_KIND_VERCEL_PROJECT","displayName":rid,"parentId":"team_1","health":"RESOURCE_HEALTH_HEALTHY","providerStatus":"READY","statusState":"METRIC_STATE_VALUE",
             "metrics":[{"kind":"METRIC_KIND_DEPLOYMENT_BILLED_COST","dimension":"total","value":{"state":"METRIC_STATE_VALUE","money":{"currencyCode":"USD","amount":"1.5"}},"temporality":"METRIC_TEMPORALITY_CUMULATIVE","periodStart":at(Utc::now()-Duration::days(3)),"periodEnd":at(Utc::now())}]})
     };
-    for (n, rids) in [(1, vec!["prj_a", "prj_b"]), (2, vec!["prj_a"])] {
-        let observed = Utc::now() + Duration::seconds(n);
-        f.ok(
+    let start = Utc::now();
+    for (observed, rids, outcome) in [
+        (
+            start + Duration::seconds(1),
+            vec!["prj_a", "prj_b"],
+            "SNAPSHOT_OUTCOME_LATEST_UPDATED",
+        ),
+        (
+            start + Duration::seconds(3),
+            vec!["prj_a"],
+            "SNAPSHOT_OUTCOME_LATEST_UPDATED",
+        ),
+        // A late snapshot that still lists the removed resource updates history only and does
+        // not restore that resource's latest metrics.
+        (
+            start + Duration::seconds(2),
+            vec!["prj_a", "prj_b"],
+            "SNAPSHOT_OUTCOME_HISTORY_ONLY",
+        ),
+    ] {
+        let reported = f.ok(
             &c1,
             "CollectorService/ReportSnapshot",
             json!({"connectionId":vercel,"leaseEpoch":epoch,"snapshot":{"observedAt":at(observed),"status":ok,"resources":rids.iter().map(|r| resource(r)).collect::<Vec<_>>(),
                 "metrics":[{"kind":"METRIC_KIND_DEPLOYMENT_BILLED_COST","dimension":"total","value":{"state":"METRIC_STATE_VALUE","money":{"currencyCode":"USD","amount":"9"}},"temporality":"METRIC_TEMPORALITY_CUMULATIVE","periodStart":at(Utc::now()-Duration::days(3)),"periodEnd":at(Utc::now())}]}}),
         )
         .await;
+        assert_eq!(reported["outcome"], outcome);
     }
+    assert_eq!(
+        f.count(&format!(
+            "SELECT count(*) FROM metric_latest WHERE connection_id='{vercel}' AND resource_id='prj_b'"
+        ))
+        .await,
+        0
+    );
     let deployments = f
         .ok(
             &user,

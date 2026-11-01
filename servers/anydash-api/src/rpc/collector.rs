@@ -916,30 +916,35 @@ async fn apply_snapshot(
     }
     for m in metrics {
         let carries = matches!(m.state, MetricState::Value | MetricState::Partial);
-        sqlx::query(
-            "INSERT INTO metric_latest(connection_id,resource_id,kind,dimension,state,value,unit,temporality,period_start,period_end,observed_at,failure_class,last_success_value,last_success_at) \
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $13 THEN $6 END,CASE WHEN $13 THEN $11 END) \
-             ON CONFLICT (connection_id,resource_id,kind,dimension) DO UPDATE SET state=EXCLUDED.state,value=EXCLUDED.value,unit=EXCLUDED.unit,temporality=EXCLUDED.temporality,\
-             period_start=EXCLUDED.period_start,period_end=EXCLUDED.period_end,observed_at=EXCLUDED.observed_at,failure_class=EXCLUDED.failure_class,\
-             last_success_value=CASE WHEN $13 THEN EXCLUDED.value ELSE metric_latest.last_success_value END,\
-             last_success_at=CASE WHEN $13 THEN EXCLUDED.observed_at ELSE metric_latest.last_success_at END \
-             WHERE metric_latest.observed_at<EXCLUDED.observed_at",
-        )
-        .bind(id)
-        .bind(&m.resource_id)
-        .bind(e16(m.kind))
-        .bind(&m.dimension)
-        .bind(e16(m.state))
-        .bind(if carries { Some(&m.value) } else { None })
-        .bind(&m.unit)
-        .bind(m.temporality)
-        .bind(m.period_start)
-        .bind(m.period_end)
-        .bind(observed)
-        .bind(if carries { 0 } else { failure_code })
-        .bind(carries)
-        .execute(&mut *tx)
-        .await?;
+        // A late (HISTORY_ONLY) snapshot updates hourly history only. Writing latest rows would
+        // recreate resource metrics that a newer successful snapshot removed, because the
+        // observation-time guard cannot apply to a row that no longer exists.
+        if outcome == SnapshotOutcome::LatestUpdated {
+            sqlx::query(
+                "INSERT INTO metric_latest(connection_id,resource_id,kind,dimension,state,value,unit,temporality,period_start,period_end,observed_at,failure_class,last_success_value,last_success_at) \
+                 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $13 THEN $6 END,CASE WHEN $13 THEN $11 END) \
+                 ON CONFLICT (connection_id,resource_id,kind,dimension) DO UPDATE SET state=EXCLUDED.state,value=EXCLUDED.value,unit=EXCLUDED.unit,temporality=EXCLUDED.temporality,\
+                 period_start=EXCLUDED.period_start,period_end=EXCLUDED.period_end,observed_at=EXCLUDED.observed_at,failure_class=EXCLUDED.failure_class,\
+                 last_success_value=CASE WHEN $13 THEN EXCLUDED.value ELSE metric_latest.last_success_value END,\
+                 last_success_at=CASE WHEN $13 THEN EXCLUDED.observed_at ELSE metric_latest.last_success_at END \
+                 WHERE metric_latest.observed_at<EXCLUDED.observed_at",
+            )
+            .bind(id)
+            .bind(&m.resource_id)
+            .bind(e16(m.kind))
+            .bind(&m.dimension)
+            .bind(e16(m.state))
+            .bind(if carries { Some(&m.value) } else { None })
+            .bind(&m.unit)
+            .bind(m.temporality)
+            .bind(m.period_start)
+            .bind(m.period_end)
+            .bind(observed)
+            .bind(if carries { 0 } else { failure_code })
+            .bind(carries)
+            .execute(&mut *tx)
+            .await?;
+        }
         if m.state == MetricState::Value {
             // The last successful value in each UTC hour; a late result lands in its own hour.
             sqlx::query(

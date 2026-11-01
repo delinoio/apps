@@ -90,7 +90,7 @@ A user with several roles gets the union. Team-role edit permission never bypass
 ### External snapshots and hourly history
 
 - Accept a snapshot only under the current valid lease epoch. For each reported metric (keyed by connection, resource ID or empty, kind and dimension):
-  - The latest value changes only when the snapshot's `observed_at` is newer than the stored latest observation. Failure and `AUTH_EXPIRED` states replace the latest state but keep the last successful value and its time.
+  - The latest value changes only when the snapshot's `observed_at` is newer than the connection's latest observation. An older snapshot (`HISTORY_ONLY`) changes only hourly history, so it never restores resources or resource metrics that a newer snapshot removed. Failure and `AUTH_EXPIRED` states replace the latest state but keep the last successful value and its time.
   - For `VALUE` states, the hourly UTC snapshot for the hour of `observed_at` keeps the last successful value in that hour: a later observation in the same hour wins and an earlier one is ignored. A late result, for example after a collection-device change or a short offline period, lands in the bucket of its observation time, because a valid lease produced it.
   - Cumulative and instantaneous values are stored with their temporality and period and never mixed in one series.
 - The resource set of a connection is replaced by each newer `SUCCEEDED` snapshot; resources missing from it and their resource metrics are removed from the latest view. A `PARTIALLY_SUCCEEDED` snapshot updates the reported resources without removing others.
