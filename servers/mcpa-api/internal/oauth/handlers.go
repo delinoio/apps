@@ -431,6 +431,8 @@ func (b *Broker) completeLogin(ctx context.Context, code string, req store.MCPAu
 	}
 	user, err := b.cfg.Delcore.GetCurrentUser(ctx, dc.AccessToken)
 	if err != nil {
+		// No grant will hold the upstream refresh token.
+		b.revokeUpstream(ctx, refresh)
 		return nil, apperr.DependencyUnavailable(fmt.Errorf("resolve Delcore user: %w", err))
 	}
 	id := store.NewID()
