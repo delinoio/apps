@@ -454,8 +454,8 @@ importers:
         version: 1.0.2
     devDependencies:
       '@lynx-js/lynxtron':
-        specifier: 0.0.30
-        version: 0.0.30(supports-color@8.1.1)
+        specifier: 0.0.31
+        version: 0.0.31(supports-color@8.1.1)
       '@lynx-js/react-rsbuild-plugin':
         specifier: 0.22.0
         version: 0.22.0(@lynx-js/react@0.129.0(@lynx-js/types@4.3.0)(@types/react@19.2.14))(@lynx-js/rspeedy@0.18.3(@rspack/core@2.2.9(@swc/helpers@0.5.23))(@types/node@24.19.2)(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(tslib@2.8.1)(typescript@5.9.3)(webpack@5.112.2(cssnano@7.1.9(postcss@8.5.30))(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(postcss@8.5.30)(svgo@4.1.0)))(@rsbuild/core@2.2.9)(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(tslib@2.8.1)(webpack@5.112.2(cssnano@7.1.9(postcss@8.5.30))(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(postcss@8.5.30)(svgo@4.1.0))
@@ -1076,28 +1076,28 @@ packages:
       preact-render-to-string:
         optional: true
 
-  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.30':
-    resolution: {integrity: sha512-98LpK5t1uaranZN/h9IdGbZ41asLyiitJAFLiopV/WgV0ClB/NAgv6VMz+Iw3W5moYSYh74i4VQ9ruQ1At/ETg==}
+  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.31':
+    resolution: {integrity: sha512-zFJOEZsWZkeSSNEgjOFsKUFkt4qA68S2Bs3Lg3fnv5rmDQcuefaCzwufs5t2MVK26I/mLKAWQDq5aPnfSVs7aw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.30':
-    resolution: {integrity: sha512-JZGjTw6xrQvmWEbSjv0Fpxut2UsQ8YZpAknhBsyreoKZL3g+akMMmGNwXcMvf3gOZS07hSpL6PfglZH3lxGLtA==}
+  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.31':
+    resolution: {integrity: sha512-5v/wlStubqYcY2QqoWOpyHcKooSM8rmDgc8E0Uvgt7q9FrrVVzMfV5PsEzYlfoc2T366YqgG6TlkS4wV9ONQmA==}
     cpu: [x64]
     os: [darwin]
 
-  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.30':
-    resolution: {integrity: sha512-4gqcTxHgS25Plp8sCy34/uvrukB7ZMzx9cNHPa3qJJcjBhc8iPHcYk8R/EwKU4IljA/ntIDuAK+aPW5P4RT3OA==}
+  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.31':
+    resolution: {integrity: sha512-HLwK9qa5kRcyHqEcXJ/OYEmjOx5sOewMzVoyTBvoxf6/SDQOGlaCClfXM7PyF232pOdDdAyLlEMNF8YfaZNY0Q==}
     cpu: [x64]
     os: [linux]
 
-  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.30':
-    resolution: {integrity: sha512-j7Vs/MR2V95yvEsionYKzsV6hQ2Fq2+9LzEfjlZXArToTPoYLZMn+hF3xNt3AH4GM5wkJ1HblFxgG42Vz8xgHA==}
+  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.31':
+    resolution: {integrity: sha512-xMzfFRWbQu8XdUZtuidWlAdUzM0bjNpYfyxm+n+Nd2TfAuvmPXy+1UJE54CPXEWjv3o2bk6OvGPgcvYfUVBc5Q==}
     cpu: [x64]
     os: [win32]
 
-  '@lynx-js/lynxtron@0.0.30':
-    resolution: {integrity: sha512-homMpV75s2tp7fsWyCl5xR1KxfCoGtA5ms1kqubQFb/7ybTXhBSBOJJd/8J53TNpBhZ5OZ1tGKivh/x7mfi/2Q==}
+  '@lynx-js/lynxtron@0.0.31':
+    resolution: {integrity: sha512-LvJYGzlopIlUhAsOHrkFD4kYjBJbaWRniNORewF5bK1DFqjZcbaknyxK/aV0s9qshEaiVAVvlnCzQD+DYqXFZQ==}
     engines: {node: ^22.18.0 || ^24.0.0 || ^26.0.0}
     hasBin: true
 
@@ -5790,19 +5790,19 @@ snapshots:
 
   '@lynx-js/internal-preact@11.0.0-rc.1-20260903085447-f95471a': {}
 
-  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.30':
+  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.31':
     optional: true
 
-  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.30':
+  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.31':
     optional: true
 
-  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.30':
+  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.31':
     optional: true
 
-  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.30':
+  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.31':
     optional: true
 
-  '@lynx-js/lynxtron@0.0.30(supports-color@8.1.1)':
+  '@lynx-js/lynxtron@0.0.31(supports-color@8.1.1)':
     dependencies:
       '@npmcli/config': 10.14.0
       node-fetch: 3.3.2
@@ -5810,10 +5810,10 @@ snapshots:
       proper-lockfile: 4.1.2
       zip-lib: 1.4.0
     optionalDependencies:
-      '@lynx-js/lynxtron-runtime-darwin-arm64-devtool': 0.0.30
-      '@lynx-js/lynxtron-runtime-darwin-x64-devtool': 0.0.30
-      '@lynx-js/lynxtron-runtime-linux-x64-devtool': 0.0.30
-      '@lynx-js/lynxtron-runtime-win32-x64-devtool': 0.0.30
+      '@lynx-js/lynxtron-runtime-darwin-arm64-devtool': 0.0.31
+      '@lynx-js/lynxtron-runtime-darwin-x64-devtool': 0.0.31
+      '@lynx-js/lynxtron-runtime-linux-x64-devtool': 0.0.31
+      '@lynx-js/lynxtron-runtime-win32-x64-devtool': 0.0.31
     transitivePeerDependencies:
       - supports-color
 
