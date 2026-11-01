@@ -105,6 +105,9 @@ type upstream struct {
 	mfa               bool
 	subject           string
 	issued            []string
+	// unverifiable makes the next MCP-audience refresh rotate the refresh
+	// token but return an access token that fails verification.
+	unverifiable bool
 }
 
 func (u *upstream) mcpToken() string {
@@ -146,6 +149,10 @@ func (u *upstream) handle(form url.Values) (int, any) {
 			u.n++
 			return http.StatusOK, map[string]any{"access_token": fmt.Sprintf("dc-token-%d", u.n), "refresh_token": u.rotate(), "expires_in": 3600}
 		case mcpResource:
+			if u.unverifiable {
+				u.unverifiable = false
+				return http.StatusOK, map[string]any{"access_token": "not-a-jwt", "refresh_token": u.rotate(), "expires_in": 3600}
+			}
 			return http.StatusOK, map[string]any{"access_token": u.mcpToken(), "refresh_token": u.rotate(), "expires_in": 3600}
 		}
 	}
@@ -756,6 +763,31 @@ func TestRefreshRejectedUpstreamRevokesGrant(t *testing.T) {
 	}
 	if e.store.grantCount() != 0 {
 		t.Fatal("grant kept after upstream rejection")
+	}
+}
+
+func TestRefreshKeepsRotatedUpstreamTokenWhenVerificationFails(t *testing.T) {
+	e := newEnv(t)
+	_, tok := e.exchange(e.code(), nil)
+	e.up.set(func(u *upstream) { u.unverifiable = true })
+	status, r := e.refresh(tok.RefreshToken, clientID)
+	if status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" || r.AccessToken != "" {
+		t.Fatalf("unverifiable refresh: %d %+v", status, r)
+	}
+	if e.store.grantCount() != 1 {
+		t.Fatal("grant removed after a recoverable failure")
+	}
+	// The retry uses the same handle and the rotated upstream refresh token;
+	// the consumed one would be rejected and end the grant.
+	status, r = e.refresh(tok.RefreshToken, clientID)
+	if status != http.StatusOK || r.AccessToken == "" || r.RefreshToken == "" {
+		t.Fatalf("retry: %d %+v", status, r)
+	}
+	if g, err := e.resolve(r.AccessToken); err != nil || g.UserID != delcoreUserID {
+		t.Fatalf("resolve retried token: %v", err)
+	}
+	if status, again := e.refresh(r.RefreshToken, clientID); status != http.StatusOK {
+		t.Fatalf("refresh after retry: %d %+v", status, again)
 	}
 }
 

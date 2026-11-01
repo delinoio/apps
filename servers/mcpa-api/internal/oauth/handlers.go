@@ -617,10 +617,14 @@ var errClientMismatch = errors.New("grant belongs to another client")
 // issue obtains a new MCP-audience token with the grant's upstream refresh
 // token, re-checks MFA evidence, records the token and rotates the refresh
 // handle. A rejected upstream refresh, a changed subject or a token without
-// MFA evidence revokes the grant.
+// MFA evidence revokes the grant. When issuance fails for a recoverable
+// reason after Logto rotated the upstream refresh token, the replacement is
+// stored without issuing a token and the client's handle stays active, so a
+// retry does not present the consumed upstream token.
 func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, oldHandle []byte) (*tokenResponse, *oauthError) {
 	var resp *tokenResponse
 	var lostRefresh string
+	keptRotation := false
 	err := b.cfg.Store.UpdateGrant(ctx, grantID, oldHandle, func(g store.MCPGrant) (store.MCPGrantChange, error) {
 		if g.ClientID != clientID {
 			return store.MCPGrantChange{}, errClientMismatch
@@ -636,12 +640,24 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		if err != nil {
 			return store.MCPGrantChange{}, err
 		}
-		if tr.RefreshToken != "" {
+		rotated := tr.RefreshToken != "" && tr.RefreshToken != t.RefreshToken
+		if rotated {
 			t.RefreshToken = tr.RefreshToken
+		}
+		sealed, err := b.seal(g.ID, t)
+		if err != nil {
+			return store.MCPGrantChange{}, err
+		}
+		// keep stores only the rotated upstream refresh token. It is returned
+		// with recoverable failures below; it issues no handle or token.
+		var keep store.MCPGrantChange
+		if rotated {
+			keep.Tokens = &sealed
 		}
 		tok, err := b.cfg.Logto.VerifyAccessToken(ctx, tr.AccessToken, b.cfg.MCPResource)
 		if err != nil {
-			return store.MCPGrantChange{}, fmt.Errorf("%w: refreshed token: %v", auth.ErrLogtoUnavailable, err)
+			keptRotation = rotated
+			return keep, fmt.Errorf("%w: refreshed token: %v", auth.ErrLogtoUnavailable, err)
 		}
 		if tok.Subject != g.Subject {
 			lostRefresh = t.RefreshToken
@@ -651,13 +667,10 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 			lostRefresh = t.RefreshToken
 			return store.MCPGrantChange{Delete: true}, b.mfaRequired()
 		}
-		sealed, err := b.seal(g.ID, t)
-		if err != nil {
-			return store.MCPGrantChange{}, err
-		}
 		handle, err := auth.RandomToken()
 		if err != nil {
-			return store.MCPGrantChange{}, err
+			keptRotation = rotated
+			return keep, err
 		}
 		expiresIn := int64(tok.Expiry.Sub(b.now()).Seconds())
 		if tr.ExpiresIn > 0 && tr.ExpiresIn < expiresIn {
@@ -688,7 +701,9 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		b.cfg.Log.InfoContext(ctx, "mcp grant revoked: refreshed token lacks MFA evidence", "grant_id", grantID)
 		return nil, &oauthError{code: errInvalidGrant, description: "multi-factor authentication is required; sign in again", uri: b.cfg.ReauthURL}
 	case errors.Is(err, auth.ErrLogtoUnavailable):
-		b.cfg.Log.WarnContext(ctx, "mcp token issuance failed", "grant_id", grantID, "error", err)
+		// A failed commit returns its own error, so the rotated token was
+		// stored when keptRotation is set.
+		b.cfg.Log.WarnContext(ctx, "mcp token issuance failed", "grant_id", grantID, "upstream_refresh_kept", keptRotation, "error", err)
 		return nil, newOAuthError(errTemporarilyUnavailable, "the identity provider is unavailable; retry later")
 	default:
 		b.cfg.Log.ErrorContext(ctx, "mcp token issuance failed", "grant_id", grantID, "error", err)

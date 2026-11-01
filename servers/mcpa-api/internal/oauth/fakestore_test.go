@@ -158,12 +158,22 @@ func (f *fakeStore) UpdateGrant(_ context.Context, id uuid.UUID, handle []byte, 
 		}
 	}
 	ch, err := fn(g)
-	if err != nil && !ch.Delete {
+	if ch.Delete && err != nil {
+		f.deleteLocked(id)
+		return err
+	}
+	if err != nil {
+		// Only replaced tokens survive a failed fn; the handle stays active.
+		if ch.Tokens != nil {
+			g.Tokens = *ch.Tokens
+			g.UpdateTime = f.now()
+			f.grants[id] = g
+		}
 		return err
 	}
 	if ch.Delete {
 		f.deleteLocked(id)
-		return err
+		return nil
 	}
 	if h != nil {
 		h.retired = true

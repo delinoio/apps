@@ -64,6 +64,7 @@ type MCPCode struct {
 type MCPGrantChange struct {
 	// Delete removes the grant with its codes, handles and access tokens.
 	Delete bool
+	// Tokens replaces the sealed grant tokens.
 	Tokens *crypto.Sealed
 	// ExpireTime replaces the idle expiry when non-zero.
 	ExpireTime time.Time
@@ -199,15 +200,39 @@ func (m *MCPOAuth) GrantByAccessToken(ctx context.Context, tokenHash []byte) (MC
 
 // UpdateGrant locks an unexpired grant and applies the change that fn
 // returns. When handle is non-nil it must be an active refresh handle of the
-// grant; it is retired in the same transaction, or ErrHandleRetired is
-// returned without calling fn. A change with Delete is applied even when fn
-// also returns an error, which is then returned.
+// grant, or ErrHandleRetired is returned without calling fn; the handle is
+// retired in the same transaction when fn succeeds.
+//
+// When fn also returns an error, only the Delete and Tokens parts of its
+// change are applied, the handle stays active and the error is returned. A
+// failed issuance can so keep a rotated upstream refresh token, which the
+// upstream refresh already consumed, without issuing a handle or token.
 func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, handle []byte, fn func(MCPGrant) (MCPGrantChange, error)) error {
 	var fnErr error
 	err := m.s.InTx(ctx, func(tx pgx.Tx) error {
 		g, err := scanMCPGrant(tx.QueryRow(ctx, `SELECT `+mcpGrantColumns+` FROM mcp_grants WHERE id = $1 AND expire_time > now() FOR UPDATE`, id))
 		if err != nil {
 			return err
+		}
+		// The grant row lock serializes every update of the grant, so the
+		// handle cannot be retired between this check and the retirement.
+		if handle != nil {
+			var active bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mcp_refresh_handles
+				WHERE handle_hash = $1 AND grant_id = $2 AND retire_time IS NULL)`, handle, id).Scan(&active); err != nil {
+				return err
+			}
+			if !active {
+				return ErrHandleRetired
+			}
+		}
+		ch, err := fn(g)
+		if err != nil {
+			if !ch.Delete && ch.Tokens == nil {
+				return err
+			}
+			fnErr = err
+			return applyMCPGrantChange(ctx, tx, id, MCPGrantChange{Delete: ch.Delete, Tokens: ch.Tokens})
 		}
 		if handle != nil {
 			tag, err := tx.Exec(ctx, `UPDATE mcp_refresh_handles SET retire_time = now()
@@ -219,11 +244,6 @@ func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, handle []byte,
 				return ErrHandleRetired
 			}
 		}
-		ch, err := fn(g)
-		if err != nil && !ch.Delete {
-			return err
-		}
-		fnErr = err
 		return applyMCPGrantChange(ctx, tx, id, ch)
 	})
 	if err != nil {

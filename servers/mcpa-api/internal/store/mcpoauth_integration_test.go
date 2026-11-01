@@ -176,6 +176,43 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	if _, _, err := m.RefreshHandleGrant(ctx, digest("h3")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("h3 = %v", err)
 	}
+	// A failing fn keeps replaced tokens only: the handle stays active and no
+	// handle, access token or expiry change is applied.
+	before, err := m.GetGrant(ctx, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced, err := kr.Seal([]byte(`{"refresh_token":"rt-rotated"}`), crypto.MCPGrantAAD(g.ID.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.UpdateGrant(ctx, g.ID, digest("h2"), func(store.MCPGrant) (store.MCPGrantChange, error) {
+		return store.MCPGrantChange{
+			Tokens: &replaced, NewHandle: digest("h3"), AccessToken: digest("at3"), AccessExpire: accessExpire,
+			ExpireTime: time.Now().Add(48 * time.Hour),
+		}, boom
+	}); !errors.Is(err, boom) {
+		t.Fatalf("fn error with tokens = %v", err)
+	}
+	after, err := m.GetGrant(ctx, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain, err := kr.Open(after.Tokens, crypto.MCPGrantAAD(g.ID.String())); err != nil || string(plain) != `{"refresh_token":"rt-rotated"}` {
+		t.Fatalf("kept tokens = %q, %v", plain, err)
+	}
+	if !after.ExpireTime.Equal(before.ExpireTime) {
+		t.Fatalf("expiry changed from %v to %v", before.ExpireTime, after.ExpireTime)
+	}
+	if _, retired, err := m.RefreshHandleGrant(ctx, digest("h2")); err != nil || retired {
+		t.Fatalf("handle after kept tokens = %v %v", retired, err)
+	}
+	if _, _, err := m.RefreshHandleGrant(ctx, digest("h3")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("h3 after kept tokens = %v", err)
+	}
+	if _, err := m.GrantByAccessToken(ctx, digest("at3")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("at3 after kept tokens = %v", err)
+	}
 	if err := m.UpdateGrant(ctx, g.ID, nil, func(store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{Delete: true}, boom
 	}); !errors.Is(err, boom) {
