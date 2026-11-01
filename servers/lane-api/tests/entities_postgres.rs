@@ -1379,6 +1379,57 @@ async fn realqa_atomic_capture_history_move_ownership_and_deletion() {
     assert_eq!(count, 1);
     f.close().await;
 }
+/// Shared RealQA duplicate vectors: equal normalized prefixes are rejected while
+/// path-case and port differences remain distinct rules.
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn realqa_rule_duplicate_vectors() {
+    let suite: Value = serde_json::from_str(include_str!(
+        "../../../protos/lane/v1/fixtures/url-prefixes.json"
+    ))
+    .unwrap();
+    let mut f = Fixture::new().await;
+    for case in suite["cases"].as_array().unwrap() {
+        if case["input"]["operation"] != "create" {
+            continue;
+        }
+        let repo = id();
+        f.repo(&repo, &format!("https://example.com/{repo}")).await;
+        let prefixes = case["input"]["prefixes"].as_array().unwrap();
+        let first = f
+            .capture(
+                "CreateURLConnection",
+                json!({"id":id(),"meta":{"requestId":id()},"connection":{"prefix":prefixes[0],"repositoryId":repo}}),
+            )
+            .await
+            .unwrap();
+        let second = f
+            .capture(
+                "CreateURLConnection",
+                json!({"id":id(),"meta":{"requestId":id()},"connection":{"prefix":prefixes[1],"repositoryId":repo}}),
+            )
+            .await;
+        assert_eq!(
+            second.is_err(),
+            case["expected"]["duplicateRejected"] == true,
+            "{}",
+            case["id"]
+        );
+        // Deleting the target repository removes its rules before the next vector.
+        f.call(
+            "DeleteRepository",
+            json!({"id":repo,"meta":{"requestId":id()}}),
+        )
+        .await
+        .unwrap();
+        assert!(first["result"]["version"]["entityId"].is_string());
+    }
+    assert_eq!(
+        f.capture("ListURLConnections", json!({})).await.unwrap()["items"],
+        json!([])
+    );
+    f.close().await;
+}
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL"]
 async fn realqa_rule_conflicts_duplicates_cascade_and_sync_negotiation() {

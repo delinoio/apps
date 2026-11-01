@@ -73,15 +73,17 @@ async fn metrics(State(s): State<Arc<Server>>, headers: HeaderMap) -> Response {
     }
     match s.push.metrics().await {
         Ok(push) => {
-            let pending: Result<i64, _> =
-                sqlx::query_scalar("SELECT count(*) FROM lane_sync_rejections")
-                    .fetch_one(&s.db)
-                    .await;
+            // Aggregate backlog gauges only; no account, attachment or object identifiers.
+            let pending: Result<(i64, i64, i64), _> = sqlx::query_as(
+                "SELECT (SELECT count(*) FROM lane_sync_rejections),(SELECT count(*) FROM lane_attachments WHERE pending_png IS NOT NULL AND NOT available),(SELECT count(*) FROM lane_attachment_garbage)",
+            )
+            .fetch_one(&s.db)
+            .await;
             match pending {
-                Ok(n) => (
+                Ok((n, uploads, deletions)) => (
                     [("content-type", "text/plain; version=0.0.4")],
                     format!(
-                        "{}{push}lane_sync_pending_failures {n}\n",
+                        "{}{push}lane_sync_pending_failures {n}\n# TYPE lane_attachment_pending_publications gauge\nlane_attachment_pending_publications {uploads}\n# TYPE lane_attachment_pending_deletions gauge\nlane_attachment_pending_deletions {deletions}\n",
                         s.metrics.encode()
                     ),
                 )
