@@ -562,10 +562,22 @@ function usageView(
   };
 }
 
-/** Decimal strings as integer hundredths, the chart scale of money and percent. */
-const hundredths = (amount: string) => {
-  const value = Math.round(Number(amount) * 100);
-  return Number.isFinite(value) ? BigInt(value) : 0n;
+/** The most fractional digits the API accepts in a decimal string. */
+const DECIMAL_SCALE = 12;
+
+/**
+ * A decimal string as an exact integer of 10^-12 units. Collectors report usage
+ * quantities with up to 9 fractional digits, so a coarser scale would chart
+ * small readings (for example 0.004 GB) as zero.
+ */
+const decimalUnits = (text: string) => {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text.trim());
+  if (!match) return 0n;
+  const [, sign, whole, fraction = ""] = match;
+  const units = BigInt(
+    whole + fraction.slice(0, DECIMAL_SCALE).padEnd(DECIMAL_SCALE, "0"),
+  );
+  return sign ? -units : units;
 };
 
 const normalize = (values: bigint[]) => {
@@ -666,9 +678,9 @@ export function widgetView(
           : point.value?.value.case === "integer"
             ? point.value.value.value
             : point.value?.value.case === "money"
-              ? hundredths(point.value.value.value.amount)
+              ? decimalUnits(point.value.value.value.amount)
               : point.value?.value.case === "decimal"
-                ? hundredths(point.value.value.value)
+                ? decimalUnits(point.value.value.value)
                 : 0n,
       );
       if (!latest || !series)

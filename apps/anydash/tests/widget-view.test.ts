@@ -192,10 +192,9 @@ describe("metric states", () => {
 });
 
 describe("metric history", () => {
-  it("charts decimal readings on the same scale as the primary value", () => {
-    const widget = widgets[8];
-    const history = create(WidgetDataSchema, {
-      widgetId: widget.id,
+  const decimalHistory = (values: string[]) =>
+    create(WidgetDataSchema, {
+      widgetId: widgets[8].id,
       type: WidgetType.DEPLOYMENT_USAGE,
       sharingState: SharingState.PRIVATE,
       content: {
@@ -206,7 +205,7 @@ describe("metric history", () => {
               kind: MetricKind.DEPLOYMENT_USAGE_QUANTITY,
               dimension: "requests",
               unit: "GB",
-              points: ["0.5", "1.25", "2.5"].map((value, index) => ({
+              points: values.map((value, index) => ({
                 observedAt: timestampFromDate(
                   new Date(fixtures.NOW.getTime() - (3 - index) * 3_600_000),
                 ),
@@ -220,9 +219,24 @@ describe("metric history", () => {
         },
       },
     });
-    const result = widgetView(widget, history, ctx());
+
+  it("charts decimal readings on the same scale as the primary value", () => {
+    const result = widgetView(
+      widgets[8],
+      decimalHistory(["0.5", "1.25", "2.5"]),
+      ctx(),
+    );
     expect(result.state).toBe(WidgetState.Value);
     expect(result.primary?.text).toBe("2.50 GB");
     expect(result.bars).toEqual([0.2, 0.5, 1]);
+  });
+
+  it("keeps the ratio of readings below one hundredth", () => {
+    const result = widgetView(
+      widgets[8],
+      decimalHistory(["0.001", "0.002", "0.004"]),
+      ctx(),
+    );
+    expect(result.bars).toEqual([0.25, 0.5, 1]);
   });
 });
