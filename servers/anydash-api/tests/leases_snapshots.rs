@@ -711,7 +711,8 @@ async fn snapshots_hourly_history_and_late_arrival() {
         f.ok(
             &c1,
             "CollectorService/ReportSnapshot",
-            json!({"connectionId":vercel,"leaseEpoch":epoch,"snapshot":{"observedAt":at(observed),"status":ok,"resources":rids.iter().map(|r| resource(r)).collect::<Vec<_>>()}}),
+            json!({"connectionId":vercel,"leaseEpoch":epoch,"snapshot":{"observedAt":at(observed),"status":ok,"resources":rids.iter().map(|r| resource(r)).collect::<Vec<_>>(),
+                "metrics":[{"kind":"METRIC_KIND_DEPLOYMENT_BILLED_COST","dimension":"total","value":{"state":"METRIC_STATE_VALUE","money":{"currencyCode":"USD","amount":"9"}},"temporality":"METRIC_TEMPORALITY_CUMULATIVE","periodStart":at(Utc::now()-Duration::days(3)),"periodEnd":at(Utc::now())}]}}),
         )
         .await;
     }
@@ -752,6 +753,60 @@ async fn snapshots_hourly_history_and_late_arrival() {
         "ERROR_REASON_INVALID_ARGUMENT",
     )
     .await;
+    // A resource allowlist also excludes account-level readings from panels and history.
+    let cost = f
+        .ok(
+            &user,
+            "DashboardService/AddWidget",
+            json!({"dashboardId":dash,"expectedVersion":"4","requestId":id(),"type":"WIDGET_TYPE_DEPLOYMENT_COST",
+                "layout":{"x":0,"y":6,"width":4,"height":2,"presentation":"WIDGET_PRESENTATION_NUMBER"},"query":{"resourceIds":["prj_a"]},"source":{"connectionIds":[vercel]}}),
+        )
+        .await["widgetId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let data = f
+        .ok(
+            &user,
+            "WidgetDataService/QueryWidgetData",
+            json!({"dashboardId":dash,"widgetId":cost}),
+        )
+        .await;
+    let readings = data["data"]["metricPanel"]["readings"].as_array().unwrap();
+    assert!(!readings.is_empty());
+    assert!(
+        readings.iter().all(|r| r["resourceId"] == "prj_a"),
+        "{readings:?}"
+    );
+    assert_eq!(
+        data["data"]["summary"]["primaryValue"]["money"]["amount"],
+        "1.5"
+    );
+    let cost_history = f
+        .ok(
+            &user,
+            "DashboardService/AddWidget",
+            json!({"dashboardId":dash,"expectedVersion":"5","requestId":id(),"type":"WIDGET_TYPE_METRIC_HISTORY",
+                "layout":{"x":4,"y":6,"width":8,"height":3,"presentation":"WIDGET_PRESENTATION_LINE_CHART"},
+                "query":{"period":"QUERY_PERIOD_LAST_24_HOURS","granularity":"TIME_GRANULARITY_HOUR","resourceIds":["prj_a"]},"source":{"connectionIds":[vercel]}}),
+        )
+        .await["widgetId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let data = f
+        .ok(
+            &user,
+            "WidgetDataService/QueryWidgetData",
+            json!({"dashboardId":dash,"widgetId":cost_history}),
+        )
+        .await;
+    let series = data["data"]["metricHistory"]["series"].as_array().unwrap();
+    assert!(!series.is_empty());
+    assert!(
+        series.iter().all(|s| s["resourceId"] == "prj_a"),
+        "{series:?}"
+    );
     assert!(f.server.metrics.encode().contains(
         "anydash_collection_snapshots_total{provider=\"claude_code\",status=\"failed\"} 1"
     ));

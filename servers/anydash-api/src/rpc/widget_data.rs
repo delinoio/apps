@@ -715,10 +715,9 @@ async fn readings(
             {
                 continue;
             }
-            if !resource.is_empty()
-                && !w.query.resource_ids.is_empty()
-                && !w.query.resource_ids.contains(&resource)
-            {
+            // A nonempty resource allowlist also excludes account-level readings, which have no
+            // resource ID: the data owner chose to show only the listed resources.
+            if !w.query.resource_ids.is_empty() && !w.query.resource_ids.contains(&resource) {
                 continue;
             }
             if !w.query.dimensions.is_empty() && !w.query.dimensions.contains(&dimension) {
@@ -895,9 +894,7 @@ async fn metric_history(
         let dimension: String = r.get("dimension");
         if !kind_filter(w, kind)
             || (account_only && !resource.is_empty())
-            || (!w.query.resource_ids.is_empty()
-                && !resource.is_empty()
-                && !w.query.resource_ids.contains(&resource))
+            || (!w.query.resource_ids.is_empty() && !w.query.resource_ids.contains(&resource))
             || (!w.query.dimensions.is_empty() && !w.query.dimensions.contains(&dimension))
         {
             continue;
