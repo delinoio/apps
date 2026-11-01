@@ -1,0 +1,2 @@
+# Product and platform names used in documentation comments.
+doc-valid-idents = ["AnyDash", "LaunchAgent", ".."]
