@@ -29,3 +29,4 @@ inputs:
       - protos/perfine/v1
       - protos/lane/v1
       - protos/mcpa/v1
+      - protos/anydash/v1

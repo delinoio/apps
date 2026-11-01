@@ -12,7 +12,7 @@ AnyDash ships as a web app, macOS and Windows desktop apps, iOS and Android apps
 
 ## Domain Ownership Map
 
-All paths below are `planned`. Planned paths are requirements, not evidence of implementation. Create each path skeleton and its explicit workspace membership in the change that starts its runtime implementation.
+Paths marked `planned` are not implemented yet. Planned paths are requirements, not evidence of implementation. Create each path skeleton and its explicit workspace membership in the change that starts its runtime implementation.
 
 - `apps/anydash` (`planned`): shared ReactLynx client, the browser host for `anydash.delino.io`, the macOS and Windows Lynxtron desktop hosts, the iOS and Android Lynx SDK hosts and the native widget hosts, including separate native widget hosts when Lynxtron packaging cannot embed a widget extension.
   - `apps/anydash/src`: shared ReactLynx application.
@@ -23,7 +23,7 @@ All paths below are `planned`. Planned paths are requirements, not evidence of i
   - `apps/anydash/scripts`: app-local build and development helpers.
 - `cmds/anydash` (`planned`): Rust `anydash` executable, which is both the CLI and the single shared collector process with its local IPC service and provider adapters. It is a member of the root Cargo workspace and uses Apache-2.0.
 - `servers/anydash-api` (`planned`): Rust Connect API and background worker in one process, PostgreSQL migrations, OCI packaging and reusable operator assets under `servers/anydash-api/ops/`. It is a member of the independent server Cargo workspace and uses FSL-1.1-ALv2.
-- `protos/anydash/v1` (`planned`): canonical `anydash.v1` schema with checked-in Go and TypeScript bindings. Rust generation runs independently in `servers/crates/delino-protos` and in the `cmds/anydash` Cargo build output from the same schema.
+- `protos/anydash/v1` (`implemented`): canonical `anydash.v1` schema with checked-in Go and TypeScript bindings, registered in `buf.gen.yaml` and exported as `@repo/protos/anydash/v1/anydash_pb`. Rust generation runs in `servers/crates/delino-protos` and, when the CLI is implemented, in the `cmds/anydash` Cargo build output from the same schema.
 - `packages/anydash` (`planned`): npm `@delinoio/anydash` executable launcher, its platform packages and the `sh` and PowerShell install scripts served from `anydash.delino.io`.
 
 The main-only unified release selects AnyDash web, server image, CLI, desktop and mobile publication from changesets. Private operator automation owns infrastructure, deployment configuration, rollout and deployment-specific monitoring settings. This repository owns server source, explicit migrations, OCI packaging, image publication and reusable monitoring assets.
