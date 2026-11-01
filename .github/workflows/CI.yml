@@ -991,9 +991,6 @@ jobs:
           TEST_DATABASE_URL: postgres://mcpa:mcpa@127.0.0.1:55438/mcpa_api_test?sslmode=disable
         run: pnpm --filter @servers/mcpa-api ci:integration
         id: integration
-      - name: Build the server image without publishing
-        id: oci
-        run: pnpm --filter @servers/mcpa-api ci:oci
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25

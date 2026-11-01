@@ -826,8 +826,12 @@ test("Managed CPA Go server validates on Linux with disposable PostgreSQL", () =
   );
   assert.equal(setup.with["go-version-file"], "go.mod");
   const run = (id) => job.steps.find((step) => step.id === id).run.trim();
-  for (const script of ["vet", "unit", "vuln", "integration", "oci"])
+  for (const script of ["vet", "unit", "vuln", "integration"])
     assert.equal(run(script), `pnpm --filter @servers/mcpa-api ci:${script}`);
+  // Like the Rust APIs, ordinary CI does not build server images.
+  assert.ok(
+    !job.steps.some((step) => /ci:oci|docker build/u.test(step.run ?? "")),
+  );
   assert.equal(run("monitoring"), "servers/mcpa-api/ops/check.sh");
   // Go formatting stays in Check Formatting with every other formatter.
   assert.ok(!job.steps.some((step) => /ci:format|gofmt/u.test(step.run ?? "")));
