@@ -95,16 +95,16 @@ func (g *fakeGroups) RefreshGroups(ctx context.Context, p *auth.Principal, tenan
 // upstream scripts the Logto token endpoint: one refresh token is current
 // at a time and every refresh rotates it, like Logto with rotation enabled.
 type upstream struct {
-	t        *testing.T
-	p        *authtest.Provider
-	mu       sync.Mutex
-	nonce    string
-	challnge string
-	current  string
-	n        int
-	mfa      bool
-	subject  string
-	issued   []string
+	t                 *testing.T
+	p                 *authtest.Provider
+	mu                sync.Mutex
+	nonce             string
+	upstreamChallenge string
+	current           string
+	n                 int
+	mfa               bool
+	subject           string
+	issued            []string
 }
 
 func (u *upstream) mcpToken() string {
@@ -131,7 +131,7 @@ func (u *upstream) handle(form url.Values) (int, any) {
 	switch form.Get("grant_type") {
 	case "authorization_code":
 		sum := sha256.Sum256([]byte(form.Get("code_verifier")))
-		if form.Get("code") != "logto-code" || base64.RawURLEncoding.EncodeToString(sum[:]) != u.challnge ||
+		if form.Get("code") != "logto-code" || base64.RawURLEncoding.EncodeToString(sum[:]) != u.upstreamChallenge ||
 			form.Get("resource") != mcpResource || form.Get("redirect_uri") != publicURL+oauth.CallbackPath {
 			return http.StatusBadRequest, invalid
 		}
@@ -302,7 +302,7 @@ func (e *env) startLogin() (string, *http.Cookie) {
 		!slices.Equal(q["resource"], []string{mcpResource, delcoreResource}) || !strings.Contains(q.Get("scope"), "offline_access") {
 		e.t.Fatalf("upstream query %v", q)
 	}
-	e.up.set(func(u *upstream) { u.nonce = q.Get("nonce"); u.challnge = q.Get("code_challenge") })
+	e.up.set(func(u *upstream) { u.nonce = q.Get("nonce"); u.upstreamChallenge = q.Get("code_challenge") })
 	var cookie *http.Cookie
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == "mcpa_mcp_oauth" {
