@@ -10,10 +10,14 @@
     "build": "rspeedy build",
     "build:frontend": "pnpm build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
-    "test": "pnpm typecheck && rstest && node --test native/desktop/desktop.test.mjs scripts/icons.test.mjs && pnpm build",
+    "test": "pnpm typecheck && rstest && node --test native/desktop/desktop.test.mjs scripts/icons.test.mjs scripts/widget-fixtures.test.mjs && pnpm build",
     "test:browser": "pnpm build && node tests/browser.mjs",
     "build:desktop": "pnpm build && node scripts/desktop.mjs build",
-    "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run"
+    "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run",
+    "test:widgets": "node scripts/widgets-test.mjs",
+    "fixtures:widgets": "node --experimental-transform-types --no-warnings scripts/widget-fixtures.ts --write",
+    "mobile:ios:init": "pnpm build && node scripts/native.mjs ios init",
+    "build:ios": "pnpm mobile:ios:init && node scripts/native.mjs ios build"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.16.0",
