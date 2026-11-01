@@ -101,6 +101,8 @@ func FinishOAuthFlow(ctx context.Context, db DB, id uuid.UUID, state mcpav1.Oaut
 	if credentialID != uuid.Nil {
 		cred = &credentialID
 	}
+	// The consent URL and user code are only useful while the flow is
+	// pending; they are cleared so ended flows keep no flow parameters.
 	return scanOAuthFlow(db.QueryRow(ctx, `UPDATE provider_oauth_flows SET state = $2, credential_id = $3, failure_message = $4,
-		update_time = now() WHERE id = $1 RETURNING `+oauthFlowColumns, id, int16(state), cred, TruncateUTF8(failure, 200)))
+		authorization_url = '', user_code = '', verification_uri = '', update_time = now() WHERE id = $1 RETURNING `+oauthFlowColumns, id, int16(state), cred, TruncateUTF8(failure, 200)))
 }
