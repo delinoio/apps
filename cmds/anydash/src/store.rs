@@ -353,12 +353,25 @@ impl Store {
         )?;
         Ok(())
     }
-    /// The current aggregate of every bucket: Codex contributions, deduplicated Claude Code
-    /// entries (largest total per key across files) and sessions counted in their start bucket.
+    /// The current aggregate of every bucket: Codex contributions deduplicated by session,
+    /// deduplicated Claude Code entries (largest total per key across files) and sessions counted
+    /// in their start bucket.
+    ///
+    /// A Codex rollout holds one session, so several files with the same session are copies of
+    /// it: a rollout moved to `archived_sessions`, or compressed. Only the file with the largest
+    /// token total counts; the session comes from the file cursor's parser state.
     pub fn aggregate(&self) -> Result<BTreeMap<(i32, String, i64), BucketValue>> {
         let mut out: BTreeMap<(i32, String, i64), BucketValue> = BTreeMap::new();
         let mut tokens = self.conn.prepare(
-            "SELECT tool, model, bucket, SUM(input), SUM(output), SUM(cache_read), SUM(cache_write) FROM contributions GROUP BY tool, model, bucket
+            "WITH codex_files AS (
+               SELECT c.path, COALESCE(NULLIF(CASE WHEN json_valid(f.state) THEN json_extract(f.state, '$.session') END, ''), c.path) AS session,
+                 SUM(c.input + c.output + c.cache_read + c.cache_write) AS total
+               FROM contributions c LEFT JOIN files f ON f.path = c.path GROUP BY c.path
+             ), counted AS (
+               SELECT path FROM (SELECT path, ROW_NUMBER() OVER (PARTITION BY session ORDER BY total DESC, path) AS rn FROM codex_files) WHERE rn = 1
+             )
+             SELECT tool, model, bucket, SUM(input), SUM(output), SUM(cache_read), SUM(cache_write) FROM contributions
+             WHERE path IN (SELECT path FROM counted) GROUP BY tool, model, bucket
              UNION ALL
              SELECT 2, model, (at / 900) * 900 AS b, SUM(input), SUM(output), SUM(cache_read), SUM(cache_write) FROM
              (SELECT *, ROW_NUMBER() OVER (PARTITION BY key ORDER BY total DESC, path) AS rn FROM claude_records) WHERE rn = 1 GROUP BY model, b",

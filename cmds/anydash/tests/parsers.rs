@@ -222,6 +222,79 @@ fn codex_files_jsonl_zst_archived_and_session_start_bucket() {
     assert!(codex.join("archived_sessions/rollout-b.jsonl.zst").exists());
 }
 #[test]
+fn moved_or_compressed_codex_rollouts_count_once() {
+    let home = tempfile::tempdir().unwrap();
+    let codex = home.path().join(".codex");
+    let content = codex_session(&[
+        meta("2026-10-31T10:00:00Z", "moved"),
+        turn("2026-10-31T10:00:00Z", "gpt-5.5"),
+        codex_token("2026-10-31T10:01:00Z", 100, 40, 10, None),
+        codex_token("2026-10-31T10:20:00Z", 250, 100, 30, None),
+    ]);
+    let active = codex.join("sessions/2026/10/31/rollout-moved.jsonl");
+    support::write(&active, &content);
+    let settings = support::settings(home.path(), &[]);
+    let store = store(home.path());
+    let totals = |s: &Store| {
+        s.aggregate()
+            .unwrap()
+            .values()
+            .fold((0, 0), |(sessions, tokens), v| {
+                (sessions + v.sessions, tokens + v.tokens.total())
+            })
+    };
+    scan::sync(&settings, &store, now()).unwrap();
+    assert_eq!(totals(&store), (1, 280));
+    let versions = |s: &Store| {
+        s.pending_buckets(100)
+            .unwrap()
+            .into_iter()
+            .map(|b| (b.bucket, b.version))
+            .collect::<Vec<_>>()
+    };
+    let before = versions(&store);
+    // Archiving moves the rollout; the old path's contributions remain but count once.
+    let archived = codex.join("archived_sessions/rollout-moved.jsonl");
+    std::fs::create_dir_all(archived.parent().unwrap()).unwrap();
+    std::fs::rename(&active, &archived).unwrap();
+    let report = scan::sync(&settings, &store, now()).unwrap();
+    assert_eq!(report.files_read, 1);
+    assert_eq!(totals(&store), (1, 280));
+    assert_eq!(report.changed_buckets, 0);
+    assert_eq!(versions(&store), before, "no bucket correction is uploaded");
+    // A compressed copy of the same session also counts once.
+    std::fs::write(
+        codex.join("archived_sessions/rollout-moved.jsonl.zst"),
+        zstd::encode_all(content.as_bytes(), 0).unwrap(),
+    )
+    .unwrap();
+    scan::sync(&settings, &store, now()).unwrap();
+    assert_eq!(totals(&store), (1, 280));
+    // A copy that keeps growing counts with its larger total, without double counting.
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&archived)
+        .unwrap();
+    writeln!(
+        f,
+        "{}",
+        codex_token("2026-10-31T10:40:00Z", 300, 100, 40, None)
+    )
+    .unwrap();
+    scan::sync(&settings, &store, now()).unwrap();
+    assert_eq!(totals(&store), (1, 340));
+    // A different session in another file still counts separately.
+    support::write(
+        &codex.join("sessions/2026/10/31/rollout-other.jsonl"),
+        &codex_session(&[
+            meta("2026-10-31T11:00:00Z", "other"),
+            codex_token("2026-10-31T11:01:00Z", 10, 0, 1, None),
+        ]),
+    );
+    scan::sync(&settings, &store, now()).unwrap();
+    assert_eq!(totals(&store), (2, 351));
+}
+#[test]
 fn growth_resumes_from_offset_and_incomplete_lines_wait() {
     let home = tempfile::tempdir().unwrap();
     let file = home.path().join(".codex/sessions/2026/10/31/r.jsonl");
