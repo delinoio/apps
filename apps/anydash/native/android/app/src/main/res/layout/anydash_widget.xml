@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Design record: "{Provider} · {metric}", the primary value, one supporting line and "Updated {time}". -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="12dp" android:background="@drawable/anydash_widget_background">
+    <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textSize="12sp" android:textStyle="bold" android:textColor="@color/anydash_muted"
+        android:maxLines="1" android:ellipsize="end" />
+    <TextView android:id="@+id/widget_value" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:textSize="26sp" android:textStyle="bold"
+        android:textColor="@color/anydash_fg" android:maxLines="1" android:ellipsize="end" />
+    <TextView android:id="@+id/widget_supporting" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:textSize="12sp" android:textColor="@color/anydash_muted" android:maxLines="2" />
+    <View android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+    <TextView android:id="@+id/widget_updated" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textSize="12sp" android:textColor="@color/anydash_muted" android:maxLines="1" />
+</LinearLayout>
