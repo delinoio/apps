@@ -222,7 +222,9 @@ export function Home({ route, mode }: { route: Route; mode: LayoutMode }) {
           setDialog(Dialog.Spaces);
         }}
       />
-      {!phone && !onboarding ? (
+      {/* Phones keep the dashboard picker: it is the only way to open another
+          dashboard, because Home opens the first one automatically. */}
+      {!onboarding ? (
         <Pill
           label={current?.name ?? ExtraCopy.dashboards}
           accessibilityLabel={`${ExtraCopy.chooseDashboard}: ${current?.name ?? ExtraCopy.dashboards}`}

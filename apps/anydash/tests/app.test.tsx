@@ -202,6 +202,20 @@ describe("layouts", () => {
   });
 });
 
+describe("phone layout", () => {
+  it("keeps the dashboard picker on phones", async () => {
+    app = await renderApp({
+      path: dashboardPath,
+      width: 390,
+      platform: HostPlatform.Ios,
+    });
+    await app.see("62% left");
+    await app.tap(`${ExtraCopy.chooseDashboard}: Overview`);
+    await app.see(ExtraCopy.chooseDashboard);
+    await app.see("✓ Overview");
+  });
+});
+
 describe("editor", () => {
   it("recovers from a version conflict by loading the latest dashboard", async () => {
     app = await renderApp({ path: dashboardPath, conflictOnLayout: true });
