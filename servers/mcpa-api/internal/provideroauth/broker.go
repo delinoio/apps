@@ -25,6 +25,7 @@ import (
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/apperr"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/auth"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/authz"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/credential"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/crypto"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/proxy"
@@ -248,22 +249,22 @@ func dbErr(err error) error {
 
 // lockLive locks the live resource and then the flow, in the same order as
 // resource deletion, so the two never deadlock.
-func lockLive(ctx context.Context, tx pgx.Tx, resourceID, flowID uuid.UUID) (store.OAuthFlow, crypto.Sealed, error) {
+func lockLive(ctx context.Context, tx pgx.Tx, resourceID, flowID uuid.UUID) (store.Resource, store.OAuthFlow, crypto.Sealed, error) {
 	r, err := store.LockResource(ctx, tx, resourceID)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.OAuthFlow{}, crypto.Sealed{}, apperr.NotFound("resource not found")
+		return store.Resource{}, store.OAuthFlow{}, crypto.Sealed{}, apperr.NotFound("resource not found")
 	}
 	if err != nil {
-		return store.OAuthFlow{}, crypto.Sealed{}, err
+		return store.Resource{}, store.OAuthFlow{}, crypto.Sealed{}, err
 	}
 	if r.Deleted() {
-		return store.OAuthFlow{}, crypto.Sealed{}, apperr.FailedPrecondition("the resource was deleted")
+		return store.Resource{}, store.OAuthFlow{}, crypto.Sealed{}, apperr.FailedPrecondition("the resource was deleted")
 	}
 	f, s, err := store.LockOAuthFlow(ctx, tx, resourceID, flowID)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.OAuthFlow{}, crypto.Sealed{}, apperr.NotFound("OAuth flow not found")
+		return store.Resource{}, store.OAuthFlow{}, crypto.Sealed{}, apperr.NotFound("OAuth flow not found")
 	}
-	return f, s, err
+	return r, f, s, err
 }
 
 // StartProviderOAuth creates a flow. Authorization-code flows return the
@@ -390,7 +391,7 @@ func (b *Broker) claim(ctx context.Context, tx pgx.Tx, f store.OAuthFlow, sec *f
 func (b *Broker) finish(ctx context.Context, f store.OAuthFlow, ferr *flowError) (*mcpav1.ProviderOAuthFlow, error) {
 	var out store.OAuthFlow
 	err := b.db.InTx(ctx, func(tx pgx.Tx) error {
-		cur, _, err := lockLive(ctx, tx, f.ResourceID, f.ID)
+		_, cur, _, err := lockLive(ctx, tx, f.ResourceID, f.ID)
 		if err != nil {
 			return err
 		}
@@ -426,7 +427,7 @@ func (b *Broker) CompleteProviderOAuth(ctx context.Context, p *auth.Principal, r
 	err = b.db.InTx(ctx, func(tx pgx.Tx) error {
 		var sealed crypto.Sealed
 		var err error
-		f, sealed, err = lockLive(ctx, tx, res.ID, flowID)
+		_, f, sealed, err = lockLive(ctx, tx, res.ID, flowID)
 		if err != nil {
 			return err
 		}
@@ -496,6 +497,13 @@ func (b *Broker) fail(ctx context.Context, f store.OAuthFlow, err error) (*mcpav
 
 // register stores the credential encrypted, writes the audit event and
 // completes the flow in one transaction, then notifies the data plane.
+//
+// The service authorized p before the provider exchange or poll, outside the
+// resource lock. register rechecks that p still holds MANAGE under the lock,
+// as Service mutations do, so an ACL change that committed meanwhile applies.
+// When the recheck fails, the tokens are discarded and the flow fails, since
+// the provider does not issue them again; the caller receives the
+// authorization error.
 func (b *Broker) register(ctx context.Context, p *auth.Principal, f store.OAuthFlow, tok token) (*mcpav1.ProviderOAuthFlow, error) {
 	payload, err := json.Marshal(tok.payload)
 	if err != nil {
@@ -517,16 +525,27 @@ func (b *Broker) register(ctx context.Context, p *auth.Principal, f store.OAuthF
 	if err != nil {
 		return nil, apperr.Internal(err)
 	}
-	var out store.OAuthFlow
+	var (
+		out    store.OAuthFlow
+		denied *apperr.Error
+	)
 	registered := false
 	err = b.db.InTx(ctx, func(tx pgx.Tx) error {
-		cur, _, err := lockLive(ctx, tx, f.ResourceID, f.ID)
+		r, cur, _, err := lockLive(ctx, tx, f.ResourceID, f.ID)
 		if err != nil {
 			return err
 		}
 		if cur.State != mcpav1.OauthFlowState_OAUTH_FLOW_STATE_PENDING {
 			out = cur
 			return nil
+		}
+		if _, err := authz.Recheck(ctx, tx, p, r, mcpav1.ResourceRole_RESOURCE_ROLE_MANAGE); err != nil {
+			if !errors.As(err, &denied) {
+				return err
+			}
+			out, err = store.FinishOAuthFlow(ctx, tx, f.ID, mcpav1.OauthFlowState_OAUTH_FLOW_STATE_FAILED, uuid.Nil,
+				"the account was not connected because the caller no longer manages the resource; start a new flow")
+			return err
 		}
 		if c, err = store.InsertCredential(ctx, tx, c, sealed); err != nil {
 			return err
@@ -550,6 +569,10 @@ func (b *Broker) register(ctx context.Context, p *auth.Principal, f store.OAuthF
 	})
 	if err != nil {
 		return nil, dbErr(err)
+	}
+	if denied != nil {
+		b.log.WarnContext(ctx, "provider OAuth credential not registered: the caller lost the manage role", "resource_id", f.ResourceID, "flow_id", f.ID, "provider", f.Provider.String())
+		return nil, denied
 	}
 	if registered {
 		if b.listener != nil {
@@ -587,7 +610,7 @@ func (b *Broker) GetProviderOAuthFlow(ctx context.Context, p *auth.Principal, re
 	var sec flowSecret
 	polling := false
 	err = b.db.InTx(ctx, func(tx pgx.Tx) error {
-		cur, sealed, err := lockLive(ctx, tx, res.ID, flowID)
+		_, cur, sealed, err := lockLive(ctx, tx, res.ID, flowID)
 		if err != nil {
 			return err
 		}

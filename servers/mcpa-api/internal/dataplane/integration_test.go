@@ -1053,6 +1053,129 @@ func TestIntegrationProviderOAuth(t *testing.T) {
 	assertNoSecretsOrBodies(t, e, verifierFree...)
 }
 
+// A manager who loses the MANAGE role while the provider token exchange or
+// device poll runs connects no credential: registration rechecks the role
+// under the resource lock, and the flow fails.
+func TestIntegrationProviderOAuthRechecksManageRole(t *testing.T) {
+	e := newEnv(t)
+	id := e.resource("oauth-recheck")
+	e.addUser("manager")
+	user := mcpav1.PrincipalKind_PRINCIPAL_KIND_USER
+	grant := func(role mcpav1.ResourceRole) error {
+		_, err := do(e, "owner", e.rpc.PutAclEntry, &mcpav1.PutAclEntryRequest{ResourceId: id, PrincipalKind: user, PrincipalId: e.users["manager"], Role: role})
+		return err
+	}
+	if err := grant(mcpav1.ResourceRole_RESOURCE_ROLE_MANAGE); err != nil {
+		t.Fatal(err)
+	}
+	// onToken runs once while the fake provider answers a token request:
+	// after the broker claimed the flow and before it registers the
+	// credential.
+	var onToken atomic.Pointer[func() error]
+	onTokenErr := make(chan error, 1)
+	e.setOAuthHandler(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/claude/token" || r.URL.Path == "/kimi/token" {
+			if fn := onToken.Swap(nil); fn != nil {
+				onTokenErr <- (*fn)()
+			}
+		}
+		switch r.URL.Path {
+		case "/claude/token":
+			_, _ = io.WriteString(w, `{"access_token":"sk-ant-oat-CANARY","refresh_token":"sk-ant-ort-CANARY","expires_in":3600,"account":{"email_address":"dev@example.com"}}`)
+		case "/kimi/device":
+			_, _ = io.WriteString(w, `{"device_code":"kimi-device-CANARY","user_code":"KIMI-1","verification_uri":"https://www.kimi.com/device","expires_in":900,"interval":5}`)
+		case "/kimi/token":
+			_, _ = io.WriteString(w, `{"access_token":"kimi-access-CANARY","refresh_token":"kimi-refresh-CANARY","token_type":"Bearer","expires_in":3600}`)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	whileExchanging := func(fn func() error) { onToken.Store(&fn) }
+	waitOnToken := func() {
+		t.Helper()
+		select {
+		case err := <-onTokenErr:
+			if err != nil {
+				t.Fatalf("ACL change during the exchange: %v", err)
+			}
+		default:
+			t.Fatal("the provider exchange did not run")
+		}
+	}
+	start := func(p mcpav1.Provider) *mcpav1.ProviderOAuthFlow {
+		return mustDo(e, "manager", e.rpc.StartProviderOAuth, &mcpav1.StartProviderOAuthRequest{ResourceId: id, Provider: p, Name: p.String()}).GetFlow()
+	}
+	complete := func(flow *mcpav1.ProviderOAuthFlow) (*mcpav1.CompleteProviderOAuthResponse, error) {
+		authURL, _ := url.Parse(flow.GetAuthorizationUrl())
+		state := authURL.Query().Get("state")
+		return do(e, "manager", e.rpc.CompleteProviderOAuth, &mcpav1.CompleteProviderOAuthRequest{ResourceId: id, FlowId: flow.GetId(),
+			CallbackUrl: "http://localhost:54545/callback?code=good-code%23" + state + "&state=" + state})
+	}
+	oauthCredentials := func() int {
+		n := 0
+		for _, c := range mustDo(e, "owner", e.rpc.ListCredentials, &mcpav1.ListCredentialsRequest{ResourceId: id}).GetCredentials() {
+			if c.GetKind() == mcpav1.CredentialKind_CREDENTIAL_KIND_OAUTH {
+				n++
+			}
+		}
+		return n
+	}
+	assertFailed := func(flowID string) {
+		t.Helper()
+		f := mustDo(e, "owner", e.rpc.GetProviderOAuthFlow, &mcpav1.GetProviderOAuthFlowRequest{ResourceId: id, FlowId: flowID}).GetFlow()
+		if f.GetState() != mcpav1.OauthFlowState_OAUTH_FLOW_STATE_FAILED || f.GetCredentialId() != "" || !strings.Contains(f.GetFailureMessage(), "no longer manages") {
+			t.Fatalf("flow after the role change %+v", f)
+		}
+	}
+
+	// The manager is removed during the authorization code exchange.
+	claude := start(mcpav1.Provider_PROVIDER_CLAUDE)
+	whileExchanging(func() error {
+		_, err := do(e, "owner", e.rpc.RemoveAclEntry, &mcpav1.RemoveAclEntryRequest{ResourceId: id, PrincipalKind: user, PrincipalId: e.users["manager"]})
+		return err
+	})
+	if _, err := complete(claude); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("completion by a removed manager: %v", err)
+	}
+	waitOnToken()
+	assertFailed(claude.GetId())
+	if n := oauthCredentials(); n != 0 {
+		t.Fatalf("a removed manager registered %d OAuth credentials", n)
+	}
+
+	// The manager is downgraded to INVOKE during the device poll.
+	if err := grant(mcpav1.ResourceRole_RESOURCE_ROLE_MANAGE); err != nil {
+		t.Fatal(err)
+	}
+	kimi := start(mcpav1.Provider_PROVIDER_KIMI)
+	e.clock.advance(6 * time.Second)
+	whileExchanging(func() error { return grant(mcpav1.ResourceRole_RESOURCE_ROLE_INVOKE) })
+	if _, err := do(e, "manager", e.rpc.GetProviderOAuthFlow, &mcpav1.GetProviderOAuthFlowRequest{ResourceId: id, FlowId: kimi.GetId()}); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("poll by a downgraded manager: %v", err)
+	}
+	waitOnToken()
+	assertFailed(kimi.GetId())
+	if n := oauthCredentials(); n != 0 {
+		t.Fatalf("a downgraded manager registered %d OAuth credentials", n)
+	}
+	for _, ev := range mustDo(e, "owner", e.rpc.ListAuditEvents, &mcpav1.ListAuditEventsRequest{ResourceId: id}).GetEvents() {
+		if ev.GetAction() == mcpav1.AuditAction_AUDIT_ACTION_CREDENTIAL_REGISTERED && ev.GetDetails()["flow_id"] != "" {
+			t.Fatalf("an OAuth registration was audited: %+v", ev)
+		}
+	}
+
+	// A manager who keeps the role connects the account.
+	if err := grant(mcpav1.ResourceRole_RESOURCE_ROLE_MANAGE); err != nil {
+		t.Fatal(err)
+	}
+	done, err := complete(start(mcpav1.Provider_PROVIDER_CLAUDE))
+	if err != nil || done.GetFlow().GetState() != mcpav1.OauthFlowState_OAUTH_FLOW_STATE_COMPLETED || oauthCredentials() != 1 {
+		t.Fatalf("completion by a manager: %+v %v", done, err)
+	}
+}
+
 // Budget spend of a 31-day billing period that starts partway through a UTC
 // day stays counted after the call records of its first day expire.
 func TestIntegrationBudgetSpendOutlivesCallRecords(t *testing.T) {

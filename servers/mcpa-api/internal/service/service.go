@@ -36,7 +36,10 @@ import (
 
 // OAuthBroker runs provider OAuth flows. The data plane layer implements it.
 // The service has already verified that the caller holds MANAGE on res and
-// that res is not deleted. Implementations write their own audit events
+// that res is not deleted. That check runs outside the resource lock, so an
+// implementation that changes the resource, such as by registering a
+// credential, rechecks the role with authz.Recheck in the transaction that
+// locks res. Implementations write their own audit events
 // (AUDIT_ACTION_CREDENTIAL_REGISTERED) with Service.WriteAudit.
 type OAuthBroker interface {
 	StartProviderOAuth(ctx context.Context, p *auth.Principal, res store.Resource, req *mcpav1.StartProviderOAuthRequest) (*mcpav1.ProviderOAuthFlow, error)
@@ -266,18 +269,9 @@ func (s *Service) mutate(ctx context.Context, p *auth.Principal, resourceID uuid
 			}
 			return err
 		}
-		role, err := s.authz.EffectiveRole(ctx, tx, r.TenantID, r.ID, p.UserID)
+		role, err := authz.Recheck(ctx, tx, p, r, need)
 		if err != nil {
 			return err
-		}
-		if role == mcpav1.ResourceRole_RESOURCE_ROLE_UNSPECIFIED {
-			return apperr.NotFound("resource not found")
-		}
-		if !authz.Satisfies(role, need) {
-			return apperr.PermissionDenied("this action requires the " + authz.RoleName(need) + " role on the resource")
-		}
-		if r.Deleted() {
-			return apperr.FailedPrecondition("the resource was deleted")
 		}
 		return fn(tx, r, role)
 	})
