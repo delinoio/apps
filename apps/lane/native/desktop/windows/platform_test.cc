@@ -46,11 +46,11 @@ int wmain(int count, wchar_t** args) {
                               R"({"retention":true})", R"({"retention":null})", R"({"retention":[2]})",
                               R"({"retention":{"value":2}})"})
     assert(retention(invalid) == LocalRetention::Unspecified);
-  const auto input = [](const char* value) { return RetentionChoiceOfInput(Parse(value)); };
-  assert(input(R"({"spaceId":"s","request":{"retention":2}})") == LocalRetention::RemoveLocal);
-  assert(input(R"({"spaceId":"s","request":{"retention":1}})") == LocalRetention::KeepLocal);
-  assert(input(R"({"spaceId":"s","request":"LOCAL_RETENTION_REMOVE_LOCAL"})") == LocalRetention::Unspecified);
-  assert(input(R"({"spaceId":"s"})") == LocalRetention::Unspecified);
+  const auto retention_input = [](const char* value) { return RetentionChoiceOfInput(Parse(value)); };
+  assert(retention_input(R"({"spaceId":"s","request":{"retention":2}})") == LocalRetention::RemoveLocal);
+  assert(retention_input(R"({"spaceId":"s","request":{"retention":1}})") == LocalRetention::KeepLocal);
+  assert(retention_input(R"({"spaceId":"s","request":"LOCAL_RETENTION_REMOVE_LOCAL"})") == LocalRetention::Unspecified);
+  assert(retention_input(R"({"spaceId":"s"})") == LocalRetention::Unspecified);
   wchar_t path[32768];
   const auto length = GetModuleFileNameW(nullptr, path, 32768);
   assert(length && length < 32768);

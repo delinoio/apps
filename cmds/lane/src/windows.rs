@@ -35,7 +35,7 @@ pub fn data_root() -> Result<PathBuf> {
     // SAFETY: Windows initializes the allocated UTF-16 path; it is copied before freeing it.
     unsafe {
         let mut path = ptr::null_mut();
-        if SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, ptr::null_mut(), &mut path) < 0 {
+        if SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, ptr::null_mut(), &raw mut path) < 0 {
             return Err(failed());
         }
         let mut n = 0;
@@ -51,26 +51,26 @@ pub fn protect(path: &Path, directory: bool) -> Result<()> {
     // SAFETY: All API buffers remain allocated until the API calls complete. Handles and allocated descriptors are released on every path.
     unsafe {
         let mut token = ptr::null_mut();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) == 0 {
             return Err(failed());
         }
         let result = (|| {
             let mut size = 0;
-            GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut size);
+            GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &raw mut size);
             let mut storage = vec![0usize; (size as usize).div_ceil(std::mem::size_of::<usize>())];
             if GetTokenInformation(
                 token,
                 TokenUser,
                 storage.as_mut_ptr().cast(),
                 size,
-                &mut size,
+                &raw mut size,
             ) == 0
             {
                 return Err(failed());
             }
             let user = &*storage.as_ptr().cast::<TOKEN_USER>();
             let mut sid = ptr::null_mut();
-            if ConvertSidToStringSidW(user.User.Sid, &mut sid) == 0 {
+            if ConvertSidToStringSidW(user.User.Sid, &raw mut sid) == 0 {
                 return Err(failed());
             }
             let mut n = 0;
@@ -88,7 +88,7 @@ pub fn protect(path: &Path, directory: bool) -> Result<()> {
             if ConvertStringSecurityDescriptorToSecurityDescriptorW(
                 sddl.as_ptr(),
                 1,
-                &mut descriptor,
+                &raw mut descriptor,
                 ptr::null_mut(),
             ) == 0
             {
@@ -98,8 +98,12 @@ pub fn protect(path: &Path, directory: bool) -> Result<()> {
                 let mut present = 0;
                 let mut defaulted = 0;
                 let mut acl = ptr::null_mut();
-                if GetSecurityDescriptorDacl(descriptor, &mut present, &mut acl, &mut defaulted)
-                    == 0
+                if GetSecurityDescriptorDacl(
+                    descriptor,
+                    &raw mut present,
+                    &raw mut acl,
+                    &raw mut defaulted,
+                ) == 0
                     || present == 0
                 {
                     return Err(failed());
@@ -136,14 +140,14 @@ pub fn try_lock(file: &File, exclusive: bool) -> std::io::Result<()> {
             } else {
                 0
             };
-        if LockFileEx(file.as_raw_handle(), flags, 0, 1, 0, &mut overlapped) != 0 {
+        if LockFileEx(file.as_raw_handle(), flags, 0, 1, 0, &raw mut overlapped) != 0 {
             return Ok(());
         }
         let error = GetLastError();
         if error == ERROR_LOCK_VIOLATION {
             Err(std::io::Error::from(std::io::ErrorKind::WouldBlock))
         } else {
-            Err(std::io::Error::from_raw_os_error(error as i32))
+            Err(std::io::Error::from_raw_os_error(error.cast_signed()))
         }
     }
 }
