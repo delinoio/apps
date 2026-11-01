@@ -123,8 +123,12 @@ export function packArtifact({ key, version, directory, destination, stage }) {
 }
 
 /** Packs the launcher, which carries no executables, with the combined manifest. */
-export function packLauncher({ manifest, destination, stage }) {
-  const pkg = readPackage();
+export function packLauncher({
+  manifest,
+  destination,
+  stage,
+  pkg = readPackage(),
+}) {
   if (manifest.version !== pkg.version)
     throw new Error("Launcher and artifact versions must match");
   rmSync(stage, { recursive: true, force: true });

@@ -4,7 +4,7 @@
 // and platform packages, the direct archive and the install script, each
 // running `--version` and `--help`. Nothing is published.
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   cpSync,
   lstatSync,
@@ -49,22 +49,37 @@ const temporary = mkdtempSync(resolve(tmpdir(), "anydash-smoke-"));
 const env = { ...process.env, ANYDASH_HOME: resolve(temporary, "home") };
 const checks = [];
 
-function execute(file, args, label) {
-  const result = spawnSync(file, args, { encoding: "utf8", env, input: "" });
-  assert.equal(
-    result.status,
-    0,
-    `${label} ${args.join(" ")}: ${result.stderr}`,
-  );
-  checks.push({ command: `${label} ${args.join(" ")}`, result: "passed" });
+function runAsync(file, args, childEnv) {
+  return new Promise((done, reject) => {
+    const child = spawn(file, args, {
+      env: childEnv,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (data) => (stdout += data));
+    child.stderr.on("data", (data) => (stderr += data));
+    child.once("error", reject);
+    child.once("exit", (status) => done({ status, stdout, stderr }));
+  });
+}
+
+function execute(file, prefix, argument, label) {
+  const result = spawnSync(file, [...prefix, argument], {
+    encoding: "utf8",
+    env,
+    input: "",
+  });
+  assert.equal(result.status, 0, `${label} ${argument}: ${result.stderr}`);
+  checks.push({ command: `${label} ${argument}`, result: "passed" });
   return result.stdout;
 }
 function expectCli(file, label, prefix = []) {
   assert.equal(
-    execute(file, [...prefix, "--version"], label).trim(),
+    execute(file, prefix, "--version", label).trim(),
     `anydash ${version}`,
   );
-  assert.match(execute(file, [...prefix, "--help"], label), /^Usage: anydash/m);
+  assert.match(execute(file, prefix, "--help", label), /^Usage: anydash/m);
 }
 
 try {
@@ -169,8 +184,9 @@ try {
       "install",
       host.startsWith("windows-") ? "install.ps1" : "install.sh",
     );
+    // Run asynchronously: the release fixture serves from this event loop.
     const run = host.startsWith("windows-")
-      ? spawnSync(
+      ? await runAsync(
           "powershell.exe",
           [
             "-NoProfile",
@@ -181,18 +197,15 @@ try {
             script,
           ],
           {
-            encoding: "utf8",
-            env: {
-              ...env,
-              ...server.env,
-              ANYDASH_INSTALL_DIR: target,
-              ANYDASH_NO_MODIFY_PATH: "1",
-            },
+            ...env,
+            ...server.env,
+            ANYDASH_INSTALL_DIR: target,
+            ANYDASH_NO_MODIFY_PATH: "1",
           },
         )
-      : spawnSync("sh", [script, "--install-dir", target], {
-          encoding: "utf8",
-          env: { ...env, ...server.env },
+      : await runAsync("sh", [script, "--install-dir", target], {
+          ...env,
+          ...server.env,
         });
     assert.equal(run.status, 0, `install script: ${run.stdout}${run.stderr}`);
     checks.push({ command: `install script ${host}`, result: "passed" });

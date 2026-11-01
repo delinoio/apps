@@ -458,8 +458,8 @@ test("CLI archives are deterministic ustar archives with executable modes", (t) 
   const listing = spawnSync("tar", ["-tvzf", resolve(root, "archive.tar.gz")], {
     encoding: "utf8",
   }).stdout;
-  assert.match(listing, /^-rwxr-xr-x .*anydash-linux-x64\/anydash$/m);
-  assert.match(listing, /^-rw-r--r-- .*anydash-linux-x64\/LICENSE$/m);
+  assert.match(listing, /^-rwxr-xr-x .*anydash-linux-x64\/anydash\r?$/m);
+  assert.match(listing, /^-rw-r--r-- .*anydash-linux-x64\/LICENSE\r?$/m);
   assert.equal(
     readFileSync(
       resolve(

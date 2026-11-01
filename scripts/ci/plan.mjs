@@ -63,7 +63,7 @@ function classifyShared(paths) {
       // Namespace metadata has no runtime consumers. Keep this list exact so
       // future Apache service code retains fallback until its CI is registered.
       !/^oss\/(?:LICENSE|NOTICE|servers\/\.gitkeep)$/u.test(path) &&
-      !/^(crates\/perfine-core\/|cmds\/(?:perfine|lane|anydash)\/|packages\/(?:perfine|lane)\/)/u.test(
+      !/^(crates\/perfine-core\/|cmds\/(?:perfine|lane|anydash)\/|packages\/(?:perfine|lane|anydash)\/)/u.test(
         path,
       ) &&
       !/^(apps|actions|protos|examples|docs|servers)\//u.test(path),
@@ -202,6 +202,15 @@ export function select(paths, lockfiles) {
           path,
         ),
       ),
+    anydash_cli:
+      repositoryShared ||
+      shared.rust ||
+      shared.protocol ||
+      paths.some((path) =>
+        /^(Cargo\.(toml|lock)$|cmds\/anydash\/|packages\/anydash\/|protos\/anydash\/)/u.test(
+          path,
+        ),
+      ),
     lane:
       repositoryShared ||
       shared.lynxUi ||
@@ -230,7 +239,12 @@ export function select(paths, lockfiles) {
       repositoryShared ||
       shared.lynxUi ||
       shared.protocol ||
-      paths.some((path) => /^(apps\/anydash\/|protos\/anydash\/)/u.test(path)),
+      // The web output also serves the CLI install scripts.
+      paths.some((path) =>
+        /^(apps\/anydash\/|protos\/anydash\/|packages\/anydash\/install\/)/u.test(
+          path,
+        ),
+      ),
     perfine_fixtures:
       repositoryShared ||
       shared.rust ||

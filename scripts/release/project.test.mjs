@@ -182,8 +182,25 @@ test("Release graph separates image preparation from authorized component public
     "web",
     "lane",
     "perfine",
+    "anydash",
     "mobile",
+    "anydash-mobile",
   ]);
+  // Each mobile workflow serves only its own component.
+  assert.match(component.jobs.mobile.if, /component == 'delitools'/);
+  assert.match(component.jobs["anydash-mobile"].if, /component == 'anydash'/);
+  assert.match(component.jobs.anydash.if, /component == 'anydash'/);
+  assert.equal(component.jobs.anydash.with.publish, true);
+  assert.equal(component.jobs["anydash-mobile"].with.publish, false);
+  assert.equal(
+    component.jobs["anydash-mobile"].with.build_number,
+    "${{ format('{0}', github.run_number) }}",
+  );
+  assert.match(component.jobs.complete.if, /needs.anydash.result == 'success'/);
+  assert.match(
+    component.jobs.complete.if,
+    /needs\['anydash-mobile'\].result == 'success'/,
+  );
   assert.match(component.jobs.complete.if, /needs.web.result == 'success'/);
   assert.match(component.jobs.complete.if, /cancelled/);
   for (const name of [
@@ -193,6 +210,8 @@ test("Release graph separates image preparation from authorized component public
     "deploy-lane",
     "deploy-perfine",
     "deploy-delitools-mobile",
+    "deploy-anydash",
+    "deploy-anydash-mobile",
   ])
     assert.deepEqual(Object.keys(workflow(name).on), ["workflow_call"]);
   const images = workflow("deploy-images").jobs.images;
@@ -208,6 +227,7 @@ test("shared protocol records include Rust and Go server consumers outside the n
     mcpaRead,
   );
   assert.deepEqual(result.servers, [
+    "anydash-api",
     "delcore-api",
     "delitools-api",
     "devbase-api",
@@ -249,12 +269,30 @@ test("release credentials stay in the three repository-wide environments", () =>
     workflow("deploy-perfine").jobs.publish.environment,
     "release-publish",
   );
-  const mobile = workflow("deploy-delitools-mobile").jobs;
-  for (const platform of ["android", "ios"]) {
-    assert.equal(mobile[platform].environment, "release-signing");
-    assert.equal(mobile[`${platform}-publish`].environment, "release-publish");
-    assert.equal(mobile[`${platform}-publish`].needs, platform);
+  for (const name of ["deploy-delitools-mobile", "deploy-anydash-mobile"]) {
+    const mobile = workflow(name).jobs;
+    for (const platform of ["android", "ios"]) {
+      assert.equal(mobile[platform].environment, "release-signing");
+      assert.equal(
+        mobile[`${platform}-publish`].environment,
+        "release-publish",
+      );
+      assert.equal(mobile[`${platform}-publish`].needs, platform);
+    }
   }
+  const anydash = workflow("deploy-anydash").jobs;
+  assert.equal(anydash.native.environment, "release-signing");
+  assert.equal(anydash.assemble.environment, "release-signing");
+  assert.equal(anydash.publish.environment, "release-publish");
+  assert.equal(anydash.publish.if, "inputs.publish");
+  assert.equal(
+    anydash["cli-linux"].environment,
+    undefined,
+    "unsigned Linux builds hold no credentials",
+  );
+  for (const job of Object.values(anydash))
+    if (job.permissions?.contents === "write")
+      assert.equal(job, anydash.publish);
   const prepare = web.steps.find((step) => step.id === "config");
   assert.equal(
     prepare.env.CLOUDFLARE_API_TOKEN,
@@ -264,4 +302,60 @@ test("release credentials stay in the three repository-wide environments", () =>
     step.name?.startsWith("Deploy the release build"),
   );
   assert.match(deploy.with.command, /steps.config.outputs.project/);
+});
+
+test("AnyDash app and CLI records publish binaries, mobile and the web host together", () => {
+  const app = plan({ "@apps/anydash": "minor" });
+  assert.deepEqual(app.servers, ["anydash-api", "delcore-api"]);
+  assert.equal(app.components.length, 1);
+  const { version, tag, ...selection } = app.components[0];
+  assert.deepEqual(selection, {
+    component: "anydash",
+    apps: ["anydash"],
+    binaries: true,
+    mobile: true,
+  });
+  assert.equal(tag, `anydash@v${version}`);
+  const cli = plan({ "@delinoio/anydash": "patch" });
+  assert.deepEqual(cli.servers, []);
+  // The web host serves the install scripts; mobile builds are not selected.
+  assert.deepEqual(cli.components[0].apps, ["anydash"]);
+  assert.equal(cli.components[0].binaries, true);
+  assert.equal(cli.components[0].mobile, false);
+  const server = plan({ "@servers/anydash-api": "minor" });
+  assert.deepEqual(server.servers, ["anydash-api", "delcore-api"]);
+  assert.deepEqual(server.components[0].apps, []);
+  assert.equal(server.components[0].binaries, false);
+  assert.deepEqual(Object.keys(server.changes), [
+    "servers/anydash-api/package.json",
+  ]);
+});
+
+test("AnyDash CLI, launcher and platform packages follow the component release version", () => {
+  const result = plan(
+    { "@apps/anydash": "minor", "@delinoio/anydash": "patch" },
+    { anydash: "3.1.0" },
+  );
+  assert.equal(result.components[0].version, "3.2.0");
+  synchronizeVersions(result.changes, read, result.components);
+  const launcher = JSON.parse(result.changes["packages/anydash/package.json"]);
+  assert.equal(launcher.version, "3.2.0");
+  assert.ok(
+    Object.values(launcher.optionalDependencies).every(
+      (value) => value === "3.2.0",
+    ),
+  );
+  assert.match(
+    result.changes["cmds/anydash/Cargo.toml"],
+    /^version = "3\.2\.0"$/m,
+  );
+  assert.match(
+    result.changes["Cargo.lock"],
+    /name = "anydash"\nversion = "3\.2\.0"/,
+  );
+  // The app keeps its own package version; desktop builds embed the release version.
+  assert.notEqual(
+    JSON.parse(result.changes["apps/anydash/package.json"]).version,
+    "3.2.0",
+  );
 });

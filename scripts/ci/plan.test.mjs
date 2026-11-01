@@ -18,6 +18,7 @@ test("isolated projects select only their validation", () => {
     lane_api: false,
     anydash_api: false,
     lane_cli: false,
+    anydash_cli: false,
     lane: false,
     mcpa_api: false,
     mcpa: false,
@@ -40,6 +41,7 @@ test("isolated projects select only their validation", () => {
     lane_api: true,
     anydash_api: true,
     lane_cli: false,
+    anydash_cli: false,
     lane: false,
     mcpa_api: true,
     mcpa: false,
@@ -62,6 +64,7 @@ test("isolated projects select only their validation", () => {
     lane_api: true,
     anydash_api: true,
     lane_cli: true,
+    anydash_cli: true,
     lane: true,
     mcpa_api: true,
     mcpa: true,
@@ -96,6 +99,7 @@ for (const [project, key] of [
         lane_api: false,
         anydash_api: false,
         lane_cli: false,
+        anydash_cli: false,
         lane: false,
         mcpa_api: false,
         mcpa: false,
@@ -123,6 +127,7 @@ test("consumer examples select protocol validation without native runners", () =
     lane_api: false,
     anydash_api: false,
     lane_cli: false,
+    anydash_cli: false,
     lane: false,
     mcpa_api: false,
     mcpa: false,
@@ -202,6 +207,7 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       lane_api: false,
       anydash_api: false,
       lane_cli: path === "Cargo.lock",
+      anydash_cli: path === "Cargo.lock",
       lane: false,
       mcpa_api: false,
       mcpa: false,
@@ -228,6 +234,7 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     lane_api: false,
     anydash_api: false,
     lane_cli: false,
+    anydash_cli: false,
     lane: false,
     mcpa_api: true,
     mcpa: false,
@@ -362,7 +369,9 @@ for (const [paths, expected] of [
     [
       "delidev",
       "delitools",
-      ...(/^Cargo\./u.test(path) ? ["lane_cli", "perfine_fixtures"] : []),
+      ...(/^Cargo\./u.test(path)
+        ? ["lane_cli", "anydash_cli", "perfine_fixtures"]
+        : []),
     ],
   ]),
   ...[".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml"].map(
@@ -379,6 +388,7 @@ for (const [paths, expected] of [
         "lane_api",
         "anydash_api",
         "lane_cli",
+        "anydash_cli",
         "perfine_fixtures",
       ],
     ],
@@ -396,6 +406,7 @@ for (const [paths, expected] of [
       "lane_api",
       "anydash_api",
       "lane_cli",
+      "anydash_cli",
       "lane",
       "mcpa_api",
       "mcpa",
@@ -415,6 +426,7 @@ for (const [paths, expected] of [
       "lane_api",
       "anydash_api",
       "lane_cli",
+      "anydash_cli",
       "lane",
       "mcpa_api",
       "mcpa",
@@ -673,6 +685,9 @@ test("Lane domain paths select owning validators and shared store consumers", ()
     ["packages/lane/package.json", ["lane_cli"]],
     ["apps/lane/native/store/schema.sql", ["lane_cli", "lane"]],
     ["packages/lynx-ui/src/components/input.tsx", ["lane", "anydash"]],
+    ["cmds/anydash/src/main.rs", ["anydash_cli"]],
+    ["packages/anydash/bin/verify.mjs", ["anydash_cli"]],
+    ["packages/anydash/install/install.sh", ["anydash_cli", "anydash"]],
   ])
     assert.deepEqual(selectedJobs([path]), expected, path);
   assert.deepEqual(selectRustServers(select(["servers/lane-api/src/lib.rs"])), [
@@ -716,9 +731,14 @@ test("AnyDash server paths select only the AnyDash server validator", () => {
   }
 });
 
-test("AnyDash CLI paths use only Rust package validation", () => {
-  for (const path of ["cmds/anydash/src/main.rs", "cmds/anydash/Cargo.toml"]) {
-    assert.deepEqual(selectedJobs([path]), [], path);
+test("AnyDash CLI and distribution paths select only the AnyDash CLI job", () => {
+  for (const path of [
+    "cmds/anydash/src/main.rs",
+    "cmds/anydash/Cargo.toml",
+    "packages/anydash/package.json",
+    "packages/anydash/scripts/build.mjs",
+  ]) {
+    assert.deepEqual(selectedJobs([path]), ["anydash_cli"], path);
     assert.ok(
       Object.values(selectChecks([path])).every((value) => !value),
       path,
