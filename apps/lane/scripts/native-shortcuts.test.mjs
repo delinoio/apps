@@ -160,6 +160,62 @@ int main() { @autoreleasepool {
 } }
 `;
 
+// cl.exe is on PATH only inside a Visual Studio developer environment, while
+// CMake's Visual Studio generator locates MSVC itself. Load the documented
+// MSVC host toolchain through vswhere unless a developer shell is active.
+function msvcEnvironment() {
+  if (process.env.VCINSTALLDIR) return process.env;
+  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  const vswhere = join(
+    process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
+    "Microsoft Visual Studio",
+    "Installer",
+    "vswhere.exe",
+  );
+  const installation = execFileSync(
+    vswhere,
+    [
+      "-latest",
+      "-products",
+      "*",
+      "-requires",
+      arch === "arm64"
+        ? "Microsoft.VisualStudio.Component.VC.Tools.ARM64"
+        : "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+      "-property",
+      "installationPath",
+    ],
+    { encoding: "utf8" },
+  ).trim();
+  assert.ok(
+    installation,
+    "Visual Studio with the MSVC C++ toolchain is installed",
+  );
+  const vcvars = join(
+    installation,
+    "VC",
+    "Auxiliary",
+    "Build",
+    "vcvarsall.bat",
+  );
+  const variables = execFileSync(
+    "cmd.exe",
+    ["/d", "/s", "/c", `"call "${vcvars}" ${arch} >nul && set"`],
+    { encoding: "utf8", windowsVerbatimArguments: true },
+  );
+  const environment = {};
+  for (const line of variables.split(/\r?\n/)) {
+    const separator = line.indexOf("=", 1);
+    if (separator > 0)
+      environment[line.slice(0, separator)] = line.slice(separator + 1);
+  }
+  assert.ok(
+    environment.VCINSTALLDIR,
+    "vcvarsall.bat loads the MSVC environment",
+  );
+  return environment;
+}
+
 function runFixture(source, flags) {
   const directory = mkdtempSync(join(tmpdir(), "lane-shortcuts-"));
   try {
@@ -175,7 +231,7 @@ function runFixture(source, flags) {
       execFileSync(
         "cl.exe",
         ["/nologo", "/std:c++17", "/EHsc", "/TP", input, `/Fe:${executable}`],
-        { stdio: "pipe" },
+        { cwd: directory, env: msvcEnvironment(), stdio: "pipe" },
       );
       execFileSync(executable, [], { stdio: "pipe" });
     } else {
