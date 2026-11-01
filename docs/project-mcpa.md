@@ -66,7 +66,7 @@ Server runtime rollout, infrastructure and deployment-specific monitoring settin
 - Customers own their provider credentials and costs. Service-owned provider accounts are not offered.
 - Provider tokens and API keys are stored in PostgreSQL with application-level envelope encryption under an operator master key. Each ciphertext records its key ID. Secrets are never returned after creation and never logged.
 - Managed CPA stores call metadata only. It never stores or logs request or response bodies (prompts and outputs), including through opt-in debug logging. SDK request-body logging stays disabled.
-- Request-level call records are retained for 30 days. Daily aggregates and the customer-visible audit log are retained for 13 months.
+- Request-level call records are retained for 30 days. Budget spend entries, which hold only the committed bytes per call start instant, are retained for 35 days so they outlive every billing period. Daily aggregates and the customer-visible audit log are retained for 13 months.
 
 ### Protocol and surfaces
 

@@ -25,6 +25,9 @@ func pruneBatch(table, where string) PruneBatch {
 var (
 	// PruneCallRecords deletes call records 30 days after the call start.
 	PruneCallRecords = pruneBatch("call_records", `expire_time <= $1`)
+	// PruneUsageSpend deletes budget spend entries 35 days after the call
+	// start (SpendRetention).
+	PruneUsageSpend = pruneBatch("usage_spend", `start_time <= $1::timestamptz - interval '35 days'`)
 	// PruneUsageDaily deletes daily aggregates older than 13 months.
 	PruneUsageDaily = pruneBatch("usage_daily", `day < (($1::timestamptz - interval '13 months') AT TIME ZONE 'UTC')::date`)
 	// PruneAuditEvents deletes audit events older than 13 months.
@@ -93,6 +96,7 @@ func (s *Store) DeleteTenantData(ctx context.Context, tenantID string) (TenantDe
 		}{
 			{&d.Outbox, `DELETE FROM usage_outbox WHERE tenant_id = $1`},
 			{&d.CallRecords, `DELETE FROM call_records WHERE tenant_id = $1`},
+			{nil, `DELETE FROM usage_spend WHERE tenant_id = $1`},
 			{&d.Aggregates, `DELETE FROM usage_daily WHERE tenant_id = $1`},
 			{&d.AuditEvents, `DELETE FROM audit_events WHERE tenant_id = $1`},
 			{nil, `DELETE FROM tenant_budgets WHERE tenant_id = $1`},

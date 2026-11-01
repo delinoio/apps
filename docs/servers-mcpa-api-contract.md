@@ -283,6 +283,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 - Each resource and each tenant can have an optional USD limit, a canonical non-negative decimal of at most 64 characters. Resource managers set the resource limit. Holders of `manage_tenant_budget` set the tenant limit. An empty value removes the limit.
 - The budget period is the tenant's current Delcore billing period, read from `ListMeterAggregates` and cached for `MCPA_AUTHORIZE_CACHE_TTL`.
 - Measured spend is the bytes committed locally by checkpoints for calls that started in the period, multiplied by the per-byte price. It uses exact decimal arithmetic.
+- Daily usage aggregates supply the UTC days that the period fully covers. Budget spend entries supply the partial first and last days. Each entry holds the committed bytes of the calls of one resource that started at one instant. Spend entries outlive every Delcore billing period, so spend from early in a 31-day period stays counted after its call records expire.
 - When spend reaches either limit, new calls are rejected with `budget_exhausted`, and `mcpa_budget_rejections_total{scope}` increments. In-progress streams continue to completion, so measured spend can go slightly over the limit.
 - When a limit is set and the period cannot be read after cache expiry, the call fails closed with `dependency_unavailable`.
 - A new Delcore billing period resets spend.
@@ -301,6 +302,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 | Record                                     | Retention                                           |
 | ------------------------------------------ | --------------------------------------------------- |
 | Request-level call records                 | 30 days after the call start                        |
+| Budget spend entries                       | 35 days after the call start                        |
 | Daily usage aggregates (UTC days)          | 13 months                                           |
 | Audit events                               | 13 months                                           |
 | Usage outbox rows                          | 30 days after creation                              |
@@ -319,7 +321,7 @@ A retention worker prunes expired records in bounded batches.
   - Leaves a tombstone of the resource ID, tenant, name and deletion time.
 - The tombstone and its ACL entries remain read-only. They serve only to show the retained usage, error and audit records to their former roles until retention ends. A deleted resource accepts no other action, and its endpoint rejects calls. Pending billing events continue to be delivered.
 - `BLOCKED` and `DELETING` tenants cannot make model calls.
-- A lifecycle worker calls `CheckTenantLifecycle` for tenants with retained data. It deletes all of a tenant's retained data (resources, tombstones, ACL, credentials, keys, records, aggregates, audit, snapshots and outbox rows) only after Delcore reports `DELETED`. `UNKNOWN`, errors and pending deletion delete nothing. Fixed record expiry applies independently.
+- A lifecycle worker calls `CheckTenantLifecycle` for tenants with retained data. It deletes all of a tenant's retained data (resources, tombstones, ACL, credentials, keys, records, budget spend entries, aggregates, audit, snapshots and outbox rows) only after Delcore reports `DELETED`. `UNKNOWN`, errors and pending deletion delete nothing. Fixed record expiry applies independently.
 
 ### Error mapping
 
@@ -354,6 +356,7 @@ PostgreSQL is authoritative. All entity IDs are UUID v7. The schema holds these 
 - Call keys (hash, prefix, issuer, expiry, last use and revocation).
 - Request-key idempotency records.
 - Call records.
+- Budget spend entries (tenant, resource, call start instant and committed bytes).
 - Daily usage aggregates.
 - Resource and tenant budgets.
 - Audit events.

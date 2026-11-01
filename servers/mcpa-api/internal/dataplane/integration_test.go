@@ -813,7 +813,7 @@ func TestIntegrationTenantCleanupOnlyAfterDeleted(t *testing.T) {
 
 	counts := func(tenant string) []int64 {
 		var out []int64
-		for _, table := range []string{"resources", "call_records", "usage_daily", "usage_outbox", "audit_events", "tenant_budgets", "credentials", "call_keys"} {
+		for _, table := range []string{"resources", "call_records", "usage_spend", "usage_daily", "usage_outbox", "audit_events", "tenant_budgets", "credentials", "call_keys"} {
 			out = append(out, e.scalar(`SELECT count(*) FROM `+table+` WHERE tenant_id = $1`, tenant))
 		}
 		return out
@@ -1049,4 +1049,139 @@ func TestIntegrationProviderOAuth(t *testing.T) {
 	// Tokens, verifiers and device codes are stored encrypted only.
 	verifierFree := []string{"sk-ant-oat-CANARY", "sk-ant-ort-CANARY", "kimi-device-CANARY", "kimi-access-CANARY", state}
 	assertNoSecretsOrBodies(t, e, verifierFree...)
+}
+
+// Budget spend of a 31-day billing period that starts partway through a UTC
+// day stays counted after the call records of its first day expire.
+func TestIntegrationBudgetSpendOutlivesCallRecords(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now().UTC()
+	// The period started 31 days minus two hours ago, partway through a UTC
+	// day, and lasts 31 days.
+	start := now.Add(-31*24*time.Hour + 2*time.Hour).Truncate(time.Hour).Add(17 * time.Minute)
+	end := start.Add(31 * 24 * time.Hour)
+	resourceID, keyID := store.NewID(), store.NewID()
+	apply := func(startTime time.Time, bytes int64) store.Checkpoint {
+		t.Helper()
+		c := store.Checkpoint{
+			CallID: store.NewID(), TenantID: e.tenant, ResourceID: resourceID, CallKeyID: keyID,
+			Provider: mcpav1.Provider_PROVIDER_OPENAI_COMPATIBLE, Model: "m", Format: mcpav1.EndpointFormat_ENDPOINT_FORMAT_OPENAI,
+			StartTime: startTime, Seq: 1, DeltaRequestBytes: bytes, DeltaResponseBytes: 0,
+			RequestBytes: bytes, ResponseBytes: 0, OutboxID: store.NewID(), RequestKey: store.NewID(),
+		}
+		if _, err := e.db.ApplyCheckpoint(e.ctx, c); err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	first := apply(start.Add(time.Minute), 1000)              // partial first day
+	middle := apply(start.Add(3*24*time.Hour), 20)            // fully covered day
+	apply(start.Add(-time.Minute), 300)                       // previous period
+	second := apply(first.StartTime.Add(time.Microsecond), 4) // a second call on the first day
+	// A later checkpoint of the first call adds to its spend entry.
+	next := first
+	next.Seq, next.DeltaRequestBytes, next.RequestBytes = 2, 5, first.RequestBytes+5
+	next.Final, next.Status = true, mcpav1.CallStatus_CALL_STATUS_SUCCEEDED
+	next.OutboxID, next.RequestKey = store.NewID(), store.NewID()
+	if _, err := e.db.ApplyCheckpoint(e.ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	want := int64(1000 + 5 + 20 + 4)
+	billed := func() (int64, int64) {
+		t.Helper()
+		r, err := e.dp.Usage.ResourceBilledBytes(e.ctx, resourceID, start, end)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tenant, err := e.dp.Usage.TenantBilledBytes(e.ctx, e.tenant, start, end)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r, tenant
+	}
+	// The resource row is required by ResourceBilledBytes.
+	if _, err := e.db.Pool.Exec(e.ctx, `INSERT INTO resources (id, tenant_id, name, created_by_user_id) VALUES ($1, $2, 'spend', 'u')`,
+		resourceID, e.tenant); err != nil {
+		t.Fatal(err)
+	}
+	if r, tenant := billed(); r != want || tenant != want {
+		t.Fatalf("billed before retention: resource %d tenant %d, want %d", r, tenant, want)
+	}
+
+	if err := e.dp.RetentionCycle(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.scalar(`SELECT count(*) FROM call_records WHERE id = ANY($1)`, []uuid.UUID{first.CallID, second.CallID}); n != 0 {
+		t.Fatalf("%d first-day call records survived retention", n)
+	}
+	if n := e.scalar(`SELECT count(*) FROM call_records WHERE id = $1`, middle.CallID); n != 1 {
+		t.Fatal("the call record of a later day was pruned")
+	}
+	if r, tenant := billed(); r != want || tenant != want {
+		t.Fatalf("billed after call record retention: resource %d tenant %d, want %d", r, tenant, want)
+	}
+
+	// Spend entries expire 35 days after the call start.
+	old := apply(now.Add(-36*24*time.Hour), 9)
+	if err := e.dp.RetentionCycle(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.scalar(`SELECT count(*) FROM usage_spend WHERE start_time = $1`, old.StartTime); n != 0 {
+		t.Fatal("an expired spend entry survived retention")
+	}
+	if n := e.scalar(`SELECT count(*) FROM usage_spend WHERE tenant_id = $1`, e.tenant); n != 4 {
+		t.Fatalf("retained spend entries %d, want 4", n)
+	}
+}
+
+// Migration 0003 backfills spend entries from retained call records.
+func TestIntegrationUsageSpendMigrationBackfill(t *testing.T) {
+	dbURL := testDatabase(t)
+	db, err := store.Open(t.Context(), dbURL, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	ms, err := store.Migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := db.Pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	// Bring the schema to version 2 as an earlier binary did.
+	exec(`CREATE TABLE mcpa_schema_migrations (version integer PRIMARY KEY, name text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`)
+	for _, m := range ms[:2] {
+		exec(m.SQL)
+		exec(`INSERT INTO mcpa_schema_migrations (version, name) VALUES ($1, $2)`, m.Version, m.Name)
+	}
+	resourceID, at := store.NewID(), time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
+	for i, bytes := range [][2]int64{{10, 5}, {1, 2}, {0, 0}} {
+		startTime := at
+		if i == 2 {
+			startTime = at.Add(time.Second)
+		}
+		exec(`INSERT INTO call_records (id, tenant_id, resource_id, call_key_id, format, request_bytes, response_bytes, checkpoint_seq,
+				start_time, expire_time) VALUES ($1, 't1', $2, $3, 1, $4, $5, 1, $6, $6::timestamptz + interval '30 days')`,
+			store.NewID(), resourceID, store.NewID(), bytes[0], bytes[1], startTime)
+	}
+	applied, err := db.Migrate(ctx)
+	if err != nil || len(applied) != len(ms)-2 || applied[0] != 3 {
+		t.Fatalf("migrate applied %v: %v", applied, err)
+	}
+	var n, sum int64
+	if err := db.Pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(bytes), 0) FROM usage_spend WHERE tenant_id = 't1' AND resource_id = $1`,
+		resourceID).Scan(&n, &sum); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || sum != 18 {
+		t.Fatalf("backfilled %d entries with %d bytes, want 1 entry with 18 bytes", n, sum)
+	}
+	if err := db.CheckSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -21,6 +21,7 @@ type retentionRule struct {
 
 var retentionRules = []retentionRule{
 	{"call_records", store.PruneCallRecords},
+	{"usage_spend", store.PruneUsageSpend},
 	{"usage_daily", store.PruneUsageDaily},
 	{"audit_events", store.PruneAuditEvents},
 	{"provider_oauth_flows", store.PruneOAuthFlows},
@@ -36,8 +37,8 @@ func (dp *DataPlane) RunRetention(ctx context.Context) error {
 	return every(ctx, dp.cfg.RetentionInterval, dp.log, "retention", dp.RetentionCycle)
 }
 
-// RetentionCycle deletes call records 30 days after the call start, daily
-// aggregates and audit events after 13 months, OAuth flows one day after
+// RetentionCycle deletes call records 30 days and budget spend entries 35
+// days after the call start, daily aggregates and audit events after 13 months, OAuth flows one day after
 // they end, expired request keys, expired console state and resource
 // tombstones that no retained record refers to anymore.
 func (dp *DataPlane) RetentionCycle(ctx context.Context) error {

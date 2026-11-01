@@ -5,6 +5,7 @@ package store
 import (
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -41,13 +42,21 @@ func TestEventKey(t *testing.T) {
 	}
 }
 
+func TestSpendRetentionOutlivesBillingPeriods(t *testing.T) {
+	// Delcore billing periods last at most one month (31 days); the partial
+	// first day of a period must stay measurable until the period ends.
+	if SpendRetention <= 31*24*time.Hour || SpendRetention != 35*24*time.Hour {
+		t.Fatalf("spend retention %s", SpendRetention)
+	}
+}
+
 func TestMigrationsAreContiguous(t *testing.T) {
 	ms, err := Migrations()
 	if err != nil {
 		t.Fatal(err)
 	}
 	version, err := ExpectedVersion()
-	if err != nil || version != len(ms) || version < 2 || ms[1].Name != "data_plane" {
+	if err != nil || version != len(ms) || version != 3 || ms[1].Name != "data_plane" || ms[2].Name != "usage_spend" {
 		t.Fatalf("expected version %d with %d migrations: %v", version, len(ms), err)
 	}
 }

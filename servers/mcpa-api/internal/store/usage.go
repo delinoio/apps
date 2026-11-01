@@ -19,6 +19,11 @@ import (
 // CallRecordRetention is how long call records are kept after the call start.
 const CallRecordRetention = 30 * 24 * time.Hour
 
+// SpendRetention is how long budget spend entries are kept after the call
+// start. It must exceed the longest Delcore billing period (one month) so
+// the partial first day of a period stays measurable until the period ends.
+const SpendRetention = 35 * 24 * time.Hour
+
 // MaxModelBytes bounds stored model names. Longer names are truncated.
 const MaxModelBytes = 200
 
@@ -83,7 +88,8 @@ type aggKey struct {
 
 // ApplyCheckpoint commits a checkpoint in one transaction: it upserts the
 // call record, moves the call's bytes into the right daily aggregate bucket
-// and inserts one outbox row when the delta is non-zero. A checkpoint whose
+// and, when the delta is non-zero, adds it to the budget spend entry of the
+// call start and inserts one outbox row. A checkpoint whose
 // sequence number is not newer than the committed one was already applied
 // and is skipped, so a resent checkpoint bills its bytes exactly once. It
 // reports whether the checkpoint was applied now.
@@ -172,6 +178,11 @@ func (s *Store) ApplyCheckpoint(ctx context.Context, c Checkpoint) (bool, error)
 		}
 
 		if delta := c.DeltaRequestBytes + c.DeltaResponseBytes; delta > 0 {
+			if _, err := tx.Exec(ctx, `INSERT INTO usage_spend (tenant_id, resource_id, start_time, bytes) VALUES ($1, $2, $3, $4)
+				ON CONFLICT (tenant_id, resource_id, start_time) DO UPDATE SET bytes = usage_spend.bytes + EXCLUDED.bytes`,
+				c.TenantID, c.ResourceID, c.StartTime, delta); err != nil {
+				return err
+			}
 			if _, err := tx.Exec(ctx, `INSERT INTO usage_outbox (id, event_key, request_key, tenant_id, resource_id, occurred_at, bytes,
 					next_attempt_at, create_time, expires_at)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now(), now() + interval '30 days')
@@ -382,8 +393,9 @@ func ListUsageRows(ctx context.Context, db DB, f UsageFilter, after uuid.UUID, l
 // BilledBytes returns the bytes committed by checkpoints for calls that
 // started in [start, end), for one resource (resourceID set) or a whole
 // tenant. UTC days fully inside the period come from the daily aggregates;
-// the partial first and last days come from call records, which are kept
-// for 30 days.
+// the partial first and last days come from the budget spend entries, which
+// outlive every billing period (SpendRetention). Call records are not used:
+// they expire after 30 days, before a 31-day period ends.
 func BilledBytes(ctx context.Context, db DB, tenantID string, resourceID *uuid.UUID, start, end time.Time) (int64, error) {
 	if !start.Before(end) {
 		return 0, nil
@@ -406,7 +418,7 @@ func BilledBytes(ctx context.Context, db DB, tenantID string, resourceID *uuid.U
 		total += full
 		// Partial days at both ends.
 		for _, r := range [][2]time.Time{{start, firstFull}, {lastFull, end}} {
-			n, err := recordBytes(ctx, db, tenantID, resourceID, r[0], r[1])
+			n, err := spendBytes(ctx, db, tenantID, resourceID, r[0], r[1])
 			if err != nil {
 				return 0, err
 			}
@@ -414,15 +426,15 @@ func BilledBytes(ctx context.Context, db DB, tenantID string, resourceID *uuid.U
 		}
 		return total, nil
 	}
-	return recordBytes(ctx, db, tenantID, resourceID, start, end)
+	return spendBytes(ctx, db, tenantID, resourceID, start, end)
 }
 
-func recordBytes(ctx context.Context, db DB, tenantID string, resourceID *uuid.UUID, start, end time.Time) (int64, error) {
+func spendBytes(ctx context.Context, db DB, tenantID string, resourceID *uuid.UUID, start, end time.Time) (int64, error) {
 	if !start.Before(end) {
 		return 0, nil
 	}
 	var n int64
-	err := db.QueryRow(ctx, `SELECT COALESCE(sum(request_bytes + response_bytes), 0)::bigint FROM call_records
+	err := db.QueryRow(ctx, `SELECT COALESCE(sum(bytes), 0)::bigint FROM usage_spend
 		WHERE tenant_id = $1 AND ($2::uuid IS NULL OR resource_id = $2) AND start_time >= $3 AND start_time < $4`,
 		tenantID, resourceID, start, end).Scan(&n)
 	return n, err
