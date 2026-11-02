@@ -2,6 +2,7 @@
 package io.delino.anydash
 
 import android.content.Context
+import android.content.SharedPreferences
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -12,29 +13,60 @@ import java.net.URL
  * provider: one binary NativeWidgetSnapshot per widget. ENDED snapshots replace
  * the previous file, so the widget removes displayed data at its next update.
  */
-internal class WidgetStore(context: Context) {
-    private val directory = File(context.filesDir, "widget-snapshots")
-    private val preferences = context.getSharedPreferences("anydash-widgets", Context.MODE_PRIVATE)
+internal class WidgetStore(private val directory: File, private val preferences: SharedPreferences) {
+    constructor(context: Context) : this(
+        File(context.filesDir, "widget-snapshots"),
+        context.getSharedPreferences("anydash-widgets", Context.MODE_PRIVATE),
+    )
+
+    /** Changes whenever the whole store is replaced or cleared, for example on sign-out. */
+    private var generation = 0L
 
     @Synchronized fun write(encoded: List<String>, replaceAll: Boolean) {
-        if (replaceAll) directory.deleteRecursively()
+        if (replaceAll) {
+            directory.deleteRecursively()
+            generation++
+        }
         directory.mkdirs()
         for (item in encoded) {
             val bytes = try { unbase64(item) } catch (_: IllegalArgumentException) { continue }
             val snapshot = try { SnapshotCodec.snapshot(bytes) } catch (_: DecodeException) { continue }
             if (snapshot.widgetId.isEmpty()) continue
             snapshot.summary?.title?.let { rememberTitle(snapshot.widgetId, it) }
-            val target = File(directory, "${sha256Hex(snapshot.widgetId)}.pb")
+            val target = file(snapshot.widgetId)
             val temporary = File(directory, "${target.name}.tmp")
             temporary.writeBytes(bytes)
             if (!temporary.renameTo(target)) temporary.delete()
         }
     }
 
-    @Synchronized fun replace(snapshot: NativeWidgetSnapshot, encoded: ByteArray) {
-        directory.mkdirs()
-        File(directory, "${sha256Hex(snapshot.widgetId)}.pb").writeBytes(encoded)
+    /** The stored snapshot of a widget with the state that a later [replaceIfCurrent] must still match. */
+    @Synchronized fun stored(widgetId: String): StoredSnapshot? {
+        val bytes = file(widgetId).takeIf { it.isFile }?.readBytes() ?: return null
+        val snapshot = try { SnapshotCodec.snapshot(bytes) } catch (_: Exception) { return null }
+        return StoredSnapshot(snapshot, bytes, generation)
     }
+
+    /**
+     * Writes a widget refresh result only when the store still holds the snapshot that started the
+     * refresh. A sign-out, a full replacement or an app-written snapshot (such as ENDED) in the
+     * meantime wins, so a late response never restores a signed-out user's data or older data.
+     */
+    @Synchronized fun replaceIfCurrent(expected: StoredSnapshot, encoded: ByteArray): Boolean {
+        if (generation != expected.generation) return false
+        val target = file(expected.snapshot.widgetId)
+        val current = target.takeIf { it.isFile }?.readBytes()
+        if (current == null || !current.contentEquals(expected.bytes)) return false
+        val temporary = File(directory, "${target.name}.tmp")
+        temporary.writeBytes(encoded)
+        if (!temporary.renameTo(target)) {
+            temporary.delete()
+            return false
+        }
+        return true
+    }
+
+    private fun file(widgetId: String) = File(directory, "${sha256Hex(widgetId)}.pb")
 
     @Synchronized fun all(): List<NativeWidgetSnapshot> =
         (directory.listFiles { file -> file.extension == "pb" } ?: emptyArray())
@@ -58,9 +90,13 @@ internal class WidgetStore(context: Context) {
 
     @Synchronized fun clear() {
         directory.deleteRecursively()
+        generation++
         preferences.edit().clear().apply()
     }
 }
+
+/** A stored snapshot, its exact bytes and the store generation in which they were read. */
+internal class StoredSnapshot(val snapshot: NativeWidgetSnapshot, val bytes: ByteArray, val generation: Long)
 
 internal data class RpcResult(val status: Int, val body: ByteArray, val correlationId: String)
 

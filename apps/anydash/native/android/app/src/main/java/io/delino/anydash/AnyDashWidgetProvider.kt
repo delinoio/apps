@@ -27,7 +27,9 @@ class AnyDashWidgetProvider : AppWidgetProvider() {
             try {
                 val host = (context.applicationContext as AnyDashApplication).host
                 for (id in ids) {
-                    host.widgets.snapshot(host.widgets.selection(id))?.let { refresh(host, it) }
+                    host.widgets.snapshot(host.widgets.selection(id))
+                        ?.let { host.widgets.stored(it.widgetId) }
+                        ?.let { refresh(host, it) }
                     render(context, manager, id)
                 }
             } finally {
@@ -51,7 +53,8 @@ class AnyDashWidgetProvider : AppWidgetProvider() {
                 render(context, manager, id)
         }
 
-        private fun refresh(host: AnyDashHost, snapshot: NativeWidgetSnapshot) {
+        private fun refresh(host: AnyDashHost, stored: StoredSnapshot) {
+            val snapshot = stored.snapshot
             if (snapshot.sharingState == SharingState.ENDED || !host.auth.signedIn) return
             val worker = Executors.newSingleThreadExecutor()
             try {
@@ -69,7 +72,9 @@ class AnyDashWidgetProvider : AppWidgetProvider() {
                         sharingState = if (data.state == SharingState.UNSPECIFIED) snapshot.sharingState else data.state,
                         summary = data.summary,
                     )
-                    host.widgets.replace(next, SnapshotCodec.encodeSnapshot(next, data.summaryBytes, System.currentTimeMillis()))
+                    // Sign-out or a newer app-written snapshot (such as ENDED) during the request wins.
+                    if (!host.widgets.replaceIfCurrent(stored, SnapshotCodec.encodeSnapshot(next, data.summaryBytes, System.currentTimeMillis())))
+                        AnyDashLog.info("anydash_widget_refresh_discarded")
                 }
                 // Broadcast receivers have about ten seconds; keep the latest snapshot on timeout.
                 future.get(8, TimeUnit.SECONDS)
