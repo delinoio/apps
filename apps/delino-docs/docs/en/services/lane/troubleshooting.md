@@ -51,7 +51,7 @@ On iOS, background notification wakes are controlled by the OS and are not guara
 ## RealQA and Chrome
 
 - **Lane is not running:** start Lane and retry the explicit capture. Closing its main window is different from quitting the app.
-- **Connection unavailable:** check that the installed Lane build includes the matching extension registration. Reinstall the matching trusted build if registration is missing. Another browser is not supported for DOM capture.
+- **Connection unavailable:** quit and restart Lane so it registers its Chrome component again, then retry. On macOS, first move Lane to your Applications folder. If the connection is still unavailable, the installed Lane build may not allow this extension; install the matching trusted build. Another browser is not supported for DOM capture.
 - **Approval required or disconnected:** connect from the extension and approve its profile in Lane. A revoked token cannot be reused.
 - **Page cannot be selected:** use a normal HTTP or HTTPS page outside incognito and the Chrome Web Store. Click the extension on that page to grant access, then retry.
 - **Element is clipped:** only visible pixels are included. Scroll and make another capture yourself. RealQA never stitches hidden portions.

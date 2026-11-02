@@ -43,6 +43,8 @@ if(APPLE)
     target_compile_definitions(LaneCaptureTest PRIVATE LANE_NATIVE_TESTING)
     target_link_libraries(LaneCaptureTest PRIVATE "-framework Cocoa" "-weak_framework ScreenCaptureKit" "-framework CoreImage" "-framework Carbon" "-framework ImageIO")
     add_test(NAME lane_macos_capture_memory COMMAND LaneCaptureTest)
+    add_executable(LaneShortcutReservationsTest shortcut-reservations_test.cc)
+    add_test(NAME lane_capture_shortcut_reservations COMMAND LaneShortcutReservationsTest)
     # The logger is header-only and needs only Foundation. The production variant omits
     # LANE_NATIVE_TESTING to prove test-root injection stays disabled outside native-testing builds.
     add_executable(LaneLogTest macos/log_test.mm)

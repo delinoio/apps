@@ -93,11 +93,12 @@ export class RealQA {
       fail("This capture is no longer in the draft.", "ERROR_REASON_NOT_FOUND");
     return image;
   }
+  // An omitted key is a removed value. An empty string is a retained value, such
+  // as a page without a title, and is saved and rendered as defined.
   metadata(value = {}) {
     const metadata = {};
     for (const key of ["pageUrl", "pageTitle", "cssSelector"])
-      if (typeof value[key] === "string" && value[key])
-        metadata[key] = value[key];
+      if (typeof value[key] === "string") metadata[key] = value[key];
     return metadata;
   }
   appendCapture(value) {
@@ -133,6 +134,9 @@ export class RealQA {
       height: value.height,
       layers: [],
       metadata: this.metadata(value.metadata),
+      // Draft-only guidance for a browser capture limited to the visible portion.
+      // Export copies only saved fields, so this flag never enters the prompt.
+      ...(value.clipped === true ? { clipped: true } : {}),
       canUndo: false,
       canRedo: false,
     };

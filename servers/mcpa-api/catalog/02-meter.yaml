@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Billable traffic: request bytes sent to providers plus response bytes sent
+# to customers, reported as checkpoint deltas.
+kind: meter
+service: mcpa
+key: mcpa-traffic-bytes
+event_type: mcpa.traffic
+aggregation: sum
+value_attribute: bytes
+group_by:
+  - resource_id

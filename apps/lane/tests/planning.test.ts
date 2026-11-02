@@ -431,6 +431,18 @@ test("rejected synchronization reasons are explained and omitted ProtoJSON defau
     /retry the blocked items/,
   );
   assert.equal(describeItemError("STORAGE_FULL"), "STORAGE_FULL");
+  assert.match(
+    describeItemError("ERROR_REASON_ITEM_TOO_LARGE", "attachment"),
+    /exceeds the server size limit\. It remains on this device\. Retry/,
+  );
+  assert.match(
+    describeItemError("ERROR_REASON_INVALID_INPUT", "attachment"),
+    /rejected this capture image as invalid/,
+  );
+  assert.match(
+    describeItemError("ERROR_REASON_STORAGE_FULL", "attachment"),
+    /could not synchronize \(ERROR_REASON_STORAGE_FULL\)/,
+  );
   const sparse = toUI(
     create(EntityVersionSchema, {
       entityId: "m",

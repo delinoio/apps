@@ -100,6 +100,11 @@ fn capture_receipts_and_history_interoperate_in_both_writer_directions() {
         );
         assert_eq!(replay["result"]["result"], "RESULT_KIND_REPLAYED");
         let original = &first["result"]["version"];
+        // Both writers store the problem text only as the prompt; the task
+        // description stays empty, so bodies compare equal across writers.
+        assert_eq!(original["task"]["description"], "", "{original}");
+        assert_eq!(original["task"]["prompt"], "Problem", "{original}");
+        assert_eq!(replay["result"]["version"]["task"], original["task"]);
         let mut body = original["task"].clone();
         body["captures"] = json!([]);
         let q = request(

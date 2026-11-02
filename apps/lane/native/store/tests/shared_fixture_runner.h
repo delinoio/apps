@@ -124,9 +124,40 @@ void fingerprint_vector(const J& c) {
   error(f.raw("CreateTask", replay), "REQUEST_ID_REUSED");
   require(f.history(v).size() == 1, "prompt presence fingerprint rejection is atomic");
 }
+// Shared RealQA URL-prefix vectors. The native store owns normalization and
+// duplicate rejection; repository selection runs in the shared UI matcher.
+void url_prefix_vector(const J& c) {
+  const auto input = c.at("input"), expected = c.at("expected");
+  const auto operation = input.at("operation").get<std::string>();
+  if (operation == "select") return;
+  Fixture f; auto repository = f.task()["task"]["repositoryId"];
+  auto create = [&](const J& prefix) {
+    return f.raw("CreateURLConnection", {{"meta", f.meta()}, {"id", uuid()},
+        {"connection", {{"prefix", prefix}, {"repositoryId", repository}}}});
+  };
+  if (operation == "normalize") {
+    if (expected.contains("reason")) {
+      Sql db(f.database()); auto before = counts(db);
+      error(create(input.at("prefix")), expected.at("reason"));
+      require(counts(db) == before, "fixture invalid prefix must not write");
+    } else {
+      auto created = create(input.at("prefix"));
+      require(created.value("ok", false), "fixture prefix rejected: " + created.dump());
+      require(created.at("response").at("result").at("version").at("urlConnection").at("prefix") ==
+          expected.at("normalizedPrefix"), "fixture normalized URL prefix mismatch");
+    }
+  } else if (operation == "create") {
+    require(create(input.at("prefixes").at(0)).value("ok", false), "fixture first prefix rejected");
+    auto second = create(input.at("prefixes").at(1));
+    require(second.value("ok", false) != expected.at("duplicateRejected").get<bool>(),
+        "fixture duplicate normalized prefix outcome");
+  } else {
+    throw std::runtime_error("unknown URL-prefix operation");
+  }
+}
 unsigned run_shared_fixtures(const fs::path& directory) {
   unsigned failed = 0, total = 0;
-  for (const auto& name : {"normalization", "tasks", "fingerprints"}) {
+  for (const auto& name : {"normalization", "tasks", "fingerprints", "url-prefixes"}) {
     J cases;
     try { cases = load_vectors(directory, name); }
     catch (const std::exception& e) { ++failed; std::cerr << "FAIL fixtures " << name << ": " << e.what() << '\n'; continue; }
@@ -135,6 +166,7 @@ unsigned run_shared_fixtures(const fs::path& directory) {
       try {
         if (std::string(name) == "normalization") normalization_vector(c);
         else if (std::string(name) == "tasks") task_vector(c);
+        else if (std::string(name) == "url-prefixes") url_prefix_vector(c);
         else fingerprint_vector(c);
         std::cout << "PASS fixture " << name << '/' << c.at("id").get<std::string>() << '\n';
       } catch (const std::exception& e) {

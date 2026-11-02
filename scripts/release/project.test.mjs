@@ -14,6 +14,20 @@ const inventory = JSON.parse(
     encoding: "utf8",
   }),
 );
+// Fixture Managed CPA manifests keep release tests independent of whether the
+// console and Go server workspaces are present in this checkout.
+const mcpaManifests = {
+  "apps/mcpa/package.json":
+    '{\n  "name": "@apps/mcpa",\n  "version": "0.1.0",\n  "private": true\n}\n',
+  "servers/mcpa-api/package.json":
+    '{\n  "name": "@servers/mcpa-api",\n  "private": true\n}\n',
+};
+const mcpaInventory = {
+  ...inventory,
+  "@apps/mcpa": "apps/mcpa/package.json",
+  "@servers/mcpa-api": "servers/mcpa-api/package.json",
+};
+const mcpaRead = (file) => mcpaManifests[file] ?? read(file);
 const plan = (packages, versions) =>
   makePlan([{ id: "fixture", packages }], inventory, read, versions);
 
@@ -187,17 +201,44 @@ test("Release graph separates image preparation from authorized component public
   assert.equal(workflow("deploy-web").jobs.deploy.permissions, undefined);
 });
 
-test("shared protocol records include Rust server consumers outside the npm graph", () => {
-  const result = plan({ "@repo/protos": "patch" });
+test("shared protocol records include Rust and Go server consumers outside the npm graph", () => {
+  const result = makePlan(
+    [{ id: "fixture", packages: { "@repo/protos": "patch" } }],
+    mcpaInventory,
+    mcpaRead,
+  );
   assert.deepEqual(result.servers, [
     "delcore-api",
     "delitools-api",
     "devbase-api",
     "git-tracker-api",
     "lane-api",
+    "mcpa-api",
     "perfine-api",
   ]);
   assert.deepEqual(Object.keys(result.changes), ["protos/package.json"]);
+});
+
+test("Managed CPA console and Go server release as the mcpa component", () => {
+  const release = (packages) =>
+    makePlan([{ id: "fixture", packages }], mcpaInventory, mcpaRead);
+  const server = release({ "@servers/mcpa-api": "none" });
+  assert.deepEqual(server.servers, ["delcore-api", "mcpa-api"]);
+  assert.deepEqual(server.components, [
+    {
+      component: "mcpa",
+      apps: [],
+      binaries: false,
+      mobile: false,
+      version: "0.1.1",
+      tag: "mcpa@v0.1.1",
+    },
+  ]);
+  const console = release({ "@apps/mcpa": "minor" });
+  assert.deepEqual(console.servers, ["delcore-api", "mcpa-api"]);
+  assert.deepEqual(console.components[0].apps, ["mcpa"]);
+  assert.equal(console.components[0].tag, "mcpa@v0.2.0");
+  assert.deepEqual(Object.keys(console.changes), ["apps/mcpa/package.json"]);
 });
 
 test("release credentials stay in the three repository-wide environments", () => {

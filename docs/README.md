@@ -144,3 +144,10 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [CLI and shared collector](cmds-anydash-cli-contract.md)
 - [Provider adapters and metric rules](cmds-anydash-provider-adapters-contract.md)
 - [Distribution](packages-anydash-distribution-contract.md)
+
+### mcpa
+
+- [Project index](project-mcpa.md)
+- [API server](servers-mcpa-api-contract.md)
+- [Connect protocol](protos-mcpa-v1-contract.md)
+- [Web console](apps-mcpa-web-contract.md)

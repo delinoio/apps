@@ -54,6 +54,9 @@ SCShareableContent* Content() {
 @implementation LaneRegionView
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
+// A shortcut can start selection while another application is active; the first
+// click must start the drag instead of only activating the overlay.
+- (BOOL)acceptsFirstMouse:(NSEvent*)event { return YES; }
 - (void)drawRect:(NSRect)dirty {
   [[NSColor colorWithWhite:0 alpha:0.22] setFill]; NSRectFill(self.bounds);
   [[NSColor systemBlueColor] setStroke]; NSFrameRectWithWidth(self.selection, 3);
@@ -174,7 +177,21 @@ struct MacCapture : std::enable_shared_from_this<MacCapture> {
         objc_setAssociatedObject(weakView, @selector(finish), nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         dispatch_semaphore_signal(done);
       };
-      overlay.contentView = view; [overlay makeKeyAndOrderFront:nil]; [overlay makeFirstResponder:view];
+      overlay.contentView = view;
+      // Global shortcuts fire while another application is frontmost. Activate Lane
+      // so the overlay becomes key and receives Return, Escape and arrow keys.
+      // Workaround: macOS 14 cooperative `-[NSApplication activate]` may decline
+      // activation when the frontmost app has not yielded, which leaves keyboard
+      // selection dead. The deprecated forced activation remains supported on
+      // macOS 12 through current releases and applies only to this explicit
+      // capture overlay. Replace it with `activate` (plus a yield from the
+      // shortcut path) once forced activation is removed or Lane adopts a
+      // non-activating key panel for the overlay.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+      [NSApp activateIgnoringOtherApps:YES];
+#pragma clang diagnostic pop
+      [overlay makeKeyAndOrderFront:nil]; [overlay makeFirstResponder:view];
       // The window retains its content until selection completes; keep the
       // window alive without writing a preview to disk.
       objc_setAssociatedObject(view, @selector(finish), overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -304,46 +321,58 @@ struct MacCapture : std::enable_shared_from_this<MacCapture> {
     }
     auto result=PNG(final); CGImageRelease(final); return result;
   }
+  // Carbon virtual key codes for the capture grammar's letters and digits.
+  static const std::map<char,UInt32>& KeyCodes() {
+    static const std::map<char,UInt32> keys={
+      {'A',kVK_ANSI_A},{'B',kVK_ANSI_B},{'C',kVK_ANSI_C},{'D',kVK_ANSI_D},{'E',kVK_ANSI_E},{'F',kVK_ANSI_F},
+      {'G',kVK_ANSI_G},{'H',kVK_ANSI_H},{'I',kVK_ANSI_I},{'J',kVK_ANSI_J},{'K',kVK_ANSI_K},{'L',kVK_ANSI_L},
+      {'M',kVK_ANSI_M},{'N',kVK_ANSI_N},{'O',kVK_ANSI_O},{'P',kVK_ANSI_P},{'Q',kVK_ANSI_Q},{'R',kVK_ANSI_R},
+      {'S',kVK_ANSI_S},{'T',kVK_ANSI_T},{'U',kVK_ANSI_U},{'V',kVK_ANSI_V},{'W',kVK_ANSI_W},{'X',kVK_ANSI_X},
+      {'Y',kVK_ANSI_Y},{'Z',kVK_ANSI_Z},
+      {'0',kVK_ANSI_0},{'1',kVK_ANSI_1},{'2',kVK_ANSI_2},{'3',kVK_ANSI_3},{'4',kVK_ANSI_4},
+      {'5',kVK_ANSI_5},{'6',kVK_ANSI_6},{'7',kVK_ANSI_7},{'8',kVK_ANSI_8},{'9',kVK_ANSI_9}};
+    return keys;
+  }
   CaptureJSON Shortcut(const CaptureJSON& request) {
     std::string mode=request.at("mode"), accelerator=request.at("accelerator");
-    __block bool accepted=false;
+    enum class Outcome { Accepted, System, Unavailable };
+    if (!accelerator.empty()) {
+      LaneCaptureShortcut parsed;
+      if (LaneParseCaptureShortcut(accelerator,parsed)!=LaneCaptureShortcutParse::Ok || !KeyCodes().count(parsed.key))
+        throw CaptureError("Use Command, Control or Option, optionally with Shift, plus one letter or digit. The previous shortcut is retained.");
+      if (LaneReservedCaptureShortcut(parsed,LaneShortcutPlatform::MacOS))
+        throw CaptureError("Lane already uses that shortcut. Choose another combination; the previous shortcut is retained.","ERROR_REASON_CONFLICT");
+    }
+    __block Outcome outcome=Outcome::Unavailable;
     Main(^{
       auto old=shortcuts.find(mode);
       if (accelerator.empty()) {
         if (old!=shortcuts.end()) { UnregisterEventHotKey(old->second); shortcuts.erase(old); }
         for(auto it=modes.begin();it!=modes.end();) { if(it->second==mode) it=modes.erase(it); else ++it; }
-        accepted=true; return;
+        outcome=Outcome::Accepted; return;
       }
-      UInt32 modifiers=0; std::string key, token;
-      std::istringstream stream(accelerator);
-      while (std::getline(stream,token,'+')) {
-        if (token=="Command" || token=="Cmd" || token=="Meta") modifiers|=cmdKey;
-        else if (token=="Ctrl" || token=="Control") modifiers|=controlKey;
-        else if (token=="Alt" || token=="Option") modifiers|=optionKey;
-        else if (token=="Shift") modifiers|=shiftKey;
-        else key=token;
-      }
-      const std::map<std::string,UInt32> keys={{"A",0},{"S",1},{"D",2},{"F",3},{"H",4},{"G",5},{"Z",6},{"X",7},{"C",8},{"V",9},{"B",11},{"Q",12},{"W",13},{"E",14},{"R",15},{"Y",16},{"T",17},{"1",18},{"2",19},{"3",20},{"4",21},{"6",22},{"5",23},{"9",25},{"7",26},{"8",28},{"0",29},{"O",31},{"U",32},{"I",34},{"P",35},{"L",37},{"J",38},{"K",40}};
-      if (!modifiers || !keys.count(key)) return;
-      if (key.size() == 1 && LaneReservedCaptureShortcut(modifiers, key[0], cmdKey, shiftKey)) return;
+      LaneCaptureShortcut parsed; LaneParseCaptureShortcut(accelerator,parsed);
+      UInt32 modifiers=(parsed.command?cmdKey:0)|(parsed.control?controlKey:0)|(parsed.alt?optionKey:0)|(parsed.shift?shiftKey:0);
+      UInt32 code=KeyCodes().at(parsed.key);
       CFArrayRef systemKeys = nullptr;
       if (CopySymbolicHotKeys(&systemKeys) == noErr && systemKeys) {
         bool reserved = false;
         for (NSDictionary* binding in (__bridge NSArray*)systemKeys) {
           if ([binding[(__bridge NSString*)kHISymbolicHotKeyEnabled] boolValue] &&
-              [binding[(__bridge NSString*)kHISymbolicHotKeyCode] unsignedIntValue] == keys.at(key) &&
+              [binding[(__bridge NSString*)kHISymbolicHotKeyCode] unsignedIntValue] == code &&
               [binding[(__bridge NSString*)kHISymbolicHotKeyModifiers] unsignedIntValue] == modifiers) reserved = true;
         }
         CFRelease(systemKeys);
-        if (reserved) return;
+        if (reserved) { outcome=Outcome::System; return; }
       }
       EventHotKeyRef fresh=nullptr; UInt32 id=next++;
-      if (RegisterEventHotKey(keys.at(key),modifiers,EventHotKeyID{'LQAC',id},GetApplicationEventTarget(),kEventHotKeyExclusive,&fresh)!=noErr) return;
+      if (RegisterEventHotKey(code,modifiers,EventHotKeyID{'LQAC',id},GetApplicationEventTarget(),kEventHotKeyExclusive,&fresh)!=noErr) return;
       if (old!=shortcuts.end()) UnregisterEventHotKey(old->second);
       for(auto it=modes.begin();it!=modes.end();) { if(it->second==mode) it=modes.erase(it); else ++it; }
-      shortcuts[mode]=fresh; modes[id]=mode; accepted=true;
+      shortcuts[mode]=fresh; modes[id]=mode; outcome=Outcome::Accepted;
     });
-    if (!accepted) throw CaptureError("That shortcut is unavailable or already used. Choose another combination; the previous shortcut is retained.","ERROR_REASON_CONFLICT");
+    if (outcome==Outcome::System) throw CaptureError("macOS already uses that shortcut. Choose another combination; the previous shortcut is retained.","ERROR_REASON_CONFLICT");
+    if (outcome!=Outcome::Accepted) throw CaptureError("Another application already uses that shortcut. Choose another combination; the previous shortcut is retained.","ERROR_REASON_CONFLICT");
     return CaptureJSON::object();
   }
   CaptureJSON Call(const CaptureJSON& request) {

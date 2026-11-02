@@ -76,4 +76,38 @@ export const remedies = {
     "Chrome could not secure RealQA's local storage. Reload the extension, then try again.",
   PERMISSION_REQUIRED:
     "Click the RealQA extension on this page, then select an element.",
+  APPROVAL_PENDING:
+    "Approve this Chrome profile in Lane. Lane is already showing an approval request for it.",
+  CONNECTION_TIMEOUT:
+    "Lane did not respond. Make sure Lane is running, then try again.",
+  ELEMENT_NOT_VISIBLE:
+    "The selected element is not visible. Scroll it into view, then select it again.",
+  CHROME_NOT_AVAILABLE:
+    "Keep this Chrome window focused, then select the element again.",
+  LANE_SAVING:
+    "Lane is saving the current task. Wait for the save to finish, then capture again.",
+  INVALID_CAPTURE:
+    "Lane could not validate this capture. Your Lane draft is unchanged. Select the element again.",
+  INVALID_METADATA:
+    "Lane could not validate this page's details. Your Lane draft is unchanged. Select the element again.",
+  CAPTURE_FAILED:
+    "Lane could not add this capture. Your Lane draft is unchanged. Select the element again.",
 };
+export function remedy(reason) {
+  return (
+    remedies[reason] ||
+    "Capture failed. Your Lane draft is unchanged. Select the element again."
+  );
+}
+// Failure codes the worker may report to Lane after a Lane-initiated selection.
+// Unknown errors, including browser exception text, collapse to CAPTURE_FAILED.
+const LOCAL_CAPTURE_FAILURES = new Set([
+  "PAGE_CHANGED",
+  "ELEMENT_NOT_VISIBLE",
+  "UNSUPPORTED_PAGE",
+  "PERMISSION_REQUIRED",
+  "CHROME_NOT_AVAILABLE",
+]);
+export function localCaptureFailure(reason) {
+  return LOCAL_CAPTURE_FAILURES.has(reason) ? reason : "CAPTURE_FAILED";
+}

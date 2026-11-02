@@ -245,32 +245,42 @@ export function Choices<T extends string | number>({
   onChange,
   disabled = false,
   exclusive = false,
+  error,
 }: {
   label: string;
   value: T;
   options: readonly (readonly [T, string])[];
   onChange: (v: T) => void;
   disabled?: boolean;
-  // Expose the pressed state to assistive technology for exclusive choices.
+  // Prefix each option's accessible name with the group label.
   exclusive?: boolean;
+  // Validation message shown next to the choices and included in each
+  // option's accessible name, never by color alone.
+  error?: string;
 }) {
   return (
-    <view className="field">
+    <view className="field" data-invalid={error ? "true" : undefined}>
       <text className="label">{label}</text>
       <view className="row wrap">
         {options.map(([v, title]) => (
           <Button
             key={v}
             disabled={disabled}
-            primary={exclusive ? undefined : v === value}
-            pressed={exclusive ? v === value : undefined}
-            label={exclusive ? `${label}: ${title}` : undefined}
+            // Every choice exposes its selected state to assistive technology
+            // and through the shared pressed style, not only by color.
+            pressed={v === value}
+            label={
+              [exclusive ? `${label}: ${title}` : title, error]
+                .filter(Boolean)
+                .join(". ") || undefined
+            }
             onClick={() => onChange(v)}
           >
             {title}
           </Button>
         ))}
       </view>
+      {error && <text className="validation">{error}</text>}
     </view>
   );
 }
@@ -434,10 +444,38 @@ export function Notice({ children }: { children: ReactNode }) {
     </view>
   );
 }
-let openDialogs = 0;
+// Open dialogs in mount order. Only the topmost dialog handles Escape, so a
+// nested confirmation closes without its parent dialog reacting to the same key.
+const dialogStack: string[] = [];
 export function hasOpenDialog() {
   "background only";
-  return openDialogs > 0;
+  return dialogStack.length > 0;
+}
+function isTopDialog(id: string) {
+  "background only";
+  return dialogStack[dialogStack.length - 1] === id;
+}
+// When a dialog and its nested confirmation close in the same update, focus
+// returns to the trigger of the lowest closing dialog; the confirmation's target
+// inside the closed parent no longer exists.
+let pendingFocus: { index: number; id?: string } | undefined;
+function returnFocus(index: number, id?: string) {
+  "background only";
+  if (pendingFocus) {
+    if (index < pendingFocus.index) pendingFocus = { index, id };
+    return;
+  }
+  pendingFocus = { index, id };
+  void Promise.resolve().then(() => {
+    const target = pendingFocus?.id;
+    pendingFocus = undefined;
+    if (target)
+      lynx
+        .createSelectorQuery()
+        .select(`#${target}`)
+        .invoke({ method: "setFocus", params: { focus: true } })
+        .exec();
+  });
 }
 export function Dialog({
   title,
@@ -463,30 +501,32 @@ export function Dialog({
   const [headingId] = useState(
     () => "dialog-heading-" + Math.random().toString(36).slice(2),
   );
+  // Declared before the stack registration so its cleanup still sees this
+  // dialog's stack position when both run on close.
   useEffect(() => {
     "background only";
-    openDialogs++;
     if (focusHeading)
       lynx
         .createSelectorQuery()
         .select(`#${headingId}`)
         .invoke({ method: "setFocus", params: { focus: true } })
         .exec();
-    return () => {
-      openDialogs--;
-      if (returnFocusId)
-        lynx
-          .createSelectorQuery()
-          .select(`#${returnFocusId}`)
-          .invoke({ method: "setFocus", params: { focus: true } })
-          .exec();
-    };
+    return () => returnFocus(dialogStack.lastIndexOf(headingId), returnFocusId);
   }, [focusHeading, headingId, returnFocusId]);
+  useEffect(() => {
+    "background only";
+    dialogStack.push(headingId);
+    return () => {
+      const index = dialogStack.lastIndexOf(headingId);
+      if (index >= 0) dialogStack.splice(index, 1);
+    };
+  }, [headingId]);
   return (
     <view
       className="overlay"
       global-bindkeydown={(e) => {
-        if (e.key === "Escape" && !closeDisabled) onClose();
+        if (e.key === "Escape" && !closeDisabled && isTopDialog(headingId))
+          onClose();
       }}
     >
       <view

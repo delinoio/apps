@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Operator configuration: every alert threshold lives here as a constant series.
+# Replace these initial values for the deployment, keep rules.test.yml in sync,
+# then validate with check.sh. Values are operational triggers, not SLOs.
+groups:
+  - name: mcpa-thresholds
+    interval: 30s
+    rules:
+      # Minimum model calls in the window before a call ratio can fire or recover.
+      - record: mcpa:threshold:call_min_samples
+        expr: vector(20)
+      # Fraction of calls that failed inside mcpa (internal or dependency rejection).
+      - record: mcpa:threshold:call_error_ratio
+        expr: vector(0.05)
+      # Fraction of a provider's calls that failed with 5xx or network errors.
+      - record: mcpa:threshold:provider_failure_ratio
+        expr: vector(0.25)
+      # Delcore authorization RPC failures (unavailable or error, not denials) per five minutes.
+      - record: mcpa:threshold:delcore_failures_5m
+        expr: vector(5)
+      # Pending billing outbox rows.
+      - record: mcpa:threshold:outbox_pending
+        expr: vector(1000)
+      # Age of the oldest pending billing outbox row in seconds.
+      - record: mcpa:threshold:outbox_oldest_age_seconds
+        expr: vector(900)
+      # Poisoned billing outbox rows kept until expiry.
+      - record: mcpa:threshold:outbox_poisoned
+        expr: vector(0)
+      # Failed metering checkpoint transactions per five minutes.
+      - record: mcpa:threshold:checkpoint_failures_5m
+        expr: vector(0)
+      # Budget rejections per fifteen minutes, per scope.
+      - record: mcpa:threshold:budget_rejections_15m
+        expr: vector(100)

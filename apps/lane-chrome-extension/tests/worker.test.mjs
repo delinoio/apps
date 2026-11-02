@@ -213,6 +213,12 @@ function createHarness({
   setAccessLevel = async () => {},
   tab: tabOverrides = {},
   executeScript = async () => [],
+  // Returns the native reply for a posted message, or undefined to hold it.
+  respond = (message) => ({
+    id: message.id,
+    ok: true,
+    ...(message.type === "connect" ? { token: "credential" } : {}),
+  }),
 } = {}) {
   const messages = event(),
     nativeMessages = event(),
@@ -242,13 +248,8 @@ function createHarness({
     onDisconnect: event(),
     postMessage(message) {
       sent.push(message);
-      queueMicrotask(() =>
-        nativeMessages.emit({
-          id: message.id,
-          ok: true,
-          ...(message.type === "connect" ? { token: "credential" } : {}),
-        }),
-      );
+      const reply = respond(message);
+      if (reply) queueMicrotask(() => nativeMessages.emit(reply));
     },
     disconnect() {},
   };
@@ -318,6 +319,7 @@ function createHarness({
     activations,
     calls,
     invoke,
+    port,
     setTab(value) {
       tabState = { ...tabState, ...value };
     },
@@ -736,5 +738,175 @@ test("incognito, internal, file, absent and malformed URLs are rejected safely",
     assert.equal(absent.calls.executeScript, 0);
   } finally {
     absent.dispose();
+  }
+});
+
+test("profile approval keeps waiting past the request timeout while the native port is open", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const harness = createHarness({
+    respond: (message) =>
+      message.type === "connect" ? undefined : { id: message.id, ok: true },
+  });
+  try {
+    await harness.load();
+    let reply;
+    harness.connect().then((value) => (reply = value));
+    await settle();
+    const connect = harness.sent.find((value) => value.type === "connect");
+    assert.ok(connect, "connect was sent");
+    t.mock.timers.tick(10 * 60 * 1000);
+    await settle();
+    assert.equal(reply, undefined, "approval is still awaited");
+    harness.nativeMessages.emit({ id: connect.id, ok: true, token: "late" });
+    await settle();
+    assert.equal(reply.ok, true);
+    assert.equal(harness.storage.token, "late");
+  } finally {
+    harness.dispose();
+  }
+});
+
+test("an approval already waiting in Lane gets a specific remedy", async () => {
+  const harness = createHarness({
+    respond: (message) => ({
+      id: message.id,
+      ok: false,
+      reason: "APPROVAL_PENDING",
+    }),
+  });
+  try {
+    await harness.load();
+    const reply = await harness.connect();
+    assert.equal(reply.ok, false);
+    assert.match(reply.message, /^Approve this Chrome profile in Lane\./);
+    await settle();
+    assert.equal(harness.session.status, reply.message);
+  } finally {
+    harness.dispose();
+  }
+});
+
+test("failures after a Lane-initiated selection are reported to Lane by code only", async () => {
+  const harness = createHarness({
+    executeScript: async () => [
+      {
+        result: {
+          url: "https://example.com/test",
+          width: 100,
+          height: 50,
+          scrollX: 0,
+          scrollY: 7,
+        },
+      },
+    ],
+  });
+  const sender = () => ({
+    tab: {
+      id: 1,
+      windowId: 7,
+      url: "https://example.com/test",
+      incognito: false,
+    },
+    frameId: 0,
+    id: chrome.runtime.id,
+  });
+  try {
+    await harness.load();
+    await harness.connect();
+    assert.equal(
+      (await harness.nativeSelect("from-lane", false)).reason,
+      undefined,
+    );
+    const failed = await harness.invoke(selectionMessage, sender());
+    assert.equal(failed.ok, false);
+    assert.equal(
+      failed.message,
+      "The page moved or changed during capture. Select the element again.",
+    );
+    await settle();
+    const reports = harness.sent.filter(
+      (value) => value.type === "captureFailed",
+    );
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0].reason, "PAGE_CHANGED");
+    assert.equal(JSON.stringify(reports[0]).includes("example.com"), false);
+    // A selection started from the extension itself reports only in Chrome.
+    assert.equal((await harness.invoke({ type: "capture" })).ok, true);
+    await harness.invoke(selectionMessage, sender());
+    await settle();
+    assert.equal(
+      harness.sent.filter((value) => value.type === "captureFailed").length,
+      1,
+    );
+  } finally {
+    harness.dispose();
+  }
+});
+
+test("Lane-side capture rejections show a specific extension remedy", async () => {
+  const harness = createHarness({
+    executeScript: async () => [
+      {
+        result: {
+          url: "https://example.com/test",
+          width: 100,
+          height: 50,
+          scrollX: 0,
+          scrollY: 0,
+        },
+      },
+    ],
+    respond: (message) =>
+      message.type === "capture"
+        ? { id: message.id, ok: false, reason: "LANE_SAVING" }
+        : {
+            id: message.id,
+            ok: true,
+            ...(message.type === "connect" ? { token: "credential" } : {}),
+          },
+  });
+  globalThis.createImageBitmap = async () => ({
+    width: 100,
+    height: 50,
+    close() {},
+  });
+  globalThis.OffscreenCanvas = class {
+    constructor(width, height) {
+      this.width = width;
+      this.height = height;
+    }
+    getContext() {
+      return { drawImage() {} };
+    }
+    async convertToBlob() {
+      return new Blob([new Uint8Array([1])], { type: "image/png" });
+    }
+  };
+  try {
+    await harness.load();
+    await harness.connect();
+    await harness.nativeSelect("from-lane", false);
+    const reply = await harness.invoke(selectionMessage, {
+      tab: {
+        id: 1,
+        windowId: 7,
+        url: "https://example.com/test",
+        incognito: false,
+      },
+      frameId: 0,
+      id: chrome.runtime.id,
+    });
+    assert.equal(reply.ok, false);
+    assert.match(reply.message, /Lane is saving the current task/);
+    await settle();
+    assert.equal(
+      harness.sent.filter((value) => value.type === "captureFailed").length,
+      0,
+      "Lane reports its own rejection",
+    );
+  } finally {
+    delete globalThis.createImageBitmap;
+    delete globalThis.OffscreenCanvas;
+    harness.dispose();
   }
 });

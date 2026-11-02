@@ -31,7 +31,7 @@ for (const action of ["install", "uninstall"]) {
       import cp from 'node:child_process';
       import {syncBuiltinESMExports} from 'node:module';
       // Keep this portable fixture from invoking any real registry command.
-      cp.execFileSync = cp.spawnSync = () => { throw new Error('UNEXPECTED_EXTERNAL_COMMAND'); };
+      cp.execFile = cp.execFileSync = cp.spawnSync = () => { throw new Error('UNEXPECTED_EXTERNAL_COMMAND'); };
       for (const name of ['mkdirSync','cpSync','rmSync','writeFileSync'])
         fs[name] = () => { throw new Error('UNEXPECTED_FILESYSTEM_WRITE'); };
       syncBuiltinESMExports();

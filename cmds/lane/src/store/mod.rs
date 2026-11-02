@@ -627,11 +627,21 @@ self.preferences(c)}
 ),
             "GetLocalStatus"=>self.with(false,|c|{
 let identity=self.identity()?;
-let count:i64=c.query_row("SELECT (SELECT count(*) FROM outbox) + (SELECT count(*) FROM attachments WHERE synchronized=0 OR png_base64 IS NULL)",[],|r|r.get(0))?;
+// Blocked attachments, like blocked outbox rows, remain unsynchronized local work.
+let count:i64=c.query_row("SELECT (SELECT count(*) FROM outbox) + (SELECT count(*) FROM attachments WHERE synchronized<>1 OR png_base64 IS NULL)",[],|r|r.get(0))?;
 let mut stmt=c.prepare("SELECT request_id,entity_id,error_reason FROM outbox WHERE error_reason IS NOT NULL ORDER BY request_id")?;
-let items=stmt.query_map([],|r|Ok(json!({
+let mut items=stmt.query_map([],|r|Ok(json!({
 "requestId":r.get::<_,String>(0)?,"entityId":r.get::<_,String>(1)?,"reason":r.get::<_,String>(2)?}
 )))?.collect::<std::result::Result<Vec<_>,_>>()?;
+// A permanently rejected attachment is reported per item; its request ID is the
+// attachment ID because image transfer has no mutation request.
+let mut stmt=c.prepare("SELECT id,task_id,synchronized FROM attachments WHERE synchronized IN (2,3) ORDER BY id")?;
+for row in stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?)))?{
+let(attachment,task,state)=row?;
+if let Some(reason)=crate::syncclient::blocked_attachment_reason(state){
+items.push(json!({"requestId":attachment,"entityId":task,"attachmentId":attachment,"reason":reason}));
+}
+}
 let mut out=json!({
 "spaceId":self.space,"deviceId":self.device,"accountId":identity.account,"syncEnabled":identity.enabled,"connected":false,"reconnectRequired":meta(c,"reconnect_required")?=="1","syncErrorReason":meta(c,"sync_error_reason")?,"pendingItemCount":count.to_string(),"itemErrors":items,"notificationPreferences":self.preferences(c)?}
 );

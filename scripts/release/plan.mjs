@@ -8,6 +8,7 @@ export const Component = Object.freeze({
   Devbase: "devbase",
   Perfine: "perfine",
   Lane: "lane",
+  Mcpa: "mcpa",
 });
 export const serverDependencies = Object.freeze({
   "delcore-api": [],
@@ -16,6 +17,7 @@ export const serverDependencies = Object.freeze({
   "delitools-api": ["delcore-api"],
   "perfine-api": ["delcore-api"],
   "lane-api": ["delcore-api"],
+  "mcpa-api": ["delcore-api"],
 });
 const owners = {
   "delino-site": "delino",
@@ -30,12 +32,15 @@ const owners = {
   lane: "lane",
   "lane-api": "lane",
   "perfine-api": "perfine",
+  mcpa: "mcpa",
+  "mcpa-api": "mcpa",
 };
 const frontendServers = {
   devbase: ["devbase-api"],
   "git-tracker": ["git-tracker-api"],
   lane: ["lane-api"],
   delitools: ["delitools-api"],
+  mcpa: ["mcpa-api"],
 };
 const weight = { none: 0, patch: 1, minor: 2, major: 3 };
 const greatest = (a = "none", b = "none") => (weight[a] >= weight[b] ? a : b);
@@ -56,7 +61,7 @@ export function makePlan(records, inventory, read, priorVersions = {}) {
       bumps[name] = greatest(bumps[name], bump);
       selected.add(name);
     }
-  // The protocol workspace also generates Rust bindings outside npm's graph.
+  // The protocol workspace also generates Rust and Go bindings outside npm's graph.
   if (selected.has("@repo/protos"))
     for (const server of Object.keys(serverDependencies))
       selected.add(`@servers/${server}`);

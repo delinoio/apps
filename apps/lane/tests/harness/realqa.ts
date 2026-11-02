@@ -12,6 +12,8 @@ const stubs: Record<string, string> = {
     export const captureModes = [["screen", "Full screen"], ["window", "Window"], ["region", "Region"], ["dom", "Chrome element"]];
     export const host = { realqa: async () => undefined };
     export const realqa = (input) => host.realqa(input);
+    export const desktopCaptureAvailable = () => true;
+    export const listenRealQA = () => () => undefined;
   `,
   "src/URLConnections.tsx": `export const URLConnections = () => null;`,
   "src/runtime.ts": `
@@ -43,6 +45,7 @@ export async function loadRealQA(): Promise<{
   RealQA: (props: any) => unknown;
   CaptureActions: (props: any) => unknown;
   RealQADialogs: (props: any) => unknown;
+  useRealQA: () => any;
   runtime: typeof import("./lynx-react.ts");
   captureHost: { realqa: (input: Record<string, unknown>) => Promise<unknown> };
   urlHost: { openURL: (value: string) => Promise<unknown> };
@@ -51,6 +54,7 @@ export async function loadRealQA(): Promise<{
     stdin: {
       contents: `
         export { RealQA, CaptureActions, RealQADialogs } from "./src/RealQA.tsx";
+        export { useRealQA } from "./src/useRealQA.ts";
         export * as runtime from "./tests/harness/lynx-react.ts";
         export { host as captureHost } from "./src/realqa-host.ts";
         export { host as urlHost } from "./src/runtime.ts";

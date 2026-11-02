@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Thresholds come from thresholds.yml. Durations are operator-configurable;
+# change them together with rules.test.yml. Initial values are not SLOs.
+groups:
+  - name: mcpa-alerts
+    interval: 30s
+    rules:
+      - alert: McpaTargetDown
+        expr: up{job="mcpa-api"} == 0
+        for: 5m
+        labels:
+          severity: critical
+      # Model calls that failed inside mcpa. Provider and customer outcomes are excluded.
+      - alert: McpaCallErrors
+        expr: |
+          (mcpa:call_errors:ratio5m > on() group_left() mcpa:threshold:call_error_ratio)
+          and on()
+          (mcpa:call_samples:5m >= on() group_left() mcpa:threshold:call_min_samples)
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          severity: warning
+      # Provider outages or egress problems. 429, 4xx and authentication results
+      # belong to customer-owned accounts and stay on the dashboard only.
+      - alert: McpaProviderFailures
+        expr: |
+          (mcpa:provider_failures:ratio15m > on() group_left() mcpa:threshold:provider_failure_ratio)
+          and
+          (mcpa:provider_calls:15m >= on() group_left() mcpa:threshold:call_min_samples)
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          severity: warning
+      # Calls fail closed while Delcore authorization is unavailable.
+      - alert: McpaDelcoreAuthorizationFailures
+        expr: mcpa:delcore_authorization_failures:5m > on() group_left() mcpa:threshold:delcore_failures_5m
+        for: 2m
+        keep_firing_for: 5m
+        labels:
+          severity: critical
+      - alert: McpaOutboxBacklog
+        expr: mcpa:outbox_pending:max > on() group_left() mcpa:threshold:outbox_pending
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          severity: warning
+      # Delivery stops at 30 days and expired rows are dropped without estimating.
+      - alert: McpaOutboxAge
+        expr: mcpa:outbox_oldest_pending_age_seconds:max > on() group_left() mcpa:threshold:outbox_oldest_age_seconds
+        keep_firing_for: 10m
+        labels:
+          severity: critical
+      - alert: McpaOutboxPoisoned
+        expr: mcpa:outbox_poisoned:max > on() group_left() mcpa:threshold:outbox_poisoned
+        labels:
+          severity: critical
+      # A failed checkpoint leaves measured bytes unbilled until the next successful one.
+      - alert: McpaMeteringCheckpointFailures
+        expr: mcpa:checkpoint_failures:5m > on() group_left() mcpa:threshold:checkpoint_failures_5m
+        keep_firing_for: 5m
+        labels:
+          severity: critical
+      # Budget rejections are customer-requested limits; a surge can also reveal
+      # a wrong billing period or price.
+      - alert: McpaBudgetRejections
+        expr: mcpa:budget_rejections:15m > on() group_left() mcpa:threshold:budget_rejections_15m
+        for: 5m
+        labels:
+          severity: info

@@ -1616,6 +1616,14 @@ text {
 .realqa-dialog .button text {
   word-break: break-all;
 }
+/* RealQA selected choices and tools also use a heavier underlined label, so the
+   selected state does not depend on the fill color alone. */
+.realqa-home .button[data-pressed="true"] text,
+.realqa-dialog .button[data-pressed="true"] text,
+.realqa-composer .button[data-pressed="true"] text {
+  font-weight: 700;
+  text-decoration: underline;
+}
 .realqa-composer {
   display: flex;
   flex-direction: column;

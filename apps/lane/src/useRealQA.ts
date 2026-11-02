@@ -8,9 +8,13 @@ import {
   type RealQAState,
 } from "./realqa-host";
 export function useRealQA() {
-  const [available, setAvailable] = useState(false);
+  // Unknown until the background thread checks the host, so desktop does not
+  // briefly render the mobile read-only entry.
+  const [available, setAvailable] = useState<boolean>();
   const [state, setState] = useState<RealQAState>();
   const [error, setError] = useState("");
+  // Mode of the in-app capture that failed most recently; offered for retry.
+  const [retryMode, setRetryMode] = useState<CaptureMode>();
   const [busy, setBusy] = useState(false);
   const [discard, setDiscard] = useState(false);
   const [saved, setSaved] = useState<{ taskId: string; spaceId?: string }>();
@@ -35,6 +39,7 @@ export function useRealQA() {
     ++revision.current;
     setBusy(true);
     setError("");
+    setRetryMode(undefined);
     try {
       await action();
       await refresh();
@@ -75,8 +80,18 @@ export function useRealQA() {
     });
     return run(() => realqa({ op: "updateDraft", ...patch }));
   };
-  const capture = (mode: CaptureMode) =>
+  const tracked = (mode: CaptureMode, action: () => Promise<unknown>) =>
     run(async () => {
+      try {
+        await action();
+      } catch (e) {
+        // The draft is unchanged; keep the failed mode for an explicit retry.
+        if (active.current) setRetryMode(mode);
+        throw e;
+      }
+    });
+  const capture = (mode: CaptureMode) =>
+    tracked(mode, async () => {
       if (mode === CaptureMode.Screen || mode === CaptureMode.Window) {
         const result = await realqa<{
           sources: {
@@ -88,6 +103,13 @@ export function useRealQA() {
         }>({ op: "sources", mode });
         setSources({ mode, sources: result.sources });
       } else await realqa({ op: "capture", mode });
+    });
+  // Capture the monitor or window chosen from the enumerated sources. A failure
+  // offers the same retry as a failed enumeration.
+  const captureSource = (mode: CaptureMode, sourceId: string) =>
+    tracked(mode, async () => {
+      setSources(undefined);
+      await realqa({ op: "capture", mode, sourceId });
     });
   useEffect(() => {
     active.current = true;
@@ -122,6 +144,8 @@ export function useRealQA() {
     updateDraft,
     state,
     error,
+    retryMode,
+    setRetryMode,
     busy,
     discard,
     setDiscard,
@@ -131,6 +155,7 @@ export function useRealQA() {
     setSources,
     run,
     capture,
+    captureSource,
     refresh,
   };
 }

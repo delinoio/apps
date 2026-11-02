@@ -9,7 +9,7 @@ import {
 import type { UI } from "./serializable";
 import type { LaneAdapter } from "./adapter";
 import { Button, Choices, Dialog, Field, Notice } from "./components";
-import { RealQADialogs } from "./RealQA";
+import { RealQADialogs, RetryCapture } from "./RealQA";
 import {
   EditTool,
   captureModes,
@@ -28,6 +28,16 @@ import {
   matchingRepository,
 } from "./captures-model";
 
+// Toolbar names, also used to identify annotation layers.
+export const toolLabels: Record<EditTool, string> = {
+  [EditTool.Crop]: "Crop",
+  [EditTool.Draw]: "Freehand",
+  [EditTool.Arrow]: "Arrow",
+  [EditTool.Rectangle]: "Rectangle",
+  [EditTool.Text]: "Text",
+  [EditTool.Blur]: "Blur",
+  [EditTool.Cover]: "Opaque cover",
+};
 export function CaptureComposer({
   controller,
   adapter,
@@ -419,24 +429,21 @@ export function CaptureComposer({
             )}
             <Choices
               label="Repository"
+              exclusive
               value={draft?.repositoryId || ""}
               options={options}
               disabled={saving || !repositoriesReady}
+              error={validation.repository || undefined}
               onChange={(repositoryId) => update({ repositoryId })}
             />
-            {validation.repository && (
-              <text className="validation">{validation.repository}</text>
-            )}
             <Field
               label="Title"
               focus
               value={draft?.title || ""}
               disabled={saving}
+              error={validation.title || undefined}
               onChange={(title) => update({ title })}
             />
-            {validation.title && (
-              <text className="validation">{validation.title}</text>
-            )}
             <Field
               label="Description"
               multiline
@@ -456,6 +463,12 @@ export function CaptureComposer({
                   <Notice>
                     A capture matches a different repository. Your selected
                     repository has not changed.
+                  </Notice>
+                )}
+                {image.clipped && (
+                  <Notice>
+                    This capture contains only the visible part of the element.
+                    Scroll and capture again to include more.
                   </Notice>
                 )}
                 {(
@@ -492,6 +505,7 @@ export function CaptureComposer({
               </view>
             )}
             {controller.error && <Notice>{controller.error}</Notice>}
+            <RetryCapture controller={controller} />
             {saveError && <Notice>{saveError} Your draft is retained.</Notice>}
             <text className="muted">
               Unsaved captures and layers stay in memory until you save or
@@ -683,24 +697,14 @@ function ImageEditor({
         {Object.values(EditTool).map((value) => (
           <Button
             key={value}
-            primary={tool === value}
+            pressed={tool === value}
             disabled={disabled}
             onClick={() => {
               setTool(value);
               if (value === EditTool.Text) setCoordinatesExpanded(true);
             }}
           >
-            {
-              {
-                crop: "Crop",
-                draw: "Freehand",
-                arrow: "Arrow",
-                rectangle: "Rectangle",
-                text: "Text",
-                blur: "Blur",
-                cover: "Opaque cover",
-              }[value]
-            }
+            {toolLabels[value]}
           </Button>
         ))}
         <Button
@@ -815,7 +819,7 @@ function ImageEditor({
       {image.layers.map((layer, index) => (
         <view className="row wrap composer-layer" key={index}>
           <text>
-            {index + 1}. {layer.type}
+            {index + 1}. {toolLabels[layer.type] ?? layer.type}
             {layer.text ? `: ${layer.text}` : ""}
           </text>
           <Button

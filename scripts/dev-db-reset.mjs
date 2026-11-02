@@ -40,6 +40,23 @@ export async function main({
       cwd: serverRoot,
     },
     {
+      // Go servers live in the root module and write beside the Cargo outputs.
+      event: "dev_db_build",
+      service: Api.Mcpa,
+      command: "go",
+      args: [
+        "build",
+        "-o",
+        resolve(
+          target,
+          "debug",
+          `mcpa-api${process.platform === "win32" ? ".exe" : ""}`,
+        ),
+        "./servers/mcpa-api",
+      ],
+      cwd: root,
+    },
+    {
       event: "dev_db_remove",
       command: "docker",
       args: ["compose", "down", "--volumes"],
@@ -89,7 +106,7 @@ if (
       JSON.stringify({
         event: "dev_db_reset_failed",
         message:
-          "Could not reset development databases. Check Docker, Cargo and service-local migration configuration.",
+          "Could not reset development databases. Check Docker, Cargo, Go and service-local migration configuration.",
       }),
     );
     process.exitCode = 1;

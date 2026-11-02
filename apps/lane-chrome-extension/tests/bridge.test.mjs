@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -13,7 +13,9 @@ import {
 } from "../../lane/native/desktop/chrome-framing.mjs";
 import { runNativeRelay } from "../../lane/native/desktop/chrome-native-host.mjs";
 import {
+  ensureNativeMessaging,
   installNativeMessaging,
+  RegistrationResult,
   removeNativeMessaging,
 } from "../scripts/native-registration.mjs";
 const extensionId = "a".repeat(32),
@@ -199,6 +201,111 @@ test("registration uses exact origins and removes only its own installation", as
     installNativeMessaging({ ...options, extensionIds: ["*"] }),
     /REAL_EXTENSION_IDS_REQUIRED/,
   );
+});
+
+test("the running host keeps the registration on its own relay", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lane-registration-ensure-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const relayExecutable = join(root, "Lane Relay");
+  await writeFile(relayExecutable, "");
+  const options = {
+    platform: "darwin",
+    home: root,
+    extensionIds: [extensionId],
+    relayExecutable,
+  };
+  assert.equal(
+    await ensureNativeMessaging(options),
+    RegistrationResult.Registered,
+  );
+  assert.equal(
+    await ensureNativeMessaging(options),
+    RegistrationResult.Current,
+  );
+  const path = await installNativeMessaging({
+    ...options,
+    relayExecutable: join(root, "Other Lane Relay"),
+  });
+  assert.equal(
+    await ensureNativeMessaging(options),
+    RegistrationResult.Registered,
+  );
+  assert.equal(JSON.parse(await readFile(path, "utf8")).path, relayExecutable);
+  const published = "b".repeat(32);
+  assert.equal(
+    await ensureNativeMessaging({
+      ...options,
+      extensionIds: [extensionId, published],
+    }),
+    RegistrationResult.Registered,
+  );
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")).allowed_origins, [
+    `chrome-extension://${extensionId}/`,
+    `chrome-extension://${published}/`,
+  ]);
+  await writeFile(path, "{");
+  assert.equal(
+    await ensureNativeMessaging(options),
+    RegistrationResult.Registered,
+  );
+  await removeNativeMessaging(options);
+  assert.equal(
+    await ensureNativeMessaging({
+      ...options,
+      relayExecutable:
+        "/private/var/folders/x/AppTranslocation/1/d/Lane.app/Contents/Resources/app/relay/lane-chrome-host",
+    }),
+    RegistrationResult.Translocated,
+  );
+  await assert.rejects(readFile(path), { code: "ENOENT" });
+  await assert.rejects(
+    ensureNativeMessaging({ ...options, relayExecutable: join(root, "none") }),
+    { code: "ENOENT" },
+  );
+  await assert.rejects(readFile(path), { code: "ENOENT" });
+});
+
+test("Windows registration repairs a missing registry value", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lane-registration-windows-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const relayExecutable = join(root, "lane-chrome-host.exe");
+  await writeFile(relayExecutable, "");
+  let value;
+  const calls = [];
+  const options = {
+    platform: "win32",
+    manifestDirectory: join(root, "native-messaging"),
+    extensionIds: [extensionId],
+    relayExecutable,
+    execFile: async (command, args) => {
+      calls.push(args[0]);
+      assert.equal(command, "reg.exe");
+      if (args[0] === "ADD") value = args[args.indexOf("/d") + 1];
+      if (args[0] === "DELETE") value = undefined;
+      if (args[0] === "QUERY" && !value) throw new Error("absent");
+      return { stdout: `\r\n    (Default)    REG_SZ    ${value}\r\n` };
+    },
+  };
+  const path = join(root, "native-messaging", "io.delino.lane.realqa.json");
+  assert.equal(
+    await ensureNativeMessaging(options),
+    RegistrationResult.Registered,
+  );
+  assert.equal(value, path);
+  assert.equal(
+    await ensureNativeMessaging(options),
+    RegistrationResult.Current,
+  );
+  value = undefined;
+  assert.equal(
+    await ensureNativeMessaging(options),
+    RegistrationResult.Registered,
+  );
+  assert.equal(value, path);
+  await removeNativeMessaging(options);
+  assert.equal(value, undefined);
+  await assert.rejects(readFile(path), { code: "ENOENT" });
+  assert.deepEqual(calls, ["ADD", "QUERY", "QUERY", "ADD", "QUERY", "DELETE"]);
 });
 
 test("revoking a pending approval prevents a late approval from restoring access", async (t) => {

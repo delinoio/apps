@@ -71,10 +71,13 @@
 - `apps/delino-docs`: Public documentation app for Delino services.
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
+- `apps/mcpa`: Managed CPA web console; its API server lives in `servers/mcpa-api`.
+- `servers/mcpa-api`: Managed CPA Go API server in the root Go module, the documented exception to the Rust server default; its protocol is `protos/mcpa/v1`.
 - `servers/delitools-api`: DeliTools translation and extraction API; its protocol is `protos/delitools/v1`.
 - `protos/delcore/v1`: Delcore schemas, generated Go and TypeScript messages and Connect bindings.
 - `protos/delitools/v1`: DeliTools schemas, generated Go and TypeScript messages and Connect bindings.
 - `protos/devbase/v1`: DevBase schemas, generated Go and TypeScript messages and Connect bindings.
+- `protos/mcpa/v1`: Managed CPA schemas, generated Go and TypeScript messages and Connect bindings.
 - `scripts/`: Shared build and development support.
 - `scripts/localization/`: Local ChatGPT translation generation and offline validation for Delino Site and Delino Docs; follow its scoped instructions.
 - `scripts/ci/`: Affected selection, validation and evidence tooling.
@@ -213,6 +216,14 @@ Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfin
 - Planned `apps/anydash` owns the shared ReactLynx client, the web host and the desktop, mobile and native widget hosts.
 - Planned `cmds/anydash` owns the Rust `anydash` CLI and shared collector in the root Cargo workspace; planned `servers/anydash-api` owns the Rust API and worker in the server workspace; planned `protos/anydash/v1` owns the schema and generated Go and TypeScript bindings; planned `packages/anydash` owns the `@delinoio/anydash` installer and install scripts.
 - Read [AnyDash project](docs/project-anydash.md) and the domain contracts it lists before changing these paths.
+
+## Managed CPA ownership
+
+- `servers/mcpa-api`: Go API server, embedded CLIProxyAPI data plane, PostgreSQL migrations, workers, OCI packaging and operator assets. It is the documented Go exception among FSL servers and builds from the root Go module.
+- `apps/mcpa`: Web console.
+- `protos/mcpa/v1`: Connect schema and generated Go and TypeScript bindings.
+
+Read [Managed CPA contracts](docs/project-mcpa.md) before changing these paths.
 
 ## Changeset procedure
 

@@ -808,7 +808,11 @@ This private runtime does not update Lynxtron's separately embedded runtime. The
 Lynxtron or the Lane application. `LANE_CHROME_EXTENSION_IDS` supplies exact,
 comma-separated development or published extension IDs at build time. An empty
 value leaves Chrome registration and the connection service disabled; it does
-not produce a placeholder store listing.
+not produce a placeholder store listing. `LANE_CHROME_WEB_STORE_EXTENSION_ID`
+optionally names the published extension. It must also appear in
+`LANE_CHROME_EXTENSION_IDS`; only then does RealQA offer `Install extension`
+for its Chrome Web Store listing. The build rejects malformed IDs in both
+variables.
 
 Windows builds require Node 24, CMake, Visual Studio with the MSVC C++ desktop
 toolchain, and a Windows 10/11 SDK containing `Windows.winmd`. Native shortcut
@@ -850,7 +854,10 @@ packaged relay for its configured extension IDs. It refuses to replace an
 existing installation. After quitting Lane, `node scripts/desktop.mjs uninstall`
 removes the matching registration and application; it preserves Lane user data.
 Registration removal verifies its owner so an obsolete installer cannot remove
-a newer installation's registration. The existing Windows signing/runtime
+a newer installation's registration. In that case, uninstall keeps the
+registration and still removes its own application. A started non-testing
+package also registers its own relay, so portable release archives need no
+installer step. Native-testing packages never change the user's registration. The existing Windows signing/runtime
 acceptance boundary still applies.
 
 Use a `LANE_NATIVE_TESTING=1` build with an absolute `LANE_NATIVE_TEST_ROOT` for

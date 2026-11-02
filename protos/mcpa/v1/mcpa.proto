@@ -1,0 +1,688 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package mcpa.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/apps/protos/mcpa/v1;mcpav1";
+
+// ErrorReason refines the Connect error code carried by every failure.
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_INVALID_INPUT = 1;
+  ERROR_REASON_UNAUTHENTICATED = 2;
+  ERROR_REASON_PERMISSION_DENIED = 3;
+  ERROR_REASON_NOT_FOUND = 4;
+  ERROR_REASON_ALREADY_EXISTS = 5;
+  ERROR_REASON_FAILED_PRECONDITION = 6;
+  // MFA_REQUIRED means the Logto token carries no MFA evidence. The detail
+  // contains the enrollment or reauthentication URL.
+  ERROR_REASON_MFA_REQUIRED = 7;
+  ERROR_REASON_DEPENDENCY_UNAVAILABLE = 8;
+  // TENANT_INACTIVE means Delcore reports the tenant as BLOCKED, DELETING,
+  // DELETED or UNKNOWN, or denies paid authorization.
+  ERROR_REASON_TENANT_INACTIVE = 9;
+  ERROR_REASON_BUDGET_EXHAUSTED = 10;
+  ERROR_REASON_MODEL_NOT_ALLOWED = 11;
+  ERROR_REASON_IDEMPOTENCY_CONFLICT = 12;
+  // TENANT_SERVICE_KEY_REJECTED means a Delcore tenant service key was used
+  // for management. Only personal keys are accepted.
+  ERROR_REASON_TENANT_SERVICE_KEY_REJECTED = 13;
+}
+
+// ErrorDetail is attached to every Connect error. The trace ID is a safe
+// correlation identifier that operators can use to find the request in logs.
+message ErrorDetail {
+  ErrorReason reason = 1;
+  string trace_id = 2;
+  // reauthentication_url is set for ERROR_REASON_MFA_REQUIRED.
+  string reauthentication_url = 3;
+}
+
+message Metadata {
+  string trace_id = 1;
+}
+
+// Page bounds a list request. size defaults to 50 and is at most 200.
+// after_id is the opaque next_after_id of the previous page.
+message Page {
+  int32 size = 1;
+  string after_id = 2;
+}
+
+// ResourceRole is a per-resource role. MANAGE implies every INVOKE action.
+enum ResourceRole {
+  RESOURCE_ROLE_UNSPECIFIED = 0;
+  // MANAGE permits settings, credentials, routing, ACL, budgets, all call
+  // keys, usage, errors and audit.
+  RESOURCE_ROLE_MANAGE = 1;
+  // INVOKE permits issuing and managing the caller's own call keys and
+  // viewing usage.
+  RESOURCE_ROLE_INVOKE = 2;
+}
+
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  // USER identifies a Delcore internal user ID.
+  PRINCIPAL_KIND_USER = 1;
+  // GROUP identifies a Delcore group ID in the resource's tenant.
+  PRINCIPAL_KIND_GROUP = 2;
+}
+
+// Provider identifies an upstream provider supported by the embedded
+// CLIProxyAPI SDK version.
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  // GEMINI is the Gemini API with API keys.
+  PROVIDER_GEMINI = 1;
+  // GEMINI_CLI is the Gemini CLI OAuth account.
+  PROVIDER_GEMINI_CLI = 2;
+  // VERTEX is Vertex AI with an API key or a service account.
+  PROVIDER_VERTEX = 3;
+  // CLAUDE is the Anthropic API with API keys or a Claude Code OAuth account.
+  PROVIDER_CLAUDE = 4;
+  // CODEX is the OpenAI API with API keys or a Codex OAuth account.
+  PROVIDER_CODEX = 5;
+  // ANTIGRAVITY is the Antigravity OAuth account.
+  PROVIDER_ANTIGRAVITY = 6;
+  // KIMI is the Kimi OAuth account or API key.
+  PROVIDER_KIMI = 7;
+  // OPENAI_COMPATIBLE is any OpenAI-compatible upstream with an API key.
+  PROVIDER_OPENAI_COMPATIBLE = 8;
+}
+
+enum CredentialKind {
+  CREDENTIAL_KIND_UNSPECIFIED = 0;
+  CREDENTIAL_KIND_OAUTH = 1;
+  CREDENTIAL_KIND_API_KEY = 2;
+}
+
+// EndpointFormat identifies a client wire format served under a resource.
+enum EndpointFormat {
+  ENDPOINT_FORMAT_UNSPECIFIED = 0;
+  // OPENAI covers Chat Completions, Completions, Responses and models.
+  ENDPOINT_FORMAT_OPENAI = 1;
+  // CLAUDE covers Messages, token counting and models.
+  ENDPOINT_FORMAT_CLAUDE = 2;
+  // GEMINI covers generateContent, streamGenerateContent and models.
+  ENDPOINT_FORMAT_GEMINI = 3;
+}
+
+enum LoadBalancing {
+  LOAD_BALANCING_UNSPECIFIED = 0;
+  // ROUND_ROBIN rotates across the resource's accounts of one provider.
+  LOAD_BALANCING_ROUND_ROBIN = 1;
+}
+
+message Endpoint {
+  EndpointFormat format = 1;
+  // base_url is the absolute base URL, for example
+  // https://mcpa.api.delino.io/r/<resource_id>/v1 for OpenAI.
+  string base_url = 2;
+}
+
+message RoutingSettings {
+  LoadBalancing load_balancing = 1;
+  // model_allowlist is empty to allow every model the resource's credentials
+  // can serve. A non-empty list allows only the exact listed model names.
+  repeated string model_allowlist = 2;
+}
+
+message Resource {
+  // id is a UUID v7.
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string description = 4;
+  RoutingSettings routing = 5;
+  repeated Endpoint endpoints = 6;
+  // caller_role is the effective role of the caller on this resource.
+  ResourceRole caller_role = 7;
+  string created_by_user_id = 8;
+  google.protobuf.Timestamp create_time = 9;
+  google.protobuf.Timestamp update_time = 10;
+}
+
+message AclEntry {
+  string resource_id = 1;
+  PrincipalKind principal_kind = 2;
+  string principal_id = 3;
+  ResourceRole role = 4;
+  string created_by_user_id = 5;
+  google.protobuf.Timestamp create_time = 6;
+}
+
+message Credential {
+  string id = 1;
+  string resource_id = 2;
+  Provider provider = 3;
+  CredentialKind kind = 4;
+  // name is the customer-supplied label.
+  string name = 5;
+  // account_label is a non-secret account identifier reported by an OAuth
+  // provider, such as an email address. It is empty for API keys.
+  string account_label = 6;
+  // secret_hint is the last four characters of an API key. It is empty for
+  // OAuth credentials.
+  string secret_hint = 7;
+  // base_url is set for OPENAI_COMPATIBLE and optional Vertex endpoints.
+  string base_url = 8;
+  // models lists the upstream model names declared for OPENAI_COMPATIBLE.
+  repeated string models = 9;
+  string created_by_user_id = 10;
+  google.protobuf.Timestamp create_time = 11;
+}
+
+enum OauthFlowKind {
+  OAUTH_FLOW_KIND_UNSPECIFIED = 0;
+  // AUTHORIZATION_CODE requires the customer to open authorization_url and
+  // submit the final redirect URL with CompleteProviderOAuth.
+  OAUTH_FLOW_KIND_AUTHORIZATION_CODE = 1;
+  // DEVICE_CODE requires the customer to enter user_code at
+  // verification_uri. GetProviderOAuthFlow polls the provider.
+  OAUTH_FLOW_KIND_DEVICE_CODE = 2;
+}
+
+enum OauthFlowState {
+  OAUTH_FLOW_STATE_UNSPECIFIED = 0;
+  OAUTH_FLOW_STATE_PENDING = 1;
+  OAUTH_FLOW_STATE_COMPLETED = 2;
+  OAUTH_FLOW_STATE_FAILED = 3;
+  OAUTH_FLOW_STATE_EXPIRED = 4;
+}
+
+message ProviderOAuthFlow {
+  string id = 1;
+  string resource_id = 2;
+  Provider provider = 3;
+  OauthFlowKind kind = 4;
+  OauthFlowState state = 5;
+  string authorization_url = 6;
+  string user_code = 7;
+  string verification_uri = 8;
+  google.protobuf.Timestamp expire_time = 9;
+  // credential_id is set when state is COMPLETED.
+  string credential_id = 10;
+  // failure_message is a safe, secret-free description when state is FAILED.
+  string failure_message = 11;
+}
+
+message CallKey {
+  string id = 1;
+  string resource_id = 2;
+  string name = 3;
+  // display_prefix identifies the key, for example "mcpa_0192ab...". It never
+  // contains the secret part.
+  string display_prefix = 4;
+  string issuer_user_id = 5;
+  google.protobuf.Timestamp create_time = 6;
+  // expire_time is unset when the key has no expiry date.
+  google.protobuf.Timestamp expire_time = 7;
+  google.protobuf.Timestamp last_used_time = 8;
+  google.protobuf.Timestamp revoke_time = 9;
+}
+
+// Budget is an optional USD limit for one Delcore billing period.
+message Budget {
+  // limit_usd is a canonical decimal string. Empty means no limit.
+  string limit_usd = 1;
+  // spent_usd is the estimated measured spend in the current period.
+  string spent_usd = 2;
+  google.protobuf.Timestamp period_start = 3;
+  google.protobuf.Timestamp period_end = 4;
+  bool exhausted = 5;
+}
+
+// CallStatus is the outcome category of one model call.
+enum CallStatus {
+  CALL_STATUS_UNSPECIFIED = 0;
+  CALL_STATUS_SUCCEEDED = 1;
+  // PROVIDER_ERROR means the provider returned an error status.
+  CALL_STATUS_PROVIDER_ERROR = 2;
+  // PROVIDER_AUTH_ERROR means the provider rejected an expired or invalid
+  // credential.
+  CALL_STATUS_PROVIDER_AUTH_ERROR = 3;
+  CALL_STATUS_CLIENT_CANCELLED = 4;
+  CALL_STATUS_STREAM_INTERRUPTED = 5;
+  CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED = 6;
+  CALL_STATUS_REJECTED_BUDGET = 7;
+  CALL_STATUS_REJECTED_TENANT = 8;
+  CALL_STATUS_REJECTED_DEPENDENCY = 9;
+  CALL_STATUS_NO_CREDENTIAL = 10;
+  CALL_STATUS_INTERNAL_ERROR = 11;
+}
+
+// StatusClass is the HTTP status class returned by the provider.
+enum StatusClass {
+  STATUS_CLASS_UNSPECIFIED = 0;
+  STATUS_CLASS_2XX = 1;
+  STATUS_CLASS_3XX = 2;
+  STATUS_CLASS_4XX = 3;
+  // 429 is reported separately from other 4xx responses.
+  STATUS_CLASS_429 = 4;
+  STATUS_CLASS_5XX = 5;
+  // NONE means no provider response was received.
+  STATUS_CLASS_NONE = 6;
+}
+
+// CallRecord is the metadata of one model call. It never contains request or
+// response bodies.
+message CallRecord {
+  string id = 1;
+  string resource_id = 2;
+  string call_key_id = 3;
+  Provider provider = 4;
+  string model = 5;
+  CallStatus status = 6;
+  StatusClass provider_status_class = 7;
+  // error_class is a bounded, secret-free classifier such as "rate_limited".
+  string error_class = 8;
+  int64 request_bytes = 9;
+  int64 response_bytes = 10;
+  int64 latency_ms = 11;
+  // request_id is the debug identifier returned to the caller.
+  string request_id = 12;
+  google.protobuf.Timestamp start_time = 13;
+  EndpointFormat format = 14;
+  bool streaming = 15;
+}
+
+message CallFilter {
+  repeated string resource_ids = 1;
+  repeated string models = 2;
+  repeated Provider providers = 3;
+  repeated string call_key_ids = 4;
+  repeated CallStatus statuses = 5;
+  google.protobuf.Timestamp start_time = 6;
+  google.protobuf.Timestamp end_time = 7;
+}
+
+// UsageRow is a daily aggregate for one resource, model, provider, call key
+// and status.
+message UsageRow {
+  google.protobuf.Timestamp day = 1;
+  string resource_id = 2;
+  string model = 3;
+  Provider provider = 4;
+  string call_key_id = 5;
+  CallStatus status = 6;
+  int64 call_count = 7;
+  int64 request_bytes = 8;
+  int64 response_bytes = 9;
+}
+
+message UsageSummary {
+  int64 call_count = 1;
+  int64 request_bytes = 2;
+  int64 response_bytes = 3;
+  int64 total_bytes = 4;
+  // total_gib is total_bytes / 2^30 as a canonical decimal string.
+  string total_gib = 5;
+  // estimated_usd is total_gib * 0.07 as a canonical decimal string. Delcore
+  // issues the final bill.
+  string estimated_usd = 6;
+}
+
+enum AuditAction {
+  AUDIT_ACTION_UNSPECIFIED = 0;
+  AUDIT_ACTION_RESOURCE_CREATED = 1;
+  AUDIT_ACTION_RESOURCE_UPDATED = 2;
+  AUDIT_ACTION_RESOURCE_DELETED = 3;
+  AUDIT_ACTION_CREDENTIAL_REGISTERED = 4;
+  AUDIT_ACTION_CREDENTIAL_REMOVED = 5;
+  AUDIT_ACTION_CALL_KEY_ISSUED = 6;
+  AUDIT_ACTION_CALL_KEY_REVOKED = 7;
+  AUDIT_ACTION_ACL_CHANGED = 8;
+  AUDIT_ACTION_ROUTING_CHANGED = 9;
+  AUDIT_ACTION_RESOURCE_BUDGET_CHANGED = 10;
+  AUDIT_ACTION_TENANT_BUDGET_CHANGED = 11;
+}
+
+// ActorKind identifies how the actor authenticated.
+enum ActorKind {
+  ACTOR_KIND_UNSPECIFIED = 0;
+  ACTOR_KIND_CONSOLE = 1;
+  ACTOR_KIND_MCP = 2;
+  ACTOR_KIND_PERSONAL_KEY = 3;
+  ACTOR_KIND_SYSTEM = 4;
+}
+
+message AuditEvent {
+  string id = 1;
+  string tenant_id = 2;
+  string resource_id = 3;
+  AuditAction action = 4;
+  ActorKind actor_kind = 5;
+  string actor_user_id = 6;
+  // target_id identifies the changed entity, such as a credential or key ID.
+  string target_id = 7;
+  // details holds bounded, secret-free attributes of the change.
+  map<string, string> details = 8;
+  google.protobuf.Timestamp occur_time = 9;
+}
+
+message Tenant {
+  string id = 1;
+  string name = 2;
+  bool personal = 3;
+}
+
+message Viewer {
+  string user_id = 1;
+  repeated Tenant tenants = 2;
+  ActorKind actor_kind = 3;
+}
+
+message Group {
+  string id = 1;
+  string name = 2;
+}
+
+message GetViewerRequest {}
+message GetViewerResponse {
+  Metadata metadata = 1;
+  Viewer viewer = 2;
+}
+
+message ListTenantGroupsRequest {
+  string tenant_id = 1;
+}
+message ListTenantGroupsResponse {
+  Metadata metadata = 1;
+  repeated Group groups = 2;
+}
+
+message CreateResourceRequest {
+  // request_key is a client-generated UUID v7 idempotency key.
+  string request_key = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string description = 4;
+}
+message CreateResourceResponse {
+  Metadata metadata = 1;
+  Resource resource = 2;
+}
+
+message GetResourceRequest {
+  string resource_id = 1;
+}
+message GetResourceResponse {
+  Metadata metadata = 1;
+  Resource resource = 2;
+}
+
+message ListResourcesRequest {
+  string tenant_id = 1;
+  Page page = 2;
+}
+message ListResourcesResponse {
+  Metadata metadata = 1;
+  // resources contains only resources on which the caller has a role.
+  repeated Resource resources = 2;
+  string next_after_id = 3;
+}
+
+message UpdateResourceRequest {
+  string resource_id = 1;
+  string name = 2;
+  string description = 3;
+}
+message UpdateResourceResponse {
+  Metadata metadata = 1;
+  Resource resource = 2;
+}
+
+message DeleteResourceRequest {
+  string resource_id = 1;
+  // confirm_name must equal the resource name.
+  string confirm_name = 2;
+}
+message DeleteResourceResponse {
+  Metadata metadata = 1;
+}
+
+message UpdateRoutingRequest {
+  string resource_id = 1;
+  RoutingSettings routing = 2;
+}
+message UpdateRoutingResponse {
+  Metadata metadata = 1;
+  Resource resource = 2;
+}
+
+message ListAclEntriesRequest {
+  string resource_id = 1;
+}
+message ListAclEntriesResponse {
+  Metadata metadata = 1;
+  repeated AclEntry entries = 2;
+}
+
+message PutAclEntryRequest {
+  string resource_id = 1;
+  PrincipalKind principal_kind = 2;
+  string principal_id = 3;
+  ResourceRole role = 4;
+}
+message PutAclEntryResponse {
+  Metadata metadata = 1;
+  AclEntry entry = 2;
+}
+
+message RemoveAclEntryRequest {
+  string resource_id = 1;
+  PrincipalKind principal_kind = 2;
+  string principal_id = 3;
+}
+message RemoveAclEntryResponse {
+  Metadata metadata = 1;
+}
+
+message ListCredentialsRequest {
+  string resource_id = 1;
+}
+message ListCredentialsResponse {
+  Metadata metadata = 1;
+  repeated Credential credentials = 2;
+}
+
+message RegisterApiKeyCredentialRequest {
+  string resource_id = 1;
+  Provider provider = 2;
+  string name = 3;
+  // api_key is the provider secret. It is never returned or logged.
+  string api_key = 4;
+  string base_url = 5;
+  repeated string models = 6;
+}
+message RegisterApiKeyCredentialResponse {
+  Metadata metadata = 1;
+  Credential credential = 2;
+}
+
+message RemoveCredentialRequest {
+  string resource_id = 1;
+  string credential_id = 2;
+}
+message RemoveCredentialResponse {
+  Metadata metadata = 1;
+}
+
+message StartProviderOAuthRequest {
+  string resource_id = 1;
+  Provider provider = 2;
+  string name = 3;
+}
+message StartProviderOAuthResponse {
+  Metadata metadata = 1;
+  ProviderOAuthFlow flow = 2;
+}
+
+message CompleteProviderOAuthRequest {
+  string resource_id = 1;
+  string flow_id = 2;
+  // callback_url is the full redirect URL that the provider returned to the
+  // browser after consent.
+  string callback_url = 3;
+}
+message CompleteProviderOAuthResponse {
+  Metadata metadata = 1;
+  ProviderOAuthFlow flow = 2;
+}
+
+message GetProviderOAuthFlowRequest {
+  string resource_id = 1;
+  string flow_id = 2;
+}
+message GetProviderOAuthFlowResponse {
+  Metadata metadata = 1;
+  ProviderOAuthFlow flow = 2;
+}
+
+message IssueCallKeyRequest {
+  string request_key = 1;
+  string resource_id = 2;
+  string name = 3;
+  google.protobuf.Timestamp expire_time = 4;
+}
+message IssueCallKeyResponse {
+  Metadata metadata = 1;
+  CallKey call_key = 2;
+  // secret is returned once, by the first execution of the request key.
+  string secret = 3;
+}
+
+message ListCallKeysRequest {
+  string resource_id = 1;
+  Page page = 2;
+}
+message ListCallKeysResponse {
+  Metadata metadata = 1;
+  // call_keys contains all keys for managers and the caller's own keys for
+  // invokers.
+  repeated CallKey call_keys = 2;
+  string next_after_id = 3;
+}
+
+message RevokeCallKeyRequest {
+  string resource_id = 1;
+  string call_key_id = 2;
+}
+message RevokeCallKeyResponse {
+  Metadata metadata = 1;
+  CallKey call_key = 2;
+}
+
+message GetResourceBudgetRequest {
+  string resource_id = 1;
+}
+message GetResourceBudgetResponse {
+  Metadata metadata = 1;
+  Budget budget = 2;
+}
+
+message SetResourceBudgetRequest {
+  string resource_id = 1;
+  // limit_usd is a canonical nonnegative decimal, or empty to remove the limit.
+  string limit_usd = 2;
+}
+message SetResourceBudgetResponse {
+  Metadata metadata = 1;
+  Budget budget = 2;
+}
+
+message GetTenantBudgetRequest {
+  string tenant_id = 1;
+}
+message GetTenantBudgetResponse {
+  Metadata metadata = 1;
+  Budget budget = 2;
+}
+
+message SetTenantBudgetRequest {
+  string tenant_id = 1;
+  string limit_usd = 2;
+}
+message SetTenantBudgetResponse {
+  Metadata metadata = 1;
+  Budget budget = 2;
+}
+
+message GetUsageRequest {
+  string tenant_id = 1;
+  CallFilter filter = 2;
+  Page page = 3;
+}
+message GetUsageResponse {
+  Metadata metadata = 1;
+  UsageSummary summary = 2;
+  repeated UsageRow rows = 3;
+  string next_after_id = 4;
+}
+
+message ListCallRecordsRequest {
+  string tenant_id = 1;
+  CallFilter filter = 2;
+  Page page = 3;
+}
+message ListCallRecordsResponse {
+  Metadata metadata = 1;
+  repeated CallRecord records = 2;
+  string next_after_id = 3;
+}
+
+message ListAuditEventsRequest {
+  string resource_id = 1;
+  Page page = 2;
+}
+message ListAuditEventsResponse {
+  Metadata metadata = 1;
+  repeated AuditEvent events = 2;
+  string next_after_id = 3;
+}
+
+// ListTenantAuditEventsRequest lists the tenant-level audit events, which
+// have no owning resource (tenant budget changes).
+message ListTenantAuditEventsRequest {
+  string tenant_id = 1;
+  Page page = 2;
+}
+message ListTenantAuditEventsResponse {
+  Metadata metadata = 1;
+  repeated AuditEvent events = 2;
+  string next_after_id = 3;
+}
+
+// McpaService is the management interface. Console sessions, interactive MCP
+// sessions and Delcore personal keys use the same handlers.
+service McpaService {
+  rpc GetViewer(GetViewerRequest) returns (GetViewerResponse);
+  rpc ListTenantGroups(ListTenantGroupsRequest) returns (ListTenantGroupsResponse);
+  rpc CreateResource(CreateResourceRequest) returns (CreateResourceResponse);
+  rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  rpc UpdateResource(UpdateResourceRequest) returns (UpdateResourceResponse);
+  rpc DeleteResource(DeleteResourceRequest) returns (DeleteResourceResponse);
+  rpc UpdateRouting(UpdateRoutingRequest) returns (UpdateRoutingResponse);
+  rpc ListAclEntries(ListAclEntriesRequest) returns (ListAclEntriesResponse);
+  rpc PutAclEntry(PutAclEntryRequest) returns (PutAclEntryResponse);
+  rpc RemoveAclEntry(RemoveAclEntryRequest) returns (RemoveAclEntryResponse);
+  rpc ListCredentials(ListCredentialsRequest) returns (ListCredentialsResponse);
+  rpc RegisterApiKeyCredential(RegisterApiKeyCredentialRequest) returns (RegisterApiKeyCredentialResponse);
+  rpc RemoveCredential(RemoveCredentialRequest) returns (RemoveCredentialResponse);
+  rpc StartProviderOAuth(StartProviderOAuthRequest) returns (StartProviderOAuthResponse);
+  rpc CompleteProviderOAuth(CompleteProviderOAuthRequest) returns (CompleteProviderOAuthResponse);
+  rpc GetProviderOAuthFlow(GetProviderOAuthFlowRequest) returns (GetProviderOAuthFlowResponse);
+  rpc IssueCallKey(IssueCallKeyRequest) returns (IssueCallKeyResponse);
+  rpc ListCallKeys(ListCallKeysRequest) returns (ListCallKeysResponse);
+  rpc RevokeCallKey(RevokeCallKeyRequest) returns (RevokeCallKeyResponse);
+  rpc GetResourceBudget(GetResourceBudgetRequest) returns (GetResourceBudgetResponse);
+  rpc SetResourceBudget(SetResourceBudgetRequest) returns (SetResourceBudgetResponse);
+  rpc GetTenantBudget(GetTenantBudgetRequest) returns (GetTenantBudgetResponse);
+  rpc SetTenantBudget(SetTenantBudgetRequest) returns (SetTenantBudgetResponse);
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse);
+  rpc ListCallRecords(ListCallRecordsRequest) returns (ListCallRecordsResponse);
+  rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse);
+  rpc ListTenantAuditEvents(ListTenantAuditEventsRequest) returns (ListTenantAuditEventsResponse);
+}

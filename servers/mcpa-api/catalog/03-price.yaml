@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# USD 0.07 per GiB (2^30 bytes), expressed per byte, with no included usage
+# and no per-request fee. Add one usage price like this to every plan that may
+# use Managed CPA; example-free is the development default plan declared in
+# servers/delcore-api/catalog.
+kind: price
+key: mcpa-traffic
+plan: example-free
+service: mcpa
+meter: mcpa-traffic-bytes
+price_kind: usage
+unit_price: "0.00000000006519258022308349609375"
+included: "0"
+currency: USD

@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+rule_files: [recording.yml]
+evaluation_interval: 30s
+fuzzy_compare: true
+tests:
+  # Rejections before provider contact are excluded from provider call counts.
+  - name: call, provider, Delcore and budget windows count only their categories
+    interval: 30s
+    input_series:
+      - series: mcpa_calls_total{format="openai",provider="codex",status="succeeded"}
+        values: "0+18x40"
+      - series: mcpa_calls_total{format="openai",provider="codex",status="internal_error"}
+        values: "0+1x40"
+      - series: mcpa_calls_total{format="claude",provider="codex",status="rejected_dependency"}
+        values: "0+1x40"
+      - series: mcpa_calls_total{format="gemini",provider="codex",status="rejected_budget"}
+        values: "0+0x40"
+      - series: mcpa_provider_failures_total{provider="codex",status_class="5xx"}
+        values: "0+2x40"
+      - series: mcpa_provider_failures_total{provider="codex",status_class="network"}
+        values: "0+1x40"
+      - series: mcpa_provider_failures_total{provider="codex",status_class="429"}
+        values: "0+3x40"
+      - series: mcpa_provider_failures_total{provider="codex",status_class="auth"}
+        values: "0+3x40"
+      - series: mcpa_delcore_failures_total{rpc="Authorize",kind="unavailable"}
+        values: "0+1x40"
+      - series: mcpa_delcore_failures_total{rpc="Authorize",kind="denied"}
+        values: "0+5x40"
+      - series: mcpa_delcore_failures_total{rpc="IngestEvent",kind="error"}
+        values: "0+1x40"
+      - series: mcpa_metering_checkpoint_failures_total{instance="a"}
+        values: "0+1x40"
+      - series: mcpa_budget_rejections_total{scope="resource"}
+        values: "0+2x40"
+      - series: mcpa_budget_rejections_total{scope="tenant"}
+        values: "0+1x40"
+    promql_expr_test:
+      - expr: mcpa:call_samples:5m
+        eval_time: 20m
+        exp_samples: [{ labels: "mcpa:call_samples:5m", value: 200 }]
+      - expr: mcpa:call_errors:ratio5m
+        eval_time: 20m
+        exp_samples: [{ labels: "mcpa:call_errors:ratio5m", value: 0.1 }]
+      - expr: mcpa:provider_calls:15m
+        eval_time: 20m
+        exp_samples:
+          [{ labels: 'mcpa:provider_calls:15m{provider="codex"}', value: 570 }]
+      - expr: mcpa:provider_failures:ratio15m
+        eval_time: 20m
+        exp_samples:
+          [
+            {
+              labels: 'mcpa:provider_failures:ratio15m{provider="codex"}',
+              value: 0.15789473684210528,
+            },
+          ]
+      - expr: mcpa:delcore_authorization_failures:5m
+        eval_time: 20m
+        exp_samples:
+          [
+            {
+              labels: 'mcpa:delcore_authorization_failures:5m{rpc="Authorize"}',
+              value: 10,
+            },
+          ]
+      - expr: mcpa:checkpoint_failures:5m
+        eval_time: 20m
+        exp_samples: [{ labels: "mcpa:checkpoint_failures:5m", value: 10 }]
+      - expr: mcpa:budget_rejections:15m
+        eval_time: 20m
+        exp_samples:
+          [
+            {
+              labels: 'mcpa:budget_rejections:15m{scope="resource"}',
+              value: 60,
+            },
+            { labels: 'mcpa:budget_rejections:15m{scope="tenant"}', value: 30 },
+          ]
+  - name: replicated outbox gauges use the maximum, never the sum
+    interval: 30s
+    input_series:
+      - series: mcpa_outbox_pending{instance="a"}
+        values: "7x4"
+      - series: mcpa_outbox_pending{instance="b"}
+        values: "7x4"
+      - series: mcpa_outbox_oldest_pending_age_seconds{instance="a"}
+        values: "120x4"
+      - series: mcpa_outbox_oldest_pending_age_seconds{instance="b"}
+        values: "90x4"
+      - series: mcpa_outbox_poisoned{instance="a"}
+        values: "2x4"
+      - series: mcpa_outbox_poisoned{instance="b"}
+        values: "2x4"
+    promql_expr_test:
+      - expr: mcpa:outbox_pending:max
+        eval_time: 1m
+        exp_samples: [{ labels: "mcpa:outbox_pending:max", value: 7 }]
+      - expr: mcpa:outbox_oldest_pending_age_seconds:max
+        eval_time: 1m
+        exp_samples:
+          [{ labels: "mcpa:outbox_oldest_pending_age_seconds:max", value: 120 }]
+      - expr: mcpa:outbox_poisoned:max
+        eval_time: 1m
+        exp_samples: [{ labels: "mcpa:outbox_poisoned:max", value: 2 }]

@@ -374,6 +374,17 @@ impl Fx {
         assert_eq!(response.status(), axum::http::StatusCode::OK);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let text = std::str::from_utf8(&body).unwrap();
+        for gauge in [
+            "lane_attachment_pending_publications ",
+            "lane_attachment_pending_deletions ",
+        ] {
+            assert!(
+                text.lines().any(|line| line
+                    .strip_prefix(gauge)
+                    .is_some_and(|n| n.parse::<i64>().is_ok())),
+                "{gauge}"
+            );
+        }
         text.lines()
             .find_map(|line| line.strip_prefix("lane_sync_pending_failures "))
             .unwrap()

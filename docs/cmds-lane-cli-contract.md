@@ -266,7 +266,15 @@ MCP discovery includes the CaptureService request schemas and attachment/rule
 operations. Upload preparation/completion are online-only. The local sync worker
 negotiates the current format (3), publishes manifests before signed uploads, and validates
 image digests, sizes and dimensions before storing downloads. A failed image
-transfer preserves local bytes and does not stop unrelated transfers. Account
+transfer preserves local bytes and does not stop unrelated transfers. An image
+that is waiting is pending, not a failure: another device has not uploaded it, the
+server does not yet know it or reports its owner deleted, or its task creation is
+still unacknowledged. A size or invalid-content refusal blocks only that image, as
+described in the local-store contract; it does not fail the cycle. Other transfer
+failures keep the existing retry and backoff. Attachment transfer failures enter the
+local operation log with operation, reason, correlation ID and duration. Before
+saving, the CLI applies the native store's structural PNG rules; the server also
+decodes the pixel stream. Account
 epoch changes require renewed explicit approval and re-upload retained images;
 standalone import copies required historical images and rules into the approved
 account space without relabeling data already assigned to another account.

@@ -727,6 +727,7 @@ int main(int argc, char** argv) {
     {"legacy capture defaults",capture_legacy_empty_defaults},
     {"capture lifecycle",capture_lifecycle},
     {"capture upload handoff",capture_upload_handoff},
+    {"blocked capture status and retry",capture_blocked_attachment_status_and_retry},
     {"moved capture retained history import", moved_capture_and_rule_import_retained_history},
     {"attachment identity deletion and import", attachment_identity_survives_deletion_and_import},
     {"moved capture deleted repository replay", moved_capture_survives_deleted_repository_replay},

@@ -8,6 +8,8 @@ Repository-owned files outside `servers/`, including clients, shared protocol so
 
 Include `servers/LICENSE` and `servers/NOTICE` with server distributions, and root `LICENSE` and `NOTICE` for included Apache-2.0 protocol code. Other distributions include root `LICENSE` and `NOTICE`. Preserve third-party licenses, copyright notices and CEF notices. Imported third-party code and bundled fonts retain their original licenses; neither repository license replaces them.
 
+Server distributions that embed third-party code carry its license text and copyright notice in the third-party section of `servers/NOTICE`. The Managed CPA API embeds the MIT-licensed CLIProxyAPI SDK, so `servers/NOTICE` reproduces the CLIProxyAPI MIT license and copyright notice, and the `mcpa-api` image includes `servers/LICENSE` and `servers/NOTICE`. The Managed CPA server files remain FSL-1.1-ALv2 even though they live in the root Go module beside Apache-2.0 protocol packages.
+
 Official terms: [FSL-1.1-ALv2](https://fsl.software/FSL-1.1-ALv2.template.md) and [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
 
 ## Server Rust workspace
