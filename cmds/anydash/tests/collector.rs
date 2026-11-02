@@ -378,19 +378,13 @@ async fn access_token_is_refreshed_before_expiry_and_stored_first() {
         mock.count("/anydash.v1.DeviceService/RefreshDeviceToken"),
         0
     );
-    // A reader beside a running collector never rotates the refresh token.
+    // A token within the refresh margin is rotated.
     let home2 = tempfile::tempdir().unwrap();
     let state2 = Arc::new(Mutex::new(Api {
         access_expires: time::now() + 120,
         ..Api::default()
     }));
     let (mock2, core2) = logged_in(home2.path(), &state2, Owner::Direct).await;
-    let reader = support::core(home2.path(), &mock2, Owner::Reader, &[]);
-    assert_eq!(reader.access_token().await.unwrap(), "ada_0");
-    assert_eq!(
-        mock2.count("/anydash.v1.DeviceService/RefreshDeviceToken"),
-        0
-    );
     assert_eq!(core2.access_token().await.unwrap(), "ada_1");
     let refresh: RefreshDeviceTokenRequest = support::decode(
         &mock2
@@ -1054,6 +1048,195 @@ async fn quit_interrupts_a_running_provider_poll_and_releases_leases() {
         .unwrap();
     assert_eq!(mock.count("/anydash.v1.CollectorService/ReleaseLease"), 1);
     assert_eq!(mock.count("/anydash.v1.CollectorService/ReportSnapshot"), 0);
+}
+struct NoRunner;
+impl anydash::service::Runner for NoRunner {
+    fn run(&mut self, _: &str, _: &[String]) -> anydash::error::Result<()> {
+        Ok(())
+    }
+}
+/// Run the CLI with the API at `api_url`.
+async fn run_cli(home: &Path, api_url: &str, args: &[&str]) -> (i32, serde_json::Value) {
+    let mut env = anydash::cli::Env {
+        settings: support::settings(home, &[("ANYDASH_API_URL", api_url)]),
+        endpoints: anydash::providers::Endpoints::mock(api_url, "grok-not-installed-for-tests"),
+        os: Arc::new(anydash::keys::MemoryStore::default()),
+        exe: home.join("bin/anydash"),
+        runner: Box::new(NoRunner),
+        platform: anydash::service::Platform::current(),
+        open_browser: false,
+    };
+    let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+    let (mut out, mut err) = (vec![], vec![]);
+    let mut input = std::io::Cursor::new(vec![]);
+    let mut io = anydash::cli::Io {
+        out: &mut out,
+        err: &mut err,
+        input: &mut input,
+        tty: false,
+    };
+    let code = anydash::cli::run(&args, &mut env, &mut io).await;
+    (code, serde_json::from_slice(&out).unwrap_or_default())
+}
+#[tokio::test(flavor = "multi_thread")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One scenario covers the IPC and direct paths with their failures."
+)]
+async fn connection_refresh_goes_through_the_running_collector() {
+    const CONNECTION: &str = "01890000-0000-7000-8000-0000000000c1";
+    const CORRELATION: &str = "01890000-0000-7000-8000-0000000000aa";
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, enrolled) = logged_in(home.path(), &state, Owner::Foreground).await;
+    drop(enrolled);
+    let limited = Arc::new(Mutex::new(false));
+    let base = api(state.clone());
+    let l = limited.clone();
+    mock.set(move |r| {
+        if r.route().ends_with("RequestConnectionRefresh") && *l.lock().unwrap() {
+            Reply::connect_error(
+                429,
+                "resource_exhausted",
+                ErrorDetail {
+                    reason: ErrorReason::RateLimited.into(),
+                    correlation_id: CORRELATION.into(),
+                    retry_after: Some(prost_types::Duration {
+                        seconds: 42,
+                        nanos: 0,
+                    }),
+                    rate_limit_scope: pb::RateLimitScope::ManualRefresh.into(),
+                    ..Default::default()
+                },
+            )
+        } else {
+            base(r)
+        }
+    });
+    let refreshes = || mock.count("/anydash.v1.ConnectionService/RequestConnectionRefresh");
+    let running = collector::start(anydash::core::Options {
+        settings: support::settings(home.path(), &[("ANYDASH_API_URL", &mock.base)]),
+        endpoints: anydash::providers::Endpoints::mock(&mock.base, "grok-not-installed-for-tests"),
+        os: Arc::new(anydash::keys::MemoryStore::default()),
+        owner: Owner::Foreground,
+    })
+    .unwrap();
+    let task = tokio::spawn(running.run());
+    // The CLI's own API URL is unreachable: only the collector can reach the API, so a
+    // success shows that the CLI never used the device credentials itself.
+    let unreachable = "http://127.0.0.1:9";
+    let (code, v) = run_cli(home.path(), unreachable, &["--json", "refresh", CONNECTION]).await;
+    assert_eq!(code, 0, "{v}");
+    assert!(v["result"]["nextAllowedAt"].as_str().is_some());
+    assert_eq!(refreshes(), 1);
+    let request: pb::RequestConnectionRefreshRequest = support::decode(
+        &mock
+            .recorded()
+            .into_iter()
+            .find(|r| r.route().ends_with("RequestConnectionRefresh"))
+            .unwrap(),
+    );
+    assert_eq!(request.connection_id, CONNECTION);
+    // API errors pass through with their retry wait and correlation ID.
+    *limited.lock().unwrap() = true;
+    let (code, v) = run_cli(home.path(), unreachable, &["--json", "refresh", CONNECTION]).await;
+    assert_eq!(code, 1);
+    assert_eq!(v["error"]["reason"], "ERROR_REASON_RATE_LIMITED");
+    assert_eq!(v["error"]["retryAfterSeconds"], 42);
+    assert_eq!(v["error"]["correlationId"], CORRELATION);
+    let client = ipc::Client::connect(&support::settings(home.path(), &[]).dirs())
+        .await
+        .unwrap();
+    let f = client
+        .call::<_, pb::RequestLocalConnectionRefreshResponse>(
+            "RequestLocalConnectionRefresh",
+            &pb::RequestLocalConnectionRefreshRequest {
+                connection_id: CONNECTION.into(),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        (f.detail.rate_limit_scope, f.correlation_id.as_str()),
+        (pb::RateLimitScope::ManualRefresh as i32, CORRELATION)
+    );
+    // A malformed ID is rejected before any API call.
+    for id in [
+        "c1",
+        "01890000-0000-7000-8000-0000000000C1",
+        "01890000-0000-4000-8000-0000000000c1",
+    ] {
+        let f = client
+            .call::<_, pb::RequestLocalConnectionRefreshResponse>(
+                "RequestLocalConnectionRefresh",
+                &pb::RequestLocalConnectionRefreshRequest {
+                    connection_id: id.into(),
+                },
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            (f.reason, f.detail.field.as_str()),
+            (ErrorReason::InvalidArgument, "connection_id"),
+            "{id}"
+        );
+    }
+    assert_eq!(refreshes(), 3);
+    let _: QuitResponse = client.call("Quit", &QuitRequest {}).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    // Without a running collector the command runs the same handler directly.
+    *limited.lock().unwrap() = false;
+    let (code, v) = run_cli(home.path(), &mock.base, &["--json", "refresh", CONNECTION]).await;
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(refreshes(), 4);
+    let (code, v) = run_cli(home.path(), &mock.base, &["--json", "refresh", "c1"]).await;
+    assert_eq!(
+        (code, v["error"]["reason"].as_str()),
+        (1, Some("ERROR_REASON_INVALID_ARGUMENT"))
+    );
+    assert_eq!(refreshes(), 4);
+    // An older collector without the method answers `unimplemented`; the CLI asks for an
+    // update and never calls the API with the device credentials itself.
+    #[cfg(unix)]
+    {
+        let dirs = support::settings(home.path(), &[]).dirs();
+        let old = tokio::net::UnixListener::bind(ipc::socket_path(&dirs)).unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = old.accept().await else {
+                    return;
+                };
+                let service = hyper::service::service_fn(|_| async {
+                    Ok::<_, std::convert::Infallible>(
+                        hyper::Response::builder()
+                            .status(501)
+                            .header("Content-Type", "application/json")
+                            .body(http_body_util::Full::new(bytes::Bytes::from_static(
+                                br#"{"code":"unimplemented","message":"Unknown method."}"#,
+                            )))
+                            .unwrap(),
+                    )
+                });
+                tokio::spawn(
+                    hyper::server::conn::http1::Builder::new()
+                        .serve_connection(hyper_util::rt::TokioIo::new(stream), service),
+                );
+            }
+        });
+        let (code, v) = run_cli(home.path(), &mock.base, &["--json", "refresh", CONNECTION]).await;
+        assert_eq!(code, 1, "{v}");
+        assert!(
+            v["error"]["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("update the older")),
+            "{v}"
+        );
+        assert_eq!(refreshes(), 4);
+    }
 }
 #[tokio::test(flavor = "multi_thread")]
 async fn one_shared_process_with_ipc_quit_and_service_ownership() {

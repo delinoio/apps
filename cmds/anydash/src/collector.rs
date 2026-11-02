@@ -89,6 +89,9 @@ impl Running {
         signals.abort();
         if let Some(server) = server {
             server.abort();
+            // Wait until the listener is closed, so that a command issued right after the quit
+            // runs directly instead of reaching a closing endpoint.
+            let _ = server.await;
         }
         tracing::info!(event = "collector_stopped");
         Ok(())

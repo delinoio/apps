@@ -14,7 +14,8 @@ use crate::{
         EnrollmentState, ErrorReason, GetCollectorStatusRequest, GetCollectorStatusResponse,
         KeySource, ListSourcePathsRequest, ListSourcePathsResponse, LocalTool, LogoutRequest,
         LogoutResponse, Provider, RemoveConnectionCredentialRequest,
-        RemoveConnectionCredentialResponse, RequestLocalSyncRequest, RequestLocalSyncResponse,
+        RemoveConnectionCredentialResponse, RequestLocalConnectionRefreshRequest,
+        RequestLocalConnectionRefreshResponse, RequestLocalSyncRequest, RequestLocalSyncResponse,
         RotateKeyRequest, RotateKeyResponse, SourcePath, StartLoginRequest, StartLoginResponse,
     },
     providers::{self, Endpoints},
@@ -631,18 +632,22 @@ async fn execute(parsed: &Parsed, env: &mut Env, io: &mut Io<'_>, color: bool) -
             Ok(pb::to_json(&r, "RequestLocalSyncResponse"))
         }
         ["refresh", id] => {
+            // A running collector alone uses the device credentials; direct execution runs
+            // the same handler under this command's collector lock. An older collector without
+            // the method answers `unimplemented`, which asks the user to update it.
             let b = backend(env).await?;
-            let next = match &b {
-                Backend::Direct(core, _) => core.request_connection_refresh(id).await?,
-                Backend::Ipc(_) => {
-                    Core::open(options(env, Owner::Reader))?
-                        .request_connection_refresh(id)
-                        .await?
-                }
-            };
+            let r: RequestLocalConnectionRefreshResponse = b
+                .call(
+                    "RequestLocalConnectionRefresh",
+                    &RequestLocalConnectionRefreshRequest {
+                        connection_id: (*id).to_owned(),
+                    },
+                )
+                .await?;
             if !parsed.json {
                 out.line("Refresh requested.");
             }
+            let next = r.next_allowed_at.map_or(0, |t| t.seconds);
             Ok(json!({"nextAllowedAt": time::rfc3339(next)}))
         }
         ["key", "rotate"] => {

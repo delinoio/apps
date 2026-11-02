@@ -49,9 +49,6 @@ pub const MAX_SNAPSHOT_METRICS: usize = 5000;
 pub enum Owner {
     /// A CLI command that holds the lock only for one operation.
     Direct,
-    /// A CLI command beside a running collector. It never rotates the device refresh token,
-    /// which the collector owns.
-    Reader,
     Foreground,
     Service,
     Desktop,
@@ -60,7 +57,7 @@ impl Owner {
     #[must_use]
     pub const fn kind(self) -> CollectorKind {
         match self {
-            Self::Direct | Self::Reader => CollectorKind::Unspecified,
+            Self::Direct => CollectorKind::Unspecified,
             Self::Desktop => CollectorKind::DesktopApp,
             Self::Foreground | Self::Service => CollectorKind::Cli,
         }
@@ -351,7 +348,6 @@ impl Core {
     /// stored before the old one is discarded.
     pub async fn access_token(&self) -> Result<String> {
         let _guard = self.refresh.lock().await;
-        let reader = self.owner == Owner::Reader;
         let creds = self
             .credentials()?
             .filter(|_| {
@@ -361,14 +357,8 @@ impl Core {
             })
             .ok_or_else(|| Failure::local(ErrorReason::NotLoggedIn, "Run anydash login first."))?;
         let remaining = ts_seconds(creds.access_token_expires_at.as_ref()) - time::now();
-        if remaining > TOKEN_REFRESH_MARGIN || (reader && remaining > 30) {
+        if remaining > TOKEN_REFRESH_MARGIN {
             return Ok(creds.access_token);
-        }
-        if reader {
-            return Err(Failure::local(
-                ErrorReason::DependencyUnavailable,
-                "The running collector is refreshing the device token; retry in a minute.",
-            ));
         }
         let request = RefreshDeviceTokenRequest {
             device_id: self.device_id()?,

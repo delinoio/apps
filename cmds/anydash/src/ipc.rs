@@ -16,6 +16,7 @@ use crate::{
         ListNativeWidgetSnapshotsResponse, ListSourcePathsResponse, LocalTool, LogoutResponse,
         PutNativeWidgetSnapshotsRequest, PutNativeWidgetSnapshotsResponse, QuitResponse,
         RemoveConnectionCredentialRequest, RemoveConnectionCredentialResponse,
+        RequestLocalConnectionRefreshRequest, RequestLocalConnectionRefreshResponse,
         RequestLocalSyncResponse, RotateKeyResponse, StartLoginRequest, StartLoginResponse,
     },
     settings::Dirs,
@@ -41,9 +42,22 @@ fn tool(value: i32) -> Result<LocalTool> {
         .filter(|t| *t != LocalTool::Unspecified)
         .ok_or_else(|| Failure::invalid("tool", "Choose codex or claude-code."))
 }
+/// A connection ID: a lowercase UUID v7, checked before any API call.
+fn connection_id(value: &str) -> Result<&str> {
+    uuid::Uuid::try_parse(value)
+        .ok()
+        .filter(|id| id.get_version_num() == 7 && id.hyphenated().to_string() == value)
+        .map(|_| value)
+        .ok_or_else(|| {
+            Failure::invalid(
+                "connection_id",
+                "The connection ID must be a lowercase UUID v7.",
+            )
+        })
+}
 /// Execute one `LocalCollectorService` method. `running` is false for direct CLI execution.
 /// `None` means the method is unknown.
-pub const METHODS: [&str; 14] = [
+pub const METHODS: [&str; 15] = [
     "GetCollectorStatus",
     "StartLogin",
     "Logout",
@@ -55,6 +69,7 @@ pub const METHODS: [&str; 14] = [
     "EnableSourcePath",
     "RotateKey",
     "RequestLocalSync",
+    "RequestLocalConnectionRefresh",
     "PutNativeWidgetSnapshots",
     "ListNativeWidgetSnapshots",
     "Quit",
@@ -121,6 +136,15 @@ pub async fn dispatch(
                     }
                 }
                 RequestLocalSyncResponse { next_allowed_at: Some(time::timestamp(next)) }.encode_to_vec()
+            }
+            "RequestLocalConnectionRefresh" => {
+                let r: RequestLocalConnectionRefreshRequest = decode(body)?;
+                let id = connection_id(&r.connection_id)?;
+                // The collector calls the API with its own device token, so a device token
+                // refresh stays under its refresh lock. API errors pass through unchanged.
+                let next = core.request_connection_refresh(id).await?;
+                tracing::info!(event = "connection_refresh_requested", connection_id = %id, next_allowed_at = %time::rfc3339(next));
+                RequestLocalConnectionRefreshResponse { next_allowed_at: Some(time::timestamp(next)) }.encode_to_vec()
             }
             "PutNativeWidgetSnapshots" => {
                 let r: PutNativeWidgetSnapshotsRequest = decode(body)?;

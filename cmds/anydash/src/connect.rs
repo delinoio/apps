@@ -31,6 +31,13 @@ pub fn encode_error(failure: &Failure) -> (u16, Vec<u8>) {
     let mut detail = (*failure.detail).clone();
     detail.reason = failure.reason.into();
     detail.correlation_id.clone_from(&failure.correlation_id);
+    // An API failure can carry its wait only in the `Retry-After` header; keep it for local
+    // IPC clients.
+    if detail.retry_after.is_none()
+        && let Some(wait) = failure.retry_after
+    {
+        detail.retry_after = Some(crate::error::duration(wait));
+    }
     let code = failure.connect_code();
     let body = serde_json::json!({
         "code": code,
