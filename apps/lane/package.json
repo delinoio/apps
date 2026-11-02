@@ -16,15 +16,18 @@
     "mobile:ios:init": "pnpm build && node scripts/native.mjs ios init",
     "build:ios": "pnpm mobile:ios:init && node scripts/native.mjs ios build",
     "test:browser": "pnpm build && node tests/browser.mjs && node tests/pace-browser.mjs && node tests/command-palette-browser.mjs && node tests/tabs-browser.mjs && node tests/planning-browser.mjs && node tests/editor-layout-browser.mjs && node tests/planning-layout-browser.mjs && node tests/repository-list-browser.mjs && node tests/native-reset-browser.mjs && node tests/modal-rail-browser.mjs && node tests/session-browser.mjs && node tests/notification-save-browser.mjs && node tests/events-browser.mjs && node tests/events-detail-browser.mjs && node tests/task-open-browser.mjs && node tests/task-delete-browser.mjs && node tests/routes-browser.mjs",
-    "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run"
+    "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run",
+    "test:midscene": "pnpm build && pnpm test:midscene:run",
+    "test:midscene:run": "cd tests/midscene && midscene-test --config midscene.config.ts",
+    "test:midscene:check": "tsc --noEmit -p tests/midscene/tsconfig.json && cd tests/midscene && midscene-test nodes"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.16.0",
     "@connectrpc/connect": "2.2.0",
     "@connectrpc/connect-web": "2.2.0",
-    "@repo/protos": "workspace:*",
     "@lynx-js/react": "0.129.0",
     "@lynx-js/web-core": "0.26.5",
+    "@repo/protos": "workspace:*",
     "markdown-it": "14.3.3",
     "text-encoding-utf-8": "1.0.2"
   },
@@ -33,6 +36,8 @@
     "@lynx-js/react-rsbuild-plugin": "0.22.0",
     "@lynx-js/rspeedy": "0.18.3",
     "@lynx-js/types": "4.3.0",
+    "@midscene/test": "1.16.5",
+    "@midscene/web": "1.16.5",
     "@types/markdown-it": "14.1.2",
     "@types/node": "24.19.2",
     "@types/react": "19.2.14",

@@ -1,0 +1,8 @@
+cases:
+  - name: LANE-02 Preserve an unsaved draft across workspace tabs
+    steps:
+      - app.open: {}
+      - aiAct: Open the task "Improve empty states" and replace its title with "Keep my task draft" without saving. Keep this task tab open. Use New tab and choose Pace to open a separate tab. Do not discard or save the task draft.
+      - aiAssert: The Pace tab shows "Coming soon", and a separate task tab named "Keep my task draft" remains in the left tab list.
+      - aiAct: Return to the task tab named "Keep my task draft" in the left tab list.
+      - aiAssert: The task editor title is "Keep my task draft" and its tab indicates unsaved changes.

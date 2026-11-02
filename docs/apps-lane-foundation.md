@@ -756,6 +756,42 @@ lifecycle, signing, installation and store submission need separate platform
 validation. No macOS runner is added to PR, main-push or affected manual CI.
 Remove generated `dist` after validation.
 
+### Optional AI browser checks
+
+`apps/lane/tests/midscene` adds three user-operation checks with `@midscene/test`:
+search/edit/save and reopen, retain a draft while visiting a separate Pace tab, and cancel
+then confirm discarding a draft at a 390-pixel viewport. UI actions use `aiAct`;
+visible outcomes use `aiAssert`. These workflows use Midscene's bulk text input
+(paste-like `insertText`) because the current Lynx web controlled input can drop
+characters during rapid per-keystroke typing. This does not establish keyboard
+input stability; remove the workaround after that host behavior is corrected.
+Existing component, browser, protocol, exact
+layout and request-count checks remain authoritative for deterministic behavior.
+
+From `apps/lane`, run `pnpm test:midscene:check` to type-check the configuration
+and load the node registry without model calls. Set `MIDSCENE_MODEL_NAME`,
+`MIDSCENE_MODEL_FAMILY`, `MIDSCENE_MODEL_BASE_URL` and `MIDSCENE_MODEL_API_KEY`
+in the process environment using a compatible vision model, then run
+`pnpm exec midscene-test model verify` and `pnpm test:midscene`.
+Do not commit credentials. The suite uses installed Chrome by default;
+`LANE_BROWSER_CHANNEL=chromium` selects a Playwright-installed Chromium.
+`HEADLESS=false` opens a visible browser. After a build, `pnpm test:midscene:run`
+runs the suite without rebuilding.
+
+Each file starts a new test-only preview process on loopback port 46440 and a
+fresh browser context. Files run serially with no automatic retries. Port
+conflicts fail startup. Reopening within a file preserves the fixture server's
+saved task while discarding browser state. Browser traffic is restricted to the
+fixture origin. Screenshots are sent to the configured model provider; fixtures
+contain synthetic data only. Reports are written under the ignored
+`tests/midscene/.midscene` and `tests/midscene/midscene_run` directories.
+
+These checks are opt-in and do not add a model credential requirement to
+`pnpm test` or ordinary CI. They establish shared browser UI behavior against
+fixtures, not native persistence, real-account synchronization or device
+acceptance. Record first-pass results, model, elapsed time and report paths when
+running them; a retry does not replace the first result.
+
 Settings render tests bundle the real Settings screen with a Node ReactLynx stand-in and a scripted adapter. They cover notification Choices and Save staying disabled for the whole pending Settings operation, blocked tap and Enter/Space activation, acknowledged-value adoption, retained draft and error on rejected saves, and the dirty-draft guard on loads. They are bundle-level checks, not browser or native acceptance.
 
 Required product tests cover all task/proposal transitions, optional prompts, explicit-save history, prompt restore as a new version, task moves, repository normalization and conflicts, safe Markdown, and input retention on errors. Task planning tests cover title-only creation; setting and clearing every field in every adapter; name, color, label-limit, date and story-point boundaries; same-name items across repositories and kinds; relationship self-link, cycle and multiple-parent rejection with unchanged progress; moves and each deletion kind with detached references, surviving tasks and history redaction; filter AND/OR/unassigned combinations, sort directions, unassigned-last, task-ID ties and page boundaries; restart persistence without a server; rejected synchronization with correction and explicit retry; response-loss replay and request-ID reuse; transaction rollback without partial cleanup; structured logs without user content; and the explicit development reset with active-handle coordination. Test keyboard operation, screen readers, visible focus, non-color states, text enlargement, the 900-pixel and 360-pixel layouts, loading/empty/error states and Escape handling on every released GUI platform.

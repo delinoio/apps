@@ -1,0 +1,12 @@
+cases:
+  - name: LANE-03 Cancel and confirm discarding a draft on a narrow screen
+    steps:
+      - app.open: { viewport: mobile }
+      - aiAct: Open the task "Improve empty states" and replace its title with "Mobile unsaved draft" without saving. Open the Tabs dialog and use the close control for this task tab. Stop when the discard confirmation appears; leave it unanswered.
+      - aiAssert: A "Discard unsaved changes?" confirmation is visible.
+      - aiAct: Cancel discarding the changes. If the Tabs dialog is still open, select the "Mobile unsaved draft" task tab to return to its editor.
+      - aiAssert: The title field still contains "Mobile unsaved draft".
+      - aiAct: Open Tabs, close the "Mobile unsaved draft" task tab again, and confirm Discard changes.
+      - app.open: { viewport: mobile }
+      - aiAct: Open the task "Improve empty states".
+      - aiAssert: The task title is "Improve empty states", not the discarded draft title.

@@ -1,0 +1,9 @@
+cases:
+  - name: LANE-01 Search, edit and reopen a saved task
+    steps:
+      - app.open: {}
+      - aiAct: Search for "Improve empty states" using the task search field, open that task, replace its title with "Clearer empty state guidance", and click Save.
+      - aiAssert: The task editor title is "Clearer empty state guidance" and its tab has no unsaved changes indicator.
+      - app.open: {}
+      - aiAct: Search for "Clearer empty state guidance" and open that task.
+      - aiAssert: The reopened task editor title is "Clearer empty state guidance".
