@@ -34,6 +34,7 @@ Solo business owners (primary), Delcore team members who view and edit shared te
 - `pnpm dev` in `apps/anydash` injects Infisical development settings (default path `/`) and registers the Portless route `anydash` at `https://anydash.localhost` with fixed loopback port `127.0.0.1:46330`, failing on conflict. `pnpm dev:desktop` builds and launches the desktop host. Register the route in the [workflow contract](repository-workflow-contract.md#named-local-development-urls) when runtime begins.
 - Web routes: `/` (space and dashboard home), `/connect/<enrollment_id>` (device approval), `/spaces/<space_id>/dashboards/<dashboard_id>` (dashboard, optional `widget=<widget_id>` query to focus a widget), `/settings` (time zone, devices, connections, activity, data deletion).
 - Native deep links: `anydash://spaces/<space_id>/dashboards/<dashboard_id>?widget=<widget_id>` and `anydash://connect/<enrollment_id>`. Native widgets open the first form.
+- A dashboard route or link whose space is not among the caller's spaces, such as a team the caller left, reloads `ListSpaces` once and then shows the access-denied state with a way back to the dashboards.
 
 ### Authentication, spaces and onboarding
 

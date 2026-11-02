@@ -144,6 +144,22 @@ describe("dashboard states", () => {
     expect(app.text()).toContain(Copy.goToDashboards);
   });
 
+  it("shows access denied for dashboard links to spaces the caller left", async () => {
+    const leftSpace = "0192f000-0000-7000-8000-0000000000b9";
+    app = await renderApp({
+      path: `/spaces/${leftSpace}/dashboards/${fixtures.ids.teamBoard}`,
+    });
+    await app.see(Copy.accessDenied);
+    expect(app.text()).toContain(Copy.accessDeniedDetail);
+    // The spaces are reloaded once in case the caller joined after sign-in.
+    const listSpaces = () =>
+      app!.host.api.calls.filter((call) => call.method === "ListSpaces").length;
+    expect(listSpaces()).toBe(2);
+    await app.tap(Copy.goToDashboards);
+    await app.see("62% left");
+    expect(app.text()).not.toContain(Copy.accessDenied);
+  });
+
   it("shows the error screen with copyable correlation IDs", async () => {
     app = await renderApp({
       dashboardError: ErrorReason.INTERNAL,

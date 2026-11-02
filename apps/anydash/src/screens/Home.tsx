@@ -20,6 +20,7 @@ import { Modal } from "../components/dialog";
 import { ConnectDevice } from "../components/ConnectDevice";
 import { Pill, SmallButton, T } from "../components/primitives";
 import {
+  AccessDeniedState,
   ErrorState,
   LimitReached,
   LoadingState,
@@ -112,6 +113,25 @@ export function Home({ route, mode }: { route: Route; mode: LayoutMode }) {
   useEffect(() => {
     if (routeSpace && routeSpace.id !== spaceId) setSpaceId(routeSpace.id);
   }, [routeSpace?.id]);
+  // A dashboard link can name a space the caller no longer belongs to, such as
+  // a team they left. Reload the spaces once, in case the caller joined it
+  // after sign-in, and then show access denied instead of the selected space.
+  const missingSpaceId =
+    route.kind === RouteKind.Dashboard && !routeSpace ? route.spaceId : "";
+  const [checkedSpaceId, setCheckedSpaceId] = useState("");
+  useEffect(() => {
+    if (!missingSpaceId || checkedSpaceId === missingSpaceId) return;
+    let active = true;
+    void session
+      .reloadSpaces()
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setCheckedSpaceId(missingSpaceId);
+      });
+    return () => {
+      active = false;
+    };
+  }, [missingSpaceId]);
   const space =
     session.spaces.find((entry) => entry.id === spaceId) ?? session.spaces[0];
   const onboarding =
@@ -267,6 +287,15 @@ export function Home({ route, mode }: { route: Route; mode: LayoutMode }) {
   );
   let content;
   if (session.updateRequired) content = null;
+  else if (missingSpaceId)
+    content =
+      checkedSpaceId === missingSpaceId ? (
+        <AccessDeniedState
+          onBack={() => navigate({ kind: RouteKind.Home }, { replace: true })}
+        />
+      ) : (
+        <LoadingState mode={mode} />
+      );
   else if (onboarding)
     content = (
       <ConnectDevice
