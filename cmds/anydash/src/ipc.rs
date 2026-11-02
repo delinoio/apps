@@ -274,26 +274,58 @@ pub async fn serve(core: Arc<Core>, listener: Listener) {
 }
 #[cfg(windows)]
 pub use crate::windows::{Listener, bind, pipe_name, serve};
+#[cfg(unix)]
+type Stream = tokio::net::UnixStream;
+#[cfg(windows)]
+type Stream = tokio::net::windows::named_pipe::NamedPipeClient;
 /// A client of the running collector.
 pub struct Client {
     dirs: Dirs,
+    /// The connection opened by `connect`, used by the first call, so that the call does not
+    /// depend on opening the endpoint a second time.
+    probe: std::sync::Mutex<Option<Stream>>,
 }
 #[cfg(unix)]
-async fn open_stream(dirs: &Dirs) -> std::io::Result<tokio::net::UnixStream> {
+async fn open_stream(dirs: &Dirs) -> std::io::Result<Stream> {
     tokio::net::UnixStream::connect(socket_path(dirs)).await
 }
+/// How long a client retries opening a busy pipe.
 #[cfg(windows)]
-async fn open_stream(
-    dirs: &Dirs,
-) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeClient> {
+const PIPE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+/// The wait between attempts to open a busy pipe.
+#[cfg(windows)]
+const PIPE_BUSY_RETRY: std::time::Duration = std::time::Duration::from_millis(50);
+#[cfg(windows)]
+async fn open_stream(dirs: &Dirs) -> std::io::Result<Stream> {
+    use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
     let _ = dirs;
-    tokio::net::windows::named_pipe::ClientOptions::new().open(pipe_name()?)
+    let name = pipe_name()?;
+    // The collector creates its next pipe instance only after a client connects to the current
+    // one, so an open in between, or while other clients use every instance, fails with
+    // `ERROR_PIPE_BUSY` although the collector runs. Retry it for a bounded time, as Tokio's
+    // named pipe client documentation describes; a missing pipe fails immediately.
+    let deadline = tokio::time::Instant::now() + PIPE_BUSY_TIMEOUT;
+    loop {
+        match tokio::net::windows::named_pipe::ClientOptions::new().open(&name) {
+            Err(e)
+                if e.raw_os_error().and_then(|code| u32::try_from(code).ok())
+                    == Some(ERROR_PIPE_BUSY)
+                    && tokio::time::Instant::now() < deadline =>
+            {
+                tokio::time::sleep(PIPE_BUSY_RETRY).await;
+            }
+            result => return result,
+        }
+    }
 }
 impl Client {
     /// Connect to a running collector, or `None` when none answers.
     pub async fn connect(dirs: &Dirs) -> Option<Self> {
-        open_stream(dirs).await.ok()?;
-        Some(Self { dirs: dirs.clone() })
+        let probe = open_stream(dirs).await.ok()?;
+        Some(Self {
+            dirs: dirs.clone(),
+            probe: std::sync::Mutex::new(Some(probe)),
+        })
     }
     /// Call a method. Unknown methods return Connect `unimplemented`, which asks the user to
     /// update the older component.
@@ -308,7 +340,15 @@ impl Client {
                 "The local collector is unreachable.",
             )
         };
-        let stream = open_stream(&self.dirs).await.map_err(|_| unavailable())?;
+        let probe = self
+            .probe
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let stream = match probe {
+            Some(stream) => stream,
+            None => open_stream(&self.dirs).await.map_err(|_| unavailable())?,
+        };
         let (mut sender, connection) =
             hyper::client::conn::http1::handshake(hyper_util::rt::TokioIo::new(stream))
                 .await

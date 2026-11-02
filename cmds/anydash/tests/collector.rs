@@ -1448,6 +1448,32 @@ async fn connection_refresh_goes_through_the_running_collector() {
         assert_eq!(refreshes(), 4);
     }
 }
+/// The first call uses the connection that found the collector. A second open can fail
+/// although the collector runs (on Windows, `ERROR_PIPE_BUSY` before the collector creates its
+/// next pipe instance); here the socket is removed after the connection is made.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn the_first_ipc_call_uses_the_connection_that_found_the_collector() {
+    let home = tempfile::tempdir().unwrap();
+    let mock = Mock::start(api(Arc::new(Mutex::new(Api::default())))).await;
+    let core = support::core(home.path(), &mock, Owner::Foreground, &[]);
+    let listener = ipc::bind(&core.dirs).unwrap();
+    let server = tokio::spawn(ipc::serve(core.clone(), listener));
+    let client = ipc::Client::connect(&core.dirs).await.unwrap();
+    std::fs::remove_file(ipc::socket_path(&core.dirs)).unwrap();
+    let response: GetCollectorStatusResponse = client
+        .call("GetCollectorStatus", &GetCollectorStatusRequest {})
+        .await
+        .unwrap();
+    assert!(response.status.is_some());
+    // Later calls open their own connection.
+    let f = client
+        .call::<_, GetCollectorStatusResponse>("GetCollectorStatus", &GetCollectorStatusRequest {})
+        .await
+        .unwrap_err();
+    assert_eq!(f.reason, ErrorReason::DependencyUnavailable);
+    server.abort();
+}
 #[tokio::test(flavor = "multi_thread")]
 async fn one_shared_process_with_ipc_quit_and_service_ownership() {
     let home = tempfile::tempdir().unwrap();

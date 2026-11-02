@@ -56,6 +56,7 @@ Human output uses ANSI color when stdout is a terminal. `--color=never`, `NO_COL
 - Transport: the Connect protocol (HTTP/1.1, binary Protobuf) for `anydash.v1.LocalCollectorService` over a local stream socket.
 - macOS and Linux: Unix domain socket `<runtime dir>/collector.sock` in a directory with mode 0700, socket mode 0600; the runtime directory is `$XDG_RUNTIME_DIR/anydash` on Linux (falling back to the data directory) and the data directory on macOS. The collector checks the peer user ID and rejects other users.
 - Windows: named pipe `\\.\pipe\io.delino.anydash.collector.<user SID>` with a DACL that grants only the current user SID, and remote clients rejected.
+- A client sends its first request over the connection that found the running collector. On Windows, a client retries an open that fails with `ERROR_PIPE_BUSY` (every pipe instance is in use, or the collector has not yet created its next instance) for up to 2 seconds before it reports the collector unreachable.
 - No other process boundary is trusted. Requests carry no bearer token; the OS user boundary is the access control.
 - Version skew: the app, CLI and embedded collector can have different versions. Clients read `CollectorStatus.collector_version`; an unknown method returns Connect `unimplemented`, and the client asks the user to update the older component.
 
