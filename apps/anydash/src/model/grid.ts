@@ -111,6 +111,17 @@ export function applyKey(
   );
 }
 
+/**
+ * Incorporates a server dashboard returned by an add or remove during editing
+ * into the unsaved draft: surviving widgets keep their draft positions, new
+ * widgets take the server position and removed widgets leave the draft. The
+ * pending moves and resizes are still saved together with Done.
+ */
+export const keepDraftPositions = (draft: Box[], next: Box[]): Box[] => {
+  const drafted = new Map(draft.map((box) => [box.id, box]));
+  return next.map((box) => drafted.get(box.id) ?? box);
+};
+
 /** First free position for a new widget, scanning rows top to bottom. */
 export function placeNew(
   boxes: Box[],

@@ -269,6 +269,52 @@ describe("editor", () => {
     ).toBe(8n);
   });
 
+  it("keeps unsaved moves when a widget is added or removed while editing", async () => {
+    app = await renderApp({ path: dashboardPath });
+    await app.see("62% left");
+    await app.tap(Copy.edit);
+    await app.see(ExtraCopy.editorHint);
+    const card = app.find(".ad-widget")[0];
+    const label = card.getAttribute("accessibility-label")!;
+    await app.tap(label);
+    await app.key(card, "ArrowRight");
+    await app.see("column 2, row 1, 4 columns wide, 2 rows tall.");
+    const position = () =>
+      app!.find(".ad-widget")[0].getAttribute("accessibility-label")!;
+    const calls = (method: string) =>
+      app!.host.api.calls.filter((call) => call.method === method);
+    await app.tap(ExtraCopy.addWidget);
+    await app.tap("Codex · Codex", ".lui-dialog");
+    await app.tap(ExtraCopy.addWidget, ".lui-dialog");
+    await waitFor(() => expect(calls("AddWidget").length).toBe(1));
+    await waitFor(() =>
+      expect(app!.find(".ad-widget").length).toBe(
+        fixtures.makeDashboard().widgets.length + 1,
+      ),
+    );
+    expect(position()).toContain("column 2, row 1");
+    const added = app.find(".ad-widget").at(-1)!;
+    await app.tap(added.getAttribute("accessibility-label")!);
+    await app.tap(Copy.removeWidget);
+    await waitFor(() => expect(calls("RemoveWidget").length).toBe(1));
+    await waitFor(() =>
+      expect(app!.find(".ad-widget").length).toBe(
+        fixtures.makeDashboard().widgets.length,
+      ),
+    );
+    expect(position()).toContain("column 2, row 1");
+    await app.tap(Copy.done);
+    await waitFor(() => expect(calls("UpdateWidgetLayout").length).toBe(1));
+    const save = calls("UpdateWidgetLayout")[0].request as {
+      expectedVersion: bigint;
+      updates: { widgetId: string; layout: { x: number; y: number } }[];
+    };
+    const moved = save.updates.find(
+      (update) => update.widgetId === fixtures.ids.widget(1),
+    );
+    expect(moved?.layout.x).toBe(1);
+  });
+
   it("confirms the shared scope before adding a widget to a team dashboard", async () => {
     app = await renderApp({ team: true, path: teamPath });
     await app.see("62% left");

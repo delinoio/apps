@@ -58,6 +58,7 @@ import {
   describeBox,
   EditKey,
   isEditKey,
+  keepDraftPositions,
   LayoutMode,
   placeNew,
   type Box,
@@ -373,7 +374,12 @@ export function DashboardScreen({
       setAdding(false);
       setSharing(undefined);
       void dataQuery.refetch();
-      if (editing) setDraft(boxesOf(response.dashboard));
+      // Keep unsaved moves and resizes; submitWidget placed the new widget
+      // in a free cell of this draft.
+      if (editing)
+        setDraft((current) =>
+          keepDraftPositions(current, boxesOf(response.dashboard)),
+        );
     },
     onError: (error) => {
       setAdding(false);
@@ -384,7 +390,10 @@ export function DashboardScreen({
   const removeWidget = useMutation(DashboardService.method.removeWidget, {
     onSuccess: (response) => {
       replaceDashboard(response.dashboard);
-      if (editing) setDraft(boxesOf(response.dashboard));
+      if (editing)
+        setDraft((current) =>
+          keepDraftPositions(current, boxesOf(response.dashboard)),
+        );
     },
     onError: onMutationError,
   });

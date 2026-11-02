@@ -38,6 +38,7 @@ import {
   clampBox,
   describeBox,
   EditKey,
+  keepDraftPositions,
   layoutMode,
   LayoutMode,
   placeNew,
@@ -101,6 +102,18 @@ describe("grid", () => {
       height: 2,
     });
     expect(placeNew(boxes.slice(0, 2), "d")).toMatchObject({ x: 8, y: 0 });
+  });
+  it("keeps draft positions when a widget is added or removed while editing", () => {
+    const draft = [{ ...boxes[0], x: 4, y: 2 }, boxes[1], boxes[2]];
+    const added = { id: "d", x: 0, y: 0, width: 4, height: 2 };
+    expect(keepDraftPositions(draft, [...boxes, added])).toEqual([
+      ...draft,
+      added,
+    ]);
+    expect(keepDraftPositions(draft, [boxes[0], boxes[2]])).toEqual([
+      draft[0],
+      draft[2],
+    ]);
   });
   it("announces position and size", () => {
     expect(
