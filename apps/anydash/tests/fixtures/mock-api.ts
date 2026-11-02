@@ -79,6 +79,8 @@ let correlation = 0;
 export class MockApi {
   calls: RecordedCall[] = [];
   snapshots = new Map<string, NativeWidgetSnapshot>();
+  /** Connections with a credential stored in the local collector. */
+  localCredentials = new Set<string>([fixtures.ids.claude]);
   personal: Space;
   team?: Space;
   dashboards = new Map<string, Dashboard>();
@@ -261,7 +263,13 @@ export class MockApi {
           deviceId: fixtures.ids.studio,
           collectorVersion: "1.0.3",
           keySource: KeySource.OS_SECURE_STORE,
-          connections: [{ connectionId: fixtures.ids.claude, nextAttemptAt: timestampFromDate(new Date(fixtures.NOW.getTime() + 4 * 60_000)), credentialPresent: true }],
+          connections: [fixtures.ids.claude, ...this.localCredentials]
+            .filter((id, index, all) => all.indexOf(id) === index)
+            .map((connectionId) => ({
+              connectionId,
+              nextAttemptAt: timestampFromDate(new Date(fixtures.NOW.getTime() + 4 * 60_000)),
+              credentialPresent: this.localCredentials.has(connectionId),
+            })),
         },
       }),
       "LocalCollectorService/PutNativeWidgetSnapshots": (request: { snapshots: NativeWidgetSnapshot[]; replaceAll: boolean }) => {
@@ -280,6 +288,14 @@ export class MockApi {
         });
       },
       "LocalCollectorService/Logout": () => ({}),
+      "LocalCollectorService/AddConnectionCredential": (request: { connectionId: string }) => {
+        this.localCredentials.add(request.connectionId);
+        return { connectionId: request.connectionId };
+      },
+      "LocalCollectorService/RemoveConnectionCredential": (request: { connectionId: string }) => {
+        this.localCredentials.delete(request.connectionId);
+        return {};
+      },
     };
   }
 

@@ -595,6 +595,29 @@ describe("settings", () => {
     expect(methods.indexOf("Logout")).toBeGreaterThanOrEqual(0);
   });
 
+  it("reloads the collector status after changing local credentials", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+    });
+    await app.see(ExtraCopy.removeFromComputer);
+    const count = (label: string) =>
+      app!
+        .find(".lui-button-label")
+        .filter((element) => element.textContent?.trim() === label).length;
+    const using = count(ExtraCopy.useOnComputer);
+    await app.tap(ExtraCopy.removeFromComputer);
+    await waitFor(() => expect(count(ExtraCopy.removeFromComputer)).toBe(0));
+    expect(count(ExtraCopy.useOnComputer)).toBe(using + 1);
+    const claude = app.host.api.calls.filter(
+      (call) => call.method === "RemoveConnectionCredential",
+    );
+    expect(claude.length).toBe(1);
+    await app.tap(ExtraCopy.useOnComputer);
+    await app.tap(Copy.connect, ".lui-dialog");
+    await waitFor(() => expect(count(ExtraCopy.removeFromComputer)).toBe(1));
+  });
+
   it("shows the Vercel write warning before connecting on desktop", async () => {
     app = await renderApp({
       path: "/settings",

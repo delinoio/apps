@@ -348,7 +348,14 @@ function ConnectDialog({
   );
 }
 
-function ConnectionsSection({ status }: { status?: CollectorStatus }) {
+function ConnectionsSection({
+  status,
+  reloadStatus,
+}: {
+  status?: CollectorStatus;
+  /** Reloads the collector status that owns `credentialPresent`. */
+  reloadStatus: () => void;
+}) {
   const session = useSession();
   const queryClient = useQueryClient();
   const connections = useQuery(ConnectionService.method.listConnections, {
@@ -391,6 +398,7 @@ function ConnectionsSection({ status }: { status?: CollectorStatus }) {
         connectionId,
       });
       refresh();
+      reloadStatus();
     } catch (error) {
       onError(error);
     }
@@ -480,6 +488,7 @@ function ConnectionsSection({ status }: { status?: CollectorStatus }) {
           onDone={() => {
             setConnecting(undefined);
             refresh();
+            reloadStatus();
           }}
         />
       ) : null}
@@ -900,7 +909,9 @@ export function Settings() {
       ) : null}
       {session.collector ? <UpdatesSection /> : null}
       {session.updateRequired ? null : <DevicesSection />}
-      {session.updateRequired ? null : <ConnectionsSection status={status} />}
+      {session.updateRequired ? null : (
+        <ConnectionsSection status={status} reloadStatus={reload} />
+      )}
       {session.updateRequired ? null : <ActivitySection />}
       {session.updateRequired ? null : <DeleteDataSection />}
       <Section title={ExtraCopy.about}>
