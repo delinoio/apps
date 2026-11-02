@@ -35,7 +35,7 @@ Individuals on desktops, servers and development machines with or without the de
 
 There is no self-update command; updates come only through the install channel.
 
-Commands other than `run` and `service` operate through the local IPC service when a collector runs. Without a running collector they take the collector lock, perform the operation directly against the local store and the server, release the lock and exit without collecting. `status` without a running collector reports `run_state` from the stored state and states that the collector is not running.
+Commands other than `run` and `service` operate through the local IPC service when a collector runs; the collector alone uses the device credentials, so `refresh <connection-id>` calls `RequestLocalConnectionRefresh`. Without a running collector they take the collector lock, perform the operation directly against the local store and the server, release the lock and exit without collecting. `status` without a running collector reports `run_state` from the stored state and states that the collector is not running.
 
 Human output uses ANSI color when stdout is a terminal. `--color=never`, `NO_COLOR` or `ANYDASH_LOG_COLOR=never` disables it; JSON output never contains ANSI.
 
