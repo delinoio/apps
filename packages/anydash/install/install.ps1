@@ -16,7 +16,8 @@
 #                         leave the user PATH unchanged
 #   ANYDASH_RELEASES_URL, ANYDASH_DOWNLOAD_URL
 #                         release list and download base, for mirrors and tests
-#                         (default: GitHub Releases)
+#                         (default: GitHub Releases); the script appends per_page
+#                         and page parameters
 
 function Get-AnyDashTarget {
   param([Parameter(Mandatory)][string]$Architecture)
@@ -42,16 +43,30 @@ function Get-AnyDashDigest {
   return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+# The repository's other products publish releases too, and GitHub does not
+# document the order of the release list, so this reads every page up to
+# MaxPages (1000 releases by default) before choosing the highest version.
 function Get-AnyDashLatestVersion {
-  param([Parameter(Mandatory)][string]$ReleasesUrl)
+  param([Parameter(Mandatory)][string]$ReleasesUrl, [int]$PageSize = 100, [int]$MaxPages = 10)
   $ProgressPreference = 'SilentlyContinue'
-  $releases = Invoke-RestMethod -Uri $ReleasesUrl -UseBasicParsing -Headers @{ Accept = 'application/vnd.github+json' }
+  $separator = if ($ReleasesUrl.Contains('?')) { '&' } else { '?' }
   $latest = $null
-  foreach ($release in @($releases)) {
-    if ($release.draft -or $release.prerelease) { continue }
-    if ($release.tag_name -notmatch '^anydash@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') { continue }
-    $candidate = [version]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
-    if ($null -eq $latest -or $candidate -gt $latest) { $latest = $candidate }
+  for ($page = 1; $page -le $MaxPages; $page++) {
+    $response = Invoke-RestMethod -Uri "$ReleasesUrl${separator}per_page=$PageSize&page=$page" -UseBasicParsing `
+      -Headers @{ Accept = 'application/vnd.github+json' }
+    # Assign before enumerating: Windows PowerShell 5.1 emits a JSON array as one object.
+    $releases = @($response | Where-Object { $null -ne $_ })
+    foreach ($release in $releases) {
+      if ($release.draft -or $release.prerelease) { continue }
+      if ($release.tag_name -notmatch '^anydash@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') { continue }
+      $candidate = [version]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+      if ($null -eq $latest -or $candidate -gt $latest) { $latest = $candidate }
+    }
+    # A short page is the last one.
+    if ($releases.Count -lt $PageSize) { break }
+    if ($page -eq $MaxPages) {
+      Write-Host "anydash install: the release list has more than $MaxPages pages; only those were searched"
+    }
   }
   if ($null -eq $latest) { throw 'no published AnyDash release was found' }
   return $latest.ToString()
@@ -134,7 +149,7 @@ function Invoke-AnyDashInstall {
     }
     $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
     $installDir = if ($env:ANYDASH_INSTALL_DIR) { $env:ANYDASH_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\AnyDash' }
-    $releasesUrl = if ($env:ANYDASH_RELEASES_URL) { $env:ANYDASH_RELEASES_URL } else { 'https://api.github.com/repos/delinoio/apps/releases?per_page=100' }
+    $releasesUrl = if ($env:ANYDASH_RELEASES_URL) { $env:ANYDASH_RELEASES_URL } else { 'https://api.github.com/repos/delinoio/apps/releases' }
     $downloadUrl = if ($env:ANYDASH_DOWNLOAD_URL) { $env:ANYDASH_DOWNLOAD_URL } else { 'https://github.com/delinoio/apps/releases/download' }
     # Windows PowerShell 5.1 may default to older TLS versions.
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12

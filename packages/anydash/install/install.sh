@@ -15,10 +15,16 @@
 #   --install-dir DIR, ANYDASH_INSTALL_DIR  install into DIR (default ~/.local/bin)
 #   ANYDASH_RELEASES_URL, ANYDASH_DOWNLOAD_URL
 #                                           release list and download base, for mirrors
-#                                           and tests (default: GitHub Releases)
+#                                           and tests (default: GitHub Releases); the
+#                                           script appends per_page and page parameters
 set -eu
 
-releases_url=${ANYDASH_RELEASES_URL:-https://api.github.com/repos/delinoio/apps/releases?per_page=100}
+releases_url=${ANYDASH_RELEASES_URL:-https://api.github.com/repos/delinoio/apps/releases}
+# The repository's other products publish releases too, and GitHub does not
+# document the order of the release list, so latest-version discovery reads
+# every page up to this bound (1000 releases) before choosing a version.
+releases_page_size=100
+releases_max_pages=10
 download_url=${ANYDASH_DOWNLOAD_URL:-https://github.com/delinoio/apps/releases/download}
 version=${ANYDASH_VERSION:-}
 install_dir=${ANYDASH_INSTALL_DIR:-}
@@ -147,8 +153,26 @@ fi
 work=$(mktemp -d 2>/dev/null || mktemp -d -t anydash-install)
 
 if [ -z "$version" ]; then
-  fetch "$releases_url" "$work/releases.json" || fail "cannot read the AnyDash release list"
-  version=$(grep -o '"tag_name"[[:space:]]*:[[:space:]]*"anydash@v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"' "$work/releases.json" |
+  case "$releases_url" in
+    *\?*) separator='&' ;;
+    *) separator='?' ;;
+  esac
+  : >"$work/tags"
+  page=1
+  while :; do
+    fetch "$releases_url${separator}per_page=$releases_page_size&page=$page" "$work/releases.json" ||
+      fail "cannot read the AnyDash release list"
+    grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' "$work/releases.json" >"$work/page" || true
+    cat "$work/page" >>"$work/tags"
+    # A short page is the last one.
+    [ "$(grep -c . "$work/page" || true)" -ge "$releases_page_size" ] || break
+    if [ "$page" -ge "$releases_max_pages" ]; then
+      log "the release list has more than $releases_max_pages pages; only those were searched"
+      break
+    fi
+    page=$((page + 1))
+  done
+  version=$(grep -o '"anydash@v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"' "$work/tags" |
     sed 's/.*anydash@v//; s/"$//' |
     sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
   [ -n "$version" ] || fail "no published AnyDash release was found"

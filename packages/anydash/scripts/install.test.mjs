@@ -121,6 +121,34 @@ async function fixture(t, versions = ["1.2.0", "1.10.0"]) {
   return { root, directories, server };
 }
 
+/**
+ * Serves a release list that spans several pages: the newest AnyDash release
+ * (1.10.0) sits behind 150 releases of other products, after an older one.
+ */
+async function paginatedFixture(t) {
+  const f = await fixture(t);
+  const others = (count, from = 0) =>
+    Array.from({ length: count }, (_, index) =>
+      release(`lane@v0.0.${from + index}`),
+    );
+  const server = await serveReleases({
+    releases: [
+      release("anydash@v1.2.0"),
+      ...others(150),
+      release("anydash@v1.10.0"),
+    ],
+    directories: f.directories,
+  });
+  t.after(server.close);
+  // Past the page bound (10 pages of 100), discovery stops searching.
+  const unbounded = await serveReleases({
+    releases: [...others(1000), release("anydash@v1.10.0")],
+    directories: f.directories,
+  });
+  t.after(unbounded.close);
+  return { ...f, server, unbounded };
+}
+
 // Linux distributions often run install.sh with dash; macOS sh is bash.
 const shells = [
   "sh",
@@ -154,6 +182,30 @@ for (const interpreter of shells) {
       assert.deepEqual(readdirSync(resolve(f.root, "home/.local/bin")), [
         "anydash",
       ]);
+    },
+  );
+
+  test(
+    `${interpreter}: install.sh searches every release-list page for the newest AnyDash release`,
+    { skip: process.platform === "win32" },
+    async (t) => {
+      const f = await paginatedFixture(t);
+      const result = await shell(f, { os: "Linux", arch: "x86_64" });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stderr, /installed AnyDash 1\.10\.0/);
+      assert.deepEqual(f.server.listPages, [1, 2]);
+
+      const bounded = await shell(
+        { ...f, server: f.unbounded },
+        { os: "Linux", arch: "x86_64" },
+      );
+      assert.equal(bounded.status, 1);
+      assert.match(bounded.stderr, /more than 10 pages/);
+      assert.match(bounded.stderr, /no published AnyDash release/);
+      assert.deepEqual(
+        f.unbounded.listPages,
+        Array.from({ length: 10 }, (_, index) => index + 1),
+      );
     },
   );
 
@@ -381,6 +433,30 @@ test(
       direct.stdout + direct.stderr,
       /use https:\/\/anydash\.delino\.io\/install\.sh/,
     );
+  },
+);
+
+test(
+  "install.ps1 searches every release-list page for the newest AnyDash release",
+  { skip: !hasPwsh && "pwsh is not installed" },
+  async (t) => {
+    const f = await paginatedFixture(t);
+    const latest = await powershell(
+      f,
+      "Get-AnyDashLatestVersion -ReleasesUrl $env:ANYDASH_RELEASES_URL",
+    );
+    assert.equal(latest.status, 0, latest.stderr);
+    assert.equal(latest.stdout.trim(), "1.10.0");
+    assert.deepEqual(f.server.listPages, [1, 2]);
+
+    const bounded = await powershell(
+      { ...f, server: f.unbounded },
+      "try { Get-AnyDashLatestVersion -ReleasesUrl $env:ANYDASH_RELEASES_URL } catch { Write-Output $_.Exception.Message }",
+    );
+    assert.equal(bounded.status, 0, bounded.stderr);
+    assert.match(bounded.stdout, /more than 10 pages/);
+    assert.match(bounded.stdout, /no published AnyDash release/);
+    assert.equal(f.unbounded.listPages.length, 10);
   },
 );
 
