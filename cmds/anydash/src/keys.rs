@@ -345,7 +345,8 @@ impl Keys {
             _ => None,
         }
     }
-    /// Make the pending key the main key and delete the old one.
+    /// Make the pending key the main key and delete the old one. Repeating a completed or
+    /// partly completed promotion is harmless.
     fn promote(&mut self, key: DataKey, store: &Store) -> Result<()> {
         match self.source {
             KeySource::OsSecureStore => {
@@ -354,7 +355,10 @@ impl Keys {
                     .map_err(|Unavailable| unavailable("The OS secure store is unavailable."))?;
                 let _ = self.os.delete(SERVICE, PENDING);
             }
-            KeySource::KeyFile => std::fs::rename(self.pending_path(), &self.file)?,
+            KeySource::KeyFile => {
+                write_key_file(&self.file, &key)?;
+                let _ = std::fs::remove_file(self.pending_path());
+            }
             _ => {}
         }
         self.key = key;
@@ -385,7 +389,9 @@ impl Keys {
     }
     /// Rotate the data key: store the new key as pending, re-encrypt every secret in one
     /// transaction that records the new key ID, then promote. Failure before the commit deletes
-    /// the pending key and keeps the old key and ciphertext.
+    /// the pending key and keeps the old key and ciphertext. Failure of the promotion after the
+    /// commit keeps the new key in memory and as the pending key; the next rotation or start
+    /// completes the promotion.
     pub fn rotate(
         &mut self,
         store: &mut Store,
@@ -393,6 +399,18 @@ impl Keys {
         fault: Option<RotateFault>,
     ) -> Result<u32> {
         let failed = |message: &str| Failure::local(ErrorReason::KeyRotationFailed, message);
+        // A committed rotation whose promotion failed leaves the secrets under the pending key,
+        // which is then the only stored copy of the current key. Complete that promotion before
+        // a new pending key could overwrite or delete it.
+        if store.meta("pending_key_id")? == self.key.id {
+            let current = self.key.clone();
+            self.promote(current, store).map_err(|_| {
+                failed(
+                    "The previous key rotation could not be completed; the current key stays as the pending key. Retry when the key store is available.",
+                )
+            })?;
+            tracing::info!(event = "key_rotation_recovered", key_id = %self.key.id);
+        }
         let new = match (self.source, new_key) {
             (_, Some(key)) => key,
             (KeySource::Environment, None) => {
@@ -419,7 +437,15 @@ impl Keys {
             return Ok(count);
         }
         tracing::info!(event = "key_rotated", key_id = %new.id, secret_count = count);
-        self.promote(new, store)?;
+        // The secrets and the recorded key ID use the new key from here on, so this process uses
+        // it even if the promotion fails; the pending key stays stored until a promotion
+        // succeeds.
+        self.key = new.clone();
+        if self.promote(new, store).is_err() {
+            return Err(failed(
+                "The secrets were re-encrypted with the new key, but it could not be stored as the main key; it stays as the pending key, and the next rotation or start completes the promotion.",
+            ));
+        }
         Ok(count)
     }
 }

@@ -3,7 +3,7 @@
 //! rotation with rollback.
 mod support;
 use anydash::{
-    keys::{DataKey, Keys, MemoryStore, RotateFault, SERVICE, SecureStore},
+    keys::{DataKey, Keys, MemoryStore, RotateFault, SERVICE, SecureStore, Unavailable},
     pb::{ErrorReason, KeySource},
     store::Store,
 };
@@ -190,6 +190,88 @@ fn rotation_failure_rolls_back_and_crash_recovery_promotes() {
         b"connection:b"
     );
     assert_eq!(store.meta("pending_key_id").unwrap().len(), 0);
+}
+/// An OS store whose main-key writes fail while `fail_main` is set.
+#[derive(Default)]
+struct FlakyStore {
+    inner: MemoryStore,
+    fail_main: std::sync::atomic::AtomicBool,
+}
+impl SecureStore for FlakyStore {
+    fn get(&self, service: &str, account: &str) -> Result<Option<String>, Unavailable> {
+        self.inner.get(service, account)
+    }
+    fn set(&self, service: &str, account: &str, value: &str) -> Result<(), Unavailable> {
+        if account == "data-key" && self.fail_main.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(Unavailable);
+        }
+        self.inner.set(service, account, value)
+    }
+    fn delete(&self, service: &str, account: &str) -> Result<(), Unavailable> {
+        self.inner.delete(service, account)
+    }
+}
+#[test]
+fn failed_promotion_keeps_the_committed_key_until_it_is_promoted() {
+    use std::sync::atomic::Ordering;
+    let home = tempfile::tempdir().unwrap();
+    let flaky = Arc::new(FlakyStore::default());
+    let os: Arc<dyn SecureStore> = flaky.clone();
+    let env = [("ANYDASH_KEY_SOURCE", "os")];
+    let (mut keys, mut store) = seeded(home.path(), &env, &os);
+    let old = keys.key.clone();
+    // The re-encryption commits, then the OS store rejects the main-key write.
+    flaky.fail_main.store(true, Ordering::SeqCst);
+    let error = keys.rotate(&mut store, None, None).unwrap_err();
+    assert_eq!(error.reason, ErrorReason::KeyRotationFailed);
+    let committed = keys.key.clone();
+    assert_ne!(committed.id, old.id, "the process uses the committed key");
+    assert_eq!(store.meta("key_id").unwrap(), committed.id);
+    assert_eq!(
+        store.secret(&keys.key, "connection:a").unwrap().unwrap(),
+        b"connection:a"
+    );
+    let pending = || {
+        os.get(SERVICE, "data-key-pending")
+            .unwrap()
+            .map(|v| DataKey::parse(&v).unwrap().id)
+    };
+    assert_eq!(pending(), Some(committed.id.clone()));
+    // Another rotation first completes the promotion; while that still fails, it is refused
+    // and the pending key, the only stored copy of the current key, is kept.
+    let error = keys.rotate(&mut store, None, None).unwrap_err();
+    assert_eq!(error.reason, ErrorReason::KeyRotationFailed);
+    assert_eq!(keys.key.id, committed.id);
+    assert_eq!(pending(), Some(committed.id.clone()));
+    assert_eq!(store.meta("key_id").unwrap(), committed.id);
+    // A restart promotes the pending key.
+    flaky.fail_main.store(false, Ordering::SeqCst);
+    let settings = support::settings(home.path(), &env);
+    let mut restarted = Keys::load(&settings, &settings.dirs(), &os).unwrap();
+    assert_eq!(restarted.key.id, old.id);
+    restarted.recover(&store).unwrap();
+    assert_eq!(restarted.key.id, committed.id);
+    assert_eq!(pending(), None);
+    // Without a restart, the next rotation completes the promotion and rotates again.
+    let other = tempfile::tempdir().unwrap();
+    let (mut keys, mut store) = seeded(other.path(), &env, &os);
+    flaky.fail_main.store(true, Ordering::SeqCst);
+    keys.rotate(&mut store, None, None).unwrap_err();
+    let committed = keys.key.clone();
+    flaky.fail_main.store(false, Ordering::SeqCst);
+    assert_eq!(keys.rotate(&mut store, None, None).unwrap(), 3);
+    assert_ne!(keys.key.id, committed.id);
+    assert_eq!(pending(), None);
+    assert_eq!(
+        os.get(SERVICE, "data-key")
+            .unwrap()
+            .map(|v| DataKey::parse(&v).unwrap().id),
+        Some(keys.key.id.clone())
+    );
+    assert_eq!(
+        store.secret(&keys.key, "connection:b").unwrap().unwrap(),
+        b"connection:b"
+    );
 }
 #[test]
 fn environment_rotation_requires_the_new_key() {
