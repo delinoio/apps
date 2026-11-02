@@ -36,7 +36,10 @@ import (
 
 // OAuthBroker runs provider OAuth flows. The data plane layer implements it.
 // The service has already verified that the caller holds MANAGE on res and
-// that res is not deleted. Implementations write their own audit events
+// that res is not deleted. That check runs outside the resource lock, so an
+// implementation that changes the resource, such as by registering a
+// credential, rechecks the role with authz.Recheck in the transaction that
+// locks res. Implementations write their own audit events
 // (AUDIT_ACTION_CREDENTIAL_REGISTERED) with Service.WriteAudit.
 type OAuthBroker interface {
 	StartProviderOAuth(ctx context.Context, p *auth.Principal, res store.Resource, req *mcpav1.StartProviderOAuthRequest) (*mcpav1.ProviderOAuthFlow, error)
@@ -70,10 +73,17 @@ type SpendReader interface {
 	TenantBilledBytes(ctx context.Context, tenantID string, start, end time.Time) (int64, error)
 }
 
-// CredentialListener is notified after credential changes commit so the
-// data plane can update its in-process provider auth state immediately.
-// Implementations must not block for long.
+// CredentialListener propagates credential changes to the data plane.
+//
+// CredentialsChanging runs inside the transaction of every credential
+// change of a resource, before it commits. What it writes through tx (the
+// data plane queues a PostgreSQL notification for other replicas) commits
+// or rolls back with the change; an error aborts the change. The other
+// methods run after the change commits so the data plane can update its
+// in-process provider auth state immediately. Implementations must not
+// block for long.
 type CredentialListener interface {
+	CredentialsChanging(ctx context.Context, tx pgx.Tx, resourceID uuid.UUID) error
 	CredentialRegistered(ctx context.Context, resourceID, credentialID uuid.UUID)
 	CredentialRemoved(ctx context.Context, resourceID, credentialID uuid.UUID)
 	ResourceDeleted(ctx context.Context, resourceID uuid.UUID, credentialIDs []uuid.UUID)
@@ -141,6 +151,15 @@ func (s *Service) getHooks() Hooks {
 	s.hooksMu.RLock()
 	defer s.hooksMu.RUnlock()
 	return s.hooks
+}
+
+// credentialsChanging runs the credential listener's in-transaction hook
+// for a credential change of resourceID.
+func (s *Service) credentialsChanging(ctx context.Context, tx pgx.Tx, resourceID uuid.UUID) error {
+	if l := s.getHooks().Credentials; l != nil {
+		return l.CredentialsChanging(ctx, tx, resourceID)
+	}
+	return nil
 }
 
 func principal(ctx context.Context) (*auth.Principal, error) {
@@ -250,18 +269,9 @@ func (s *Service) mutate(ctx context.Context, p *auth.Principal, resourceID uuid
 			}
 			return err
 		}
-		role, err := s.authz.EffectiveRole(ctx, tx, r.TenantID, r.ID, p.UserID)
+		role, err := authz.Recheck(ctx, tx, p, r, need)
 		if err != nil {
 			return err
-		}
-		if role == mcpav1.ResourceRole_RESOURCE_ROLE_UNSPECIFIED {
-			return apperr.NotFound("resource not found")
-		}
-		if !authz.Satisfies(role, need) {
-			return apperr.PermissionDenied("this action requires the " + authz.RoleName(need) + " role on the resource")
-		}
-		if r.Deleted() {
-			return apperr.FailedPrecondition("the resource was deleted")
 		}
 		return fn(tx, r, role)
 	})

@@ -94,7 +94,9 @@ func RevokeCallKey(ctx context.Context, tx pgx.Tx, resourceID, id uuid.UUID) (Ca
 
 // TouchCallKey records a use at most once per minute per key.
 func TouchCallKey(ctx context.Context, db DB, id uuid.UUID, at time.Time) error {
-	_, err := db.Exec(ctx, `UPDATE call_keys SET last_used_time = $2
-		WHERE id = $1 AND (last_used_time IS NULL OR last_used_time <= $2 - interval '1 minute')`, id, at)
+	// The explicit cast keeps PostgreSQL from inferring $2 as an interval
+	// from the subtraction.
+	_, err := db.Exec(ctx, `UPDATE call_keys SET last_used_time = $2::timestamptz
+		WHERE id = $1 AND (last_used_time IS NULL OR last_used_time <= $2::timestamptz - interval '1 minute')`, id, at)
 	return err
 }

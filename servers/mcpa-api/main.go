@@ -28,6 +28,7 @@ import (
 	"github.com/delinoio/apps/servers/mcpa-api/internal/app"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/config"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/crypto"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/dataplane"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/obs"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
@@ -146,6 +147,9 @@ func serve(ctx context.Context, lookup config.Lookup, log *slog.Logger) error {
 		return err
 	}
 	defer a.Close()
+	if _, err := dataplane.Install(a, dataplane.InstallOptions{}); err != nil {
+		return err
+	}
 	log.Info("mcpa-api starting",
 		"public_url", cfg.PublicURL,
 		"web_origin", cfg.WebOrigin,
@@ -154,6 +158,8 @@ func serve(ctx context.Context, lookup config.Lookup, log *slog.Logger) error {
 		"metrics_token", cfg.MetricsToken != "",
 		"active_key_id", cfg.ActiveKeyID,
 		"oauth_clients", len(cfg.OAuthClients),
+		"checkpoint_interval", cfg.CheckpointInterval.String(),
+		"outbox_interval", cfg.OutboxInterval.String(),
 	)
 	return a.Run(ctx)
 }

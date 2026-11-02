@@ -194,9 +194,12 @@ Every request resolves to an actor kind (`ACTOR_KIND_CONSOLE`, `ACTOR_KIND_MCP` 
 - OAuth credentials are connected through a flow that the console or MCP brokers. Managed CPA obtains and refreshes the tokens.
   - `StartProviderOAuth` creates a `ProviderOAuthFlow` of kind `AUTHORIZATION_CODE` or `DEVICE_CODE`, as the provider requires. For `AUTHORIZATION_CODE`, the customer opens `authorization_url`, consents and submits the full final redirect URL from the browser with `CompleteProviderOAuth`. The server validates its state against the flow and exchanges the code. For `DEVICE_CODE`, the customer enters `user_code` at `verification_uri`, and `GetProviderOAuthFlow` polls the provider.
   - A completed flow creates the credential and sets `credential_id`. A failed flow sets a safe `failure_message`. A flow expires at `expire_time`.
+  - The provider exchange or poll runs outside the resource lock. Registration then rechecks the caller's `MANAGE` role under that lock. If the caller lost the role meanwhile, the server discards the tokens, fails the flow and returns the authorization error. It creates no credential.
   - PKCE verifiers, device codes and other flow secrets are encrypted at rest and are never returned.
+  - Claude, Codex and Kimi flows use the public client IDs of the pinned SDK. Gemini CLI and Antigravity flows use Google installed-app OAuth clients whose IDs and secrets come from operator configuration and never from repository source. Without a configured client, `StartProviderOAuth` for that provider returns `ERROR_REASON_FAILED_PRECONDITION`.
 - Token refresh uses a custom SDK token store that writes refreshed tokens back to PostgreSQL encrypted. The SDK file store is never used.
 - `RemoveCredential` deletes the credential and unregisters it from the in-process SDK auth state in the same operation. New calls never select it after the response. Calls already sent to the provider continue.
+- Other replicas learn about credential changes through PostgreSQL notifications. Registration, removal, refreshed OAuth tokens and resource and tenant deletion queue the notification in the transaction of the change. PostgreSQL delivers it when that transaction commits, so a committed change always notifies, and a change whose notification cannot be queued fails and commits nothing. A replica drops its cached credentials of the resource when the notification arrives, and drops all cached credentials when its listener reconnects.
 - No RPC, log, metric, trace, error or audit detail ever contains a provider token or API key.
 
 ### Credential encryption and master-key rotation
@@ -259,7 +262,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 
 - **Wire form.** Each segment counts the HTTP/1.1 wire form before TLS: the request line or status line; each header line, `Name: value\r\n`, from the header set at write time; the blank line; and the body bytes as written, after any content encoding. TLS, TCP, chunked transfer framing, HTTP/2 framing and header compression are excluded. The count is the same whatever protocol version the connection negotiates.
 - **Counting points.** A counting `http.RoundTripper`, installed through the SDK round-tripper provider, counts the provider segment. A counting `http.ResponseWriter` counts the customer segment.
-- **Partial calls.** Bytes already sent are billed whatever the outcome, including provider errors, client cancellation and stream interruption. Rejections after step 1 bill their customer-segment response bytes.
+- **Partial calls.** Bytes already sent are billed whatever the outcome, including provider errors, client cancellation and stream interruption. Rejections after step 1 bill their customer-segment response bytes. Requests sent by the SDK Claude client (Claude credentials and Claude-format Kimi calls) are the exception for request bodies: their body is billed only when the transport reports the whole request written. An upload that is cancelled, rejected or disconnected before it completes bills only its request line and headers.
 - **Exclusions.** Provider-reported token counts are never used. Management, console, authentication, OAuth, MCP and operational traffic is never metered.
 
 ### Checkpoints and the usage outbox
@@ -282,6 +285,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 - Each resource and each tenant can have an optional USD limit, a canonical non-negative decimal of at most 64 characters. Resource managers set the resource limit. Holders of `manage_tenant_budget` set the tenant limit. An empty value removes the limit.
 - The budget period is the tenant's current Delcore billing period, read from `ListMeterAggregates` and cached for `MCPA_AUTHORIZE_CACHE_TTL`.
 - Measured spend is the bytes committed locally by checkpoints for calls that started in the period, multiplied by the per-byte price. It uses exact decimal arithmetic.
+- Daily usage aggregates supply the UTC days that the period fully covers. Budget spend entries supply the partial first and last days. Each entry holds the committed bytes of the calls of one resource that started at one instant. Spend entries outlive every Delcore billing period, so spend from early in a 31-day period stays counted after its call records expire.
 - When spend reaches either limit, new calls are rejected with `budget_exhausted`, and `mcpa_budget_rejections_total{scope}` increments. In-progress streams continue to completion, so measured spend can go slightly over the limit.
 - When a limit is set and the period cannot be read after cache expiry, the call fails closed with `dependency_unavailable`.
 - A new Delcore billing period resets spend.
@@ -300,6 +304,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 | Record                                     | Retention                                           |
 | ------------------------------------------ | --------------------------------------------------- |
 | Request-level call records                 | 30 days after the call start                        |
+| Budget spend entries                       | 35 days after the call start                        |
 | Daily usage aggregates (UTC days)          | 13 months                                           |
 | Audit events                               | 13 months                                           |
 | Usage outbox rows                          | 30 days after creation                              |
@@ -318,7 +323,7 @@ A retention worker prunes expired records in bounded batches.
   - Leaves a tombstone of the resource ID, tenant, name and deletion time.
 - The tombstone and its ACL entries remain read-only. They serve only to show the retained usage, error and audit records to their former roles until retention ends. A deleted resource accepts no other action, and its endpoint rejects calls. Pending billing events continue to be delivered.
 - `BLOCKED` and `DELETING` tenants cannot make model calls.
-- A lifecycle worker calls `CheckTenantLifecycle` for tenants with retained data. It deletes all of a tenant's retained data (resources, tombstones, ACL, credentials, keys, records, aggregates, audit, snapshots and outbox rows) only after Delcore reports `DELETED`. `UNKNOWN`, errors and pending deletion delete nothing. Fixed record expiry applies independently.
+- A lifecycle worker calls `CheckTenantLifecycle` for tenants with retained data. It deletes all of a tenant's retained data (resources, tombstones, ACL, credentials, keys, records, budget spend entries, aggregates, audit, snapshots and outbox rows) only after Delcore reports `DELETED`. `UNKNOWN`, errors and pending deletion delete nothing. Fixed record expiry applies independently.
 
 ### Error mapping
 
@@ -353,6 +358,7 @@ PostgreSQL is authoritative. All entity IDs are UUID v7. The schema holds these 
 - Call keys (hash, prefix, issuer, expiry, last use and revocation).
 - Request-key idempotency records.
 - Call records.
+- Budget spend entries (tenant, resource, call start instant and committed bytes).
 - Daily usage aggregates.
 - Resource and tenant budgets.
 - Audit events.
@@ -374,6 +380,7 @@ The data plane uses no object storage, so the Cloudflare R2 default does not app
 - **Audiences.** Console tokens (`MCPA_API_RESOURCE`), MCP tokens (`MCPA_MCP_RESOURCE`) and Delcore tokens (`DELCORE_RESOURCE`) are not interchangeable. MCP and console tokens are never forwarded to Delcore. The server verifies each token's issuer through `LOGTO_ISSUER` discovery and JWKS, and checks the signature, expiry and audience.
 - **Browser surfaces.** Cookie sessions require CSRF and `Origin` checks. Redirects accept only exact registered URLs. The call surface and `/mcp` reject credentialed cross-origin access.
 - **URLs.** `DELCORE_URL`, `LOGTO_TOKEN_URL`, `LOGTO_ISSUER` and the public URLs must be `https`, or `http` on loopback.
+- **Provider destinations.** A customer `base_url` must be an `https` URL whose host is a DNS name or a public IP literal. This check is only the first line of defense. After DNS resolution, the data plane refuses to dial private, loopback, link-local, shared-address and unique-local addresses, and it ignores proxy environment variables. The guard applies to every provider client. The pinned SDK's Claude client ignores the shared provider transport, so the data plane sends that client's connections through an in-process loopback SOCKS5 relay that resolves and dials with the same guard. The relay requires a random secret that exists only in the server process, so other local processes cannot use it as an egress proxy. A refused destination fails the call; no provider request is sent.
 - **Provider disclosure.** Request content is forwarded to the customer's own provider account, under that provider's terms. Managed CPA keeps no copy.
 - **Operational endpoints.** `/healthz` and `/readyz` disclose no configuration. Deployments restrict `/metrics` with `MCPA_METRICS_TOKEN` or network policy.
 - **SQL.** Use parameterized SQL only.
@@ -422,7 +429,7 @@ Unit tests run without external services. Integration tests use the build tag `i
 Tests cover these scenarios:
 
 - **Happy path.** Create a resource, connect a mocked OAuth credential and an API key, and issue a key. Make streaming and non-streaming calls in each of the three formats. Check usage and the estimated USD, and check that a mocked Delcore receives a matching `IngestEvent`.
-- **Byte metering.** Compressed and uncompressed bodies, chunked streams, client cancellation in mid-stream, provider disconnects and provider 4xx and 5xx responses. Management traffic is not metered.
+- **Byte metering.** Compressed and uncompressed bodies, chunked streams, client cancellation in mid-stream, interrupted uploads, provider disconnects and provider 4xx and 5xx responses. Management traffic is not metered.
 - **Crash recovery.** Kill the process during a stream. After restart, bytes up to the last checkpoint are billed exactly once, with no duplicate events.
 - **Outbox.** Delcore is unavailable for less than 30 days, then events are delivered once. Events older than 30 days are dropped without estimating. Poisoned rows are covered.
 - **Authorization.**
@@ -438,7 +445,7 @@ Tests cover these scenarios:
 - **Billing gates.** `paid=true` denial; `BLOCKED`, `DELETING` and `UNKNOWN` tenants; cache TTL expiry while Delcore is down; denials never cached.
 - **Routing.** Round-robin distribution, empty and non-empty allowlists, and no retry after provider failure.
 - **Budgets.** Resource and tenant limits each block new calls. An in-progress stream finishes after the limit. Spend resets at the Delcore billing period boundary.
-- **Credentials.** Encryption at rest with a key ID, AAD binding, master-key rotation with concurrent calls and refreshes, and immediate removal. No secrets appear in logs, metrics or traces.
+- **Credentials.** Encryption at rest with a key ID, AAD binding, master-key rotation with concurrent calls and refreshes, immediate removal, and removal propagation to other replicas through notifications that commit with the change. No secrets appear in logs, metrics or traces.
 - **Retention and deletion.** 30-day and 13-month pruning, resource deletion and tombstone visibility, and tenant cleanup only after `DELETED`.
 
 CI runs format, vet, unit tests, integration tests against a disposable PostgreSQL and `govulncheck` for affected changes on Ubuntu. Release image publication builds the OCI image. See the [workflow contract](repository-workflow-contract.md#managed-cpa-development-and-validation).
@@ -459,33 +466,35 @@ Update the [project index](project-mcpa.md), the [protocol contract](protos-mcpa
 
 Shared settings use unprefixed names; Managed CPA settings use the `MCPA_` prefix. A required value that is missing or invalid stops startup with an error that names the setting and omits its value. `servers/mcpa-api/.env.example` contains names, placeholders and safe loopback defaults only.
 
-| Name                                               | Meaning                                                                                                     |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `LISTEN`                                           | Listen address. The default is `127.0.0.1:46329`.                                                           |
-| `DATABASE_URL`                                     | PostgreSQL URL. Secret.                                                                                     |
-| `MCPA_PUBLIC_URL`                                  | Public API origin, for example `https://mcpa.api.delino.io`. Endpoint base URLs derive from it.             |
-| `WEB_ORIGIN`                                       | Console origin, for example `https://mcpa.delino.io`, used for CORS and `Origin` checks.                    |
-| `MCPA_WEB_RETURN_URLS`                             | JSON array of the exact allowed console `return_to` URLs.                                                   |
-| `MCPA_MASTER_KEYS`                                 | JSON object of key ID to base64url 32-byte master key. Secret.                                              |
-| `MCPA_ACTIVE_KEY_ID`                               | Key ID used for new encryptions.                                                                            |
-| `MCPA_SERVICE_ID`                                  | Delcore service UUID v7 of `mcpa`, used as the event `service_id`.                                          |
-| `DELCORE_URL`, `DELCORE_RESOURCE`                  | Delcore Connect base URL and Logto resource indicator.                                                      |
-| `LOGTO_TOKEN_URL`, `CLIENT_ID`, `CLIENT_SECRET`    | Machine-to-machine credentials for Delcore (client credentials). `CLIENT_SECRET` is secret.                 |
-| `LOGTO_ISSUER`                                     | Logto OIDC issuer for discovery and JWKS.                                                                   |
-| `MCPA_LOGTO_CLIENT_ID`, `MCPA_LOGTO_CLIENT_SECRET` | Logto web application used by the console BFF and the MCP broker. The secret is secret.                     |
-| `MCPA_API_RESOURCE`                                | Logto API resource (audience) for console sessions, for example `https://mcpa.api.delino.io`.               |
-| `MCPA_MCP_RESOURCE`                                | MCP-only audience, for example `https://mcpa.api.delino.io/mcp`.                                            |
-| `MCPA_MFA_CLAIM`                                   | Boolean access-token claim that carries MFA evidence. The default is `mcpa_mfa`.                            |
-| `MCPA_MFA_REAUTH_URL`                              | URL where users enroll in MFA or reauthenticate.                                                            |
-| `MCPA_OAUTH_CLIENTS`                               | JSON registry of approved MCP clients: `{"<client_id>":{"name":"...","redirect_uris":["..."]}}`.            |
-| `MCPA_AUTHORIZE_CACHE_TTL`                         | Go duration for caching allowed Delcore results, for example `30s`. Required.                               |
-| `MCPA_CHECKPOINT_INTERVAL`                         | Go duration of the metering checkpoint interval, for example `5s`. Required.                                |
-| `MCPA_OUTBOX_INTERVAL`                             | Go duration of the outbox delivery poll interval.                                                           |
-| `MCPA_METRICS_TOKEN`                               | Optional bearer token for `/metrics`. Secret.                                                               |
-| `DEPENDENCY_TIMEOUT`                               | Go duration for Delcore and database calls.                                                                 |
-| `LOG_FORMAT`                                       | `text` (default, ANSI color) or `json`.                                                                     |
-| `NO_COLOR`                                         | Any value disables ANSI color in text logs.                                                                 |
-| `OTEL_*`                                           | Standard OpenTelemetry exporter variables. Tracing is disabled when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset. |
+| Name                                                                       | Meaning                                                                                                                   |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `LISTEN`                                                                   | Listen address. The default is `127.0.0.1:46329`.                                                                         |
+| `DATABASE_URL`                                                             | PostgreSQL URL. Secret.                                                                                                   |
+| `MCPA_PUBLIC_URL`                                                          | Public API origin, for example `https://mcpa.api.delino.io`. Endpoint base URLs derive from it.                           |
+| `WEB_ORIGIN`                                                               | Console origin, for example `https://mcpa.delino.io`, used for CORS and `Origin` checks.                                  |
+| `MCPA_WEB_RETURN_URLS`                                                     | JSON array of the exact allowed console `return_to` URLs.                                                                 |
+| `MCPA_MASTER_KEYS`                                                         | JSON object of key ID to base64url 32-byte master key. Secret.                                                            |
+| `MCPA_ACTIVE_KEY_ID`                                                       | Key ID used for new encryptions.                                                                                          |
+| `MCPA_SERVICE_ID`                                                          | Delcore service UUID v7 of `mcpa`, used as the event `service_id`.                                                        |
+| `DELCORE_URL`, `DELCORE_RESOURCE`                                          | Delcore Connect base URL and Logto resource indicator.                                                                    |
+| `LOGTO_TOKEN_URL`, `CLIENT_ID`, `CLIENT_SECRET`                            | Machine-to-machine credentials for Delcore (client credentials). `CLIENT_SECRET` is secret.                               |
+| `LOGTO_ISSUER`                                                             | Logto OIDC issuer for discovery and JWKS.                                                                                 |
+| `MCPA_LOGTO_CLIENT_ID`, `MCPA_LOGTO_CLIENT_SECRET`                         | Logto web application used by the console BFF and the MCP broker. The secret is secret.                                   |
+| `MCPA_GEMINI_CLI_OAUTH_CLIENT_ID`, `MCPA_GEMINI_CLI_OAUTH_CLIENT_SECRET`   | Optional Google installed-app OAuth client for Gemini CLI account connection. Set both or neither. The secret is secret.  |
+| `MCPA_ANTIGRAVITY_OAUTH_CLIENT_ID`, `MCPA_ANTIGRAVITY_OAUTH_CLIENT_SECRET` | Optional Google installed-app OAuth client for Antigravity account connection. Set both or neither. The secret is secret. |
+| `MCPA_API_RESOURCE`                                                        | Logto API resource (audience) for console sessions, for example `https://mcpa.api.delino.io`.                             |
+| `MCPA_MCP_RESOURCE`                                                        | MCP-only audience, for example `https://mcpa.api.delino.io/mcp`.                                                          |
+| `MCPA_MFA_CLAIM`                                                           | Boolean access-token claim that carries MFA evidence. The default is `mcpa_mfa`.                                          |
+| `MCPA_MFA_REAUTH_URL`                                                      | URL where users enroll in MFA or reauthenticate.                                                                          |
+| `MCPA_OAUTH_CLIENTS`                                                       | JSON registry of approved MCP clients: `{"<client_id>":{"name":"...","redirect_uris":["..."]}}`.                          |
+| `MCPA_AUTHORIZE_CACHE_TTL`                                                 | Go duration for caching allowed Delcore results, for example `30s`. Required.                                             |
+| `MCPA_CHECKPOINT_INTERVAL`                                                 | Go duration of the metering checkpoint interval, for example `5s`. Required.                                              |
+| `MCPA_OUTBOX_INTERVAL`                                                     | Go duration of the outbox delivery poll interval.                                                                         |
+| `MCPA_METRICS_TOKEN`                                                       | Optional bearer token for `/metrics`. Secret.                                                                             |
+| `DEPENDENCY_TIMEOUT`                                                       | Go duration for Delcore and database calls.                                                                               |
+| `LOG_FORMAT`                                                               | `text` (default, ANSI color) or `json`.                                                                                   |
+| `NO_COLOR`                                                                 | Any value disables ANSI color in text logs.                                                                               |
+| `OTEL_*`                                                                   | Standard OpenTelemetry exporter variables. Tracing is disabled when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset.               |
 
 Secrets live in the operator's deployment target or the `/mcpa-api` Infisical development folder. They never live in Git, workflow files, frontend environments or logs. See the [environment contract](repository-environment-contract.md#managed-cpa-development-environment).
 

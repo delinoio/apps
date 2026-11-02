@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/delinoio/apps/protos/mcpa/v1/mcpav1connect"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/auth"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/obs"
@@ -138,5 +140,29 @@ func TestReadiness(t *testing.T) {
 	}
 	if rec := do(newHandler(t, nil), http.MethodGet, "/readyz", nil); rec.Code != http.StatusOK {
 		t.Fatalf("ready: %d", rec.Code)
+	}
+}
+
+func TestSelfMeteredMountIsCountedOnce(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	authn := auth.NewAuthenticator(auth.AuthenticatorConfig{WebOrigin: webOrigin})
+	metrics := obs.NewMetrics()
+	h := server.New(server.Config{
+		Service: mcpav1connect.UnimplementedMcpaServiceHandler{}, Authenticator: authn,
+		Web: web.New(web.Config{Authenticator: authn, Log: log}), Metrics: metrics, Log: log, WebOrigin: webOrigin,
+		Mounts: []server.Mount{
+			{Pattern: "/r/", Surface: obs.SurfaceProxy, SelfMetered: true, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				metrics.HTTPRequests.WithLabelValues(string(obs.SurfaceProxy), "2xx").Inc()
+			})},
+			{Pattern: "/mcp", Surface: obs.SurfaceMCP, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})},
+		},
+	})
+	do(h, http.MethodPost, "/r/x/v1/chat/completions", nil)
+	do(h, http.MethodPost, "/mcp", nil)
+	if got := testutil.ToFloat64(metrics.HTTPRequests.WithLabelValues("proxy", "2xx")); got != 1 {
+		t.Fatalf("proxy requests counted %v times", got)
+	}
+	if got := testutil.ToFloat64(metrics.HTTPRequests.WithLabelValues("mcp", "2xx")); got != 1 {
+		t.Fatalf("mcp requests counted %v times", got)
 	}
 }

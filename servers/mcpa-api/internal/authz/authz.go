@@ -183,6 +183,35 @@ func (a *Authorizer) ReplaceGroups(ctx context.Context, p *auth.Principal, tenan
 
 // EffectiveRole returns the principal's role on a resource.
 func (a *Authorizer) EffectiveRole(ctx context.Context, db store.DB, tenantID string, resourceID uuid.UUID, userID string) (mcpav1.ResourceRole, error) {
+	return effectiveRole(ctx, db, tenantID, resourceID, userID)
+}
+
+// Recheck reads the role p holds on r through db and checks it against need.
+// Callers run it in the transaction that locked r with store.LockResource,
+// after a first Resource check outside that lock. ACL changes run under the
+// same lock, so the recheck applies an ACL change that committed while the
+// caller waited for the lock or worked outside the transaction. Like
+// Resource, it reports no role as NOT_FOUND, a weaker role as
+// PERMISSION_DENIED and a deleted resource as FAILED_PRECONDITION. Storage
+// errors are returned unwrapped.
+func Recheck(ctx context.Context, db store.DB, p *auth.Principal, r store.Resource, need mcpav1.ResourceRole) (mcpav1.ResourceRole, error) {
+	role, err := effectiveRole(ctx, db, r.TenantID, r.ID, p.UserID)
+	if err != nil {
+		return 0, err
+	}
+	if role == mcpav1.ResourceRole_RESOURCE_ROLE_UNSPECIFIED {
+		return 0, apperr.NotFound("resource not found")
+	}
+	if !Satisfies(role, need) {
+		return 0, apperr.PermissionDenied("this action requires the " + RoleName(need) + " role on the resource")
+	}
+	if r.Deleted() {
+		return 0, apperr.FailedPrecondition("the resource was deleted")
+	}
+	return role, nil
+}
+
+func effectiveRole(ctx context.Context, db store.DB, tenantID string, resourceID uuid.UUID, userID string) (mcpav1.ResourceRole, error) {
 	groups, err := store.UserGroupIDs(ctx, db, tenantID, userID)
 	if err != nil {
 		return 0, err
