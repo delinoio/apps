@@ -4,7 +4,11 @@
 // 1-minute heartbeats and usage uploads and 5-minute external polling snapshots.
 //
 //   node anydash-load.mjs provision --api <url> --users users.json --out state.json
-//   node anydash-load.mjs run --api <url> --state state.json [--minutes 30]
+//   node anydash-load.mjs run --api <url> --state state.json [--minutes 30] [--mode gate|smoke]
+//
+// `run` defaults to the capacity gate mode, which refuses to start unless provisioning completed
+// for at least 1,000 users and 5,000 devices and the run lasts at least 30 minutes. `--mode smoke`
+// drives a smaller completed population for any duration; its result is never a gate result.
 //
 // `users.json` is an operator-prepared array of {"accessToken","delcoreAccessToken"} Logto
 // test-account tokens for the AnyDash and Delcore resources. Tokens and device credentials stay
@@ -28,10 +32,25 @@ const api = (args.api ?? "").replace(/\/$/u, "");
 const devicesPerUser = Number(args["devices-per-user"] ?? 5);
 const minutes = Number(args.minutes ?? 30);
 const version = args["client-version"] ?? "1.0.0";
-if (!api || !["provision", "run"].includes(command)) {
-  console.error("usage: anydash-load.mjs provision|run --api <url> ...");
+/** Run modes: the capacity gate from the server contract, or an explicit smaller smoke run. */
+const RunMode = Object.freeze({ GATE: "gate", SMOKE: "smoke" });
+const mode = args.mode ?? RunMode.GATE;
+if (
+  !api ||
+  !["provision", "run"].includes(command) ||
+  !Object.values(RunMode).includes(mode)
+) {
+  console.error(
+    "usage: anydash-load.mjs provision|run --api <url> ... [--mode gate|smoke]",
+  );
   process.exit(2);
 }
+// The capacity gate population and duration from the server contract.
+const GATE_USERS = 1000;
+const GATE_DEVICES = 5000;
+const GATE_MINUTES = 30;
+// Provisioning creates a Codex and a Vercel connection and registers both on every device.
+const CONNECTIONS_PER_DEVICE = 2;
 
 const stats = { requests: 0, errors: 0, byMethod: new Map() };
 function uuidv7() {
@@ -91,9 +110,17 @@ async function call(
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const bucket = (t) => new Date(Math.floor(t / 900_000) * 900_000).toISOString();
 
+// Provisioning steps that did not complete although their requests did not fail, for example an
+// enrollment that was not consumed. Request failures are counted in `stats.errors`.
+let incomplete = 0;
+function markIncomplete(step) {
+  incomplete += 1;
+  console.error(JSON.stringify({ event: "provision_incomplete", step }));
+}
+
 async function provision() {
   const users = JSON.parse(readFileSync(args.users, "utf8"));
-  const state = { users: [], devices: [] };
+  const state = { users: [], devices: [], complete: false };
   for (const user of users) {
     const kind = "CLIENT_KIND_WEB";
     const account = await call(
@@ -113,7 +140,12 @@ async function provision() {
         collectorVersion: version,
         osVersion: "24.04",
       });
-      if (!start) continue;
+      // StartEnrollment allows 10 requests per minute per client address.
+      const paced = sleep(6100);
+      if (!start) {
+        await paced;
+        continue;
+      }
       await call(
         "DeviceService/ApproveEnrollment",
         { enrollmentId: start.enrollmentId, userCode: start.userCode },
@@ -123,7 +155,11 @@ async function provision() {
         enrollmentId: start.enrollmentId,
         deviceCode: start.deviceCode,
       });
-      if (!polled) continue;
+      if (!polled?.credentials) {
+        if (polled) markIncomplete("PollEnrollment");
+        await paced;
+        continue;
+      }
       const device = {
         id: polled.device.id,
         access: polled.credentials.accessToken,
@@ -142,20 +178,23 @@ async function provision() {
         }
       }
       devices.push(device);
-      // StartEnrollment allows 10 requests per minute per client address.
-      await sleep(6100);
+      await paced;
     }
     // Every device registers the user's connections so that leases can fail over.
     const shared = devices[0]?.connections ?? [];
     for (const device of devices.slice(1)) {
+      const registered = [];
       for (const connectionId of shared) {
-        await call(
-          "ConnectionService/RegisterConnectionDevice",
-          { connectionId },
-          { token: device.access },
-        );
+        if (
+          await call(
+            "ConnectionService/RegisterConnectionDevice",
+            { connectionId },
+            { token: device.access },
+          )
+        )
+          registered.push(connectionId);
       }
-      device.connections = shared;
+      device.connections = registered;
     }
     const created = await call(
       "DashboardService/CreateDashboard",
@@ -163,8 +202,9 @@ async function provision() {
       { token: user.accessToken, kind },
     );
     let dashboardId = created?.dashboard?.id;
+    let widgetId;
     if (dashboardId) {
-      await call(
+      const added = await call(
         "DashboardService/AddWidget",
         {
           dashboardId,
@@ -186,19 +226,80 @@ async function provision() {
         },
         { token: user.accessToken, kind },
       );
+      widgetId = added?.widgetId;
     }
-    state.users.push({ accessToken: user.accessToken, dashboardId });
+    state.users.push({ accessToken: user.accessToken, dashboardId, widgetId });
     state.devices.push(...devices);
   }
+  // The state file is written even when provisioning is incomplete, because it holds the
+  // credentials of the devices that were enrolled; `run` refuses an incomplete state.
+  const problems = populationProblems(state, {
+    users: users.length,
+    devices: users.length * devicesPerUser,
+  });
+  if (stats.errors > 0) problems.push(`${stats.errors} requests failed`);
+  if (incomplete > 0) problems.push(`${incomplete} steps did not complete`);
+  state.complete = problems.length === 0;
   writeFileSync(args.out, JSON.stringify(state), { mode: 0o600 });
   console.log(
     JSON.stringify({
       event: "provisioned",
+      complete: state.complete,
       users: state.users.length,
       devices: state.devices.length,
       errors: stats.errors,
+      problems,
     }),
   );
+  process.exit(state.complete ? 0 : 1);
+}
+
+// Returns why `state` lacks the expected population: at least `expected.users` users with a
+// dashboard and a widget and at least `expected.devices` devices registered on every connection.
+function populationProblems(state, expected) {
+  const users = Array.isArray(state.users) ? state.users : [];
+  const devices = Array.isArray(state.devices) ? state.devices : [];
+  const problems = [];
+  if (users.length < expected.users)
+    problems.push(`${users.length} of ${expected.users} users provisioned`);
+  if (devices.length < expected.devices)
+    problems.push(
+      `${devices.length} of ${expected.devices} devices provisioned`,
+    );
+  const withoutWidget = users.filter((u) => !u.dashboardId || !u.widgetId);
+  if (withoutWidget.length > 0)
+    problems.push(`${withoutWidget.length} users lack a dashboard widget`);
+  const unregistered = devices.filter(
+    (d) =>
+      !d.id ||
+      !d.refresh ||
+      (d.connections ?? []).length !== CONNECTIONS_PER_DEVICE,
+  );
+  if (unregistered.length > 0)
+    problems.push(
+      `${unregistered.length} devices lack credentials or connection registrations`,
+    );
+  return problems;
+}
+
+// Refuses to start traffic for a population or duration that cannot produce the selected result.
+function runProblems(state) {
+  const gate = mode === RunMode.GATE;
+  const problems = populationProblems(
+    state,
+    gate
+      ? { users: GATE_USERS, devices: GATE_DEVICES }
+      : { users: 1, devices: 1 },
+  );
+  if (state.complete !== true)
+    problems.push("provisioning did not complete; provision again");
+  if (!Number.isFinite(minutes) || minutes <= 0)
+    problems.push("--minutes must be a positive number");
+  else if (gate && minutes < GATE_MINUTES)
+    problems.push(
+      `the capacity gate runs for at least ${GATE_MINUTES} minutes`,
+    );
+  return problems;
 }
 
 async function userLoop(user, until) {
@@ -328,6 +429,11 @@ async function deviceLoop(device, until) {
 
 async function run() {
   const state = JSON.parse(readFileSync(args.state, "utf8"));
+  const problems = runProblems(state);
+  if (problems.length > 0) {
+    console.error(JSON.stringify({ event: "invalid_run", mode, problems }));
+    process.exit(1);
+  }
   const until = Date.now() + minutes * 60_000;
   // Rotated refresh tokens replace the saved ones; presenting a rotated token again revokes the
   // device, so the state file is saved every minute in case the run is interrupted.
@@ -354,6 +460,8 @@ async function run() {
   console.log(
     JSON.stringify({
       event: "result",
+      mode,
+      capacityGate: mode === RunMode.GATE,
       users: state.users.length,
       devices: state.devices.length,
       minutes,
