@@ -77,6 +77,9 @@ struct State {
     sync_requested: bool,
     next_sync: i64,
     next_heartbeat: i64,
+    /// The server's heartbeat interval; held leases are renewed at this interval while a
+    /// provider poll blocks the scheduler. `None` until the first heartbeat.
+    heartbeat_interval: Option<Duration>,
     upload_failures: u32,
     next_upload: i64,
     /// `UploadUsage` rate-limit deadline (`Retry-After`). Local and scheduled syncs still
@@ -1038,6 +1041,13 @@ impl Core {
             }
             lock(&self.state).version = Some(v.clone());
         }
+        lock(&self.state).heartbeat_interval = Some(
+            response
+                .heartbeat_interval
+                .and_then(|d| u64::try_from(d.seconds).ok())
+                .filter(|s| *s > 0)
+                .map_or(schedule::HEARTBEAT_INTERVAL, Duration::from_secs),
+        );
         let device = self.device_id()?;
         let assigned: Vec<String> = response
             .assignments
@@ -1175,7 +1185,20 @@ impl Core {
             .with_key(|key, store| store.secret(key, &format!("connection:{}", row.id)))?
             .and_then(|b| String::from_utf8(b).ok());
         let started = std::time::Instant::now();
-        let outcome = providers::poll(&self.ctx, &row, secret.as_deref(), now).await;
+        // A poll can outlast the 5-minute lease (sequential requests, each with a 30-second
+        // timeout), and the scheduler sends no heartbeat until it completes. Renew the held
+        // leases beside the poll; losing the polled lease abandons the poll.
+        let outcome = tokio::select! {
+            outcome = providers::poll(&self.ctx, &row, secret.as_deref(), now) => Some(outcome),
+            () = self.keep_leases(&row.id) => None,
+        };
+        let Some(outcome) = outcome else {
+            tracing::info!(event = "poll_abandoned", connection_id = %row.id, reason = ErrorReason::LeaseExpired.as_str_name());
+            row.lease_held = false;
+            self.store().delete_pending_snapshot(&row.id)?;
+            self.store().put_connection(&row)?;
+            return Ok(None);
+        };
         if outcome.skipped {
             row.next_attempt = now + schedule::seconds(schedule::EXTERNAL_INTERVAL);
             self.store().put_connection(&row)?;
@@ -1267,6 +1290,52 @@ impl Core {
         }
         self.store().put_connection(&row)?;
         result.map(|()| Some(status))
+    }
+    /// Renew every held lease at the heartbeat interval until the lease of `polling` is lost.
+    /// Runs beside a provider poll, which blocks the scheduler's heartbeats. Other lost leases
+    /// return their connections to candidate selection; other failures are retried at the next
+    /// interval while the lease remains valid.
+    async fn keep_leases(&self, polling: &str) {
+        let period = lock(&self.state)
+            .heartbeat_interval
+            .unwrap_or(schedule::HEARTBEAT_INTERVAL);
+        let mut renewal = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+        renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            renewal.tick().await;
+            let Ok(rows) = self.store().connections() else {
+                continue;
+            };
+            for mut row in rows.into_iter().filter(|r| r.lease_held) {
+                let request = RenewLeaseRequest {
+                    connection_id: row.id.clone(),
+                    epoch: row.lease_epoch,
+                };
+                match self
+                    .call::<_, RenewLeaseResponse>("CollectorService", "RenewLease", &request)
+                    .await
+                {
+                    // The poll in progress serves a refresh of the polled connection.
+                    Ok(r) if r.refresh_requested && row.id != polling => {
+                        Self::manual_due(&mut row, time::now());
+                        let _ = self.store().put_connection(&row);
+                    }
+                    Ok(_) => {}
+                    Err(f) if f.reason == ErrorReason::LeaseExpired => {
+                        tracing::info!(event = "lease_lost", connection_id = %row.id, epoch = row.lease_epoch);
+                        if row.id == polling {
+                            return;
+                        }
+                        row.lease_held = false;
+                        let _ = self.store().delete_pending_snapshot(&row.id);
+                        let _ = self.store().put_connection(&row);
+                    }
+                    Err(f) => {
+                        tracing::warn!(event = "lease_renewal_failed", connection_id = %row.id, reason = f.reason.as_str_name(), correlation_id = %f.correlation_id);
+                    }
+                }
+            }
+        }
     }
     /// Report a passive Codex observation from local sessions when it is newer than the latest
     /// active observation and the lease is held.
@@ -1361,13 +1430,10 @@ impl Core {
         }
         let result = async {
             if lock(&self.state).next_heartbeat <= now {
-                let response = self.heartbeat(now).await?;
-                let interval = response
-                    .heartbeat_interval
-                    .and_then(|d| u64::try_from(d.seconds).ok())
-                    .filter(|s| *s > 0)
-                    .map_or(schedule::HEARTBEAT_INTERVAL, Duration::from_secs);
-                lock(&self.state).next_heartbeat = now + schedule::seconds(interval);
+                self.heartbeat(now).await?;
+                let mut s = lock(&self.state);
+                let interval = s.heartbeat_interval.unwrap_or(schedule::HEARTBEAT_INTERVAL);
+                s.next_heartbeat = now + schedule::seconds(interval);
             }
             let upload_due = {
                 let s = lock(&self.state);

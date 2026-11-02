@@ -43,6 +43,24 @@ struct Api {
     /// Expiry of refreshed access tokens; 0 means one hour.
     refreshed_expires: i64,
     refreshes: u32,
+    /// Heartbeat interval in seconds; 0 means 60.
+    heartbeat_seconds: i64,
+    /// When set, a lease expires this long after its acquisition, last heartbeat or renewal,
+    /// and `RenewLease` and `ReportSnapshot` then return `LEASE_EXPIRED`.
+    lease_ttl: Option<Duration>,
+    lease_extended: Option<std::time::Instant>,
+}
+impl Api {
+    fn lease_valid(&self) -> bool {
+        self.holder == DEVICE
+            && self
+                .lease_ttl
+                .zip(self.lease_extended)
+                .is_none_or(|(ttl, at)| at.elapsed() < ttl)
+    }
+    fn lease_expired() -> Reply {
+        Reply::reason(400, "failed_precondition", ErrorReason::LeaseExpired)
+    }
 }
 fn creds(expires: i64, n: u32) -> DeviceCredentials {
     DeviceCredentials {
@@ -124,35 +142,45 @@ fn api(state: Arc<Mutex<Api>>) -> impl Fn(&Recorded) -> Reply + Send + Sync + 's
             "DeviceService/RevokeDeviceCredentials" => {
                 Reply::proto(&RevokeDeviceCredentialsResponse {})
             }
-            "CollectorService/Heartbeat" => Reply::proto(&HeartbeatResponse {
-                server_time: Some(time::timestamp(time::now())),
-                version_status: Some(pb::ClientVersionStatus {
-                    minimum_version: "0.0.1".into(),
-                    latest_version: "9.9.9".into(),
-                    update_available: true,
-                    update_required: false,
-                }),
-                assignments: vec![ConnectionAssignment {
-                    connection_id: "c1".into(),
-                    provider: Provider::Vercel.into(),
-                    lease: (s.epoch > 0).then(|| Lease {
-                        connection_id: "c1".into(),
-                        holder_device_id: s.holder.clone(),
-                        epoch: s.epoch,
-                        ..Default::default()
+            "CollectorService/Heartbeat" => {
+                if s.lease_valid() {
+                    s.lease_extended = Some(std::time::Instant::now());
+                }
+                Reply::proto(&HeartbeatResponse {
+                    server_time: Some(time::timestamp(time::now())),
+                    version_status: Some(pb::ClientVersionStatus {
+                        minimum_version: "0.0.1".into(),
+                        latest_version: "9.9.9".into(),
+                        update_available: true,
+                        update_required: false,
                     }),
-                    acquire_recommended: s.epoch == 0 || s.holder.is_empty(),
-                    refresh_requested: false,
-                }],
-                local_sync_requested: false,
-                heartbeat_interval: Some(prost_types::Duration {
-                    seconds: 60,
-                    nanos: 0,
-                }),
-            }),
+                    assignments: vec![ConnectionAssignment {
+                        connection_id: "c1".into(),
+                        provider: Provider::Vercel.into(),
+                        lease: (s.epoch > 0).then(|| Lease {
+                            connection_id: "c1".into(),
+                            holder_device_id: s.holder.clone(),
+                            epoch: s.epoch,
+                            ..Default::default()
+                        }),
+                        acquire_recommended: s.epoch == 0 || s.holder.is_empty(),
+                        refresh_requested: false,
+                    }],
+                    local_sync_requested: false,
+                    heartbeat_interval: Some(prost_types::Duration {
+                        seconds: if s.heartbeat_seconds == 0 {
+                            60
+                        } else {
+                            s.heartbeat_seconds
+                        },
+                        nanos: 0,
+                    }),
+                })
+            }
             "CollectorService/AcquireLease" => {
                 s.epoch += 1;
                 s.holder = DEVICE.into();
+                s.lease_extended = Some(std::time::Instant::now());
                 Reply::proto(&AcquireLeaseResponse {
                     granted: true,
                     lease: Some(Lease {
@@ -165,7 +193,8 @@ fn api(state: Arc<Mutex<Api>>) -> impl Fn(&Recorded) -> Reply + Send + Sync + 's
             }
             "CollectorService/RenewLease" => {
                 let req: RenewLeaseRequest = support::decode(r);
-                if req.epoch == s.epoch && s.holder == DEVICE {
+                if req.epoch == s.epoch && s.lease_valid() {
+                    s.lease_extended = Some(std::time::Instant::now());
                     Reply::proto(&RenewLeaseResponse {
                         lease: None,
                         refresh_requested: false,
@@ -187,6 +216,7 @@ fn api(state: Arc<Mutex<Api>>) -> impl Fn(&Recorded) -> Reply + Send + Sync + 's
                 s.holder.clear();
                 Reply::proto(&ReleaseLeaseResponse {})
             }
+            "CollectorService/ReportSnapshot" if !s.lease_valid() => Api::lease_expired(),
             "CollectorService/ReportSnapshot" => s.report.map_or_else(
                 || {
                     Reply::proto(&ReportSnapshotResponse {
@@ -560,6 +590,56 @@ async fn lease_acquire_epoch_reports_and_loss() {
     // Disconnect unregisters this device and deletes the local credential.
     core.remove_connection("c1").await.unwrap();
     assert_eq!(core.status(true).unwrap().connections.len(), 0);
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn leases_are_renewed_during_a_poll_longer_than_the_lease() {
+    let home = tempfile::tempdir().unwrap();
+    // Scaled down: a 1-second heartbeat interval and a 2-second lease against a provider that
+    // answers after 3.5 seconds.
+    let state = Arc::new(Mutex::new(Api {
+        heartbeat_seconds: 1,
+        lease_ttl: Some(Duration::from_secs(2)),
+        ..Api::default()
+    }));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    let base = api(state.clone());
+    mock.set(move |r| {
+        let reply = base(r);
+        if r.route() == "/v10/projects" {
+            reply.delayed(Duration::from_millis(3500))
+        } else {
+            reply
+        }
+    });
+    let now = time::now();
+    core.heartbeat(now).await.unwrap();
+    mock.clear();
+    assert_eq!(
+        core.poll_connection("c1", now).await.unwrap(),
+        Some(CollectionStatus::Succeeded)
+    );
+    assert_eq!(mock.count("/anydash.v1.CollectorService/ReportSnapshot"), 1);
+    assert!(
+        core.status(true).unwrap().connections[0].lease_held,
+        "the snapshot was accepted under a valid lease"
+    );
+    assert!(
+        mock.count("/anydash.v1.CollectorService/RenewLease") >= 3,
+        "the lease is renewed before the poll and while it runs"
+    );
+    // A lease lost during the poll abandons it without a report.
+    let s = state.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let mut s = s.lock().unwrap();
+        s.epoch += 1;
+        s.holder = "01890000-0000-7000-8000-00000000d002".into();
+    });
+    mock.clear();
+    assert_eq!(core.poll_connection("c1", now + 300).await.unwrap(), None);
+    assert!(!core.status(true).unwrap().connections[0].lease_held);
+    assert_eq!(mock.count("/anydash.v1.CollectorService/ReportSnapshot"), 0);
 }
 #[tokio::test(flavor = "multi_thread")]
 async fn active_observation_is_timestamped_after_lease_acquisition() {
