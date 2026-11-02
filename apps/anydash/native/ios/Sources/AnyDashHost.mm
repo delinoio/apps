@@ -98,7 +98,13 @@ static void KeychainRemove(NSString *account, NSString *group) {
 
 @interface AnyDashHost () <ASWebAuthenticationPresentationContextProviding>
 @property(nonatomic, strong) NSDictionary *config;
+/// Guarded by @synchronized (self), together with `sessionGeneration` and the
+/// session Keychain writes that depend on the current session.
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *tokens;
+/// Sign-in and sign-out advance it, so a token request that started under an
+/// earlier session can neither store its rotated refresh token nor cache or
+/// return its access token, and its failure cannot end a newer session.
+@property(nonatomic) NSUInteger sessionGeneration;
 @property(nonatomic, strong) ASWebAuthenticationSession *authSession;
 @property(nonatomic, copy) NSString *pendingRoute;
 @end
@@ -150,7 +156,9 @@ static void KeychainRemove(NSString *account, NSString *group) {
 
 #pragma mark - Logto
 
-- (void)tokenRequest:(NSDictionary *)params completion:(void (^)(NSDictionary *body, NSString *error))completion {
+- (void)tokenRequest:(NSDictionary *)params
+          generation:(NSUInteger)generation
+          completion:(void (^)(NSDictionary *body, NSString *error))completion {
   NSURL *url = [NSURL URLWithString:@"/oidc/token" relativeToURL:[NSURL URLWithString:self.config[@"endpoint"]]];
   NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
   request.HTTPMethod = @"POST";
@@ -165,7 +173,9 @@ static void KeychainRemove(NSString *account, NSString *group) {
     NSInteger status = [(NSHTTPURLResponse *)response statusCode];
     NSDictionary *body = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     if (error || status != 200 || ![body isKindOfClass:NSDictionary.class]) {
-      if (status == 400) [self clearSession];
+      AnyDashLog(@"anydash_token_failed", @{@"status": @(status)});
+      // An invalid grant ends the session that issued the request; transient failures keep it.
+      if (status == 400) [self clearSessionIfCurrent:generation];
       completion(nil, @"Sign-in expired. Sign in again.");
       return;
     }
@@ -210,19 +220,29 @@ static void KeychainRemove(NSString *account, NSString *group) {
         completion(@"Sign-in was cancelled.");
         return;
       }
+      NSUInteger generation;
+      @synchronized (self) { generation = self.sessionGeneration; }
       [self tokenRequest:@{@"grant_type": @"authorization_code", @"code": code, @"redirect_uri": kRedirect, @"code_verifier": verifier}
+              generation:generation
               completion:^(NSDictionary *body, NSString *failure) {
         NSString *refresh = body[@"refresh_token"];
-        if (failure || !refresh) { completion(failure ?: @"Sign-in returned no refresh token."); return; }
-        KeychainSet(kRefreshAccount, refresh, nil);
-        NSArray *parts = [body[@"id_token"] componentsSeparatedByString:@"."];
+        if (failure || ![refresh isKindOfClass:NSString.class]) { completion(failure ?: @"Sign-in returned no refresh token."); return; }
+        NSString *userKey = nil;
+        NSArray *parts = [body[@"id_token"] isKindOfClass:NSString.class] ? [body[@"id_token"] componentsSeparatedByString:@"."] : nil;
         if (parts.count == 3) {
           NSString *payload = [[parts[1] stringByReplacingOccurrencesOfString:@"-" withString:@"+"] stringByReplacingOccurrencesOfString:@"_" withString:@"/"];
           while (payload.length % 4) payload = [payload stringByAppendingString:@"="];
           NSData *json = [[NSData alloc] initWithBase64EncodedString:payload options:0];
           NSDictionary *claims = json ? [NSJSONSerialization JSONObjectWithData:json options:0 error:nil] : nil;
-          if ([claims[@"sub"] isKindOfClass:NSString.class])
-            KeychainSet(kUserKeyAccount, SHA256Hex([@"anydash:" stringByAppendingString:claims[@"sub"]]), nil);
+          if ([claims isKindOfClass:NSDictionary.class] && [claims[@"sub"] isKindOfClass:NSString.class])
+            userKey = SHA256Hex([@"anydash:" stringByAppendingString:claims[@"sub"]]);
+        }
+        // A new session starts: outstanding refreshes of the previous one are discarded.
+        @synchronized (self) {
+          self.sessionGeneration += 1;
+          [self.tokens removeAllObjects];
+          KeychainSet(kRefreshAccount, refresh, nil);
+          if (userKey) KeychainSet(kUserKeyAccount, userKey, nil);
         }
         completion(nil);
       }];
@@ -233,35 +253,63 @@ static void KeychainRemove(NSString *account, NSString *group) {
 }
 
 - (void)accessToken:(NSString *)resource completion:(void (^)(NSString *token, NSString *error))completion {
-  NSDictionary *cached = self.tokens[resource];
-  if (cached && [cached[@"expiresAt"] doubleValue] - 60 > NSDate.date.timeIntervalSince1970) {
-    completion(cached[@"token"], nil);
-    return;
+  NSUInteger generation;
+  NSString *refresh = nil, *cachedToken = nil;
+  @synchronized (self) {
+    NSDictionary *cached = self.tokens[resource];
+    if (cached && [cached[@"expiresAt"] doubleValue] - 60 > NSDate.date.timeIntervalSince1970) cachedToken = cached[@"token"];
+    generation = self.sessionGeneration;
+    if (!cachedToken) refresh = KeychainGet(kRefreshAccount, nil);
   }
-  NSString *refresh = KeychainGet(kRefreshAccount, nil);
+  if (cachedToken) { completion(cachedToken, nil); return; }
   if (!refresh) { completion(nil, @"Sign in to AnyDash."); return; }
   [self tokenRequest:@{@"grant_type": @"refresh_token", @"refresh_token": refresh, @"resource": resource}
+          generation:generation
           completion:^(NSDictionary *body, NSString *error) {
     if (error || ![body[@"access_token"] isKindOfClass:NSString.class]) { completion(nil, error ?: @"Sign in to AnyDash."); return; }
-    if ([body[@"refresh_token"] isKindOfClass:NSString.class]) KeychainSet(kRefreshAccount, body[@"refresh_token"], nil);
     NSTimeInterval expiresAt = NSDate.date.timeIntervalSince1970 + [body[@"expires_in"] ?: @3600 doubleValue];
-    @synchronized (self) { self.tokens[resource] = @{@"token": body[@"access_token"], @"expiresAt": @(expiresAt)}; }
-    if ([resource isEqualToString:self.config[@"anydashResource"]]) {
-      // The widget extension may refresh while this token is valid; afterwards it
-      // shows the latest snapshot. It never receives the refresh token.
-      NSDictionary *shared = @{@"token": body[@"access_token"], @"expiresAt": @(expiresAt), @"version": self.config[@"version"]};
-      NSData *json = [NSJSONSerialization dataWithJSONObject:shared options:0 error:nil];
-      KeychainSet(kWidgetAccount, [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding], self.config[@"sharedGroup"]);
+    BOOL current;
+    @synchronized (self) {
+      // The session ended or was replaced while the request was in flight: the
+      // rotated refresh token and the access token belong to a session that no
+      // longer exists, so storing them would restore it.
+      current = generation == self.sessionGeneration;
+      if (current) {
+        if ([body[@"refresh_token"] isKindOfClass:NSString.class]) KeychainSet(kRefreshAccount, body[@"refresh_token"], nil);
+        self.tokens[resource] = @{@"token": body[@"access_token"], @"expiresAt": @(expiresAt)};
+        if ([resource isEqualToString:self.config[@"anydashResource"]]) {
+          // The widget extension may refresh while this token is valid; afterwards it
+          // shows the latest snapshot. It never receives the refresh token.
+          NSDictionary *shared = @{@"token": body[@"access_token"], @"expiresAt": @(expiresAt), @"version": self.config[@"version"]};
+          NSData *json = [NSJSONSerialization dataWithJSONObject:shared options:0 error:nil];
+          KeychainSet(kWidgetAccount, [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding], self.config[@"sharedGroup"]);
+        }
+      }
+    }
+    if (!current) {
+      AnyDashLog(@"anydash_token_discarded", @{});
+      completion(nil, @"Sign in to AnyDash.");
+      return;
     }
     completion(body[@"access_token"], nil);
   }];
 }
 
 - (void)clearSession {
-  @synchronized (self) { [self.tokens removeAllObjects]; }
-  KeychainRemove(kRefreshAccount, nil);
-  KeychainRemove(kUserKeyAccount, nil);
-  KeychainRemove(kWidgetAccount, self.config[@"sharedGroup"]);
+  @synchronized (self) {
+    self.sessionGeneration += 1;
+    [self.tokens removeAllObjects];
+    KeychainRemove(kRefreshAccount, nil);
+    KeychainRemove(kUserKeyAccount, nil);
+    KeychainRemove(kWidgetAccount, self.config[@"sharedGroup"]);
+  }
+}
+
+/// Ends the session only while `generation` is still the current one.
+- (void)clearSessionIfCurrent:(NSUInteger)generation {
+  @synchronized (self) {
+    if (generation == self.sessionGeneration) [self clearSession];
+  }
 }
 
 #pragma mark - Files
