@@ -133,7 +133,7 @@ The root pins Portless as a development dependency. Run `pnpm dev` from the repo
 | Git Tracker API | `https://git-tracker-api.localhost` | `127.0.0.1:46321` |
 | DeliTools API   | `https://delitools-api.localhost`   | `127.0.0.1:46322` |
 | Lane            | `https://lane.localhost`            | `127.0.0.1:46325` |
-| AnyDash         | `https://anydash.localhost`         | `127.0.0.1:46328` |
+| AnyDash         | `https://anydash.localhost`         | `127.0.0.1:46330` |
 | Perfine API     | `https://perfine-api.localhost`     | `127.0.0.1:46323` |
 | AnyDash API     | `https://anydash-api.localhost`     | `127.0.0.1:46331` |
 

@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name anydash --app-port 46328 rspeedy dev",
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name anydash --app-port 46330 rspeedy dev",
     "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- pnpm desktop:start",
     "build": "rspeedy build",
     "build:frontend": "pnpm build",
