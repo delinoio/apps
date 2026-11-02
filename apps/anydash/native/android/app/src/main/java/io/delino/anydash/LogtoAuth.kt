@@ -58,7 +58,14 @@ class AuthException(message: String) : Exception(message)
  * Keystore-encrypted session store; access tokens stay in memory.
  */
 internal class LogtoAuth(private val store: SessionStore) {
+    /** Guards `tokens`, `session` and session-store writes that depend on the current session. */
     private val tokens = mutableMapOf<String, Pair<String, Long>>()
+    /**
+     * Session generation. Sign-in and sign-out advance it, so a token request that
+     * started under an earlier session can neither store its rotated refresh token
+     * nor cache or return its access token, and its failure cannot end a newer session.
+     */
+    private var session = 0L
     val configured get() = BuildConfig.LOGTO_ENDPOINT.isNotEmpty() && BuildConfig.LOGTO_APP_ID.isNotEmpty()
     val signedIn get() = store.get(SessionStore.SESSION)?.optString("refreshToken")?.isNotEmpty() == true
     val userKey: String? get() = store.get(SessionStore.SESSION)?.optString("userKey")?.ifEmpty { null }
@@ -79,6 +86,7 @@ internal class LogtoAuth(private val store: SessionStore) {
     /** Exchanges the callback code after checking state and age (10 minutes). */
     fun completeSignIn(callback: Uri) {
         val pending = store.get(SessionStore.PENDING) ?: throw AuthException("Sign-in was cancelled.")
+        val generation = synchronized(tokens) { session }
         store.remove(SessionStore.PENDING)
         val state = callback.getQueryParameter("state").orEmpty()
         val code = callback.getQueryParameter("code")
@@ -91,40 +99,59 @@ internal class LogtoAuth(private val store: SessionStore) {
             "code" to code,
             "redirect_uri" to REDIRECT,
             "code_verifier" to pending.getString("verifier"),
-        ))
+        ), generation)
         val refresh = body.optString("refresh_token").ifEmpty { throw AuthException("Sign-in returned no refresh token.") }
         val subject = Pkce.subject(body.optString("id_token"))
-        store.put(SessionStore.SESSION, JSONObject().put("refreshToken", refresh)
-            .put("userKey", subject?.let { sha256Hex("anydash:$it") } ?: ""))
-        synchronized(tokens) { tokens.clear() }
+        synchronized(tokens) {
+            session += 1
+            tokens.clear()
+            store.put(SessionStore.SESSION, JSONObject().put("refreshToken", refresh)
+                .put("userKey", subject?.let { sha256Hex("anydash:$it") } ?: ""))
+        }
     }
 
     /** A cached or refreshed access token for one API resource. */
     fun accessToken(resource: String): String {
-        synchronized(tokens) {
+        val (generation, stored) = synchronized(tokens) {
             tokens[resource]?.let { (token, expiresAt) -> if (expiresAt - 60_000 > System.currentTimeMillis()) return token }
+            session to store.get(SessionStore.SESSION)
         }
-        val session = store.get(SessionStore.SESSION) ?: throw AuthException("Sign in to AnyDash.")
+        val current = stored ?: throw AuthException("Sign in to AnyDash.")
         val body = token(listOf(
             "grant_type" to "refresh_token",
-            "refresh_token" to session.getString("refreshToken"),
+            "refresh_token" to current.getString("refreshToken"),
             "resource" to resource,
-        ))
+        ), generation)
         val token = body.optString("access_token").ifEmpty { throw AuthException("Sign in to AnyDash.") }
-        body.optString("refresh_token").takeIf { it.isNotEmpty() }?.let {
-            store.put(SessionStore.SESSION, session.put("refreshToken", it))
-        }
         val expiresAt = System.currentTimeMillis() + body.optLong("expires_in", 3600) * 1000
-        synchronized(tokens) { tokens[resource] = token to expiresAt }
+        synchronized(tokens) {
+            // The session ended or was replaced while the request was in flight.
+            if (generation != session) {
+                AnyDashLog.info("anydash_token_discarded")
+                throw AuthException("Sign in to AnyDash.")
+            }
+            body.optString("refresh_token").takeIf { it.isNotEmpty() }?.let {
+                store.put(SessionStore.SESSION, current.put("refreshToken", it))
+            }
+            tokens[resource] = token to expiresAt
+        }
         return token
     }
 
     fun signOut() {
-        synchronized(tokens) { tokens.clear() }
-        store.clear()
+        synchronized(tokens) {
+            session += 1
+            tokens.clear()
+            store.clear()
+        }
     }
 
-    private fun token(params: List<Pair<String, String>>): JSONObject {
+    /** Ends the session only while `generation` is still the current one. */
+    private fun signOutIfCurrent(generation: Long) {
+        synchronized(tokens) { if (generation == session) signOut() }
+    }
+
+    private fun token(params: List<Pair<String, String>>, generation: Long): JSONObject {
         val connection = URL("${BuildConfig.LOGTO_ENDPOINT}/oidc/token").openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
@@ -139,7 +166,7 @@ internal class LogtoAuth(private val store: SessionStore) {
             if (status != 200) {
                 AnyDashLog.error("anydash_token_failed", "status" to status)
                 // An invalid grant ends the session; transient failures keep it.
-                if (status == 400) signOut()
+                if (status == 400) signOutIfCurrent(generation)
                 throw AuthException("Sign-in expired. Sign in again.")
             }
             return JSONObject(connection.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8))
