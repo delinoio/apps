@@ -223,13 +223,25 @@ impl Core {
         }
         Ok(keys)
     }
-    fn key(&self) -> Result<DataKey> {
-        self.keys()?.as_ref().map(|k| k.key.clone()).ok_or_else(|| {
-            Failure::local(
-                ErrorReason::KeyUnavailable,
-                "The encryption key is unavailable.",
-            )
-        })
+    /// Run `f` with the data key and the store while the key lock is held, so a concurrent key
+    /// rotation cannot replace and delete the key between encryption or decryption and the
+    /// store operation. Lock order: keys before store.
+    #[expect(
+        clippy::significant_drop_tightening,
+        reason = "The key guard is held through `f` on purpose."
+    )]
+    fn with_key<T>(&self, f: impl FnOnce(&DataKey, &Store) -> Result<T>) -> Result<T> {
+        let keys = self.keys()?;
+        let key = &keys
+            .as_ref()
+            .ok_or_else(|| {
+                Failure::local(
+                    ErrorReason::KeyUnavailable,
+                    "The encryption key is unavailable.",
+                )
+            })?
+            .key;
+        f(key, &self.store())
     }
     /// Record the last error for `status` and app error screens.
     pub fn record_error(&self, f: &Failure) {
@@ -242,14 +254,11 @@ impl Core {
         self.store().meta("device_id")
     }
     fn credentials(&self) -> Result<Option<DeviceCredentials>> {
-        let key = self.key()?;
-        let bytes = self.store().secret(&key, CREDENTIALS)?;
+        let bytes = self.with_key(|key, store| store.secret(key, CREDENTIALS))?;
         Ok(bytes.and_then(|b| DeviceCredentials::decode(b.as_slice()).ok()))
     }
     fn save_credentials(&self, c: &DeviceCredentials) -> Result<()> {
-        let key = self.key()?;
-        self.store()
-            .put_secret(&key, CREDENTIALS, &c.encode_to_vec())
+        self.with_key(|key, store| store.put_secret(key, CREDENTIALS, &c.encode_to_vec()))
     }
     pub fn logged_in(&self) -> Result<bool> {
         let store = self.store();
@@ -597,30 +606,29 @@ impl Core {
             response.connection
         }
         .ok_or_else(|| Failure::internal("The connection response is empty."))?;
-        let key = self.key()?;
-        let store = self.store();
-        if !local {
-            store.put_secret(
-                &key,
-                &format!("connection:{}", connection.id),
-                secret.as_bytes(),
-            )?;
-        }
-        store.put_connection(&ConnectionRow {
-            id: connection.id.clone(),
-            provider: provider.into(),
-            display_name: connection.display_name.clone(),
-            scope_id: r.scope_id.trim().to_owned(),
-            // The server keeps the fingerprint of the first registration; a registration
-            // without one adopts it.
-            account_fingerprint: if connection.account_fingerprint.is_empty() {
-                validation.fingerprint
-            } else {
-                connection.account_fingerprint.clone()
-            },
-            ..ConnectionRow::default()
+        self.with_key(|key, store| {
+            if !local {
+                store.put_secret(
+                    key,
+                    &format!("connection:{}", connection.id),
+                    secret.as_bytes(),
+                )?;
+            }
+            store.put_connection(&ConnectionRow {
+                id: connection.id.clone(),
+                provider: provider.into(),
+                display_name: connection.display_name.clone(),
+                scope_id: r.scope_id.trim().to_owned(),
+                // The server keeps the fingerprint of the first registration; a registration
+                // without one adopts it.
+                account_fingerprint: if connection.account_fingerprint.is_empty() {
+                    validation.fingerprint
+                } else {
+                    connection.account_fingerprint.clone()
+                },
+                ..ConnectionRow::default()
+            })
         })?;
-        drop(store);
         tracing::info!(event = "connection_added", connection_id = %connection.id, provider = providers::provider_name(provider));
         self.wake.notify_one();
         Ok(connection)
@@ -1163,12 +1171,9 @@ impl Core {
             }
             Err(f) => return Err(f),
         }
-        let secret = {
-            let key = self.key()?;
-            self.store()
-                .secret(&key, &format!("connection:{}", row.id))?
-                .and_then(|b| String::from_utf8(b).ok())
-        };
+        let secret = self
+            .with_key(|key, store| store.secret(key, &format!("connection:{}", row.id)))?
+            .and_then(|b| String::from_utf8(b).ok());
         let started = std::time::Instant::now();
         let outcome = providers::poll(&self.ctx, &row, secret.as_deref(), now).await;
         if outcome.skipped {
@@ -1414,5 +1419,59 @@ impl Core {
     #[must_use]
     pub fn quitting(&self) -> bool {
         lock(&self.state).quit
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::{CREDENTIALS, Core, Options, Owner};
+    use crate::{
+        keys::MemoryStore, pb::DeviceCredentials, providers::Endpoints, settings::Settings,
+    };
+    use prost::Message as _;
+    use std::{sync::Arc, time::Duration};
+    #[test]
+    fn key_rotation_waits_for_an_encrypted_write() {
+        let home = tempfile::tempdir().unwrap();
+        let anydash_home = home.path().join("anydash");
+        let api = "http://127.0.0.1:9";
+        let settings = Settings::with_vars(
+            home.path().to_path_buf(),
+            &[
+                ("ANYDASH_HOME", anydash_home.to_str().unwrap()),
+                ("ANYDASH_KEY_SOURCE", "file"),
+                ("ANYDASH_API_URL", api),
+            ],
+        );
+        let core = Core::open(Options {
+            settings,
+            endpoints: Endpoints::mock(api, "grok-not-installed-for-tests"),
+            os: Arc::new(MemoryStore::default()),
+            owner: Owner::Direct,
+        })
+        .unwrap();
+        let creds = DeviceCredentials {
+            access_token: "ada_1".into(),
+            ..DeviceCredentials::default()
+        };
+        // A rotation that starts while a write holds the key must wait for the write, then
+        // re-encrypt it; otherwise the write would store ciphertext under the replaced key.
+        let rotator = core
+            .with_key(|key, store| {
+                let rotator = {
+                    let core = core.clone();
+                    std::thread::spawn(move || core.rotate_key(None, None))
+                };
+                std::thread::sleep(Duration::from_millis(200));
+                assert!(!rotator.is_finished(), "the rotation waits for the write");
+                store.put_secret(key, CREDENTIALS, &creds.encode_to_vec())?;
+                Ok(rotator)
+            })
+            .unwrap();
+        assert_eq!(
+            rotator.join().unwrap().unwrap(),
+            1,
+            "the write is re-encrypted"
+        );
+        assert_eq!(core.credentials().unwrap().unwrap().access_token, "ada_1");
     }
 }
