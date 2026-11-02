@@ -5,8 +5,10 @@ import { create } from "@bufbuild/protobuf";
 import {
   MetricKind,
   MetricState,
+  Provider,
   SharingState,
   WidgetDataSchema,
+  WidgetPresentation,
   WidgetType,
 } from "@repo/protos/anydash/v1/anydash_pb";
 import { Copy } from "../src/copy";
@@ -238,5 +240,56 @@ describe("metric history", () => {
       ctx(),
     );
     expect(result.bars).toEqual([0.25, 0.5, 1]);
+  });
+});
+
+describe("metric tables", () => {
+  it("formats each row with its own reading's kind and unit", () => {
+    const widget = {
+      ...widgets[8],
+      layout: { ...widgets[8].layout!, presentation: WidgetPresentation.TABLE },
+    } as never;
+    const result = widgetView(
+      widget,
+      create(WidgetDataSchema, {
+        widgetId: widgets[8].id,
+        type: WidgetType.DEPLOYMENT_USAGE,
+        sharingState: SharingState.PRIVATE,
+        content: {
+          case: "metricPanel",
+          value: {
+            readings: [
+              {
+                connectionId: fixtures.ids.vercel,
+                provider: Provider.VERCEL,
+                kind: MetricKind.DEPLOYMENT_USAGE_QUANTITY,
+                dimension: "bandwidth",
+                unit: "GB",
+                current: {
+                  state: MetricState.VALUE,
+                  value: { case: "decimal", value: "2.5" },
+                },
+              },
+              {
+                connectionId: fixtures.ids.vercel,
+                provider: Provider.VERCEL,
+                kind: MetricKind.DEPLOYMENT_USAGE_QUANTITY,
+                dimension: "requests",
+                unit: "requests",
+                current: {
+                  state: MetricState.VALUE,
+                  value: { case: "integer", value: 1000n },
+                },
+              },
+            ],
+          },
+        },
+      }),
+      ctx(),
+    );
+    expect(result.primary?.text).toBe("2.50 GB");
+    expect(result.rows).toEqual([
+      { label: "Vercel · Requests", value: "1,000 requests", muted: false },
+    ]);
   });
 });

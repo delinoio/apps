@@ -299,16 +299,18 @@ function metricPanelView(
     (entry) => entry.id === reading.connectionId,
   );
   const state = readingState(reading);
-  const describe = (value: MetricValue | undefined) =>
+  // Formats a value with the metadata of the reading it belongs to, so each
+  // table or list row keeps its own kind and unit.
+  const describe = (entry: MetricReading, value: MetricValue | undefined) =>
     widget.type === WidgetType.SUBSCRIPTION_LIMITS
-      ? subscriptionParts(reading, value, readings, ctx)
+      ? subscriptionParts(entry, value, readings, ctx)
       : value
         ? {
             used: undefined,
             text: formatMetricValue(
               value,
-              reading.kind,
-              reading.unit,
+              entry.kind,
+              entry.unit,
               ctx.timeZone,
               ctx.now,
             ),
@@ -329,7 +331,7 @@ function metricPanelView(
             value:
               readingState(entry) === MetricState.NOT_PROVIDED
                 ? Copy.notProvided
-                : describe(entry.current)?.text ||
+                : describe(entry, entry.current)?.text ||
                   formatMetricValue(
                     entry.current,
                     entry.kind,
@@ -343,7 +345,7 @@ function metricPanelView(
   const updatedAt = date(reading.observedAt) ?? base.updatedAt;
   switch (state) {
     case MetricState.VALUE: {
-      const parts = describe(reading.current);
+      const parts = describe(reading, reading.current);
       const lines: ViewLine[] = parts?.detail
         ? [{ text: parts.detail, style: LineStyle.Muted }]
         : [];
@@ -399,7 +401,7 @@ function metricPanelView(
               strong: device,
             }
           : { text: Copy.authExpiredToken(provider), style: LineStyle.Muted };
-      const last = describe(reading.lastSuccess);
+      const last = describe(reading, reading.lastSuccess);
       const lines: ViewLine[] = [guidance];
       if (last?.text && reading.lastSuccessAt)
         lines.push({
@@ -428,7 +430,7 @@ function metricPanelView(
       };
     default: {
       // FAILED, PARTIAL and unknown states keep the last successful value.
-      const last = describe(reading.lastSuccess);
+      const last = describe(reading, reading.lastSuccess);
       const lastAt = reading.lastSuccessAt;
       const next = ctx.nextAttempt?.get(reading.connectionId);
       const lines: ViewLine[] = [];
