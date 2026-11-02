@@ -11,6 +11,7 @@ export const Api = Object.freeze({
   GitTracker: "git-tracker",
   Perfine: "perfine",
   Lane: "lane",
+  Mcpa: "mcpa",
 });
 export const databaseHandoff = "DEV_COMPOSE_DATABASE_URLS";
 const root = fileURLToPath(new URL("../", import.meta.url));

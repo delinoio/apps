@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Alert cases use the thresholds in thresholds.yml; update both together.
+rule_files: [thresholds.yml, alerts.yml]
+evaluation_interval: 30s
+group_eval_order: [mcpa-thresholds, mcpa-alerts]
+tests:
+  - name: target down fires after five minutes
+    interval: 30s
+    input_series:
+      - series: up{job="mcpa-api",instance="api"}
+        values: "1 0+0x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: McpaTargetDown
+        exp_alerts: []
+      - eval_time: 5m30s
+        alertname: McpaTargetDown
+        exp_alerts:
+          - exp_labels: { job: mcpa-api, instance: api, severity: critical }
+  - name: call errors strictly exceed the ratio, hold for five minutes and recover after ten
+    interval: 30s
+    input_series:
+      - series: mcpa:call_errors:ratio5m
+        values: "0.05x20 0.06x40 0x40"
+      - series: mcpa:call_samples:5m
+        values: "20x100"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: McpaCallErrors
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: McpaCallErrors
+        exp_alerts: []
+      - eval_time: 15m30s
+        alertname: McpaCallErrors
+        exp_alerts: [{ exp_labels: { severity: warning } }]
+      - eval_time: 40m30s
+        alertname: McpaCallErrors
+        exp_alerts: [{ exp_labels: { severity: warning } }]
+      - eval_time: 41m
+        alertname: McpaCallErrors
+        exp_alerts: []
+  - name: call errors need the minimum sample count
+    interval: 30s
+    input_series:
+      - series: mcpa:call_errors:ratio5m
+        values: "0.5x40"
+      - series: mcpa:call_samples:5m
+        values: "19x40"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: McpaCallErrors
+        exp_alerts: []
+  - name: provider failures fire per provider with enough calls
+    interval: 30s
+    input_series:
+      - series: mcpa:provider_failures:ratio15m{provider="codex"}
+        values: "0.25x10 0.3x30"
+      - series: mcpa:provider_calls:15m{provider="codex"}
+        values: "20x40"
+      - series: mcpa:provider_failures:ratio15m{provider="claude"}
+        values: "0.9x40"
+      - series: mcpa:provider_calls:15m{provider="claude"}
+        values: "19x40"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: McpaProviderFailures
+        exp_alerts: []
+      - eval_time: 10m30s
+        alertname: McpaProviderFailures
+        exp_alerts:
+          - exp_labels: { provider: codex, severity: warning }
+  - name: Delcore authorization failures fire after two minutes
+    interval: 30s
+    input_series:
+      - series: mcpa:delcore_authorization_failures:5m{rpc="Authorize"}
+        values: "5x10 6x20"
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: McpaDelcoreAuthorizationFailures
+        exp_alerts: []
+      - eval_time: 7m30s
+        alertname: McpaDelcoreAuthorizationFailures
+        exp_alerts:
+          - exp_labels: { rpc: Authorize, severity: critical }
+  - name: outbox backlog, age and poisoned rows use their own thresholds
+    interval: 30s
+    input_series:
+      - series: mcpa:outbox_pending:max
+        values: "1000x10 1001x30"
+      - series: mcpa:outbox_oldest_pending_age_seconds:max
+        values: "900 901+0x10 0+0x30"
+      - series: mcpa:outbox_poisoned:max
+        values: "0x2 1x10"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: McpaOutboxBacklog
+        exp_alerts: []
+      - eval_time: 15m30s
+        alertname: McpaOutboxBacklog
+        exp_alerts: [{ exp_labels: { severity: warning } }]
+      - eval_time: 0m
+        alertname: McpaOutboxAge
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: McpaOutboxAge
+        exp_alerts: [{ exp_labels: { severity: critical } }]
+      - eval_time: 15m30s
+        alertname: McpaOutboxAge
+        exp_alerts: [{ exp_labels: { severity: critical } }]
+      - eval_time: 16m
+        alertname: McpaOutboxAge
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: McpaOutboxPoisoned
+        exp_alerts: []
+      - eval_time: 1m30s
+        alertname: McpaOutboxPoisoned
+        exp_alerts: [{ exp_labels: { severity: critical } }]
+  - name: any metering checkpoint failure fires immediately
+    interval: 30s
+    input_series:
+      - series: mcpa:checkpoint_failures:5m
+        values: "0x2 1x2 0x20"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: McpaMeteringCheckpointFailures
+        exp_alerts: []
+      - eval_time: 1m30s
+        alertname: McpaMeteringCheckpointFailures
+        exp_alerts: [{ exp_labels: { severity: critical } }]
+      - eval_time: 7m30s
+        alertname: McpaMeteringCheckpointFailures
+        exp_alerts: [{ exp_labels: { severity: critical } }]
+      - eval_time: 8m
+        alertname: McpaMeteringCheckpointFailures
+        exp_alerts: []
+  - name: budget rejection surges fire per scope
+    interval: 30s
+    input_series:
+      - series: mcpa:budget_rejections:15m{scope="tenant"}
+        values: "101x20"
+      - series: mcpa:budget_rejections:15m{scope="resource"}
+        values: "100x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: McpaBudgetRejections
+        exp_alerts:
+          - exp_labels: { scope: tenant, severity: info }

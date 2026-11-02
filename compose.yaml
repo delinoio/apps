@@ -103,6 +103,23 @@ services:
       retries: 30
       start_period: 10s
 
+  mcpa-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: mcpa
+      POSTGRES_PASSWORD: local-mcpa
+      POSTGRES_DB: mcpa
+    ports:
+      - "127.0.0.1:${MCPA_POSTGRES_PORT:-55438}:5432"
+    volumes:
+      - mcpa-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U mcpa -d mcpa"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
 volumes:
   delcore-postgres-data:
   delitools-postgres-data:
@@ -110,3 +127,4 @@ volumes:
   git-tracker-postgres-data:
   perfine-postgres-data:
   lane-postgres-data:
+  mcpa-postgres-data:

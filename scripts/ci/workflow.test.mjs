@@ -36,6 +36,8 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["delitools-frontend", "delitools"],
     ["lane-frontend", "lane"],
     ["lane-cli", "lane_cli"],
+    ["mcpa-frontend", "mcpa"],
+    ["mcpa-api", "mcpa_api"],
     ["protocol", "protocol"],
     ["tooling", "tooling"],
     ["shared-ui", "shared_ui"],
@@ -279,7 +281,7 @@ test("all CI formatting checks belong to Check Formatting", () => {
     "pnpm format:check --all",
     "cargo fmt --all --check",
     "cargo fmt --manifest-path servers/Cargo.toml --all --check",
-    "node scripts/ci/check-go-format.mjs protos examples tools/changeset",
+    "node scripts/ci/check-go-format.mjs protos examples tools/changeset servers/mcpa-api",
     "pnpm exec buf format --diff --exit-code",
   ])
     assert.ok(commands.has(command), command);
@@ -319,6 +321,8 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "delitools-frontend",
     "lane-frontend",
     "lane-cli",
+    "mcpa-frontend",
+    "mcpa-api",
     "rust-clippy",
     "protocol",
   ]) {
@@ -364,6 +368,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delitools: "true",
     lane: "true",
     lane_cli: "true",
+    mcpa: "true",
+    mcpa_api: "true",
     tooling: "true",
     shared_ui: "true",
     workflows: "true",
@@ -398,6 +404,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delitools: "false",
     lane: "false",
     lane_cli: "false",
+    mcpa: "false",
+    mcpa_api: "false",
     tooling: "true",
     shared_ui: "true",
     workflows: "true",
@@ -414,6 +422,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     "delitools-frontend",
     "lane-frontend",
     "lane-cli",
+    "mcpa-frontend",
+    "mcpa-api",
     "rust-clippy",
     "rust-test",
   ])
@@ -637,6 +647,8 @@ test("shared checks allocate independent jobs from planner outputs", () => {
     ["go.mod"],
     ["apps/devbase/src/main.tsx"],
     ["apps/lane/src/App.tsx"],
+    ["servers/mcpa-api/main.go"],
+    ["apps/mcpa/src/main.tsx"],
   ]) {
     const selection = { ...select(paths), ...selectChecks(paths) };
     const needs = Object.fromEntries(
@@ -654,6 +666,8 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "delitools-frontend": "delitools",
       "lane-frontend": "lane",
       "lane-cli": "lane_cli",
+      "mcpa-frontend": "mcpa",
+      "mcpa-api": "mcpa_api",
       "perfine-profiles": "perfine_fixtures",
       "perfine-adapters": "perfine_fixtures",
       protocol: "protocol",
@@ -794,4 +808,122 @@ test("Lane Ubuntu validation includes extension and desktop RealQA fixtures", ()
     cleanup.run,
     'rm -rf "apps/lane/dist" "apps/lane-chrome-extension/dist"',
   );
+});
+
+test("Managed CPA Go server validates on Linux with disposable PostgreSQL", () => {
+  const job = workflow.jobs["mcpa-api"];
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  assert.equal(job.needs, "changes");
+  assert.equal(job.if, "needs.changes.outputs.mcpa_api == 'true'");
+  assert.equal(
+    workflow.jobs.changes.outputs.mcpa_api,
+    "${{ steps.plan.outputs.mcpa_api }}",
+  );
+  assert.equal(job.strategy, undefined);
+  assert.equal(job.env.TURBO_TOKEN, undefined);
+  const setup = job.steps.find((step) =>
+    step.uses?.startsWith("actions/setup-go@"),
+  );
+  assert.equal(setup.with["go-version-file"], "go.mod");
+  const run = (id) => job.steps.find((step) => step.id === id).run.trim();
+  for (const script of ["vet", "unit", "vuln", "integration"])
+    assert.equal(run(script), `pnpm --filter @servers/mcpa-api ci:${script}`);
+  // Like the Rust APIs, ordinary CI does not build server images.
+  assert.ok(
+    !job.steps.some((step) => /ci:oci|docker build/u.test(step.run ?? "")),
+  );
+  assert.equal(run("monitoring"), "servers/mcpa-api/ops/check.sh");
+  // Go formatting stays in Check Formatting with every other formatter.
+  assert.ok(!job.steps.some((step) => /ci:format|gofmt/u.test(step.run ?? "")));
+  const ids = job.steps.map((step) => step.id);
+  assert.ok(ids.indexOf("postgres") < ids.indexOf("integration"));
+  assert.match(
+    run("postgres"),
+    /docker run.*-p "127\.0\.0\.1:\$DATABASE_PORT:5432".*postgres:17/u,
+  );
+  const integration = job.steps.find((step) => step.id === "integration");
+  assert.equal(integration["timeout-minutes"], 10);
+  assert.equal(
+    integration.env.TEST_DATABASE_URL,
+    `postgres://${job.env.POSTGRES_USER}:${job.env.POSTGRES_USER}@127.0.0.1:${job.env.DATABASE_PORT}/${job.env.POSTGRES_DB}?sslmode=disable`,
+  );
+  assert.equal(job.env.TEST_DATABASE_URL, undefined);
+  const cleanup = job.steps.find(
+    (step) => step.name === "Remove integration database",
+  );
+  assert.equal(cleanup.if, "${{ always() }}");
+  assert.match(cleanup.run, /docker rm --force "\$SERVICE-postgres"/u);
+  assert.equal(
+    job.steps.find((step) => step.name === "Record validation").env
+      .VALIDATION_JOB,
+    "mcpa-api",
+  );
+  assert.ok(workflow.jobs["ci-result"].needs.includes("mcpa-api"));
+  assert.doesNotMatch(
+    job.steps.map((step) => step.run ?? "").join("\n"),
+    /cargo|rust-servers/u,
+  );
+});
+
+test("Managed CPA console validation follows the frontend job pattern", () => {
+  const job = workflow.jobs["mcpa-frontend"];
+  assert.equal(job.if, "needs.changes.outputs.mcpa == 'true'");
+  assert.equal(
+    workflow.jobs.changes.outputs.mcpa,
+    "${{ steps.plan.outputs.mcpa }}",
+  );
+  assert.equal(
+    job.steps.find((step) => step.id === "frontend").run,
+    "pnpm --filter @apps/mcpa test",
+  );
+  assert.equal(
+    job.steps.find((step) => step.name === "Remove generated output").run,
+    'rm -rf "apps/mcpa/dist"',
+  );
+  assert.ok(workflow.jobs["ci-result"].needs.includes("mcpa-frontend"));
+});
+
+test("Managed CPA image builds a non-root Go server with license notices", () => {
+  const dockerfile = readFileSync(
+    new URL("../../servers/mcpa-api/Dockerfile", import.meta.url),
+    "utf8",
+  );
+  assert.match(dockerfile, /^# SPDX-License-Identifier: FSL-1\.1-ALv2$/mu);
+  assert.match(
+    dockerfile,
+    /^FROM golang:[^@\s]+@sha256:[a-f0-9]{64} AS build$/mu,
+  );
+  assert.match(
+    dockerfile,
+    /^FROM gcr\.io\/distroless\/static-debian12:nonroot@sha256:[a-f0-9]{64}$/mu,
+  );
+  assert.match(dockerfile, /COPY go\.mod go\.sum/u);
+  assert.match(dockerfile, /COPY protos \.\/protos/u);
+  assert.match(dockerfile, /go build .*\.\/servers\/mcpa-api$/mu);
+  assert.match(
+    dockerfile,
+    /COPY servers\/LICENSE servers\/NOTICE \/licenses\/servers\//u,
+  );
+  assert.match(dockerfile, /COPY LICENSE NOTICE \/licenses\/protocols\//u);
+  assert.match(
+    dockerfile,
+    /org\.opencontainers\.image\.licenses="FSL-1\.1-ALv2"/u,
+  );
+  assert.match(dockerfile, /^USER 65532:65532$/mu);
+  assert.match(dockerfile, /^ENTRYPOINT \["\/mcpa-api"\]$/mu);
+  assert.match(dockerfile, /^CMD \["serve"\]$/mu);
+  // Publication reuses the per-server image job with its FSL labels.
+  const images = yaml.load(
+    readFileSync(
+      new URL("../../.github/workflows/deploy-images.yml", import.meta.url),
+      "utf8",
+    ),
+  ).jobs.images;
+  const publish = images.steps.find((step) => step.env?.SERVER).run;
+  assert.match(publish, /--file "servers\/\$\{SERVER\}\/Dockerfile"/u);
+  assert.match(
+    publish,
+    /ghcr\.io\/\$\{OWNER\}\/\$\{SERVER\}:sha-\$\{REVISION\}/u,
+  );
+  assert.match(publish, /org\.opencontainers\.image\.licenses=FSL-1\.1-ALv2/u);
 });

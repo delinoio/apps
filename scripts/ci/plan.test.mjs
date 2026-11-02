@@ -18,6 +18,8 @@ test("isolated projects select only their validation", () => {
     lane_api: false,
     lane_cli: false,
     lane: false,
+    mcpa_api: false,
+    mcpa: false,
     perfine_fixtures: false,
     protocol: false,
   });
@@ -36,6 +38,8 @@ test("isolated projects select only their validation", () => {
     lane_api: true,
     lane_cli: false,
     lane: false,
+    mcpa_api: true,
+    mcpa: false,
     perfine_fixtures: false,
     protocol: true,
   });
@@ -54,6 +58,8 @@ test("isolated projects select only their validation", () => {
     lane_api: true,
     lane_cli: true,
     lane: true,
+    mcpa_api: true,
+    mcpa: true,
     perfine_fixtures: true,
     protocol: true,
   });
@@ -84,6 +90,8 @@ for (const [project, key] of [
         lane_api: false,
         lane_cli: false,
         lane: false,
+        mcpa_api: false,
+        mcpa: false,
         perfine_fixtures: false,
         protocol: false,
       });
@@ -107,6 +115,8 @@ test("consumer examples select protocol validation without native runners", () =
     lane_api: false,
     lane_cli: false,
     lane: false,
+    mcpa_api: false,
+    mcpa: false,
     perfine_fixtures: false,
     protocol: true,
   });
@@ -182,6 +192,8 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       lane_api: false,
       lane_cli: path === "Cargo.lock",
       lane: false,
+      mcpa_api: false,
+      mcpa: false,
       perfine_fixtures: path === "Cargo.lock",
       protocol: false,
     });
@@ -204,6 +216,8 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     lane_api: false,
     lane_cli: false,
     lane: false,
+    mcpa_api: true,
+    mcpa: false,
     perfine_fixtures: false,
     protocol: true,
   });
@@ -317,8 +331,8 @@ const frontends = [
 ];
 
 for (const [paths, expected] of [
-  [["packages/ui/src/components/button.tsx"], frontends],
-  [["packages/ui/package.json"], frontends],
+  [["packages/ui/src/components/button.tsx"], [...frontends, "mcpa"]],
+  [["packages/ui/package.json"], [...frontends, "mcpa"]],
   ...[
     "Cargo.toml",
     "Cargo.lock",
@@ -351,7 +365,7 @@ for (const [paths, expected] of [
       ],
     ],
   ),
-  [["go.mod"], ["protocol"]],
+  [["go.mod"], ["mcpa_api", "protocol"]],
   [
     ["buf.yaml"],
     [
@@ -364,6 +378,8 @@ for (const [paths, expected] of [
       "lane_api",
       "lane_cli",
       "lane",
+      "mcpa_api",
+      "mcpa",
       "protocol",
     ],
   ],
@@ -379,6 +395,8 @@ for (const [paths, expected] of [
       "lane_api",
       "lane_cli",
       "lane",
+      "mcpa_api",
+      "mcpa",
       "protocol",
     ],
   ],
@@ -389,7 +407,7 @@ for (const [paths, expected] of [
       "go.mod",
       "servers/devbase-api/src/main.rs",
     ],
-    ["devbase_api", ...frontends, "protocol"],
+    ["devbase_api", ...frontends, "mcpa_api", "mcpa", "protocol"],
   ],
 ]) {
   test(`shared categories select their consumers: ${paths.join(", ")}`, () => {
@@ -693,4 +711,64 @@ test("application documentation and non-Markdown inputs keep owning validation",
     ["servers/lane-api/ops/README.md.rs", "lane_api"],
   ])
     assert.equal(select([path])[owner], true, path);
+});
+
+test("Managed CPA paths select the Go server and console validators", () => {
+  for (const [path, expected] of [
+    ["servers/mcpa-api/main.go", ["mcpa_api"]],
+    ["servers/mcpa-api/internal/proxy/meter.go", ["mcpa_api"]],
+    ["servers/mcpa-api/migrations/00001_initial.sql", ["mcpa_api"]],
+    ["servers/mcpa-api/Dockerfile", ["mcpa_api"]],
+    ["servers/mcpa-api/ops/alerts.yml", ["mcpa_api"]],
+    ["servers/mcpa-api/package.json", ["mcpa_api"]],
+    ["apps/mcpa/src/main.tsx", ["mcpa"]],
+    ["apps/mcpa/package.json", ["mcpa"]],
+    ["go.mod", ["mcpa_api", "protocol"]],
+    ["go.sum", ["mcpa_api", "protocol"]],
+    ["servers/LICENSE", undefined],
+    ["servers/NOTICE", undefined],
+  ]) {
+    if (expected) assert.deepEqual(selectedJobs([path]), expected, path);
+    else assert.equal(select([path]).mcpa_api, true, path);
+  }
+  for (const path of [
+    "servers/mcpa-api/ops/README.md",
+    "servers/mcpa-api/README.md",
+  ])
+    assert.deepEqual(selectedJobs([path]), [], path);
+  // The Go server does not build from the Cargo workspace.
+  for (const path of [
+    "servers/Cargo.toml",
+    "servers/Cargo.lock",
+    "servers/crates/server-common/src/lib.rs",
+    "Cargo.lock",
+    "rust-toolchain",
+  ])
+    assert.equal(select([path]).mcpa_api, false, path);
+  // The server imports only the mcpa and Delcore Go bindings.
+  for (const [path, server, frontend] of [
+    ["protos/mcpa/v1/mcpa.proto", true, true],
+    ["protos/mcpa/v1/mcpa.pb.go", true, true],
+    ["protos/delcore/v1/delcore.proto", true, false],
+    ["protos/package.json", true, true],
+    ["protos/lane/v1/lane.proto", false, false],
+    ["protos/devbase/v1/devbase.proto", false, false],
+  ]) {
+    assert.equal(select([path]).mcpa_api, server, path);
+    assert.equal(select([path]).mcpa, frontend, path);
+  }
+  // Server-wide helpers and shared UI keep the Managed CPA consumers selected.
+  assert.equal(select(["servers/scripts/dev-api.mjs"]).mcpa_api, true);
+  assert.equal(select(["packages/ui/src/components/button.tsx"]).mcpa, true);
+  assert.equal(
+    select(["packages/ui/src/components/button.tsx"]).mcpa_api,
+    false,
+  );
+  // Rust server allocation stays unchanged by Managed CPA-only changes.
+  for (const path of [
+    "servers/mcpa-api/main.go",
+    "apps/mcpa/src/main.tsx",
+    "go.sum",
+  ])
+    assert.deepEqual(selectRustServers(select([path])), [], path);
 });

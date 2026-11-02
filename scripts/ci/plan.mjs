@@ -99,6 +99,11 @@ export function select(paths, lockfiles) {
   const serverRust = paths.some((path) =>
     /^(servers\/crates\/|servers\/Cargo\.(toml|lock)$)/u.test(path),
   );
+  // The Go server consumes server-wide notices and launch helpers, but not the
+  // Cargo workspace manifests.
+  const serverGoShared = paths.some((path) =>
+    /^servers\/(?:(?!Cargo\.(?:toml|lock)$)[^/]+$|scripts\/)/u.test(path),
+  );
   return {
     delcore_api:
       serverRust ||
@@ -196,6 +201,23 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       paths.some((path) =>
         /^(apps\/(?:lane|lane-chrome-extension)\/|protos\/lane\/)/u.test(path),
+      ),
+    mcpa_api:
+      repositoryShared ||
+      shared.go ||
+      shared.protocol ||
+      serverGoShared ||
+      paths.some((path) =>
+        /^(servers\/mcpa-api\/|protos\/(?:mcpa\/|delcore\/|scripts\/|[^/]+$))/u.test(
+          path,
+        ),
+      ),
+    mcpa:
+      repositoryShared ||
+      shared.frontend ||
+      shared.protocol ||
+      paths.some((path) =>
+        /^(apps\/mcpa\/|protos\/(?:mcpa\/|[^/]+$))/u.test(path),
       ),
     perfine_fixtures:
       repositoryShared ||

@@ -21,6 +21,7 @@ export function prepareApiEnvironment(api, source = process.env) {
       [Api.GitTracker]: "127.0.0.1:46321",
       [Api.Perfine]: "127.0.0.1:46323",
       [Api.Lane]: "127.0.0.1:46326",
+      [Api.Mcpa]: "127.0.0.1:46329",
     }[api],
   };
   delete env[databaseHandoff];
@@ -43,6 +44,8 @@ export function apiCommand(api, source = process.env) {
     [Api.GitTracker]: "git-tracker-api",
     [Api.Perfine]: "perfine-api",
     [Api.Lane]: "lane-api",
+    // Built by build-go.mjs into the same target directory.
+    [Api.Mcpa]: "mcpa-api",
   }[api];
   if (!binary) throw new Error("Unknown development API");
   return [

@@ -20,8 +20,14 @@ import {
   apiCommand,
   prepareApiEnvironment,
 } from "../servers/scripts/dev-api.mjs";
+import {
+  GoServer,
+  goBuildSteps,
+  main as buildGo,
+} from "../servers/scripts/build-go.mjs";
 
 const urls = {
+  [Api.Mcpa]: "postgres://mcpa:fixture@127.0.0.1:15438/mcpa?sslmode=disable",
   [Api.Lane]: "postgres://lane:fixture@127.0.0.1:15437/lane?sslmode=disable",
   [Api.Perfine]:
     "postgres://perfine:fixture@127.0.0.1:15436/perfine?sslmode=disable",
@@ -35,6 +41,7 @@ const urls = {
     "postgres://git_tracker:fixture@127.0.0.1:15433/git_tracker?sslmode=disable",
 };
 const listeners = {
+  [Api.Mcpa]: "127.0.0.1:46329",
   [Api.Lane]: "127.0.0.1:46326",
   [Api.Perfine]: "127.0.0.1:46323",
   [Api.Delcore]: "127.0.0.1:8080",
@@ -556,6 +563,7 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
     [Api.GitTracker, "git-tracker-api"],
     [Api.Perfine, "perfine-api"],
     [Api.Lane, "lane-api"],
+    [Api.Mcpa, "mcpa-api"],
   ]) {
     const [command, args] = apiCommand(api, { CARGO_TARGET_DIR: target });
     assert.equal(
@@ -695,4 +703,136 @@ test("Lane development keeps its database and provider configuration API-local",
   assert.equal(prepared.env.LISTEN, "127.0.0.1:46326");
   assert.equal(prepared.env.DATABASE_URL, urls[Api.Lane]);
   assert.equal(prepared.env[databaseHandoff], undefined);
+});
+
+test("Managed CPA development keeps its database and Go build API-local", async () => {
+  const yaml = (await import("js-yaml")).default;
+  const compose = yaml.load(
+    readFileSync(new URL("../compose.yaml", import.meta.url), "utf8"),
+  );
+  const service = compose.services["mcpa-postgres"];
+  assert.equal(service.image, "postgres:17");
+  assert.deepEqual(service.environment, {
+    POSTGRES_USER: "mcpa",
+    POSTGRES_PASSWORD: "local-mcpa",
+    POSTGRES_DB: "mcpa",
+  });
+  assert.deepEqual(service.ports, [
+    "127.0.0.1:${MCPA_POSTGRES_PORT:-55438}:5432",
+  ]);
+  assert.deepEqual(service.volumes, [
+    "mcpa-postgres-data:/var/lib/postgresql/data",
+  ]);
+  assert.ok(service.healthcheck.test.join(" ").includes("-h 127.0.0.1"));
+  assert.ok(Object.hasOwn(compose.volumes, "mcpa-postgres-data"));
+  const config = JSON.parse(
+    readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
+  );
+  const task = config.tasks["@servers/mcpa-api#dev"];
+  assert.deepEqual(task.dependsOn, ["//#server-build"]);
+  assert.equal(task.cache, false);
+  assert.equal(task.persistent, true);
+  for (const key of [
+    databaseHandoff,
+    "CARGO_TARGET_DIR",
+    "DATABASE_URL",
+    "LISTEN",
+    "MCPA_*",
+    "WEB_ORIGIN",
+    "DELCORE_URL",
+    "DELCORE_RESOURCE",
+    "LOGTO_TOKEN_URL",
+    "LOGTO_ISSUER",
+    "CLIENT_ID",
+    "CLIENT_SECRET",
+    "DEPENDENCY_TIMEOUT",
+    "LOG_FORMAT",
+    "OTEL_*",
+    "NO_COLOR",
+  ]) {
+    assert.ok(task.passThroughEnv.includes(key), key);
+    assert.ok(!config.globalPassThroughEnv.includes(key), key);
+  }
+  const builder = config.tasks["//#server-build"];
+  for (const input of [
+    "servers/mcpa-api/**/*.go",
+    "servers/mcpa-api/migrations/**",
+    "go.mod",
+    "go.sum",
+    "protos/**/*.go",
+    "servers/scripts/build-go.mjs",
+  ])
+    assert.ok(builder.inputs.includes(input), input);
+  // Cargo inputs and environment stay as they were for the Rust servers.
+  for (const input of ["servers/**/*.rs", "servers/Cargo.lock"])
+    assert.ok(builder.inputs.includes(input), input);
+  for (const key of ["CARGO_*", "GO*"])
+    assert.ok(builder.passThroughEnv.includes(key), key);
+  const root = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  assert.equal(
+    root.scripts["server-build"],
+    "node servers/scripts/build-rust.mjs && node servers/scripts/build-go.mjs",
+  );
+  const prepared = prepareApiEnvironment(Api.Mcpa, {
+    ...handoff,
+    LISTEN: "0.0.0.0:9999",
+    DATABASE_URL: "postgres://remote.invalid/mcpa",
+    MCPA_ACTIVE_KEY_ID: "fixture-key",
+  });
+  assert.equal(prepared.env.LISTEN, "127.0.0.1:46329");
+  assert.equal(prepared.env.DATABASE_URL, urls[Api.Mcpa]);
+  assert.equal(prepared.env.MCPA_ACTIVE_KEY_ID, "fixture-key");
+  assert.equal(prepared.env[databaseHandoff], undefined);
+});
+
+test("Go server builder writes beside the Cargo outputs and stops on failure", async () => {
+  const target = join(tmpdir(), "go-target-fixture");
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  assert.deepEqual(Object.values(GoServer), ["mcpa-api"]);
+  assert.deepEqual(goBuildSteps({ CARGO_TARGET_DIR: target }), [
+    {
+      server: "mcpa-api",
+      command: "go",
+      args: [
+        "build",
+        "-o",
+        join(
+          target,
+          "debug",
+          `mcpa-api${process.platform === "win32" ? ".exe" : ""}`,
+        ),
+        "./servers/mcpa-api",
+      ],
+      cwd: root,
+    },
+  ]);
+  assert.equal(
+    goBuildSteps({})[0].args[2],
+    fileURLToPath(
+      new URL(
+        `../servers/target/debug/mcpa-api${process.platform === "win32" ? ".exe" : ""}`,
+        import.meta.url,
+      ),
+    ),
+  );
+  for (const outcome of [
+    { code: 0, signal: null },
+    { code: 3, signal: null },
+    { code: null, signal: "SIGINT" },
+  ]) {
+    const calls = [];
+    const result = await buildGo({
+      env: { CARGO_TARGET_DIR: target },
+      run: async (command, args, options) => {
+        calls.push({ command, args, cwd: options.cwd });
+        return outcome;
+      },
+    });
+    assert.deepEqual(result, outcome);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].command, "go");
+    assert.equal(calls[0].cwd, root);
+  }
 });

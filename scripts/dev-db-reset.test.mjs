@@ -52,7 +52,7 @@ test("reset migrates every fresh database using Compose URLs and service-local c
     }),
     { code: 0, signal: null },
   );
-  assert.equal(calls.length, 3 + Object.values(Api).length);
+  assert.equal(calls.length, 4 + Object.values(Api).length);
   const target = resolve(serverRoot, "fixture-target");
   assert.equal(calls[0].command, "cargo");
   assert.deepEqual(calls[0].args, [
@@ -64,15 +64,31 @@ test("reset migrates every fresh database using Compose URLs and service-local c
     target,
   ]);
   assert.equal(calls[0].options.cwd, serverRoot.replace(/\/$/u, ""));
+  // Go servers build from the root module before any data is deleted.
+  assert.equal(calls[1].command, "go");
+  assert.deepEqual(calls[1].args, [
+    "build",
+    "-o",
+    resolve(
+      target,
+      "debug",
+      `mcpa-api${process.platform === "win32" ? ".exe" : ""}`,
+    ),
+    "./servers/mcpa-api",
+  ]);
+  assert.equal(
+    calls[1].options.cwd,
+    fileURLToPath(new URL("../", import.meta.url)),
+  );
   assert.deepEqual(
-    calls.slice(1, 3).map(({ command, args }) => [command, ...args]),
+    calls.slice(2, 4).map(({ command, args }) => [command, ...args]),
     [
       ["docker", "compose", "down", "--volumes"],
       ["docker", "compose", "up", "-d", "--wait"],
     ],
   );
   for (const [index, api] of Object.values(Api).entries()) {
-    const call = calls[index + 3];
+    const call = calls[index + 4];
     assert.equal(
       call.command,
       resolve(
@@ -101,7 +117,7 @@ test("reset migrates every fresh database using Compose URLs and service-local c
 
 for (
   let failedStep = 0;
-  failedStep < 3 + Object.values(Api).length;
+  failedStep < 4 + Object.values(Api).length;
   failedStep++
 ) {
   for (const outcome of [

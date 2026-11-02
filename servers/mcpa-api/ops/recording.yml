@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Windows are operator-configurable; change them together with alerts.yml and the rule tests.
+# Counters are process-local and summed across replicas. Outbox gauges are global
+# PostgreSQL projections repeated by each replica, so they use max, never sum.
+groups:
+  - name: mcpa-recording
+    interval: 30s
+    rules:
+      - record: mcpa:call_samples:5m
+        expr: sum(increase(mcpa_calls_total[5m]))
+      - record: mcpa:call_errors:ratio5m
+        expr: sum(increase(mcpa_calls_total{status=~"internal_error|rejected_dependency"}[5m])) / mcpa:call_samples:5m
+      - record: mcpa:provider_calls:15m
+        expr: sum by (provider) (increase(mcpa_calls_total{status!~"rejected_.*|no_credential"}[15m]))
+      - record: mcpa:provider_failures:ratio15m
+        expr: sum by (provider) (increase(mcpa_provider_failures_total{status_class=~"5xx|network"}[15m])) / mcpa:provider_calls:15m
+      - record: mcpa:delcore_authorization_failures:5m
+        expr: sum by (rpc) (increase(mcpa_delcore_failures_total{rpc=~"Authorize|AuthorizeApiKey|GetTenantStates",kind=~"unavailable|error"}[5m]))
+      - record: mcpa:outbox_pending:max
+        expr: max(mcpa_outbox_pending)
+      - record: mcpa:outbox_oldest_pending_age_seconds:max
+        expr: max(mcpa_outbox_oldest_pending_age_seconds)
+      - record: mcpa:outbox_poisoned:max
+        expr: max(mcpa_outbox_poisoned)
+      - record: mcpa:checkpoint_failures:5m
+        expr: sum(increase(mcpa_metering_checkpoint_failures_total[5m]))
+      - record: mcpa:budget_rejections:15m
+        expr: sum by (scope) (increase(mcpa_budget_rejections_total[15m]))
