@@ -4,7 +4,7 @@
   "private": true,
   "license": "FSL-1.1-ALv2",
   "scripts": {
-    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/anydash-api -- portless run --name anydash-api --app-port 46329 node ../scripts/dev-api.mjs anydash",
+    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/anydash-api -- portless run --name anydash-api --app-port 46331 node ../scripts/dev-api.mjs anydash",
     "ci:checks": "cargo test --locked --manifest-path ../Cargo.toml -p anydash-api",
     "build": "cargo build --locked --manifest-path ../Cargo.toml -p anydash-api",
     "ci:format": "cargo fmt --manifest-path ../Cargo.toml --all --check",

@@ -690,7 +690,7 @@ test("AnyDash server paths select only the AnyDash server validator", () => {
     [
       {
         service: "anydash-api",
-        port: 55438,
+        port: 55439,
         user: "anydash",
         database: "anydash_api_test",
       },

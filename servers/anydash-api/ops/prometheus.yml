@@ -20,4 +20,4 @@ scrape_configs:
       type: Bearer
       credentials_file: /run/secrets/anydash_metrics_token
     static_configs:
-      - targets: ["anydash-api:46329"]
+      - targets: ["anydash-api:46331"]

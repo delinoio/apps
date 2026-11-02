@@ -109,7 +109,7 @@ services:
       POSTGRES_PASSWORD: local-anydash
       POSTGRES_DB: anydash
     ports:
-      - "127.0.0.1:${ANYDASH_POSTGRES_PORT:-55438}:5432"
+      - "127.0.0.1:${ANYDASH_POSTGRES_PORT:-55439}:5432"
     volumes:
       - anydash-postgres-data:/var/lib/postgresql/data
     healthcheck:

@@ -44,7 +44,7 @@ const urls = {
 };
 const listeners = {
   [Api.Mcpa]: "127.0.0.1:46329",
-  [Api.AnyDash]: "127.0.0.1:46329",
+  [Api.AnyDash]: "127.0.0.1:46331",
   [Api.Lane]: "127.0.0.1:46326",
   [Api.Perfine]: "127.0.0.1:46323",
   [Api.Delcore]: "127.0.0.1:8080",
@@ -804,7 +804,7 @@ test("AnyDash development keeps its database and configuration API-local", async
     POSTGRES_DB: "anydash",
   });
   assert.deepEqual(service.ports, [
-    "127.0.0.1:${ANYDASH_POSTGRES_PORT:-55438}:5432",
+    "127.0.0.1:${ANYDASH_POSTGRES_PORT:-55439}:5432",
   ]);
   assert.deepEqual(service.volumes, [
     "anydash-postgres-data:/var/lib/postgresql/data",
@@ -829,14 +829,14 @@ test("AnyDash development keeps its database and configuration API-local", async
   );
   assert.equal(
     manifest.scripts.dev,
-    "infisical run --env=dev --project-config-dir=../.. --path=/anydash-api -- portless run --name anydash-api --app-port 46329 node ../scripts/dev-api.mjs anydash",
+    "infisical run --env=dev --project-config-dir=../.. --path=/anydash-api -- portless run --name anydash-api --app-port 46331 node ../scripts/dev-api.mjs anydash",
   );
   const prepared = prepareApiEnvironment(Api.AnyDash, {
     ...handoff,
     LISTEN: "0.0.0.0:9999",
     DATABASE_URL: "postgres://remote.invalid/anydash",
   });
-  assert.equal(prepared.env.LISTEN, "127.0.0.1:46329");
+  assert.equal(prepared.env.LISTEN, "127.0.0.1:46331");
   assert.equal(prepared.env.DATABASE_URL, urls[Api.AnyDash]);
   assert.equal(prepared.env[databaseHandoff], undefined);
 });

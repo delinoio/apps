@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# Monitoring only. Join an existing private network containing anydash-api:46329.
+# Monitoring only. Join an existing private network containing anydash-api:46331.
 services:
   prometheus:
     image: prom/prometheus:v3.15.1

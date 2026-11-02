@@ -36,7 +36,7 @@ Rust API development launchers pass the internal `--dev-env` flag to the compile
 
 ## AnyDash development environment
 
-AnyDash API settings belong to `servers/anydash-api` and the `/anydash-api` Infisical development folder. The `@servers/anydash-api#dev` task depends on the shared server build and launches the compiled binary through Portless at `https://anydash-api.localhost`. The launcher fixes `LISTEN` to `127.0.0.1:46329` and applies the AnyDash Compose database URL after Infisical injection. Direct service-local development uses its configured database URL. Root database reset includes AnyDash and runs its migrations explicitly.
+AnyDash API settings belong to `servers/anydash-api` and the `/anydash-api` Infisical development folder. The `@servers/anydash-api#dev` task depends on the shared server build and launches the compiled binary through Portless at `https://anydash-api.localhost`. The launcher fixes `LISTEN` to `127.0.0.1:46331` and applies the AnyDash Compose database URL after Infisical injection. Direct service-local development uses its configured database URL. Root database reset includes AnyDash and runs its migrations explicitly.
 
 Only the AnyDash API task receives its identity settings (`LOGTO_ISSUER`, `LOGTO_TOKEN_URL`, `DELCORE_URL`, `DELCORE_RESOURCE`, `CLIENT_ID`, `CLIENT_SECRET`), `WEB_ORIGIN` and `ANYDASH_*` settings, including the metrics token. External provider credentials never reach the server; collectors keep them on the device. Follow the [AnyDash API contract](servers-anydash-api-contract.md#configuration) for startup validation.
 

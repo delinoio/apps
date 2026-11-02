@@ -247,7 +247,7 @@ export function selectRustServers(selected) {
     {
       service: "anydash-api",
       owner: "anydash_api",
-      port: 55438,
+      port: 55439,
       user: "anydash",
       database: "anydash_api_test",
     },

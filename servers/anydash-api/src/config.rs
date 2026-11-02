@@ -183,7 +183,7 @@ mod tests {
     fn settings(key: &str) -> Option<String> {
         Some(
             match key {
-                "LISTEN" => "127.0.0.1:46329",
+                "LISTEN" => "127.0.0.1:46331",
                 "ANYDASH_PUBLIC_URL" => "https://anydash.api.delino.io",
                 "WEB_ORIGIN" => "https://anydash.delino.io",
                 "LOGTO_ISSUER" => "https://auth.example.test/oidc",

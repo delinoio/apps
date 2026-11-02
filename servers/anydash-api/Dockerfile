@@ -10,5 +10,5 @@ COPY --from=build /src/servers/target/release/anydash-api /anydash-api
 COPY servers/LICENSE servers/NOTICE /licenses/servers/
 COPY LICENSE NOTICE /licenses/protocols/
 USER 65532:65532
-EXPOSE 46329
+EXPOSE 46331
 ENTRYPOINT ["/anydash-api"]
