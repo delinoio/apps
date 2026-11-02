@@ -17,6 +17,7 @@ import java.lang.ref.WeakReference
 class MainActivity : Activity() {
     private lateinit var lynxView: LynxView
     private val host get() = (application as AnyDashApplication).host
+    private var sessionListener: (() -> Unit)? = null
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -39,6 +40,9 @@ class MainActivity : Activity() {
         builder.registerModule("AnyDashHost", AnyDashHostModule::class.java, null)
         lynxView = builder.build(this)
         setContentView(lynxView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val notifySession: () -> Unit = { send("anydash.session", JavaOnlyMap()) }
+        sessionListener = notifySession
+        host.sessionChanged = notifySession
         val dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         // Widgets launch with anydash://spaces/<space>/dashboards/<dashboard>?widget=<widget>.
         val initial = intent?.data?.takeIf { it.scheme == "anydash" && it.host != "auth" }?.toString() ?: "/"
@@ -72,6 +76,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if (host.sessionChanged === sessionListener) host.sessionChanged = null
         lynxView.destroy()
         super.onDestroy()
     }

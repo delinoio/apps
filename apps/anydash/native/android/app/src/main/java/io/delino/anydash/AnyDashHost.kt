@@ -38,6 +38,9 @@ internal class AnyDashHost(private val context: Context) {
     var activity = WeakReference<Activity>(null)
     private var pendingSignIn: ((String) -> Unit)? = null
     private var browserOpened = false
+    private val sessionGate = SessionGate()
+    /** Notifies the current bundle that the session changed. Main thread. */
+    @Volatile var sessionChanged: (() -> Unit)? = null
 
     fun call(method: String, raw: String, reply: (String) -> Unit) {
         executor.execute {
@@ -61,8 +64,10 @@ internal class AnyDashHost(private val context: Context) {
             .put("collector", false)
             .put("platformLabel", if (tablet()) "Android tablet" else "Android")
             .put("hostVersion", BuildConfig.VERSION_NAME))
-        "session" -> success(if (auth.signedIn) JSONObject().put("signedIn", true).put("userKey", auth.userKey ?: "")
-            else JSONObject().put("signedIn", false))
+        "session" -> {
+            sessionGate.read { reply(session()) }
+            null
+        }
         "signIn" -> { signIn(reply); null }
         "signOut" -> {
             auth.signOut()
@@ -167,14 +172,29 @@ internal class AnyDashHost(private val context: Context) {
         }
     }
 
-    /** anydash://auth/callback from the browser. Main thread. */
+    private fun session(): String {
+        val signedIn = auth.signedIn
+        sessionGate.answered(signedIn)
+        return success(if (signedIn) JSONObject().put("signedIn", true).put("userKey", auth.userKey ?: "")
+            else JSONObject().put("signedIn", false))
+    }
+
+    /**
+     * anydash://auth/callback from the browser. Main thread. After Android ends
+     * the process during sign-in, the callback starts a new process without a
+     * pending `signIn` reply; the session gate then holds the bundle's session
+     * read until the exchange ends, or notifies a bundle that read "signed out".
+     */
     fun completeSignIn(callback: Uri) {
         val reply = pendingSignIn
         pendingSignIn = null
         browserOpened = false
+        sessionGate.begin()
         executor.execute {
+            var signedIn = false
             val result = try {
                 auth.completeSignIn(callback)
+                signedIn = true
                 success(JSONObject())
             } catch (error: AuthException) {
                 failure(error.message ?: "Sign-in was cancelled.")
@@ -182,6 +202,10 @@ internal class AnyDashHost(private val context: Context) {
                 failure("Sign-in was cancelled.")
             }
             reply?.invoke(result)
+            if (sessionGate.finish(signedIn, replied = reply != null)) {
+                AnyDashLog.info("anydash_recovered_sign_in_notified")
+                main.post { sessionChanged?.invoke() }
+            }
         }
     }
 
