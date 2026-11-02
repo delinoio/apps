@@ -44,17 +44,34 @@ export function buildSnapshots(
   });
 }
 
+// Collector snapshot writes run one at a time, in call order, so a prune that
+// lists and replaces the stored set never overwrites a newer publication.
+let writes = Promise.resolve();
+function serial(task: () => Promise<void>) {
+  const run = writes.then(task);
+  writes = run.catch(() => {});
+  return run;
+}
+
 /**
  * Desktop writes snapshots to the collector, which serves the macOS and
  * Windows widget hosts. Mobile hosts store them for their widget extensions.
  * Snapshots merge by widget; ENDED replaces previously shown data.
  */
-export async function publishSnapshots(
+export function publishSnapshots(
   platform: HostPlatform,
   snapshots: NativeWidgetSnapshot[],
   collector?: Transport,
 ) {
-  if (snapshots.length === 0) return;
+  if (snapshots.length === 0) return Promise.resolve();
+  return serial(() => putSnapshots(platform, snapshots, collector));
+}
+
+async function putSnapshots(
+  platform: HostPlatform,
+  snapshots: NativeWidgetSnapshot[],
+  collector?: Transport,
+) {
   try {
     if (platform === HostPlatform.Desktop && collector) {
       await createClient(
@@ -80,8 +97,41 @@ export async function publishSnapshots(
   }
 }
 
+/**
+ * Deletes the desktop collector's snapshots that `remove` selects, such as the
+ * snapshots of a removed widget or a deleted dashboard. Snapshot writes only
+ * merge by widget, so without this the macOS and Windows widget hosts keep
+ * showing a removed widget's last data. Mobile apps are viewers and cannot
+ * remove widgets.
+ */
+export function pruneSnapshots(
+  platform: HostPlatform,
+  collector: Transport | undefined,
+  remove: (snapshot: NativeWidgetSnapshot) => boolean,
+) {
+  if (platform !== HostPlatform.Desktop || !collector) return Promise.resolve();
+  return serial(async () => {
+    try {
+      const client = createClient(LocalCollectorService, collector);
+      const { snapshots } = await client.listNativeWidgetSnapshots({});
+      const kept = snapshots.filter((snapshot) => !remove(snapshot));
+      if (kept.length !== snapshots.length)
+        await client.putNativeWidgetSnapshots({
+          snapshots: kept,
+          replaceAll: true,
+        });
+    } catch {
+      logError("anydash_widget_snapshots_failed", { platform });
+    }
+  });
+}
+
 /** Removes every native widget snapshot, for example after sign-out. */
-export async function clearSnapshots(
+export function clearSnapshots(platform: HostPlatform, collector?: Transport) {
+  return serial(() => removeAllSnapshots(platform, collector));
+}
+
+async function removeAllSnapshots(
   platform: HostPlatform,
   collector?: Transport,
 ) {

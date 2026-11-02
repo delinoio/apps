@@ -72,7 +72,11 @@ import {
   serverNextAllowed,
 } from "../model/refresh";
 import { RouteKind } from "../model/routes";
-import { buildSnapshots, publishSnapshots } from "../model/snapshots";
+import {
+  buildSnapshots,
+  pruneSnapshots,
+  publishSnapshots,
+} from "../model/snapshots";
 import {
   duplicateDeviceCount,
   widgetView,
@@ -232,6 +236,15 @@ export function DashboardScreen({
         queryClient.setQueryData(dataKey, stripped);
     }
     void writeCachedWidgets(session.userKey, dataQuery.data.widgets);
+    // Drop the native snapshots of widgets no longer on this dashboard, such
+    // as one removed here or on another device, before publishing the rest.
+    const live = new Set(dashboard.widgets.map((widget) => widget.id));
+    void pruneSnapshots(
+      session.info.platform,
+      session.collector,
+      (snapshot) =>
+        snapshot.dashboardId === dashboard.id && !live.has(snapshot.widgetId),
+    );
     void publishSnapshots(
       session.info.platform,
       buildSnapshots(dashboard, dataQuery.data.widgets),

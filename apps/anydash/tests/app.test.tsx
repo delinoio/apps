@@ -450,6 +450,34 @@ describe("sharing ended", () => {
     expect(settled).toBeLessThanOrEqual(2);
   });
 
+  it("removes the desktop native snapshots of removed widgets and deleted dashboards", async () => {
+    app = await renderApp({
+      path: dashboardPath,
+      platform: HostPlatform.Desktop,
+    });
+    await app.see("62% left");
+    const snapshots = app.host.api.snapshots;
+    const removed = fixtures.ids.widget(2);
+    await waitFor(() => expect(snapshots.has(removed)).toBe(true));
+    await app.tap(Copy.edit);
+    const card = app
+      .find(".ad-widget")
+      .find((element) =>
+        element
+          .getAttribute("accessibility-label")
+          ?.includes("Absolute remaining"),
+      )!;
+    await app.tap(card.getAttribute("accessibility-label")!);
+    await app.tap(Copy.removeWidget);
+    await waitFor(() => expect(snapshots.has(removed)).toBe(false));
+    expect(snapshots.has(fixtures.ids.widget(1))).toBe(true);
+    await app.tap(Copy.done);
+    await app.tap(`${ExtraCopy.chooseDashboard}: Overview`);
+    await app.tap(Copy.deleteDashboard, ".lui-dialog");
+    await app.tap(Copy.deleteDashboard, ".lui-dialog");
+    await waitFor(() => expect(snapshots.size).toBe(0));
+  });
+
   it("writes ENDED snapshots for mobile widget extensions", async () => {
     app = await renderApp({
       path: dashboardPath,

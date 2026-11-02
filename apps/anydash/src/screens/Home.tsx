@@ -33,6 +33,7 @@ import { formatTime } from "../format";
 import { hostCall, HostMethod, HostPlatform } from "../host";
 import { LayoutMode } from "../model/grid";
 import { RouteKind, type Route } from "../model/routes";
+import { pruneSnapshots } from "../model/snapshots";
 import { useNavigation } from "../navigation";
 import { useSession } from "../session";
 import { uuidv7 } from "../uuid";
@@ -213,8 +214,14 @@ export function Home({ route, mode }: { route: Route; mode: LayoutMode }) {
     },
   });
   const remove = useMutation(DashboardService.method.deleteDashboard, {
-    onSuccess: () => {
+    onSuccess: (_response, request) => {
       setDialog(Dialog.None);
+      // A deleted dashboard's widgets leave the desktop native widgets too.
+      void pruneSnapshots(
+        session.info.platform,
+        session.collector,
+        (snapshot) => snapshot.dashboardId === request.dashboardId,
+      );
       void queryClient.invalidateQueries({ queryKey: listKey });
       navigate({ kind: RouteKind.Home }, { replace: true });
     },
