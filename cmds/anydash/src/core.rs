@@ -609,6 +609,7 @@ impl Core {
                 "Vercel connections require --team-id.",
             ));
         }
+        let registered = self.registered_locally(&r.connection_id, provider)?;
         let secret = r.secret.trim().to_owned();
         let validation = providers::validate(&self.ctx, provider, &secret, r.scope_id.trim())
             .await
@@ -648,6 +649,8 @@ impl Core {
             response.connection
         }
         .ok_or_else(|| Failure::internal("The connection response is empty."))?;
+        self.check_registered_provider(provider, &connection, registered)
+            .await?;
         self.with_key(|key, store| {
             if !local {
                 store.put_secret(
@@ -674,6 +677,70 @@ impl Core {
         tracing::info!(event = "connection_added", connection_id = %connection.id, provider = providers::provider_name(provider));
         self.wake.notify_one();
         Ok(connection)
+    }
+    /// Whether the connection `id` (empty for a new connection) is registered on this device.
+    /// A registration for an existing connection must use the connection's provider: the server
+    /// takes the provider from the connection, so another provider's token would be polled and
+    /// reported under it.
+    fn registered_locally(&self, id: &str, provider: Provider) -> Result<bool> {
+        if id.is_empty() {
+            return Ok(false);
+        }
+        let existing = self.store().connection(id)?;
+        match existing {
+            Some(existing) if existing.provider != provider as i32 => {
+                Err(Self::provider_mismatch(provider, existing.provider))
+            }
+            existing => Ok(existing.is_some()),
+        }
+    }
+    /// Reject a registration whose provider differs from the registered connection's. When this
+    /// call made the registration (no local connection row existed), undo it, because the
+    /// device stores no credential for the connection.
+    async fn check_registered_provider(
+        &self,
+        provider: Provider,
+        connection: &Connection,
+        registered_before: bool,
+    ) -> Result<()> {
+        if connection.provider == provider as i32 {
+            return Ok(());
+        }
+        if !registered_before {
+            // A failed unregistration leaves a registration that never becomes ready, because
+            // the device never lists the connection as ready.
+            let undo = UnregisterConnectionDeviceRequest {
+                connection_id: connection.id.clone(),
+                device_id: String::new(),
+            };
+            if let Err(f) = self
+                .call::<_, UnregisterConnectionDeviceResponse>(
+                    "ConnectionService",
+                    "UnregisterConnectionDevice",
+                    &undo,
+                )
+                .await
+            {
+                tracing::warn!(event = "registration_undo_failed", connection_id = %connection.id, reason = f.reason.as_str_name(), correlation_id = %f.correlation_id);
+            }
+        }
+        Err(Self::provider_mismatch(provider, connection.provider))
+    }
+    /// `INVALID_ARGUMENT` for a registration whose provider differs from the connection's.
+    fn provider_mismatch(requested: Provider, actual: i32) -> Failure {
+        let actual = Provider::try_from(actual).unwrap_or(Provider::Unspecified);
+        tracing::info!(
+            event = "connection_provider_mismatch",
+            requested = providers::provider_name(requested),
+            actual = providers::provider_name(actual)
+        );
+        Failure::invalid(
+            "provider",
+            &format!(
+                "The connection belongs to the {} provider; connect it with that provider.",
+                providers::provider_name(actual)
+            ),
+        )
     }
     pub async fn remove_connection(&self, id: &str) -> Result<()> {
         let row = self.store().connection(id)?.ok_or_else(|| {

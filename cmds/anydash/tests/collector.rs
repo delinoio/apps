@@ -813,6 +813,68 @@ async fn provider_backoff_and_official_auth_expiry_stop() {
     assert_eq!(mock.count("/v10/projects"), count);
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn registration_for_another_provider_is_rejected() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    let base = api(state.clone());
+    mock.set(move |r| match r.route() {
+        "/v1/organizations" => Reply::json(200, &json!([])),
+        // The server returns the connection with its own provider.
+        "/anydash.v1.ConnectionService/RegisterConnectionDevice" => {
+            let req: pb::RegisterConnectionDeviceRequest = support::decode(r);
+            Reply::proto(&pb::RegisterConnectionDeviceResponse {
+                connection: Some(Connection {
+                    id: req.connection_id,
+                    provider: Provider::Vercel.into(),
+                    display_name: "Vercel".into(),
+                    ..Default::default()
+                }),
+            })
+        }
+        _ => base(r),
+    });
+    let supabase = |id: &str| {
+        core.add_connection(AddConnectionCredentialRequest {
+            provider: Provider::Supabase.into(),
+            connection_id: id.into(),
+            display_name: String::new(),
+            secret: "supabase-token".into(),
+            scope_id: String::new(),
+        })
+    };
+    // A connection registered on this device is checked before anything else happens.
+    mock.clear();
+    let error = supabase("c1").await.unwrap_err();
+    assert_eq!(
+        (error.reason, error.detail.field.as_str()),
+        (ErrorReason::InvalidArgument, "provider")
+    );
+    assert_eq!(
+        mock.count("/anydash.v1.ConnectionService/RegisterConnectionDevice"),
+        0
+    );
+    let status = core.status(true).unwrap();
+    assert_eq!(status.connections.len(), 1);
+    assert_eq!(status.connections[0].provider, Provider::Vercel as i32);
+    // An unknown connection is checked against the server's provider; the registration is undone
+    // and nothing is stored locally.
+    mock.clear();
+    let error = supabase("c2").await.unwrap_err();
+    assert_eq!(
+        (error.reason, error.detail.field.as_str()),
+        (ErrorReason::InvalidArgument, "provider")
+    );
+    assert_eq!(
+        mock.count("/anydash.v1.ConnectionService/UnregisterConnectionDevice"),
+        1
+    );
+    let status = core.status(true).unwrap();
+    assert_eq!(status.connections.len(), 1);
+    assert_eq!(status.connections[0].connection_id, "c1");
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn snapshots_rejected_as_too_large_are_not_retried() {
     let home = tempfile::tempdir().unwrap();
     let state = Arc::new(Mutex::new(Api::default()));
