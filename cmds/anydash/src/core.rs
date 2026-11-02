@@ -31,6 +31,7 @@ use crate::{
 };
 use prost::Message as _;
 use std::{
+    collections::HashMap,
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
@@ -90,6 +91,12 @@ struct State {
     next_api: i64,
     passive: Option<(i64, serde_json::Value)>,
     quit: bool,
+    /// Registration generation per connection, increased whenever `add_connection` or
+    /// `remove_connection` replaces or deletes the connection row. Operations that read a row
+    /// and write it back after an await (polls, lease renewal, heartbeats, reports) write only
+    /// while the generation is unchanged, so an obsolete result never overwrites a newer
+    /// registration, for example by restoring `auth_stopped` after a reconnect.
+    registrations: HashMap<String, u64>,
 }
 /// How a provider poll ended.
 enum PollEnd {
@@ -291,6 +298,70 @@ impl Core {
             })?
             .key;
         f(key, &self.store())
+    }
+    /// The registration generation of a connection. Lock order: store before state.
+    fn registration(&self, id: &str) -> u64 {
+        lock(&self.state)
+            .registrations
+            .get(id)
+            .copied()
+            .unwrap_or(0)
+    }
+    /// Mark a connection row as replaced or deleted. Call while the store lock is held.
+    fn new_registration(&self, id: &str) {
+        *lock(&self.state)
+            .registrations
+            .entry(id.to_owned())
+            .or_default() += 1;
+    }
+    /// A connection row with its registration generation.
+    fn connection_at(&self, id: &str) -> Result<Option<(ConnectionRow, u64)>> {
+        let store = self.store();
+        Ok(store
+            .connection(id)?
+            .map(|row| (row, self.registration(id))))
+    }
+    /// Every connection row with its registration generation.
+    fn connections_at(&self) -> Result<Vec<(ConnectionRow, u64)>> {
+        let store = self.store();
+        Ok(store
+            .connections()?
+            .into_iter()
+            .map(|row| {
+                let generation = self.registration(&row.id);
+                (row, generation)
+            })
+            .collect())
+    }
+    /// Whether the connection was registered again or removed since `generation` was read.
+    fn superseded(&self, id: &str, generation: u64) -> bool {
+        let changed = self.registration(id) != generation;
+        if changed {
+            tracing::info!(
+                event = "connection_update_discarded",
+                connection_id = %id,
+                "The connection was registered again or removed meanwhile."
+            );
+        }
+        changed
+    }
+    /// Store a row read at `generation` unless the connection was registered again or removed
+    /// since then.
+    fn save_connection(&self, row: &ConnectionRow, generation: u64) -> Result<()> {
+        let store = self.store();
+        if self.superseded(&row.id, generation) {
+            return Ok(());
+        }
+        store.put_connection(row)
+    }
+    /// Delete a connection read at `generation` unless it was registered again since then.
+    fn delete_connection_at(&self, id: &str, generation: u64) -> Result<()> {
+        let store = self.store();
+        if self.superseded(id, generation) {
+            return Ok(());
+        }
+        self.new_registration(id);
+        store.delete_connection(id)
     }
     /// Record the last error for `status` and app error screens.
     pub fn record_error(&self, f: &Failure) {
@@ -652,6 +723,8 @@ impl Core {
         self.check_registered_provider(provider, &connection, registered)
             .await?;
         self.with_key(|key, store| {
+            // Polls, renewals and reports in progress must not overwrite the new registration.
+            self.new_registration(&connection.id);
             if !local {
                 store.put_secret(
                     key,
@@ -777,7 +850,11 @@ impl Core {
             Err(f) if f.reason == ErrorReason::NotFound => {}
             Err(f) => return Err(f),
         }
-        self.store().delete_connection(id)?;
+        {
+            let store = self.store();
+            self.new_registration(id);
+            store.delete_connection(id)?;
+        }
         tracing::info!(event = "connection_removed", connection_id = %id);
         Ok(())
     }
@@ -1133,6 +1210,8 @@ impl Core {
     }
     /// Send a heartbeat and apply lease assignments, refresh and sync requests.
     pub async fn heartbeat(&self, now: i64) -> Result<HeartbeatResponse> {
+        // Only connections known when the request is built can be missing from its assignments.
+        let known = self.connections_at()?;
         let request = HeartbeatRequest {
             collector_version: VERSION.to_owned(),
             os_version: os_version(),
@@ -1162,7 +1241,7 @@ impl Core {
             .map(|a| a.connection_id.clone())
             .collect();
         for a in &response.assignments {
-            let Some(mut row) = self.store().connection(&a.connection_id)? else {
+            let Some((mut row, generation)) = self.connection_at(&a.connection_id)? else {
                 continue;
             };
             match &a.lease {
@@ -1194,14 +1273,13 @@ impl Core {
             if a.refresh_requested {
                 Self::manual_due(&mut row, now);
             }
-            self.store().put_connection(&row)?;
+            self.save_connection(&row, generation)?;
         }
         // Connections deleted on the server or unregistered elsewhere lose their local credential.
-        let rows = self.store().connections()?;
-        for row in rows {
+        for (row, generation) in known {
             if !assigned.contains(&row.id) {
                 tracing::info!(event = "connection_unassigned", connection_id = %row.id);
-                self.store().delete_connection(&row.id)?;
+                self.delete_connection_at(&row.id, generation)?;
             }
         }
         if response.local_sync_requested {
@@ -1259,7 +1337,9 @@ impl Core {
         reason = "Lease renewal, polling, scheduling and reporting form one cycle."
     )]
     pub async fn poll_connection(&self, id: &str, now: i64) -> Result<Option<CollectionStatus>> {
-        let Some(mut row) = self.store().connection(id)? else {
+        // A reconnect or disconnect through IPC can replace or delete the row while this poll
+        // awaits the API or the provider; the poll then writes nothing back.
+        let Some((mut row, generation)) = self.connection_at(id)? else {
             return Ok(None);
         };
         let provider = Provider::try_from(row.provider).unwrap_or(Provider::Unspecified);
@@ -1285,7 +1365,7 @@ impl Core {
             Err(f) if f.reason == ErrorReason::LeaseExpired => {
                 row.lease_held = false;
                 self.store().delete_pending_snapshot(&row.id)?;
-                self.store().put_connection(&row)?;
+                self.save_connection(&row, generation)?;
                 return Ok(None);
             }
             Err(f) => return Err(f),
@@ -1311,7 +1391,7 @@ impl Core {
                 tracing::info!(event = "poll_abandoned", connection_id = %row.id, reason = ErrorReason::LeaseExpired.as_str_name());
                 row.lease_held = false;
                 self.store().delete_pending_snapshot(&row.id)?;
-                self.store().put_connection(&row)?;
+                self.save_connection(&row, generation)?;
                 return Ok(None);
             }
             PollEnd::Stopped => {
@@ -1321,9 +1401,16 @@ impl Core {
                 return Ok(None);
             }
         };
+        // The result belongs to the replaced credential, for example an HTTP 401 of a token the
+        // user just replaced; it is neither reported nor stored, and the new registration is
+        // polled on its own schedule.
+        if self.superseded(&row.id, generation) {
+            tracing::info!(event = "poll_abandoned", connection_id = %row.id, provider = providers::provider_name(provider), reason = "connection_registered_again");
+            return Ok(None);
+        }
         if outcome.skipped {
             row.next_attempt = now + schedule::seconds(schedule::EXTERNAL_INTERVAL);
-            self.store().put_connection(&row)?;
+            self.save_connection(&row, generation)?;
             return Ok(Some(CollectionStatus::AuthExpired));
         }
         let mut snapshot = outcome.snapshot;
@@ -1426,7 +1513,7 @@ impl Core {
             // lease so a ready device of the connection's account can take over.
             self.release_lease(&mut row).await;
         }
-        self.store().put_connection(&row)?;
+        self.save_connection(&row, generation)?;
         result.map(|()| Some(status))
     }
     /// Whether a quit or a stop signal was requested.
@@ -1452,10 +1539,10 @@ impl Core {
         renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             renewal.tick().await;
-            let Ok(rows) = self.store().connections() else {
+            let Ok(rows) = self.connections_at() else {
                 continue;
             };
-            for mut row in rows.into_iter().filter(|r| r.lease_held) {
+            for (mut row, generation) in rows.into_iter().filter(|(r, _)| r.lease_held) {
                 let request = RenewLeaseRequest {
                     connection_id: row.id.clone(),
                     epoch: row.lease_epoch,
@@ -1467,7 +1554,7 @@ impl Core {
                     // The poll in progress serves a refresh of the polled connection.
                     Ok(r) if r.refresh_requested && row.id != polling => {
                         Self::manual_due(&mut row, time::now());
-                        let _ = self.store().put_connection(&row);
+                        let _ = self.save_connection(&row, generation);
                     }
                     Ok(_) => {}
                     Err(f) if f.reason == ErrorReason::LeaseExpired => {
@@ -1477,7 +1564,7 @@ impl Core {
                         }
                         row.lease_held = false;
                         let _ = self.store().delete_pending_snapshot(&row.id);
-                        let _ = self.store().put_connection(&row);
+                        let _ = self.save_connection(&row, generation);
                     }
                     Err(f) => {
                         tracing::warn!(event = "lease_renewal_failed", connection_id = %row.id, reason = f.reason.as_str_name(), correlation_id = %f.correlation_id);
@@ -1492,11 +1579,11 @@ impl Core {
         let Some((at, value)) = lock(&self.state).passive.take() else {
             return Ok(());
         };
-        let rows = self.store().connections()?;
+        let rows = self.connections_at()?;
         // Local sessions belong to the current Codex login; report them only under a connection
         // of that account.
         let login = providers::codex::read(&self.ctx).ok();
-        for mut row in rows {
+        for (mut row, generation) in rows {
             if row.provider == Provider::Codex as i32
                 && row.lease_held
                 && at > row.last_active_observed
@@ -1507,15 +1594,15 @@ impl Core {
                 let mut snapshot = providers::codex::map_passive(&value, at);
                 snapshot.next_attempt_at = time::optional(row.next_attempt);
                 self.report(&mut row, snapshot).await?;
-                self.store().put_connection(&row)?;
+                self.save_connection(&row, generation)?;
             }
         }
         Ok(())
     }
     /// Retry pending snapshots that were not delivered.
     async fn flush_pending(&self) -> Result<()> {
-        let rows = self.store().connections()?;
-        for mut row in rows {
+        let rows = self.connections_at()?;
+        for (mut row, generation) in rows {
             let Some((epoch, bytes)) = self.store().pending_snapshot(&row.id)? else {
                 continue;
             };
@@ -1525,19 +1612,19 @@ impl Core {
             }
             if let Ok(snapshot) = Snapshot::decode(bytes.as_slice()) {
                 self.report(&mut row, snapshot).await?;
-                self.store().put_connection(&row)?;
+                self.save_connection(&row, generation)?;
             }
         }
         Ok(())
     }
     /// Release every held lease (logout, quit and service uninstall).
     pub async fn release_all(&self) {
-        let Ok(rows) = self.store().connections() else {
+        let Ok(rows) = self.connections_at() else {
             return;
         };
-        for mut row in rows.into_iter().filter(|r| r.lease_held) {
+        for (mut row, generation) in rows.into_iter().filter(|(r, _)| r.lease_held) {
             self.release_lease(&mut row).await;
-            let _ = self.store().put_connection(&row);
+            let _ = self.save_connection(&row, generation);
         }
     }
     /// Release one held lease. A failed release leaves the lease to expire on the server.

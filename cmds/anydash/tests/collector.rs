@@ -813,6 +813,68 @@ async fn provider_backoff_and_official_auth_expiry_stop() {
     assert_eq!(mock.count("/v10/projects"), count);
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn a_poll_of_a_replaced_token_does_not_overwrite_the_reconnection() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    let now = time::now();
+    core.heartbeat(now).await.unwrap();
+    // The old token is rejected, slowly enough for the user to reconnect meanwhile.
+    let base = api(state.clone());
+    mock.set(move |r| match r.route() {
+        "/v10/projects" if r.header("authorization") == Some("Bearer vercel-token") => {
+            Reply::text(401, "").delayed(Duration::from_millis(800))
+        }
+        "/anydash.v1.ConnectionService/RegisterConnectionDevice" => {
+            Reply::proto(&pb::RegisterConnectionDeviceResponse {
+                connection: Some(Connection {
+                    id: "c1".into(),
+                    provider: Provider::Vercel.into(),
+                    display_name: "Vercel".into(),
+                    ..Default::default()
+                }),
+            })
+        }
+        _ => base(r),
+    });
+    mock.clear();
+    let poll = {
+        let core = core.clone();
+        tokio::spawn(async move { core.poll_connection("c1", now).await })
+    };
+    for _ in 0..100 {
+        if mock.count("/v10/projects") > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(mock.count("/v10/projects"), 1, "the old token's poll runs");
+    core.add_connection(AddConnectionCredentialRequest {
+        provider: Provider::Vercel.into(),
+        connection_id: "c1".into(),
+        display_name: String::new(),
+        secret: "vercel-token-2".into(),
+        scope_id: "team_1".into(),
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        poll.await.unwrap().unwrap(),
+        None,
+        "the obsolete result is abandoned"
+    );
+    assert_eq!(mock.count("/anydash.v1.CollectorService/ReportSnapshot"), 0);
+    // The replacement token is polled; the old token's HTTP 401 did not stop the connection.
+    core.heartbeat(now + 1).await.unwrap();
+    assert_eq!(
+        core.poll_connection("c1", now + 1).await.unwrap(),
+        Some(CollectionStatus::Succeeded)
+    );
+    assert!(mock.recorded().iter().any(|r| r.route() == "/v10/projects"
+        && r.header("authorization") == Some("Bearer vercel-token-2")));
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn registration_for_another_provider_is_rejected() {
     let home = tempfile::tempdir().unwrap();
     let state = Arc::new(Mutex::new(Api::default()));
