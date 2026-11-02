@@ -115,6 +115,38 @@ describe("metric states", () => {
     ]);
   });
 
+  it("keeps partial aggregation details within the widget's data owner", () => {
+    const usage = data.find((entry) => entry.widgetId === widgets[4].id);
+    const shared = widgetView(
+      {
+        ...widgets[4],
+        source: undefined,
+        callerIsDataOwner: false,
+        sharingState: SharingState.SHARED,
+      } as never,
+      usage,
+      ctx(),
+    );
+    expect(shared.state).toBe(WidgetState.Partial);
+    expect(shared.badges).toEqual([
+      { tone: BadgeTone.Warning, label: "Partial aggregation" },
+    ]);
+    expect(shared.lines.map((line) => line.text)).toEqual([
+      "Est. cost $214.30 (USD, estimated)",
+    ]);
+    const otherDevice = widgetView(
+      {
+        ...widgets[4],
+        source: { connectionIds: [], deviceIds: [fixtures.ids.laptop] },
+      } as never,
+      usage,
+      ctx(),
+    );
+    expect(otherDevice.badges).toEqual([
+      { tone: BadgeTone.Warning, label: "Partial aggregation" },
+    ]);
+  });
+
   it("shows Can’t be calculated with the model that has no price", () => {
     const result = view(5);
     expect(result.state).toBe(WidgetState.CannotBeCalculated);

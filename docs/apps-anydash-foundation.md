@@ -60,7 +60,7 @@ Solo business owners (primary), Delcore team members who view and edit shared te
 - Subscription remaining is shown only as `100% − provider-reported used percentage` (`SUBSCRIPTION_REMAINING_PERCENT`). Absolute remaining amounts show "Not provided".
 - External costs show the provider's original currency; local estimated costs show USD, labeled "estimated" and separate from subscription fees and actual bills. "Cannot be calculated" and partial costs are shown as such.
 - Connection states show "authentication expired" and the reconnect action; local CLI connections explain that polling resumes automatically after signing in to that CLI again.
-- Local usage shows "partial aggregation" with the skipped record count and an update-the-collector instruction, and the duplicate-device notice whenever data from two or more devices is combined.
+- Local usage shows "partial aggregation" with the skipped record count and an update-the-collector instruction, and the duplicate-device notice whenever data from two or more devices is combined. The count and device come only from the widget's included devices: widget-scoped breakdown rows, or the data owner's own devices within the widget source. On another member's shared widget, whose devices the viewer cannot read, it shows "partial aggregation" without a count or device.
 - The Vercel connection screen warns that the token can write, because Vercel has no read-only personal token, and that AnyDash calls only read endpoints.
 - Data refreshes while visible: dashboard data queries every minute, with manual refresh limited to once per minute per connection or device and the remaining wait shown.
 

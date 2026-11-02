@@ -10,6 +10,7 @@ import {
   ParserState,
   ResourceHealth,
   SharingState,
+  UsageBreakdownDimension,
   UsageTotalsSchema,
   WidgetPresentation,
   WidgetType,
@@ -477,17 +478,49 @@ function metricPanelView(
   }
 }
 
-/** Partial aggregation details from the included devices' parser states. */
-function partialDetails(ctx: ViewContext) {
+/**
+ * Partial aggregation details scoped to the widget's data owner. The server
+ * derives the notice from the parser states of the widget's included devices,
+ * so the details come from widget-scoped rows or, for the owner only, from the
+ * caller's own devices within the widget source. Another member's devices are
+ * never visible to the viewer, so their details stay unknown.
+ */
+function partialDetails(
+  widget: Widget,
+  data: WidgetData,
+  ctx: ViewContext,
+): { skipped?: number; device?: string } {
   let skipped = 0n;
   let device: string | undefined;
-  for (const entry of ctx.devices)
-    for (const status of entry.parserStatuses)
-      if (status.state === ParserState.PARTIAL) {
-        skipped += status.skippedRecordCount;
-        device ??= entry.name;
+  let found = false;
+  if (
+    data.content.case === "usageBreakdown" &&
+    data.content.value.dimension !== UsageBreakdownDimension.MODEL
+  )
+    for (const row of data.content.value.rows)
+      if (row.parserState === ParserState.PARTIAL) {
+        found = true;
+        skipped += row.skippedRecordCount;
+        device ??= row.deviceName || undefined;
       }
-  return { skipped: Number(skipped), device };
+  if (!found && widget.callerIsDataOwner) {
+    const source = widget.source;
+    const tools = widget.query?.tools ?? [];
+    for (const entry of ctx.devices) {
+      if (source && !source.allDevices && !source.deviceIds.includes(entry.id))
+        continue;
+      for (const status of entry.parserStatuses)
+        if (
+          status.state === ParserState.PARTIAL &&
+          (tools.length === 0 || tools.includes(status.tool))
+        ) {
+          found = true;
+          skipped += status.skippedRecordCount;
+          device ??= entry.name;
+        }
+    }
+  }
+  return found ? { skipped: Number(skipped), device } : {};
 }
 
 function usageView(
@@ -534,7 +567,7 @@ function usageView(
       });
   }
   if (data.notices.includes(DataNotice.PARTIAL_AGGREGATION)) {
-    const partial = partialDetails(ctx);
+    const partial = partialDetails(widget, data, ctx);
     badges.push({
       tone: BadgeTone.Warning,
       label: Copy.partialAggregation(partial.skipped),

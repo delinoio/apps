@@ -28,8 +28,11 @@ export const Copy = {
   authExpiredCli: (cli: string, device: string) =>
     `Sign in to the ${cli} CLI again on ${device}. AnyDash resumes automatically.`,
   lastValue: (value: string, time: string) => `Last value ${value} · ${time}`,
-  partialAggregation: (records: number) =>
-    `Partial aggregation · ${records} records skipped`,
+  // Without a count (another member's shared widget) only the state shows.
+  partialAggregation: (records?: number) =>
+    records === undefined
+      ? "Partial aggregation"
+      : `Partial aggregation · ${records} records skipped`,
   partialAggregationDetail: (device: string) =>
     `Update the collector on ${device} to read them.`,
   cannotBeCalculated: "Can’t be calculated",
