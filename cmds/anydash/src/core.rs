@@ -40,6 +40,10 @@ const MAX_UPLOAD_BUCKETS: usize = 2000;
 const MAX_UPLOAD_BYTES: usize = (1 << 20) - 4096;
 const TOKEN_REFRESH_MARGIN: i64 = 300;
 const MAX_WIDGETS: usize = 100;
+/// `ReportSnapshot` limits of the AnyDash API: resources per snapshot and metrics including
+/// resource metrics. The request body limit is the upload byte limit.
+pub const MAX_SNAPSHOT_RESOURCES: usize = 1000;
+pub const MAX_SNAPSHOT_METRICS: usize = 5000;
 /// The process that owns the collector lock.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Owner {
@@ -185,6 +189,43 @@ fn stored_parsers(store: &Store) -> Result<Vec<ParserStatus>> {
         .ok()
         .and_then(|b| ReportParserStatusRequest::decode(b.as_slice()).ok())
         .map_or_else(Vec::new, |r| r.statuses))
+}
+/// Keep a snapshot within the `ReportSnapshot` limits.
+///
+/// The API rejects a larger snapshot as a whole with `PAYLOAD_TOO_LARGE`. Account-level
+/// metrics are kept first, then
+/// resources in provider order while they fit; a `SUCCEEDED` snapshot that loses resources or
+/// metrics becomes `PARTIALLY_SUCCEEDED`, so the server does not remove the omitted resources
+/// from the latest view. Returns the omitted resource and metric counts.
+#[must_use]
+pub fn fit_snapshot(snapshot: &mut Snapshot) -> (usize, usize) {
+    let mut omitted_metrics = snapshot.metrics.len().saturating_sub(MAX_SNAPSHOT_METRICS);
+    snapshot.metrics.truncate(MAX_SNAPSHOT_METRICS);
+    let resources = std::mem::take(&mut snapshot.resources);
+    let mut metrics = snapshot.metrics.len();
+    let mut size = snapshot.encoded_len();
+    let mut omitted_resources = 0;
+    for resource in resources {
+        // A length-delimited field adds a 1-byte tag and a length of up to 3 bytes below 2 MiB.
+        let len = resource.encoded_len() + 4;
+        if snapshot.resources.len() < MAX_SNAPSHOT_RESOURCES
+            && metrics + resource.metrics.len() <= MAX_SNAPSHOT_METRICS
+            && size + len <= MAX_UPLOAD_BYTES
+        {
+            metrics += resource.metrics.len();
+            size += len;
+            snapshot.resources.push(resource);
+        } else {
+            omitted_resources += 1;
+            omitted_metrics += resource.metrics.len();
+        }
+    }
+    if (omitted_resources > 0 || omitted_metrics > 0)
+        && snapshot.status == CollectionStatus::Succeeded as i32
+    {
+        snapshot.status = CollectionStatus::PartiallySucceeded.into();
+    }
+    (omitted_resources, omitted_metrics)
 }
 fn ts_seconds(t: Option<&prost_types::Timestamp>) -> i64 {
     t.map_or(0, |t| t.seconds)
@@ -1121,7 +1162,8 @@ impl Core {
         }
     }
     /// Report a snapshot under the held lease epoch. `LEASE_EXPIRED` discards it and returns to
-    /// candidate selection; other failures keep it pending.
+    /// candidate selection; `INVALID_ARGUMENT`, `NOT_FOUND` and `PAYLOAD_TOO_LARGE` discard it,
+    /// because retrying the same payload cannot succeed; other failures keep it pending.
     async fn report(&self, row: &mut ConnectionRow, snapshot: Snapshot) -> Result<()> {
         self.store()
             .put_pending_snapshot(&row.id, row.lease_epoch, &snapshot.encode_to_vec())?;
@@ -1141,6 +1183,7 @@ impl Core {
                     ErrorReason::LeaseExpired
                         | ErrorReason::InvalidArgument
                         | ErrorReason::NotFound
+                        | ErrorReason::PayloadTooLarge
                 ) =>
             {
                 tracing::info!(event = "snapshot_discarded", connection_id = %row.id, reason = f.reason.as_str_name());
@@ -1233,6 +1276,17 @@ impl Core {
         let observed = time::now_timestamp();
         let observed_seconds = observed.seconds;
         snapshot.observed_at = Some(observed);
+        let (omitted_resources, omitted_metrics) = fit_snapshot(&mut snapshot);
+        if omitted_resources > 0 || omitted_metrics > 0 {
+            tracing::warn!(
+                event = "snapshot_truncated",
+                connection_id = %row.id,
+                provider = providers::provider_name(provider),
+                omitted_resources,
+                omitted_metrics,
+                "The snapshot exceeds the AnyDash API limits; the omitted resources keep their previous values."
+            );
+        }
         let status =
             CollectionStatus::try_from(snapshot.status).unwrap_or(CollectionStatus::Failed);
         let class =
@@ -1537,6 +1591,64 @@ mod tests {
     };
     use prost::Message as _;
     use std::{sync::Arc, time::Duration};
+    #[test]
+    fn snapshots_are_fitted_to_the_report_limits() {
+        use super::{MAX_SNAPSHOT_METRICS, MAX_SNAPSHOT_RESOURCES, MAX_UPLOAD_BYTES, fit_snapshot};
+        use crate::pb::{CollectionStatus, MetricObservation, ResourceObservation, Snapshot};
+        let resource = |id: usize, metrics: usize| ResourceObservation {
+            resource_id: format!("r{id}"),
+            metrics: vec![MetricObservation::default(); metrics],
+            ..Default::default()
+        };
+        let succeeded = |resources: Vec<ResourceObservation>| Snapshot {
+            status: CollectionStatus::Succeeded.into(),
+            metrics: vec![MetricObservation::default(); 3],
+            resources,
+            ..Default::default()
+        };
+        // Within the limits nothing changes.
+        let mut snapshot = succeeded((0..10).map(|i| resource(i, 2)).collect());
+        let before = snapshot.clone();
+        assert_eq!(fit_snapshot(&mut snapshot), (0, 0));
+        assert_eq!(snapshot, before);
+        // Too many resources: the first 1,000 stay and the snapshot becomes partial.
+        let mut snapshot = succeeded((0..1200).map(|i| resource(i, 1)).collect());
+        assert_eq!(fit_snapshot(&mut snapshot), (200, 200));
+        assert_eq!(snapshot.resources.len(), MAX_SNAPSHOT_RESOURCES);
+        assert_eq!(snapshot.status, CollectionStatus::PartiallySucceeded as i32);
+        // Too many metrics, including resource metrics.
+        let mut snapshot = succeeded((0..600).map(|i| resource(i, 10)).collect());
+        let (resources, metrics) = fit_snapshot(&mut snapshot);
+        let kept: usize = snapshot.metrics.len()
+            + snapshot
+                .resources
+                .iter()
+                .map(|r| r.metrics.len())
+                .sum::<usize>();
+        assert!(kept <= MAX_SNAPSHOT_METRICS && resources > 0 && metrics == resources * 10);
+        assert_eq!(kept + metrics, 3 + 6000);
+        // The request body stays within the byte limit.
+        let mut snapshot = succeeded(
+            (0..900)
+                .map(|i| {
+                    let mut r = resource(i, 1);
+                    r.display_name = "x".repeat(2000);
+                    r
+                })
+                .collect(),
+        );
+        let (resources, _) = fit_snapshot(&mut snapshot);
+        assert!(resources > 0);
+        assert!(prost::Message::encoded_len(&snapshot) <= MAX_UPLOAD_BYTES);
+        // A failure snapshot keeps its status.
+        let mut snapshot = Snapshot {
+            status: CollectionStatus::Failed.into(),
+            metrics: vec![MetricObservation::default(); MAX_SNAPSHOT_METRICS + 1],
+            ..Default::default()
+        };
+        assert_eq!(fit_snapshot(&mut snapshot), (0, 1));
+        assert_eq!(snapshot.status, CollectionStatus::Failed as i32);
+    }
     #[test]
     fn key_rotation_waits_for_an_encrypted_write() {
         let home = tempfile::tempdir().unwrap();

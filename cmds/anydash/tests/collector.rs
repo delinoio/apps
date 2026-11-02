@@ -819,6 +819,31 @@ async fn provider_backoff_and_official_auth_expiry_stop() {
     assert_eq!(mock.count("/v10/projects"), count);
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn snapshots_rejected_as_too_large_are_not_retried() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    let now = time::now();
+    core.heartbeat(now).await.unwrap();
+    state.lock().unwrap().report = Some(ErrorReason::PayloadTooLarge);
+    assert_eq!(
+        core.poll_connection("c1", now).await.unwrap(),
+        Some(CollectionStatus::Succeeded)
+    );
+    let pending: i64 = rusqlite::Connection::open(home.path().join("anydash/data/collector.db"))
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM pending_snapshots", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(pending, 0, "the rejected payload is discarded");
+    assert!(core.status(true).unwrap().connections[0].lease_held);
+    // The next cycle does not resend it before polling again.
+    state.lock().unwrap().report = None;
+    mock.clear();
+    core.cycle(now + 60).await;
+    assert_eq!(mock.count("/anydash.v1.CollectorService/ReportSnapshot"), 0);
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn provider_retry_waits_start_when_the_response_arrives() {
     let home = tempfile::tempdir().unwrap();
     let state = Arc::new(Mutex::new(Api::default()));
