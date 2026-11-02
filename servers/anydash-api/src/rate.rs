@@ -2,7 +2,7 @@
 //! Fixed 60-second request windows shared by every replica through PostgreSQL.
 use crate::{ApiError, Result};
 use delino_protocol::anydash::v1::RateLimitScope;
-use sqlx::PgPool;
+use sqlx::{PgExecutor, PgPool};
 use std::time::Duration;
 
 pub const USER_TOKEN_LIMIT: i32 = 600;
@@ -17,9 +17,18 @@ pub fn invalid_refresh_subject(client_ip: &str) -> String {
     format!("invalid-refresh:{client_ip}")
 }
 
-/// Counts one request in its own committed statement, so rejected requests count too, and
-/// rejects the request once the window holds more than `limit` requests.
-pub async fn check(pool: &PgPool, scope: RateLimitScope, subject: &str, limit: i32) -> Result<()> {
+/// Counts one request and rejects it once the window holds more than `limit` requests.
+///
+/// On a pool the count commits in its own statement, so rejected requests count too. A handler
+/// that charges inside its transaction passes the transaction's connection instead of waiting
+/// for a second pooled connection while it holds row locks; it must then commit the transaction
+/// before it returns a rejection, so that the count persists.
+pub async fn check<'e>(
+    db: impl PgExecutor<'e>,
+    scope: RateLimitScope,
+    subject: &str,
+    limit: i32,
+) -> Result<()> {
     use buffa::Enumeration;
     let (count, retry_ms): (i32, f64) = sqlx::query_as(
         "WITH w AS (SELECT date_bin('60 seconds', clock_timestamp(), TIMESTAMPTZ '2000-01-01') AS s) \
@@ -29,7 +38,7 @@ pub async fn check(pool: &PgPool, scope: RateLimitScope, subject: &str, limit: i
     )
     .bind(scope.to_i32() as i16)
     .bind(subject)
-    .fetch_one(pool)
+    .fetch_one(db)
     .await?;
     if count > limit {
         let retry = Duration::from_millis(retry_ms.clamp(1.0, 60_000.0) as u64);

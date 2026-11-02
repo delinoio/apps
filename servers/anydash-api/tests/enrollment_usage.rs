@@ -1040,3 +1040,94 @@ async fn versioned_uploads_retention_and_estimated_cost() {
     );
     f.cleanup().await;
 }
+
+/// Refresh and refresh-token logout charge the device limit on their own transaction
+/// connection while they hold the device row lock, so they never wait for a second pooled
+/// connection. They therefore complete on an API instance with a single-connection pool, and
+/// rejected requests still count.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn refresh_token_requests_need_one_pooled_connection() {
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let (device, _, refresh) = f.enroll(&a, "laptop", "").await;
+    let (other, _, other_refresh) = f.enroll(&a, "desk", "").await;
+    let narrow = f.with_pool_size(1).await;
+    let refresh_call = |token: &str| json!({"deviceId":device,"refreshToken":token});
+    let device_windows = format!(
+        "SELECT COALESCE(sum(count),0)::int8 FROM rate_limit_windows WHERE scope=2 AND subject='{device}'"
+    );
+
+    let rotated = narrow
+        .ok(
+            &narrow.anonymous(),
+            "DeviceService/RefreshDeviceToken",
+            refresh_call(&refresh),
+        )
+        .await;
+    let refresh2 = rotated["credentials"]["refreshToken"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(f.count(&device_windows).await, 1);
+
+    // Over the device limit, the authenticated refresh is rejected and its charge persists.
+    // Pre-fill the current and next windows to avoid a minute boundary.
+    f.exec(&format!(
+        "INSERT INTO rate_limit_windows(scope,subject,window_start,count) SELECT 2,'{device}',w,60 FROM \
+         (VALUES (date_bin('60 seconds', clock_timestamp(), TIMESTAMPTZ '2000-01-01')),(date_bin('60 seconds', clock_timestamp(), TIMESTAMPTZ '2000-01-01')+interval '60 seconds')) v(w) \
+         ON CONFLICT (scope,subject,window_start) DO UPDATE SET count=60"
+    ))
+    .await;
+    narrow
+        .fail(
+            &narrow.anonymous(),
+            "DeviceService/RefreshDeviceToken",
+            refresh_call(&refresh2),
+            "ERROR_REASON_RATE_LIMITED",
+        )
+        .await;
+    assert_eq!(f.count(&device_windows).await, 121);
+    f.exec(&format!(
+        "DELETE FROM rate_limit_windows WHERE subject='{device}'"
+    ))
+    .await;
+
+    // Reuse detection and the inactive rejection that follows also count.
+    narrow
+        .fail(
+            &narrow.anonymous(),
+            "DeviceService/RefreshDeviceToken",
+            refresh_call(&refresh),
+            "ERROR_REASON_REFRESH_TOKEN_REUSED",
+        )
+        .await;
+    narrow
+        .fail(
+            &narrow.anonymous(),
+            "DeviceService/RefreshDeviceToken",
+            refresh_call(&refresh2),
+            "ERROR_REASON_DEVICE_CREDENTIALS_INACTIVE",
+        )
+        .await;
+    assert_eq!(f.count(&device_windows).await, 2);
+
+    // Collector logout with the refresh token.
+    narrow
+        .ok(
+            &narrow.anonymous(),
+            "DeviceService/RevokeDeviceCredentials",
+            json!({"deviceId":other,"refreshToken":other_refresh}),
+        )
+        .await;
+    assert_eq!(
+        f.count(&format!(
+            "SELECT COALESCE(sum(count),0)::int8 FROM rate_limit_windows WHERE scope=2 AND subject='{other}'"
+        ))
+        .await,
+        1
+    );
+    narrow.db.close().await;
+    f.cleanup().await;
+}

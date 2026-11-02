@@ -9,7 +9,7 @@ use crate::{
 };
 use chrono::Duration;
 use rand::Rng;
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 use std::collections::HashMap;
 
 const ENROLLMENT_MINUTES: i64 = 10;
@@ -635,14 +635,28 @@ async fn invalid_refresh_token(s: &Server, call: &Call) -> ApiError {
 }
 
 /// Charges a request whose refresh token was authenticated to the device token limit.
-async fn charge_device_token(s: &Server, device: Uuid) -> Result<()> {
+///
+/// The charge runs on the caller's transaction connection: the caller already holds the device
+/// row lock, and waiting for a second pooled connection there could exhaust the pool when many
+/// refreshes run at once. The count commits with the transaction, so a caller that rejects the
+/// request after this charge commits the transaction before it returns the rejection.
+async fn charge_device_token(db: &mut PgConnection, device: Uuid) -> Result<()> {
     rate::check(
-        &s.db,
+        db,
         RateLimitScope::DeviceToken,
         &device.to_string(),
         rate::DEVICE_TOKEN_LIMIT,
     )
     .await
+}
+
+/// Commits the transaction that charged a rejected request, so the charge persists, and returns
+/// the rejection.
+async fn reject_charged(tx: Transaction<'_, Postgres>, rejection: ApiError) -> ApiError {
+    match tx.commit().await {
+        Ok(()) => rejection,
+        Err(e) => e.into(),
+    }
 }
 
 pub async fn refresh_device_token(
@@ -677,9 +691,11 @@ pub async fn refresh_device_token(
     .await?;
     if let Some(expires) = current {
         // The token is authenticated; only now does the request count toward the device limit.
-        charge_device_token(s, device).await?;
+        if let Err(e) = charge_device_token(&mut tx, device).await {
+            return Err(reject_charged(tx, e).await);
+        }
         if deleted.is_some() || i32::from(state) != DeviceCredentialState::Active.to_i32() {
-            return Err(inactive());
+            return Err(reject_charged(tx, inactive()).await);
         }
         if expires <= call.now {
             sqlx::query("UPDATE devices SET credential_state=$2 WHERE id=$1")
@@ -716,9 +732,11 @@ pub async fn refresh_device_token(
         return Err(invalid_refresh_token(s, call).await);
     }
     // A rotated token was issued for this device, so reuse detection counts toward its limit.
-    charge_device_token(s, device).await?;
+    if let Err(e) = charge_device_token(&mut tx, device).await {
+        return Err(reject_charged(tx, e).await);
+    }
     if deleted.is_some() || i32::from(state) != DeviceCredentialState::Active.to_i32() {
-        return Err(inactive());
+        return Err(reject_charged(tx, inactive()).await);
     }
     sqlx::query("UPDATE devices SET credential_state=$2 WHERE id=$1")
         .bind(device)
@@ -770,7 +788,9 @@ pub async fn revoke_device_credentials(
                 drop(tx);
                 return Err(invalid_refresh_token(s, call).await);
             };
-            charge_device_token(s, device).await?;
+            if let Err(e) = charge_device_token(&mut tx, device).await {
+                return Err(reject_charged(tx, e).await);
+            }
             sqlx::query("DELETE FROM device_credentials WHERE device_id=$1")
                 .bind(device)
                 .execute(&mut *tx)

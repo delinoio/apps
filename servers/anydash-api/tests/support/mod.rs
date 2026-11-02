@@ -289,26 +289,7 @@ impl Fixture {
             .await
             .unwrap();
         admin.close().await;
-        let search = schema.clone();
-        let db = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(16)
-            .after_connect(move |conn, _| {
-                let search = search.clone();
-                Box::pin(async move {
-                    sqlx::query(&format!("SET search_path TO {search}"))
-                        .execute(conn)
-                        .await?;
-                    Ok(())
-                })
-            })
-            .connect_with(
-                database_url
-                    .parse::<PgConnectOptions>()
-                    .unwrap()
-                    .application_name(&schema),
-            )
-            .await
-            .unwrap();
+        let db = schema_pool(&database_url, &schema, 16).await;
         assert!(
             anydash_api::migration::check(&db).await.is_err(),
             "an empty schema is refused"
@@ -347,17 +328,7 @@ impl Fixture {
         let issuer = format!("{mock_base}/oidc");
         let config = Config::fixture(&issuer, &mock_base, &format!("{mock_base}/prices.json"));
         let server = Server::new(db.clone(), config).unwrap();
-        let router = anydash_api::http::router(Arc::new(server.clone()));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move {
-            axum::serve(
-                listener,
-                router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-            )
-            .await
-            .unwrap()
-        });
+        let base = serve(&server).await;
         Self {
             db,
             server,
@@ -367,6 +338,28 @@ impl Fixture {
             issuer,
             schema,
             database_url,
+        }
+    }
+
+    /// A second API instance on the same schema and mocks whose pool holds only `connections`
+    /// connections and gives up acquiring one after two seconds. It shows that a handler never
+    /// waits for another pooled connection while its transaction holds one. Close its pool with
+    /// `db.close()`; only the original fixture drops the schema.
+    pub async fn with_pool_size(&self, connections: u32) -> Self {
+        let db =
+            sqlx::postgres::PgPoolOptions::new().acquire_timeout(std::time::Duration::from_secs(2));
+        let db = schema_pool_with(db, &self.database_url, &self.schema, connections).await;
+        let server = Server::new(db.clone(), (*self.server.config).clone()).unwrap();
+        let base = serve(&server).await;
+        Self {
+            db,
+            server,
+            base,
+            http: reqwest::Client::new(),
+            mock: self.mock.clone(),
+            issuer: self.issuer.clone(),
+            schema: self.schema.clone(),
+            database_url: self.database_url.clone(),
         }
     }
 
@@ -619,6 +612,61 @@ impl Fixture {
     pub async fn count(&self, sql: &str) -> i64 {
         sqlx::query_scalar(sql).fetch_one(&self.db).await.unwrap()
     }
+}
+
+/// A pool whose connections use the test schema.
+async fn schema_pool(database_url: &str, schema: &str, connections: u32) -> PgPool {
+    schema_pool_with(
+        sqlx::postgres::PgPoolOptions::new(),
+        database_url,
+        schema,
+        connections,
+    )
+    .await
+}
+
+async fn schema_pool_with(
+    options: sqlx::postgres::PgPoolOptions,
+    database_url: &str,
+    schema: &str,
+    connections: u32,
+) -> PgPool {
+    let search = schema.to_owned();
+    options
+        .max_connections(connections)
+        .after_connect(move |conn, _| {
+            let search = search.clone();
+            Box::pin(async move {
+                sqlx::query(&format!("SET search_path TO {search}"))
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect_with(
+            database_url
+                .parse::<PgConnectOptions>()
+                .unwrap()
+                .application_name(schema),
+        )
+        .await
+        .unwrap()
+}
+
+/// Serves the API router on a loopback port and returns its base URL.
+async fn serve(server: &Server) -> String {
+    let router = anydash_api::http::router(Arc::new(server.clone()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap()
+    });
+    base
 }
 
 /// Timestamp text for a JSON request.
