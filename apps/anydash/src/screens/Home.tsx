@@ -73,7 +73,6 @@ function NameDialog({
       title={title}
       onClose={onCancel}
       initialFocusRef={input}
-      inputs={[input]}
       action={{
         label: ExtraCopy.save,
         disabled: !valid,

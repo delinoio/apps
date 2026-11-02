@@ -300,7 +300,6 @@ function ConnectDialog({
       title={Copy.connectProvider(providerName(provider))}
       onClose={onClose}
       initialFocusRef={needsToken ? token : undefined}
-      inputs={needsToken ? (vercel ? [token, scopeInput] : [token]) : []}
       action={{
         label: Copy.connect,
         loading: busy,

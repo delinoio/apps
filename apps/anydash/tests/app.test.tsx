@@ -218,6 +218,48 @@ describe("layouts", () => {
   });
 });
 
+describe("dialogs", () => {
+  const focused = () =>
+    (
+      (
+        globalThis as {
+          __anydashUiCalls?: { method: string; element?: Element | null }[];
+        }
+      ).__anydashUiCalls ?? []
+    ).filter((call) => call.method === "setFocus" || call.method === "focus");
+  const label = (element?: Element | null) =>
+    element?.querySelector(".lui-button-label")?.textContent?.trim() ??
+    element?.getAttribute("accessibility-label");
+
+  it("moves Tab focus through the modal body controls on native hosts", async () => {
+    app = await renderApp({ path: dashboardPath });
+    await app.see("62% left");
+    await app.tap(`${ExtraCopy.chooseDashboard}: Overview`);
+    await app.see(ExtraCopy.renameDashboard);
+    await waitFor(() =>
+      expect(label(focused().at(-1)?.element)).toBe(Copy.cancel),
+    );
+    const backdrop = app.find(".lui-dialog-backdrop")[0];
+    const press = async (shiftKey = false) => {
+      const before = focused().length;
+      await app!.key(backdrop, "Tab", shiftKey);
+      await waitFor(() => expect(focused().length).toBe(before + 1));
+      return label(focused().at(-1)?.element);
+    };
+    // Cancel is last, so Tab wraps to the first choice in the body.
+    expect(await press()).toBe("✓ Overview");
+    expect(await press()).toBe(Copy.createDashboard);
+    expect(await press()).toBe(ExtraCopy.renameDashboard);
+    expect(await press(true)).toBe(Copy.createDashboard);
+    expect(await press(true)).toBe("✓ Overview");
+    expect(await press(true)).toBe(Copy.cancel);
+    await app.key(backdrop, "Escape");
+    await waitFor(() =>
+      expect(app!.find(".lui-dialog-backdrop").length).toBe(0),
+    );
+  });
+});
+
 describe("phone layout", () => {
   it("keeps the dashboard picker on phones", async () => {
     app = await renderApp({

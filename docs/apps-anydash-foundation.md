@@ -89,7 +89,7 @@ Solo business owners (primary), Delcore team members who view and edit shared te
 
 ### UX requirements and design approval
 
-- Follow Toss Design Guidelines. Dialogs close with `Esc`. A form with a single critical input focuses that input.
+- Follow Toss Design Guidelines. Dialogs close with `Esc`. A form with a single critical input focuses that input. On native hosts, Tab and Shift+Tab in an open dialog move through all of its enabled controls, including the choices in its body, in rendered order and keep focus inside the dialog.
 - Accessibility: WCAG 2.2 AA on the web. VoiceOver, TalkBack and Narrator support, and keyboard operation in the apps.
 - Before UI implementation, the user approves a design preview of the empty, loading, access-denied, error, recovery and confirmation states and the final English copy. This copy includes "Not provided", "sharing ended", "authentication expired", "partial aggregation", "cannot be calculated", and the duplicate-device notice. Implementation does not start before this approval.
 
