@@ -798,6 +798,20 @@ Credentials are scoped to the test step and never injected into automatic PR
 runs. Only dispatch trusted, reviewed revisions: manual runs execute that
 revision with the model credential. Reports and result summaries are uploaded
 as `lane-midscene-<attempt>` for seven days, including on test failure.
+For an online report, create a separate Cloudflare Pages Direct Upload project
+(for example, `lane-midscene-reports`) with production branch `main`. Set repository
+variables `LANE_MIDSCENE_PAGES_PROJECT` and `CLOUDFLARE_ACCOUNT_ID`, and repository
+secret `CLOUDFLARE_API_TOKEN` with Pages edit permission for that account.
+When enabled, manual CI publishes only the generated HTML report and its assets,
+including failed test reports, to a unique `run-<id>-<attempt>` preview branch.
+The job summary links to the deployment URL; the downloadable artifact remains
+available independently. Pages previews are public unless access is configured
+in Cloudflare, so keep fixture data synthetic. Pages deployments have their own
+retention and are not deleted when the seven-day GitHub artifact expires.
+Report hosting is separate from application release deployments and never uses
+the Lane application Pages project. Without the project variable, publication
+is skipped and no Cloudflare credential is needed.
+
 They establish shared browser UI behavior against
 fixtures, not native persistence, real-account synchronization or device
 acceptance. Record first-pass results, model, elapsed time and report paths when

@@ -389,6 +389,39 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
+      - name: Locate Midscene report for Pages
+        id: midscene-pages
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && vars.LANE_MIDSCENE_PAGES_PROJECT != '' && (steps.midscene.outcome == 'success' || steps.midscene.outcome == 'failure') }}
+        run: |
+          shopt -s nullglob
+          reports=(apps/lane/tests/midscene/midscene_run/report/midscene-e2e-*/index.html)
+          if [ "${#reports[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one Midscene HTML report"
+            exit 1
+          fi
+          echo "directory=${reports[0]%/index.html}" >> "$GITHUB_OUTPUT"
+      - name: Publish Midscene report to Cloudflare Pages
+        id: midscene-deploy
+        if: ${{ always() && steps.midscene-pages.outcome == 'success' }}
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
+        env:
+          # The action installs Wrangler at the workspace root with pnpm add.
+          # Remove when the action supports --workspace-root.
+          pnpm_config_ignore_workspace_root_check: "true"
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.151.1"
+          command: pages deploy "${{ steps.midscene-pages.outputs.directory }}" --project-name=${{ vars.LANE_MIDSCENE_PAGES_PROJECT }} --branch=run-${{ github.run_id }}-${{ github.run_attempt }} --commit-hash=${{ github.sha }}
+      - name: Link online Midscene report
+        id: midscene-report-link
+        if: ${{ always() && steps.midscene-deploy.outcome == 'success' }}
+        env:
+          REPORT_URL: ${{ steps.midscene-deploy.outputs.deployment-url }}
+        run: |
+          echo "### Lane Midscene report" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Open interactive HTML report]($REPORT_URL)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Revision: $GITHUB_SHA; test outcome: ${{ steps.midscene.outcome }}" >> "$GITHUB_STEP_SUMMARY"
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
