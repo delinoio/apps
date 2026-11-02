@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // AnyDash desktop main process (Lynxtron). It stays resident in the macOS menu
 // bar or the Windows notification area after the window closes, so the
-// collector it started keeps collecting and native widget snapshots stay
-// current. Quit stops the app and the collector it started.
+// collector it started keeps collecting and, through the widget refresher,
+// native widget snapshots stay current. Quit stops the app and the collector
+// it started.
 import {
   app,
   clipboard,
@@ -20,6 +21,7 @@ import { Collector } from "./collector.mjs";
 import { DesktopHost } from "./host.mjs";
 import { createSecureStore, memoryStore } from "./secure-store.mjs";
 import { DesktopUpdater } from "./updater.mjs";
+import { WidgetRefresher } from "./widgets.mjs";
 
 const resources = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -27,7 +29,7 @@ const config = require("./package.json");
 const scheme = "anydash";
 const log = (event) =>
   console.info(JSON.stringify({ platform: process.platform, ...event }));
-let window, tray, host, auth, collector, updater;
+let window, tray, host, auth, collector, updater, refresher;
 let started = false;
 let quitting = false;
 let stopping = false;
@@ -52,6 +54,8 @@ function showWindow() {
     window.focus();
     return;
   }
+  // The window's dashboard screen publishes snapshots while it is open.
+  refresher?.stop();
   window = new LynxWindow({
     width: 1320,
     height: 860,
@@ -83,6 +87,7 @@ function showWindow() {
   owner.on("restore", () => send("anydash.visibility", { visible: true }));
   owner.on("closed", () => {
     if (window === owner) window = undefined;
+    if (!window && !stopping) refresher?.start();
     log({ event: "anydash_window_closed", resident: true });
   });
   if (
@@ -135,6 +140,7 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   if (stopping) return;
   stopping = true;
+  refresher?.stop();
   void collector
     .quit()
     .then((result) => log({ event: "anydash_collector_quit", ...result }))
@@ -168,6 +174,7 @@ else
         stateDirectory: app.getPath("userData"),
         beforeInstall: async () => {
           stopping = true;
+          refresher?.stop();
           await collector.quit();
         },
         relaunch: () => {
@@ -198,6 +205,13 @@ else
         onRoute: (path) => {
           lastPath = path;
         },
+      });
+      refresher = new WidgetRefresher({
+        host,
+        collector,
+        auth,
+        clientVersion: config.version,
+        log,
       });
       if (!(await collector.ensure()))
         log({ event: "anydash_collector_unavailable" });
@@ -242,6 +256,12 @@ else
       );
       const hidden = app.getLoginItemSettings().wasOpenedAsHidden;
       if (!hidden) showWindow();
+      else {
+        // Started at login without a window: refresh the native widgets now
+        // and then on the background cadence.
+        refresher.start();
+        void refresher.refresh();
+      }
       for (const url of [...pendingURLs.splice(0), ...process.argv])
         activateURL(url);
       log({ event: "anydash_started", collectorStarted: collector.started });

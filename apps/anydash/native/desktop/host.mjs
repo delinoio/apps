@@ -235,14 +235,33 @@ export class DesktopHost {
       service === "anydash.v1.LocalCollectorService"
     )
       throw new HostError("Invalid RPC target.");
+    const response = await this.apiCall(
+      service,
+      method,
+      Buffer.from(String(payload.body ?? ""), "base64"),
+      payload.headers,
+    );
+    return {
+      status: response.status,
+      body: response.body.toString("base64"),
+      contentType: response.contentType,
+      correlationId: response.correlationId,
+    };
+  }
+
+  /**
+   * One unary Connect call to the AnyDash API with the signed-in user's token.
+   * The renderer and the resident native widget refresh both use it.
+   */
+  async apiCall(service, method, requestBody, requestHeaders = {}) {
     const headers = {
       "content-type": "application/proto",
       "connect-protocol-version": "1",
     };
-    for (const [key, value] of Object.entries(payload.headers ?? {}))
+    for (const [key, value] of Object.entries(requestHeaders ?? {}))
       if (ALLOWED_HEADERS.has(key.toLowerCase()) && typeof value === "string")
         headers[key] = value;
-    let body = Buffer.from(String(payload.body ?? ""), "base64");
+    let body = requestBody;
     if (await this.auth.signedIn()) {
       headers.authorization = `Bearer ${await this.auth.accessToken(this.config.anydashResource)}`;
       if (DELCORE_TOKEN_METHODS.has(`${service}/${method}`))
@@ -257,7 +276,7 @@ export class DesktopHost {
     );
     return {
       status: response.status,
-      body: Buffer.from(await response.arrayBuffer()).toString("base64"),
+      body: Buffer.from(await response.arrayBuffer()),
       contentType: response.headers.get("content-type") ?? undefined,
       correlationId: response.headers.get(CORRELATION_HEADER) ?? undefined,
     };

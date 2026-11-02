@@ -540,3 +540,134 @@ test("discards a token refresh that completes after sign-out", async () => {
     code: "SIGNED_OUT",
   });
 });
+
+test("refreshes stored native widget snapshots while no window is open", async () => {
+  const { create, fromBinary, toBinary } = await import("@bufbuild/protobuf");
+  const pb = await import("@repo/protos/anydash/v1/anydash_pb");
+  const { WidgetRefresher, dashboardOutcome, DashboardOutcome } =
+    await import("./widgets.mjs");
+  const snapshot = (dashboardId, widgetId, title) =>
+    create(pb.NativeWidgetSnapshotSchema, {
+      dashboardId,
+      widgetId,
+      spaceId: "space",
+      sharingState: pb.SharingState.PRIVATE,
+      summary: { title },
+    });
+  let stored = [
+    snapshot("live", "kept", "old"),
+    snapshot("live", "removed", "old"),
+    snapshot("live", "ended", "old"),
+    snapshot("deleted", "gone", "old"),
+    snapshot("left", "revoked", "old"),
+  ];
+  const writes = [];
+  const collector = {
+    async forward(method, body) {
+      if (method === "ListNativeWidgetSnapshots")
+        return {
+          status: 200,
+          body: Buffer.from(
+            toBinary(
+              pb.ListNativeWidgetSnapshotsResponseSchema,
+              create(pb.ListNativeWidgetSnapshotsResponseSchema, {
+                snapshots: stored,
+              }),
+            ),
+          ),
+        };
+      const request = fromBinary(
+        pb.PutNativeWidgetSnapshotsRequestSchema,
+        body,
+      );
+      writes.push(request);
+      stored = request.snapshots;
+      return { status: 200, body: Buffer.alloc(0) };
+    },
+  };
+  const queried = [];
+  let gate;
+  const host = {
+    async apiCall(service, method, body, headers) {
+      const { dashboardId } = fromBinary(
+        pb.QueryDashboardDataRequestSchema,
+        body,
+      );
+      queried.push({ service, method, dashboardId, headers });
+      if (gate) await gate;
+      if (dashboardId === "deleted")
+        return { status: 404, body: Buffer.alloc(0) };
+      if (dashboardId === "left") return { status: 403, body: Buffer.alloc(0) };
+      return {
+        status: 200,
+        body: Buffer.from(
+          toBinary(
+            pb.QueryDashboardDataResponseSchema,
+            create(pb.QueryDashboardDataResponseSchema, {
+              widgets: [
+                {
+                  widgetId: "kept",
+                  sharingState: pb.SharingState.PRIVATE,
+                  summary: { title: "new" },
+                },
+                { widgetId: "ended", sharingState: pb.SharingState.ENDED },
+              ],
+            }),
+          ),
+        ),
+      };
+    },
+  };
+  let signedIn = true;
+  const refresher = new WidgetRefresher({
+    host,
+    collector,
+    auth: { signedIn: async () => signedIn },
+    clientVersion: "1.2.3",
+  });
+  await refresher.refresh();
+  assert.deepEqual(
+    queried.map((entry) => entry.dashboardId),
+    ["live", "deleted", "left"],
+  );
+  assert.equal(queried[0].service, "anydash.v1.WidgetDataService");
+  assert.equal(queried[0].method, "QueryDashboardData");
+  assert.equal(
+    queried[0].headers["x-anydash-client-kind"],
+    "CLIENT_KIND_DESKTOP",
+  );
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].replaceAll, true);
+  assert.deepEqual(
+    stored.map((entry) => [
+      entry.widgetId,
+      entry.sharingState,
+      entry.summary?.title,
+    ]),
+    [
+      ["kept", pb.SharingState.PRIVATE, "new"],
+      ["ended", pb.SharingState.ENDED, undefined],
+      ["revoked", pb.SharingState.ENDED, undefined],
+    ],
+  );
+  assert.ok(stored[0].refreshedAt);
+
+  // A window that opens mid-refresh owns publication; the stale result is
+  // discarded, and nothing is written after sign-out.
+  let release;
+  gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const pending = refresher.refresh();
+  await new Promise((resolve) => setImmediate(resolve));
+  refresher.stop();
+  release();
+  await pending;
+  gate = undefined;
+  assert.equal(writes.length, 1);
+  signedIn = false;
+  await refresher.refresh();
+  assert.equal(writes.length, 1);
+  assert.equal(dashboardOutcome(500), DashboardOutcome.Failed);
+  assert.equal(dashboardOutcome(401), DashboardOutcome.SignedOut);
+});

@@ -10,7 +10,7 @@
     "build": "rspeedy build",
     "build:frontend": "pnpm build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
-    "test": "pnpm typecheck && rstest && node --test native/desktop/desktop.test.mjs scripts/icons.test.mjs scripts/widget-fixtures.test.mjs && pnpm build",
+    "test": "pnpm typecheck && rstest && node --experimental-transform-types --no-warnings --test native/desktop/desktop.test.mjs scripts/icons.test.mjs scripts/widget-fixtures.test.mjs && pnpm build",
     "test:browser": "pnpm build && node tests/browser.mjs",
     "build:desktop": "pnpm build && node scripts/desktop.mjs build",
     "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run",
