@@ -42,7 +42,7 @@ The main-only unified release selects AnyDash web, server image, CLI, desktop an
 ### Hosts and local development
 
 - Web: `https://anydash.delino.io` on Cloudflare Pages. API: `https://anydash.api.delino.io`.
-- Local development: the `anydash` Portless route (`https://anydash.localhost`) uses fixed loopback port `127.0.0.1:46328`, and the `anydash-api` route (`https://anydash-api.localhost`) uses fixed loopback port `127.0.0.1:46329`. Both fail on port conflicts. The Compose database service is `anydash-postgres` on loopback port `${ANYDASH_POSTGRES_PORT:-55438}`. The Infisical development folder for the API is `/anydash-api`. Register these in the owning integration files when runtime implementation begins.
+- Local development: the `anydash` Portless route (`https://anydash.localhost`) uses fixed loopback port `127.0.0.1:46330`, and the `anydash-api` route (`https://anydash-api.localhost`) uses fixed loopback port `127.0.0.1:46331`. Both fail on port conflicts. The Compose database service is `anydash-postgres` on loopback port `${ANYDASH_POSTGRES_PORT:-55439}`. The Infisical development folder for the API is `/anydash-api`. Register these in the owning integration files when runtime implementation begins.
 
 ### Identity, spaces and authorization
 

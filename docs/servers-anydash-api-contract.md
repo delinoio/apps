@@ -146,7 +146,7 @@ Service-local `.env.example` lists names, placeholders and safe loopback default
 
 | Variable                         | Required | Meaning                                                                                                                         |
 | -------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `LISTEN`                         | Yes      | Listener address; development fixes `127.0.0.1:46329`                                                                           |
+| `LISTEN`                         | Yes      | Listener address; development fixes `127.0.0.1:46331`                                                                           |
 | `DATABASE_URL`                   | Yes      | PostgreSQL connection URL (secret)                                                                                              |
 | `ANYDASH_PUBLIC_URL`             | Yes      | Public API origin, `https://anydash.api.delino.io` in production                                                                |
 | `WEB_ORIGIN`                     | Yes      | Web origin for CORS and the approval URL, `https://anydash.delino.io` in production                                             |
@@ -167,8 +167,8 @@ Invalid or missing required values stop startup. Startup verifies the schema ver
 
 ### Local development
 
-- `pnpm dev` from `servers/anydash-api` wraps the launcher with `infisical run --env=dev --path=/anydash-api --project-config-dir=../..` and registers the Portless route `anydash-api` (`https://anydash-api.localhost`) with fixed upstream `127.0.0.1:46329`, failing on conflict. The launcher executes the binary built by `//#server-build`, fixes `LISTEN` and applies the Compose database URL after Infisical injection.
-- Root Compose adds `anydash-postgres` (PostgreSQL 17, loopback port `${ANYDASH_POSTGRES_PORT:-55438}`, database and user `anydash`, disposable password `local-anydash`, volume `anydash-postgres-data`). Root `pnpm dev:db:reset` includes it. Register the database, route and Infisical path in the [workflow](repository-workflow-contract.md) and [environment](repository-environment-contract.md) contracts when runtime begins.
+- `pnpm dev` from `servers/anydash-api` wraps the launcher with `infisical run --env=dev --path=/anydash-api --project-config-dir=../..` and registers the Portless route `anydash-api` (`https://anydash-api.localhost`) with fixed upstream `127.0.0.1:46331`, failing on conflict. The launcher executes the binary built by `//#server-build`, fixes `LISTEN` and applies the Compose database URL after Infisical injection.
+- Root Compose adds `anydash-postgres` (PostgreSQL 17, loopback port `${ANYDASH_POSTGRES_PORT:-55439}`, database and user `anydash`, disposable password `local-anydash`, volume `anydash-postgres-data`). Root `pnpm dev:db:reset` includes it. Register the database, route and Infisical path in the [workflow](repository-workflow-contract.md) and [environment](repository-environment-contract.md) contracts when runtime begins.
 - Local development uses mocked Delcore and Logto where real development credentials are unavailable; providers are always mocked in tests.
 - Apply migrations explicitly with `anydash-api migrate` before serving.
 
@@ -237,7 +237,7 @@ Runbooks cover startup and configuration, explicit migration, fix-forward recove
 
 ## Build and Test
 
-Run `cargo fmt --manifest-path servers/Cargo.toml --all --check`, `cargo clippy --locked --manifest-path servers/Cargo.toml --workspace --all-targets -- -D warnings`, `cargo test --locked --manifest-path servers/Cargo.toml` and the PostgreSQL tests with a disposable `TEST_DATABASE_URL` (`anydash_api_test` on port 55438 in CI). Mock Logto and Delcore, including `GetCurrentUser` pagination, `GetTenantStates` and `GetTenantMemberRoles`.
+Run `cargo fmt --manifest-path servers/Cargo.toml --all --check`, `cargo clippy --locked --manifest-path servers/Cargo.toml --workspace --all-targets -- -D warnings`, `cargo test --locked --manifest-path servers/Cargo.toml` and the PostgreSQL tests with a disposable `TEST_DATABASE_URL` (`anydash_api_test` on port 55439 in CI). Mock Logto and Delcore, including `GetCurrentUser` pagination, `GetTenantStates` and `GetTenantMemberRoles`.
 
 Required server integration tests on a disposable PostgreSQL database:
 
