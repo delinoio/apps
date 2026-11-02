@@ -1214,9 +1214,19 @@ packages:
       preact-render-to-string:
         optional: true
 
+  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.30':
+    resolution: {integrity: sha512-98LpK5t1uaranZN/h9IdGbZ41asLyiitJAFLiopV/WgV0ClB/NAgv6VMz+Iw3W5moYSYh74i4VQ9ruQ1At/ETg==}
+    cpu: [arm64]
+    os: [darwin]
+
   '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.31':
     resolution: {integrity: sha512-zFJOEZsWZkeSSNEgjOFsKUFkt4qA68S2Bs3Lg3fnv5rmDQcuefaCzwufs5t2MVK26I/mLKAWQDq5aPnfSVs7aw==}
     cpu: [arm64]
+    os: [darwin]
+
+  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.30':
+    resolution: {integrity: sha512-JZGjTw6xrQvmWEbSjv0Fpxut2UsQ8YZpAknhBsyreoKZL3g+akMMmGNwXcMvf3gOZS07hSpL6PfglZH3lxGLtA==}
+    cpu: [x64]
     os: [darwin]
 
   '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.31':
@@ -1224,15 +1234,30 @@ packages:
     cpu: [x64]
     os: [darwin]
 
+  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.30':
+    resolution: {integrity: sha512-4gqcTxHgS25Plp8sCy34/uvrukB7ZMzx9cNHPa3qJJcjBhc8iPHcYk8R/EwKU4IljA/ntIDuAK+aPW5P4RT3OA==}
+    cpu: [x64]
+    os: [linux]
+
   '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.31':
     resolution: {integrity: sha512-HLwK9qa5kRcyHqEcXJ/OYEmjOx5sOewMzVoyTBvoxf6/SDQOGlaCClfXM7PyF232pOdDdAyLlEMNF8YfaZNY0Q==}
     cpu: [x64]
     os: [linux]
 
+  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.30':
+    resolution: {integrity: sha512-j7Vs/MR2V95yvEsionYKzsV6hQ2Fq2+9LzEfjlZXArToTPoYLZMn+hF3xNt3AH4GM5wkJ1HblFxgG42Vz8xgHA==}
+    cpu: [x64]
+    os: [win32]
+
   '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.31':
     resolution: {integrity: sha512-xMzfFRWbQu8XdUZtuidWlAdUzM0bjNpYfyxm+n+Nd2TfAuvmPXy+1UJE54CPXEWjv3o2bk6OvGPgcvYfUVBc5Q==}
     cpu: [x64]
     os: [win32]
+
+  '@lynx-js/lynxtron@0.0.30':
+    resolution: {integrity: sha512-homMpV75s2tp7fsWyCl5xR1KxfCoGtA5ms1kqubQFb/7ybTXhBSBOJJd/8J53TNpBhZ5OZ1tGKivh/x7mfi/2Q==}
+    engines: {node: ^22.18.0 || ^24.0.0 || ^26.0.0}
+    hasBin: true
 
   '@lynx-js/lynxtron@0.0.31':
     resolution: {integrity: sha512-LvJYGzlopIlUhAsOHrkFD4kYjBJbaWRniNORewF5bK1DFqjZcbaknyxK/aV0s9qshEaiVAVvlnCzQD+DYqXFZQ==}
@@ -5928,17 +5953,44 @@ snapshots:
 
   '@lynx-js/internal-preact@11.0.0-rc.1-20260903085447-f95471a': {}
 
+  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.30':
+    optional: true
+
   '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.31':
+    optional: true
+
+  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.30':
     optional: true
 
   '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.31':
     optional: true
 
+  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.30':
+    optional: true
+
   '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.31':
+    optional: true
+
+  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.30':
     optional: true
 
   '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.31':
     optional: true
+
+  '@lynx-js/lynxtron@0.0.30(supports-color@8.1.1)':
+    dependencies:
+      '@npmcli/config': 10.14.0
+      node-fetch: 3.3.2
+      pacote: 21.5.1(supports-color@8.1.1)
+      proper-lockfile: 4.1.2
+      zip-lib: 1.4.0
+    optionalDependencies:
+      '@lynx-js/lynxtron-runtime-darwin-arm64-devtool': 0.0.30
+      '@lynx-js/lynxtron-runtime-darwin-x64-devtool': 0.0.30
+      '@lynx-js/lynxtron-runtime-linux-x64-devtool': 0.0.30
+      '@lynx-js/lynxtron-runtime-win32-x64-devtool': 0.0.30
+    transitivePeerDependencies:
+      - supports-color
 
   '@lynx-js/lynxtron@0.0.31(supports-color@8.1.1)':
     dependencies:
