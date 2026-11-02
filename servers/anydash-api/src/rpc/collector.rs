@@ -80,6 +80,16 @@ impl LeaseRow {
     }
 }
 
+/// Locks the device row. Collector calls that change both a device and its connections lock the
+/// device row first and the connection rows afterwards.
+async fn lock_device(db: &mut PgConnection, device: Uuid) -> Result<()> {
+    sqlx::query("SELECT 1 FROM devices WHERE id=$1 FOR UPDATE")
+        .bind(device)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 /// Locks a connection the device is registered for.
 async fn lock_lease(
     db: &mut PgConnection,
@@ -797,6 +807,10 @@ pub async fn report_snapshot(
         }
     }
     let mut tx = s.db.begin().await?;
+    // `mark_upload` changes the device row after the snapshot is applied. Lock the device row
+    // before the connection row, as `Heartbeat` does, so a concurrent heartbeat of the same
+    // device cannot wait for this connection while this call waits for the device.
+    lock_device(&mut tx, d.device_id).await?;
     let lease = lock_lease(&mut tx, &d, id).await?;
     if lease.valid_holder(call.now) != Some(d.device_id) || lease.epoch as u64 != q.lease_epoch {
         return Err(ApiError::lease_expired(lease.current_epoch(call.now)));
