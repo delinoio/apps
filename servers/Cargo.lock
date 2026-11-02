@@ -141,6 +141,7 @@ dependencies = [
  "delino-protocol",
  "hex",
  "hmac",
+ "http-body",
  "jsonwebtoken",
  "prometheus",
  "rand 0.9.5",

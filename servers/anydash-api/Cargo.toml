@@ -33,5 +33,6 @@ prometheus = "0.14"
 semver = "1"
 
 [dev-dependencies]
+http-body = "1"
 tower = { version = "=0.5.3", features = ["util"] }
 tokio = { workspace = true, features = ["test-util"] }
