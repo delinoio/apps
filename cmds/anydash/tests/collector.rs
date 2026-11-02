@@ -819,6 +819,61 @@ async fn provider_backoff_and_official_auth_expiry_stop() {
     assert_eq!(mock.count("/v10/projects"), count);
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn provider_retry_waits_start_when_the_response_arrives() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    let now = time::now();
+    core.heartbeat(now).await.unwrap();
+    // The provider answers HTTP 429 with `Retry-After: 60` only after 2.5 seconds.
+    let base = api(state.clone());
+    let failing = Arc::new(Mutex::new(429u16));
+    let f = failing.clone();
+    mock.set(move |r| {
+        if r.route() == "/v10/projects" {
+            Reply::text(*f.lock().unwrap(), "")
+                .with_header("Retry-After", "60")
+                .delayed(Duration::from_millis(2500))
+        } else {
+            base(r)
+        }
+    });
+    let next_attempt = || {
+        core.status(true).unwrap().connections[0]
+            .next_attempt_at
+            .unwrap()
+            .seconds
+    };
+    assert_eq!(
+        core.poll_connection("c1", now).await.unwrap(),
+        Some(CollectionStatus::RateLimited)
+    );
+    let next = next_attempt();
+    assert!(
+        next >= now + 62,
+        "Retry-After counts from the response, not the poll start: {next} < {}",
+        now + 62
+    );
+    // Backoff after a slow transient failure also starts when the response arrives. Make the
+    // connection due again at the same cycle time.
+    *failing.lock().unwrap() = 503;
+    rusqlite::Connection::open(home.path().join("anydash/data/collector.db"))
+        .unwrap()
+        .execute("UPDATE connections SET next_attempt = 0", [])
+        .unwrap();
+    let started = time::now();
+    assert_eq!(
+        core.poll_connection("c1", now).await.unwrap(),
+        Some(CollectionStatus::Failed)
+    );
+    let backoff = next_attempt();
+    assert!(
+        backoff >= started + 2 + 120,
+        "the second failure waits 2 minutes after the response: {backoff}"
+    );
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn offline_buffering_update_required_and_chunked_upload() {
     let home = tempfile::tempdir().unwrap();
     let state = Arc::new(Mutex::new(Api {

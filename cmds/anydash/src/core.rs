@@ -1216,6 +1216,11 @@ impl Core {
         let class =
             FailureClass::try_from(snapshot.failure_class).unwrap_or(FailureClass::Unspecified);
         let regular = now + schedule::seconds(schedule::EXTERNAL_INTERVAL);
+        // Provider retry waits (`Retry-After`, which is relative to the response, and backoff)
+        // start when the poll completes, not at the cycle start: a slow poll or earlier
+        // connections of the cycle would otherwise shorten them. `now` is ahead of the clock
+        // only when the caller schedules the cycle explicitly.
+        let completed = observed_seconds.max(now);
         match status {
             CollectionStatus::Succeeded
             | CollectionStatus::PartiallySucceeded
@@ -1233,7 +1238,7 @@ impl Core {
                 let wait = outcome
                     .retry_after
                     .unwrap_or_else(|| schedule::backoff(row.failures, schedule::jitter()));
-                row.next_attempt = now + schedule::seconds(wait).max(1);
+                row.next_attempt = completed + schedule::seconds(wait).max(1);
             }
             CollectionStatus::AuthExpired => {
                 row.next_attempt = regular;
@@ -1244,8 +1249,8 @@ impl Core {
             }
             _ => {
                 row.failures += 1;
-                row.next_attempt =
-                    now + schedule::seconds(schedule::backoff(row.failures, schedule::jitter()));
+                row.next_attempt = completed
+                    + schedule::seconds(schedule::backoff(row.failures, schedule::jitter()));
             }
         }
         row.last_status = status.into();
