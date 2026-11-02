@@ -431,6 +431,9 @@ pub async fn register_connection_device(
     let id = validate::id("connection_id", &q.connection_id)?;
     validate::fingerprint("account_fingerprint", &q.account_fingerprint)?;
     let mut tx = s.db.begin().await?;
+    // The registration insert takes a key-share lock on the device row; lock the device before the
+    // connection, as `Heartbeat` does, so the two calls cannot deadlock.
+    lock_device(&mut tx, device.device_id).await?;
     let stored: Option<String> = sqlx::query_scalar(
         "SELECT account_fingerprint FROM connections WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL FOR UPDATE",
     )
@@ -502,6 +505,14 @@ pub async fn unregister_connection_device(
         Principal::User(_) => validate::id("device_id", &q.device_id)?,
     };
     let mut tx = s.db.begin().await?;
+    // Lock the target device before the connection and its registration row, as `Heartbeat` does,
+    // so the two calls cannot deadlock. Another user's device is neither locked here nor matched by
+    // the deletion below.
+    sqlx::query("SELECT 1 FROM devices WHERE id=$1 AND user_id=$2 FOR UPDATE")
+        .bind(target)
+        .bind(p.user_id())
+        .execute(&mut *tx)
+        .await?;
     let found: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM connections WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL FOR UPDATE",
     )

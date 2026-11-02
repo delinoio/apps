@@ -290,6 +290,17 @@ pub async fn detach_source(
     Ok(())
 }
 
+/// Locks the device row. Calls that change a device together with its connections or connection
+/// registrations lock the device row first, then the connection rows, then the registration rows,
+/// so concurrent calls for one device cannot deadlock.
+pub async fn lock_device(db: &mut PgConnection, device: Uuid) -> Result<()> {
+    sqlx::query("SELECT 1 FROM devices WHERE id=$1 FOR UPDATE")
+        .bind(device)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 /// Locks the account row for quota checks.
 pub async fn lock_account(db: &mut PgConnection, user: Uuid) -> Result<()> {
     sqlx::query("SELECT 1 FROM accounts WHERE user_id=$1 FOR UPDATE")

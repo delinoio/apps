@@ -1044,3 +1044,79 @@ async fn concurrent_heartbeat_and_snapshot_of_one_device_do_not_deadlock() {
     );
     f.cleanup().await;
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn concurrent_heartbeat_and_registration_changes_of_one_device_do_not_deadlock() {
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let (_, t1, _) = f.enroll(&a, "one", "").await;
+    let (_, t2, _) = f.enroll(&a, "two", "").await;
+    let c1 = f.device(&t1);
+    let conn = f
+        .ok(
+            &c1,
+            "ConnectionService/CreateConnection",
+            json!({"requestId":id(),"provider":"PROVIDER_CODEX"}),
+        )
+        .await["connection"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let rounds = 40;
+    for round in 0..rounds {
+        // Keep the device under its per-minute request limit; this test needs more requests.
+        f.exec("DELETE FROM rate_limit_windows").await;
+        // Device two alternately registers for and unregisters from the connection while it
+        // reports itself ready for it.
+        let change = if round % 2 == 0 {
+            "ConnectionService/RegisterConnectionDevice"
+        } else {
+            "ConnectionService/UnregisterConnectionDevice"
+        };
+        let requests = [
+            (
+                "CollectorService/Heartbeat",
+                json!({"readyConnectionIds":[conn]}).to_string(),
+            ),
+            (change, json!({"connectionId":conn}).to_string()),
+        ];
+        let tasks: Vec<_> = requests
+            .into_iter()
+            .map(|(method, body)| {
+                let (base, token) = (f.base.clone(), t2.clone());
+                tokio::spawn(async move {
+                    reqwest::Client::new()
+                        .post(format!("{base}/anydash.v1.{method}"))
+                        .header("content-type", "application/json")
+                        .header("x-anydash-client-kind", "CLIENT_KIND_CLI")
+                        .header("x-anydash-client-version", "1.0.0")
+                        .bearer_auth(&token)
+                        .body(body)
+                        .send()
+                        .await
+                        .unwrap()
+                })
+            })
+            .collect();
+        for task in tasks {
+            let response = task.await.unwrap();
+            let status = response.status();
+            assert!(
+                status.is_success(),
+                "{status}: {}",
+                response.text().await.unwrap()
+            );
+        }
+    }
+    // The last change was an unregistration.
+    assert_eq!(
+        f.count(&format!(
+            "SELECT count(*) FROM connection_devices WHERE connection_id='{conn}'"
+        ))
+        .await,
+        1
+    );
+    f.cleanup().await;
+}

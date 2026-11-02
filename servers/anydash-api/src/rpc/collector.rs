@@ -80,16 +80,6 @@ impl LeaseRow {
     }
 }
 
-/// Locks the device row. Collector calls that change both a device and its connections lock the
-/// device row first and the connection rows afterwards.
-async fn lock_device(db: &mut PgConnection, device: Uuid) -> Result<()> {
-    sqlx::query("SELECT 1 FROM devices WHERE id=$1 FOR UPDATE")
-        .bind(device)
-        .execute(db)
-        .await?;
-    Ok(())
-}
-
 /// Locks a connection the device is registered for.
 async fn lock_lease(
     db: &mut PgConnection,
@@ -155,13 +145,6 @@ pub async fn heartbeat(s: &Server, call: &Call, q: HeartbeatRequest) -> Result<H
     .bind(&q.os_version)
     .fetch_one(&mut *tx)
     .await?;
-    // IDs of connections the device is not registered for match no row and are ignored.
-    sqlx::query("UPDATE connection_devices SET ready=(connection_id=ANY($2)),ready_reported_at=$3 WHERE device_id=$1")
-        .bind(d.device_id)
-        .bind(&ready)
-        .bind(call.now)
-        .execute(&mut *tx)
-        .await?;
     // Lock every connection this heartbeat touches (registered or leased by this device) in ID
     // order before changing any of them. Locking the device's own leases first and the other
     // registered connections afterwards lets two devices that hold different leases on the same
@@ -177,6 +160,15 @@ pub async fn heartbeat(s: &Server, call: &Call, q: HeartbeatRequest) -> Result<H
     .fetch_all(&mut *tx)
     .await?;
     let all: Vec<Uuid> = locked.iter().map(|(id, _)| *id).collect();
+    // Registration rows change only after their connection rows are locked, the order that
+    // `RegisterConnectionDevice` and `UnregisterConnectionDevice` also follow. IDs of connections the
+    // device is not registered for match no row and are ignored.
+    sqlx::query("UPDATE connection_devices SET ready=(connection_id=ANY($2)),ready_reported_at=$3 WHERE device_id=$1")
+        .bind(d.device_id)
+        .bind(&ready)
+        .bind(call.now)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query(
         "UPDATE connections SET lease_expires_at=$2 WHERE id=ANY($4) AND lease_device_id=$1 AND lease_expires_at>$3",
     )
