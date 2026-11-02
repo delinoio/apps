@@ -671,3 +671,108 @@ test("refreshes stored native widget snapshots while no window is open", async (
   assert.equal(dashboardOutcome(500), DashboardOutcome.Failed);
   assert.equal(dashboardOutcome(401), DashboardOutcome.SignedOut);
 });
+
+test("replaces more stored widget snapshots than one write accepts", async () => {
+  const { create, fromBinary, toBinary } = await import("@bufbuild/protobuf");
+  const pb = await import("@repo/protos/anydash/v1/anydash_pb");
+  const { WidgetRefresher, MAX_SNAPSHOTS_PER_WRITE, replacementBatches } =
+    await import("./widgets.mjs");
+  assert.deepEqual(replacementBatches([]), [
+    { snapshots: [], replaceAll: true },
+  ]);
+  // Two 60-widget dashboards merged one at a time hold 120 snapshots.
+  const ids = (dashboardId) =>
+    Array.from({ length: 60 }, (_, index) => `${dashboardId}-${index}`);
+  let stored = ["first", "second"].flatMap((dashboardId) =>
+    ids(dashboardId).map((widgetId) =>
+      create(pb.NativeWidgetSnapshotSchema, {
+        dashboardId,
+        widgetId,
+        spaceId: "space",
+        sharingState: pb.SharingState.PRIVATE,
+        summary: { title: "old" },
+      }),
+    ),
+  );
+  const order = stored.map((entry) => entry.widgetId);
+  const writes = [];
+  // Mirrors the collector store: at most 100 snapshots per request, a
+  // replacement clears the set and a merge appends new widgets in order.
+  const collector = {
+    async forward(method, body) {
+      if (method === "ListNativeWidgetSnapshots")
+        return {
+          status: 200,
+          body: Buffer.from(
+            toBinary(
+              pb.ListNativeWidgetSnapshotsResponseSchema,
+              create(pb.ListNativeWidgetSnapshotsResponseSchema, {
+                snapshots: stored,
+              }),
+            ),
+          ),
+        };
+      const request = fromBinary(
+        pb.PutNativeWidgetSnapshotsRequestSchema,
+        body,
+      );
+      writes.push(request);
+      if (request.snapshots.length > MAX_SNAPSHOTS_PER_WRITE)
+        return { status: 400, body: Buffer.alloc(0) };
+      const next = request.replaceAll ? [] : [...stored];
+      for (const snapshot of request.snapshots) {
+        const index = next.findIndex(
+          (entry) => entry.widgetId === snapshot.widgetId,
+        );
+        if (index === -1) next.push(snapshot);
+        else next[index] = snapshot;
+      }
+      stored = next;
+      return { status: 200, body: Buffer.alloc(0) };
+    },
+  };
+  const host = {
+    async apiCall(_service, _method, body) {
+      const { dashboardId } = fromBinary(
+        pb.QueryDashboardDataRequestSchema,
+        body,
+      );
+      return {
+        status: 200,
+        body: Buffer.from(
+          toBinary(
+            pb.QueryDashboardDataResponseSchema,
+            create(pb.QueryDashboardDataResponseSchema, {
+              widgets: ids(dashboardId).map((widgetId) => ({
+                widgetId,
+                sharingState: pb.SharingState.PRIVATE,
+                summary: { title: "new" },
+              })),
+            }),
+          ),
+        ),
+      };
+    },
+  };
+  const logs = [];
+  await new WidgetRefresher({
+    host,
+    collector,
+    auth: { signedIn: async () => true },
+    clientVersion: "1.2.3",
+    log: (entry) => logs.push(entry),
+  }).refresh();
+  assert.deepEqual(
+    writes.map((request) => [request.snapshots.length, request.replaceAll]),
+    [
+      [100, true],
+      [20, false],
+    ],
+  );
+  assert.deepEqual(
+    stored.map((entry) => entry.widgetId),
+    order,
+  );
+  assert.ok(stored.every((entry) => entry.summary?.title === "new"));
+  assert.equal(logs.at(-1).event, "anydash_widget_refresh_written");
+});

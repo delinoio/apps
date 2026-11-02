@@ -3,13 +3,20 @@ import { describe, expect, it } from "@rstest/core";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { base64Encode } from "@bufbuild/protobuf/wire";
 import { durationFromMs, timestampFromDate } from "@bufbuild/protobuf/wkt";
-import { createClient } from "@connectrpc/connect";
+import {
+  Code,
+  ConnectError,
+  createClient,
+  createRouterTransport,
+} from "@connectrpc/connect";
 import {
   AccountService,
   ClientKind,
   ErrorDetailSchema,
   ErrorReason,
   GetAccountResponseSchema,
+  LocalCollectorService,
+  NativeWidgetSnapshotSchema,
   QuotaKind,
   RateLimitScope,
 } from "@repo/protos/anydash/v1/anydash_pb";
@@ -50,6 +57,7 @@ import {
   refreshTargets,
   remainingSeconds,
 } from "../src/model/refresh";
+import { MAX_SNAPSHOTS, pruneSnapshots } from "../src/model/snapshots";
 import {
   parseRoute,
   routePath,
@@ -329,5 +337,45 @@ describe("formatting", () => {
       formatTime(new Date("2026-10-31T09:05:00Z"), "Asia/Seoul", fixtures.NOW),
     ).toBe("Oct 31, 18:05");
     expect(formatTime(fixtures.NOW, "UTC", fixtures.NOW)).toBe("03:41");
+  });
+});
+
+describe("native widget snapshots", () => {
+  it("prunes more stored snapshots than one write accepts in ordered batches", async () => {
+    const stored = Array.from({ length: 130 }, (_, index) =>
+      create(NativeWidgetSnapshotSchema, {
+        dashboardId: index < 10 ? "deleted" : "kept",
+        widgetId: `widget-${index}`,
+      }),
+    );
+    const writes: { ids: string[]; replaceAll: boolean }[] = [];
+    const collector = createRouterTransport(({ service }) => {
+      service(LocalCollectorService, {
+        listNativeWidgetSnapshots: () => ({ snapshots: stored }),
+        putNativeWidgetSnapshots: (request) => {
+          if (request.snapshots.length > MAX_SNAPSHOTS)
+            throw new ConnectError("too many", Code.InvalidArgument);
+          writes.push({
+            ids: request.snapshots.map((snapshot) => snapshot.widgetId),
+            replaceAll: request.replaceAll,
+          });
+          return {};
+        },
+      });
+    });
+    await pruneSnapshots(
+      HostPlatform.Desktop,
+      collector,
+      (snapshot) => snapshot.dashboardId === "deleted",
+    );
+    expect(writes.map((write) => [write.ids.length, write.replaceAll])).toEqual(
+      [
+        [100, true],
+        [20, false],
+      ],
+    );
+    expect(writes.flatMap((write) => write.ids)).toEqual(
+      stored.slice(10).map((snapshot) => snapshot.widgetId),
+    );
   });
 });

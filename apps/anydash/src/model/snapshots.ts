@@ -115,11 +115,19 @@ export function pruneSnapshots(
       const client = createClient(LocalCollectorService, collector);
       const { snapshots } = await client.listNativeWidgetSnapshots({});
       const kept = snapshots.filter((snapshot) => !remove(snapshot));
-      if (kept.length !== snapshots.length)
+      if (kept.length === snapshots.length) return;
+      // Merged writes accumulate snapshots across dashboards, so the kept set
+      // can exceed one request. Replace with the first permitted-size batch
+      // and merge the rest after it; the collector appends new widgets, which
+      // keeps the stored order.
+      let start = 0;
+      do {
         await client.putNativeWidgetSnapshots({
-          snapshots: kept,
-          replaceAll: true,
+          snapshots: kept.slice(start, start + MAX_SNAPSHOTS),
+          replaceAll: start === 0,
         });
+        start += MAX_SNAPSHOTS;
+      } while (start < kept.length);
     } catch {
       logError("anydash_widget_snapshots_failed", { platform });
     }

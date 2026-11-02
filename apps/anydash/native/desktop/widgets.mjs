@@ -20,6 +20,28 @@ import {
 /** Background cadence, close to the refresh budget WidgetKit allows. */
 export const BACKGROUND_REFRESH_MS = 15 * 60_000;
 
+/** PutNativeWidgetSnapshots accepts at most 100 snapshots per request. */
+export const MAX_SNAPSHOTS_PER_WRITE = 100;
+
+/**
+ * Splits a full replacement into permitted-size writes. Merged writes keep
+ * accumulating snapshots across dashboards, so the stored set can exceed one
+ * request: the first write replaces the stored set and the rest merge after
+ * it, which keeps the stored order because the collector appends new widgets.
+ */
+export function replacementBatches(snapshots) {
+  const batches = [];
+  let start = 0;
+  do {
+    batches.push({
+      snapshots: snapshots.slice(start, start + MAX_SNAPSHOTS_PER_WRITE),
+      replaceAll: start === 0,
+    });
+    start += MAX_SNAPSHOTS_PER_WRITE;
+  } while (start < snapshots.length);
+  return batches;
+}
+
 /** Outcome of one dashboard query, from its Connect HTTP status. */
 export const DashboardOutcome = Object.freeze({
   Data: "data",
@@ -208,18 +230,21 @@ export class WidgetRefresher {
         .filter(Boolean);
       // A window opened or the user signed out while the requests ran.
       if (!current() || !(await this.auth.signedIn()) || !current()) return;
-      const written = await this.collector.forward(
-        "PutNativeWidgetSnapshots",
-        Buffer.from(
-          toBinary(
-            PutNativeWidgetSnapshotsRequestSchema,
-            create(PutNativeWidgetSnapshotsRequestSchema, {
-              snapshots: next,
-              replaceAll: true,
-            }),
+      // Once started, the batches all run: stopping between them would drop
+      // the snapshots of the remaining batches.
+      let written;
+      for (const batch of replacementBatches(next)) {
+        written = await this.collector.forward(
+          "PutNativeWidgetSnapshots",
+          Buffer.from(
+            toBinary(
+              PutNativeWidgetSnapshotsRequestSchema,
+              create(PutNativeWidgetSnapshotsRequestSchema, batch),
+            ),
           ),
-        ),
-      );
+        );
+        if (written.status !== 200) break;
+      }
       this.log({
         event:
           written.status === 200
