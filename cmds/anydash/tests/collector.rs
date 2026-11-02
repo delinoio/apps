@@ -985,6 +985,52 @@ async fn local_sync_requests_do_not_bypass_upload_rate_limits() {
     assert_eq!(core.status(true).unwrap().pending_bucket_count, 0);
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn quit_interrupts_a_running_provider_poll_and_releases_leases() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    drop(core);
+    // The provider answers only after a minute.
+    let base = api(state.clone());
+    mock.set(move |r| {
+        let reply = base(r);
+        if r.route() == "/v10/projects" {
+            reply.delayed(Duration::from_secs(60))
+        } else {
+            reply
+        }
+    });
+    let running = collector::start(anydash::core::Options {
+        settings: support::settings(home.path(), &[("ANYDASH_API_URL", &mock.base)]),
+        endpoints: anydash::providers::Endpoints::mock(&mock.base, "grok-not-installed-for-tests"),
+        os: Arc::new(anydash::keys::MemoryStore::default()),
+        owner: Owner::Foreground,
+    })
+    .unwrap();
+    let core = running.core.clone();
+    let task = tokio::spawn(running.run());
+    for _ in 0..250 {
+        if mock.count("/v10/projects") > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        mock.count("/v10/projects"),
+        1,
+        "the provider poll is running"
+    );
+    core.quit().unwrap();
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .expect("quit does not wait for the provider poll")
+        .unwrap()
+        .unwrap();
+    assert_eq!(mock.count("/anydash.v1.CollectorService/ReleaseLease"), 1);
+    assert_eq!(mock.count("/anydash.v1.CollectorService/ReportSnapshot"), 0);
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn one_shared_process_with_ipc_quit_and_service_ownership() {
     let home = tempfile::tempdir().unwrap();
     let mock = Mock::start(|_| Reply::text(500, "")).await;

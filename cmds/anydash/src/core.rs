@@ -90,6 +90,14 @@ struct State {
     passive: Option<(i64, serde_json::Value)>,
     quit: bool,
 }
+/// How a provider poll ended.
+enum PollEnd {
+    Completed(providers::Outcome),
+    /// The polled connection's lease was lost during the poll.
+    LeaseLost,
+    /// A quit or a stop signal was requested during the poll.
+    Stopped,
+}
 pub struct Core {
     pub settings: Settings,
     pub dirs: Dirs,
@@ -931,7 +939,8 @@ impl Core {
     /// statuses. Rejected uploads stay buffered.
     pub async fn upload(&self, now: i64) -> Result<usize> {
         let mut uploaded = 0;
-        loop {
+        // A stop request ends a long backlog upload between chunks; the rest stays buffered.
+        while !self.stopping() {
             let rows = self.store().pending_buckets(MAX_UPLOAD_BUCKETS)?;
             if rows.is_empty() {
                 break;
@@ -1187,17 +1196,30 @@ impl Core {
         let started = std::time::Instant::now();
         // A poll can outlast the 5-minute lease (sequential requests, each with a 30-second
         // timeout), and the scheduler sends no heartbeat until it completes. Renew the held
-        // leases beside the poll; losing the polled lease abandons the poll.
+        // leases beside the poll; losing the polled lease abandons the poll. A stop request
+        // (quit or a stop signal) also abandons it, so the collector releases its leases
+        // promptly instead of waiting for the provider. Provider polls only read credentials,
+        // and a dropped Grok poll kills its child process.
         let outcome = tokio::select! {
-            outcome = providers::poll(&self.ctx, &row, secret.as_deref(), now) => Some(outcome),
-            () = self.keep_leases(&row.id) => None,
+            outcome = providers::poll(&self.ctx, &row, secret.as_deref(), now) => PollEnd::Completed(outcome),
+            () = self.keep_leases(&row.id) => PollEnd::LeaseLost,
+            () = self.stop_requested() => PollEnd::Stopped,
         };
-        let Some(outcome) = outcome else {
-            tracing::info!(event = "poll_abandoned", connection_id = %row.id, reason = ErrorReason::LeaseExpired.as_str_name());
-            row.lease_held = false;
-            self.store().delete_pending_snapshot(&row.id)?;
-            self.store().put_connection(&row)?;
-            return Ok(None);
+        let outcome = match outcome {
+            PollEnd::Completed(outcome) => outcome,
+            PollEnd::LeaseLost => {
+                tracing::info!(event = "poll_abandoned", connection_id = %row.id, reason = ErrorReason::LeaseExpired.as_str_name());
+                row.lease_held = false;
+                self.store().delete_pending_snapshot(&row.id)?;
+                self.store().put_connection(&row)?;
+                return Ok(None);
+            }
+            PollEnd::Stopped => {
+                // The lease stays held so that the stopping collector releases it; the
+                // connection stays due for the next collector.
+                tracing::info!(event = "poll_interrupted", connection_id = %row.id, provider = providers::provider_name(provider));
+                return Ok(None);
+            }
         };
         if outcome.skipped {
             row.next_attempt = now + schedule::seconds(schedule::EXTERNAL_INTERVAL);
@@ -1295,6 +1317,17 @@ impl Core {
         }
         self.store().put_connection(&row)?;
         result.map(|()| Some(status))
+    }
+    /// Whether a quit or a stop signal was requested.
+    #[must_use]
+    pub fn stopping(&self) -> bool {
+        *self.stopped.borrow()
+    }
+    /// Complete when a quit or a stop signal is requested.
+    async fn stop_requested(&self) {
+        let mut stopped = self.stopped.subscribe();
+        // The sender lives in `self`, so the wait ends only on a stop request.
+        let _ = stopped.wait_for(|stopped| *stopped).await;
     }
     /// Renew every held lease at the heartbeat interval until the lease of `polling` is lost.
     /// Runs beside a provider poll, which blocks the scheduler's heartbeats. Other lost leases
@@ -1468,6 +1501,10 @@ impl Core {
             self.report_passive().await?;
             let rows = self.store().connections()?;
             for row in rows {
+                // A stop request ends the cycle so that the collector releases its leases.
+                if self.stopping() {
+                    break;
+                }
                 if row.lease_held && row.next_attempt <= now {
                     self.poll_connection(&row.id, now).await?;
                 }
