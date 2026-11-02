@@ -95,7 +95,7 @@ A user with several roles gets the union. Team-role edit permission never bypass
   - Cumulative and instantaneous values are stored with their temporality and period and never mixed in one series.
 - The resource set of a connection is replaced by each newer `SUCCEEDED` snapshot; resources missing from it and their resource metrics are removed from the latest view. A `PARTIALLY_SUCCEEDED` snapshot updates the reported resources without removing others.
 - A newer `FAILED`, `RATE_LIMITED` or `AUTH_EXPIRED` snapshot without metrics marks the connection's latest metrics `FAILED` (failure class `RATE_LIMITED` for rate limits) or `AUTH_EXPIRED` and keeps their last successful values.
-- The derived remaining percentage is `100 − used`, floored at 0 when a provider reports more than 100% used.
+- The derived remaining percentage is `100 − used`, floored at 0 when a provider reports more than 100% used. Latest readings and hourly history both derive it from the used percentage of the same connection, resource and dimension, so a widget whose kind filter includes it, or that has no kind filter, returns a remaining-percentage reading or history series next to each used-percentage one.
 - Hourly snapshots are kept for 90 days.
 
 ### Estimated cost and LiteLLM price sync

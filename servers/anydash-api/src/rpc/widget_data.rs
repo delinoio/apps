@@ -892,51 +892,65 @@ async fn metric_history(
         let kind: MetricKind = enum_of(r.get("kind"));
         let resource: String = r.get("resource_id");
         let dimension: String = r.get("dimension");
-        if !kind_filter(w, kind)
-            || (account_only && !resource.is_empty())
+        if (account_only && !resource.is_empty())
             || (!w.query.resource_ids.is_empty() && !w.query.resource_ids.contains(&resource))
             || (!w.query.dimensions.is_empty() && !w.query.dimensions.contains(&dimension))
         {
             continue;
         }
+        let value = stored_value(r.get("value"), MetricState::Value);
+        // Collectors never report the remaining percentage, so its history is derived from the
+        // used-percentage history in the same way as the latest readings.
+        let mut values = Vec::with_capacity(2);
+        if kind_filter(w, kind) {
+            values.push((kind, value.clone()));
+        }
+        if kind == MetricKind::SubscriptionUsedPercent
+            && kind_filter(w, MetricKind::SubscriptionRemainingPercent)
+        {
+            values.push((MetricKind::SubscriptionRemainingPercent, remaining(&value)));
+        }
         let temporality: i16 = r.get("temporality");
-        let key = (
-            order[&conn],
-            resource.clone(),
-            kind.to_i32(),
-            dimension.clone(),
-            temporality,
-        );
-        let entry = series
-            .entry(key.clone())
-            .or_insert_with(|| MetricHistorySeries {
-                connection_id: conn.to_string(),
-                resource_id: resource,
-                kind: kind.into(),
-                dimension,
-                unit: r.get("unit"),
-                temporality: enum_of::<MetricTemporality>(temporality).into(),
-                ..Default::default()
-            });
         let hour: DateTime<Utc> = r.get("hour_start");
-        let point = MetricHistoryPoint {
-            hour_start: Some(ts(hour)).into(),
-            observed_at: Some(ts(r.get("observed_at"))).into(),
-            value: Some(stored_value(r.get("value"), MetricState::Value)).into(),
-            ..Default::default()
-        };
-        if granularity == TimeGranularity::Day {
-            // The last successful hourly snapshot in each local day.
-            let day = usage::point_of(TimeGranularity::Day, tz, hour).start;
-            match day_index.get(&(key.clone(), day)) {
-                Some(i) => entry.points[*i] = point,
-                None => {
-                    day_index.insert((key, day), entry.points.len());
-                    entry.points.push(point);
+        let observed_at: DateTime<Utc> = r.get("observed_at");
+        for (kind, value) in values {
+            let key = (
+                order[&conn],
+                resource.clone(),
+                kind.to_i32(),
+                dimension.clone(),
+                temporality,
+            );
+            let entry = series
+                .entry(key.clone())
+                .or_insert_with(|| MetricHistorySeries {
+                    connection_id: conn.to_string(),
+                    resource_id: resource.clone(),
+                    kind: kind.into(),
+                    dimension: dimension.clone(),
+                    unit: r.get("unit"),
+                    temporality: enum_of::<MetricTemporality>(temporality).into(),
+                    ..Default::default()
+                });
+            let point = MetricHistoryPoint {
+                hour_start: Some(ts(hour)).into(),
+                observed_at: Some(ts(observed_at)).into(),
+                value: Some(value).into(),
+                ..Default::default()
+            };
+            if granularity == TimeGranularity::Day {
+                // The last successful hourly snapshot in each local day.
+                let day = usage::point_of(TimeGranularity::Day, tz, hour).start;
+                match day_index.get(&(key.clone(), day)) {
+                    Some(i) => entry.points[*i] = point,
+                    None => {
+                        day_index.insert((key, day), entry.points.len());
+                        entry.points.push(point);
+                    }
                 }
+            } else {
+                entry.points.push(point);
             }
-        } else {
-            entry.points.push(point);
         }
     }
     let series: Vec<MetricHistorySeries> = series.into_values().collect();

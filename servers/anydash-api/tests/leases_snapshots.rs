@@ -667,15 +667,54 @@ async fn snapshots_hourly_history_and_late_arrival() {
             json!({"dashboardId":dash,"widgetId":history}),
         )
         .await;
+    let percents = |series: &Value| -> Vec<f64> {
+        series["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["value"]["percent"].as_f64().unwrap())
+            .collect()
+    };
+    // Without a kind filter the history holds the used percentage and the derived remaining
+    // percentage, as the latest readings do.
     let series = data["data"]["metricHistory"]["series"].as_array().unwrap();
-    assert_eq!(series.len(), 1);
-    let values: Vec<f64> = series[0]["points"]
-        .as_array()
+    assert_eq!(series.len(), 2, "{series:?}");
+    assert_eq!(series[0]["kind"], "METRIC_KIND_SUBSCRIPTION_USED_PERCENT");
+    assert_eq!(percents(&series[0]), [25.0, 30.0]);
+    assert_eq!(
+        series[1]["kind"],
+        "METRIC_KIND_SUBSCRIPTION_REMAINING_PERCENT"
+    );
+    assert_eq!(percents(&series[1]), [75.0, 70.0]);
+    // A history filtered to the remaining percentage derives it from the stored used percentage.
+    let remaining_history = f
+        .ok(
+            &user,
+            "DashboardService/AddWidget",
+            json!({"dashboardId":dash,"expectedVersion":"3","requestId":id(),"type":"WIDGET_TYPE_SUBSCRIPTION_HISTORY",
+                "layout":{"x":0,"y":20,"width":8,"height":3,"presentation":"WIDGET_PRESENTATION_LINE_CHART"},
+                "query":{"period":"QUERY_PERIOD_LAST_24_HOURS","granularity":"TIME_GRANULARITY_HOUR","dimensions":["five_hour"],
+                    "metricKinds":["METRIC_KIND_SUBSCRIPTION_REMAINING_PERCENT"]},"source":{"connectionIds":[conn]}}),
+        )
+        .await["widgetId"]
+        .as_str()
         .unwrap()
-        .iter()
-        .map(|p| p["value"]["percent"].as_f64().unwrap())
-        .collect();
-    assert_eq!(values, [25.0, 30.0]);
+        .to_owned();
+    let data = f
+        .ok(
+            &user,
+            "WidgetDataService/QueryWidgetData",
+            json!({"dashboardId":dash,"widgetId":remaining_history}),
+        )
+        .await;
+    let series = data["data"]["metricHistory"]["series"].as_array().unwrap();
+    assert_eq!(series.len(), 1, "{series:?}");
+    assert_eq!(
+        series[0]["kind"],
+        "METRIC_KIND_SUBSCRIPTION_REMAINING_PERCENT"
+    );
+    assert_eq!(percents(&series[0]), [75.0, 70.0]);
+    assert_eq!(data["data"]["summary"]["primaryValue"]["percent"], 70.0);
 
     // Deployment resources: a newer successful snapshot replaces the resource set.
     let vercel = f
@@ -746,7 +785,7 @@ async fn snapshots_hourly_history_and_late_arrival() {
         .ok(
             &user,
             "DashboardService/AddWidget",
-            json!({"dashboardId":dash,"expectedVersion":"3","requestId":id(),"type":"WIDGET_TYPE_DEPLOYMENT_RESOURCES",
+            json!({"dashboardId":dash,"expectedVersion":"4","requestId":id(),"type":"WIDGET_TYPE_DEPLOYMENT_RESOURCES",
                 "layout":{"x":0,"y":3,"width":6,"height":3,"presentation":"WIDGET_PRESENTATION_LIST"},"query":{},"source":{"connectionIds":[vercel]}}),
         )
         .await["widgetId"]
@@ -774,7 +813,7 @@ async fn snapshots_hourly_history_and_late_arrival() {
     f.fail(
         &user,
         "DashboardService/AddWidget",
-        json!({"dashboardId":dash,"expectedVersion":"4","requestId":id(),"type":"WIDGET_TYPE_SUBSCRIPTION_LIMITS",
+        json!({"dashboardId":dash,"expectedVersion":"5","requestId":id(),"type":"WIDGET_TYPE_SUBSCRIPTION_LIMITS",
             "layout":{"x":0,"y":0,"width":4,"height":2,"presentation":"WIDGET_PRESENTATION_GAUGE"},"query":{},"source":{"connectionIds":[vercel]}}),
         "ERROR_REASON_INVALID_ARGUMENT",
     )
@@ -784,7 +823,7 @@ async fn snapshots_hourly_history_and_late_arrival() {
         .ok(
             &user,
             "DashboardService/AddWidget",
-            json!({"dashboardId":dash,"expectedVersion":"4","requestId":id(),"type":"WIDGET_TYPE_DEPLOYMENT_COST",
+            json!({"dashboardId":dash,"expectedVersion":"5","requestId":id(),"type":"WIDGET_TYPE_DEPLOYMENT_COST",
                 "layout":{"x":0,"y":6,"width":4,"height":2,"presentation":"WIDGET_PRESENTATION_NUMBER"},"query":{"resourceIds":["prj_a"]},"source":{"connectionIds":[vercel]}}),
         )
         .await["widgetId"]
@@ -812,7 +851,7 @@ async fn snapshots_hourly_history_and_late_arrival() {
         .ok(
             &user,
             "DashboardService/AddWidget",
-            json!({"dashboardId":dash,"expectedVersion":"5","requestId":id(),"type":"WIDGET_TYPE_METRIC_HISTORY",
+            json!({"dashboardId":dash,"expectedVersion":"6","requestId":id(),"type":"WIDGET_TYPE_METRIC_HISTORY",
                 "layout":{"x":4,"y":6,"width":8,"height":3,"presentation":"WIDGET_PRESENTATION_LINE_CHART"},
                 "query":{"period":"QUERY_PERIOD_LAST_24_HOURS","granularity":"TIME_GRANULARITY_HOUR","resourceIds":["prj_a"]},"source":{"connectionIds":[vercel]}}),
         )
