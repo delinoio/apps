@@ -502,3 +502,41 @@ test("signs in with PKCE and requests per-resource tokens", async () => {
     createHash("sha256").update(verifier).digest("base64url"),
   );
 });
+
+test("discards a token refresh that completes after sign-out", async () => {
+  const store = memoryStore();
+  await store.set("refresh-token", "r1");
+  await store.set("user-key", "key-1");
+  let release;
+  const auth = new NativeAuth({
+    endpoint: "https://auth.example",
+    appId: "native-app",
+    resources: ["https://anydash.api.delino.io"],
+    store,
+    openBrowser: () => {},
+    fetcher: async () => {
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      return new Response(
+        JSON.stringify({
+          access_token: "a1",
+          refresh_token: "r2",
+          expires_in: 3600,
+        }),
+        { status: 200 },
+      );
+    },
+  });
+  const refreshing = auth.accessToken("https://anydash.api.delino.io");
+  while (!release) await new Promise((resolve) => setImmediate(resolve));
+  await auth.signOut();
+  release();
+  await assert.rejects(refreshing, { code: "SIGNED_OUT" });
+  assert.equal(await auth.signedIn(), false);
+  assert.equal(store.values.has("refresh-token"), false);
+  assert.equal(store.values.has("user-key"), false);
+  await assert.rejects(auth.accessToken("https://anydash.api.delino.io"), {
+    code: "SIGNED_OUT",
+  });
+});

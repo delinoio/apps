@@ -25,10 +25,20 @@ export function pkcePair(random = randomBytes) {
   return { verifier, challenge };
 }
 
+const signedOut = () =>
+  Object.assign(new Error("Sign in to AnyDash."), { code: "SIGNED_OUT" });
+
 export class NativeAuth {
   #pending;
   #tokens = new Map();
   #refresh;
+  // Incremented by sign-out and by each completed sign-in. Token requests and
+  // secure-store reads started under an older session must not store or
+  // return their results, so a late refresh never restores a signed-out user.
+  #session = 0;
+  // Secure-store writes run one at a time so a sign-out's removal always
+  // lands after any earlier save; the store spawns separate processes.
+  #writes = Promise.resolve();
 
   constructor({
     endpoint,
@@ -57,7 +67,11 @@ export class NativeAuth {
   }
 
   async refreshToken() {
-    this.#refresh ??= await this.store.get(ACCOUNT);
+    if (this.#refresh) return this.#refresh;
+    const session = this.#session;
+    const stored = await this.store.get(ACCOUNT);
+    if (session !== this.#session) return this.#refresh;
+    this.#refresh ??= stored;
     return this.#refresh;
   }
 
@@ -114,13 +128,18 @@ export class NativeAuth {
       });
       if (!body.refresh_token)
         throw new Error("Sign-in returned no refresh token.");
-      await this.#saveRefresh(body.refresh_token);
+      const session = ++this.#session;
+      this.#tokens.clear();
+      await this.#saveRefresh(body.refresh_token, session);
       const sub = subject(body.id_token);
       if (sub)
-        await this.store.set(
-          USER_KEY,
-          createHash("sha256").update(`anydash:${sub}`).digest("hex"),
-        );
+        await this.#serial(async () => {
+          if (session === this.#session)
+            await this.store.set(
+              USER_KEY,
+              createHash("sha256").update(`anydash:${sub}`).digest("hex"),
+            );
+        });
       pending.resolve();
     } catch (error) {
       pending.reject(error);
@@ -149,20 +168,28 @@ export class NativeAuth {
     return body;
   }
 
-  async #saveRefresh(token) {
-    this.#refresh = token;
-    await this.store.set(ACCOUNT, token);
+  #serial(write) {
+    const run = this.#writes.then(write);
+    this.#writes = run.catch(() => {});
+    return run;
+  }
+
+  /** Saves a refresh token only while `session` is still the current one. */
+  #saveRefresh(token, session) {
+    return this.#serial(async () => {
+      if (session !== this.#session) return;
+      this.#refresh = token;
+      await this.store.set(ACCOUNT, token);
+    });
   }
 
   /** Access token for one API resource, refreshed shortly before expiry. */
   async accessToken(resource) {
     const cached = this.#tokens.get(resource);
     if (cached && cached.expiresAt - 60_000 > this.now()) return cached.token;
+    const session = this.#session;
     const refresh = await this.refreshToken();
-    if (!refresh)
-      throw Object.assign(new Error("Sign in to AnyDash."), {
-        code: "SIGNED_OUT",
-      });
+    if (!refresh || session !== this.#session) throw signedOut();
     let body;
     try {
       body = await this.#token({
@@ -171,10 +198,15 @@ export class NativeAuth {
         resource,
       });
     } catch (error) {
+      if (session !== this.#session) throw signedOut();
       if (error.code === "SESSION_EXPIRED") await this.signOut();
       throw error;
     }
-    if (body.refresh_token) await this.#saveRefresh(body.refresh_token);
+    // The session ended or was replaced while the request was in flight.
+    if (session !== this.#session) throw signedOut();
+    if (body.refresh_token)
+      await this.#saveRefresh(body.refresh_token, session);
+    if (session !== this.#session) throw signedOut();
     this.#tokens.set(resource, {
       token: body.access_token,
       expiresAt: this.now() + Number(body.expires_in ?? 3600) * 1000,
@@ -183,9 +215,12 @@ export class NativeAuth {
   }
 
   async signOut() {
+    this.#session += 1;
     this.#tokens.clear();
     this.#refresh = undefined;
-    await this.store.remove(ACCOUNT);
-    await this.store.remove(USER_KEY);
+    await this.#serial(async () => {
+      await this.store.remove(ACCOUNT);
+      await this.store.remove(USER_KEY);
+    });
   }
 }
