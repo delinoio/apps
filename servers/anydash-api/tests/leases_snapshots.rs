@@ -1120,3 +1120,118 @@ async fn concurrent_heartbeat_and_registration_changes_of_one_device_do_not_dead
     );
     f.cleanup().await;
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn daily_metric_history_uses_the_observation_local_day() {
+    use chrono::TimeZone;
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let user = f.user(&a);
+    let (_, token, _) = f.enroll(&a, "one", "").await;
+    let c = f.device(&token);
+    let conn = f
+        .ok(
+            &c,
+            "ConnectionService/CreateConnection",
+            json!({"requestId":id(),"provider":"PROVIDER_CLAUDE_CODE"}),
+        )
+        .await["connection"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    beat(&f, &c, &conn, true).await;
+    assert_eq!(
+        f.ok(
+            &c,
+            "CollectorService/AcquireLease",
+            json!({"connectionId":conn})
+        )
+        .await["granted"],
+        true
+    );
+    // The lease was acquired three days ago so that every observation below is inside it.
+    f.exec("UPDATE connections SET lease_acquired_at=now()-interval '3 days'")
+        .await;
+    // Asia/Kolkata is UTC+05:30, so each UTC hour starts on the previous local day for the first
+    // 30 minutes of a local day.
+    let tz = chrono_tz::Asia::Kolkata;
+    let midnight = |days_ago: i64| {
+        let date = Utc::now().with_timezone(&tz).date_naive() - Duration::days(days_ago);
+        tz.from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+            .single()
+            .unwrap()
+            .with_timezone(&Utc)
+    };
+    let (yesterday, today) = (midnight(1), midnight(0));
+    for (observed, percent) in [
+        // 23:25 the day before yesterday.
+        (yesterday - Duration::minutes(35), 10.0),
+        // 00:25 yesterday, stored in the UTC hour that starts at 23:30 the day before.
+        (yesterday + Duration::minutes(25), 20.0),
+        // 23:50 yesterday, stored in the UTC hour that starts at 23:30 yesterday and ends today.
+        (today - Duration::minutes(10), 30.0),
+    ] {
+        assert_eq!(
+            f.ok(
+                &c,
+                "CollectorService/ReportSnapshot",
+                json!({"connectionId":conn,"leaseEpoch":"1","snapshot":snapshot(observed, "COLLECTION_STATUS_SUCCEEDED", vec![used("five_hour", percent)])}),
+            )
+            .await["outcome"],
+            "SNAPSHOT_OUTCOME_LATEST_UPDATED"
+        );
+    }
+    let dash = f
+        .ok(
+            &user,
+            "DashboardService/CreateDashboard",
+            json!({"requestId":id(),"spaceId":a.personal,"name":"Daily"}),
+        )
+        .await["dashboard"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut version = 1;
+    let mut daily = |period: &'static str| {
+        let (f, user, dash, conn) = (&f, &user, dash.clone(), conn.clone());
+        version += 1;
+        let expected = (version - 1).to_string();
+        async move {
+            let widget = f
+                .ok(
+                    user,
+                    "DashboardService/AddWidget",
+                    json!({"dashboardId":dash,"expectedVersion":expected,"requestId":id(),"type":"WIDGET_TYPE_SUBSCRIPTION_HISTORY",
+                        "layout":{"x":0,"y":0,"width":8,"height":3,"presentation":"WIDGET_PRESENTATION_LINE_CHART"},
+                        "query":{"period":period,"granularity":"TIME_GRANULARITY_DAY","dimensions":["five_hour"],
+                            "metricKinds":["METRIC_KIND_SUBSCRIPTION_USED_PERCENT"]},"source":{"connectionIds":[conn]}}),
+                )
+                .await["widgetId"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            let data = f
+                .ok(
+                    user,
+                    "WidgetDataService/QueryWidgetData",
+                    json!({"dashboardId":dash,"widgetId":widget,"timeZone":"Asia/Kolkata"}),
+                )
+                .await;
+            data["data"]["metricHistory"]["series"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|s| s["points"].as_array().cloned().unwrap_or_default())
+                .map(|p| p["value"]["percent"].as_f64().unwrap())
+                .collect::<Vec<f64>>()
+        }
+    };
+    // One point per local day of observation: the last one of each day.
+    assert_eq!(daily("QUERY_PERIOD_LAST_7_DAYS").await, [10.0, 30.0]);
+    // Today has no observation; yesterday's 23:50 observation is outside the range even though
+    // its UTC hour overlaps today.
+    assert_eq!(daily("QUERY_PERIOD_TODAY").await, Vec::<f64>::new());
+    f.cleanup().await;
+}

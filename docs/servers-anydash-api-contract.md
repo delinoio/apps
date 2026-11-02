@@ -96,6 +96,7 @@ A user with several roles gets the union. Team-role edit permission never bypass
 - The resource set of a connection is replaced by each newer `SUCCEEDED` snapshot; resources missing from it and their resource metrics are removed from the latest view. A `PARTIALLY_SUCCEEDED` snapshot updates the reported resources without removing others.
 - A newer `FAILED`, `RATE_LIMITED` or `AUTH_EXPIRED` snapshot without metrics marks the connection's latest metrics `FAILED` (failure class `RATE_LIMITED` for rate limits) or `AUTH_EXPIRED` and keeps their last successful values.
 - The derived remaining percentage is `100 − used`, floored at 0 when a provider reports more than 100% used. Latest readings and hourly history both derive it from the used percentage of the same connection, resource and dimension, so a widget whose kind filter includes it, or that has no kind filter, returns a remaining-percentage reading or history series next to each used-percentage one.
+- A daily metric history point is the last successful hourly snapshot observed in a local day of the selected time zone. Snapshots are grouped by the local date of their `observed_at`, not of their UTC hour, and snapshots observed before the query range starts are excluded, so a 30- or 45-minute offset never moves an observation into the adjacent day.
 - Hourly snapshots are kept for 90 days.
 
 ### Estimated cost and LiteLLM price sync

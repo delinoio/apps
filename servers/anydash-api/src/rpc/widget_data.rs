@@ -913,6 +913,12 @@ async fn metric_history(
         let temporality: i16 = r.get("temporality");
         let hour: DateTime<Utc> = r.get("hour_start");
         let observed_at: DateTime<Utc> = r.get("observed_at");
+        // A daily point belongs to the local day of its observation. The UTC hour that holds the
+        // observation can start on the previous local day for 30- and 45-minute offsets, so the
+        // hour-aligned query can also return an observation from before the range start.
+        if granularity == TimeGranularity::Day && observed_at < range.start {
+            continue;
+        }
         for (kind, value) in values {
             let key = (
                 order[&conn],
@@ -939,8 +945,10 @@ async fn metric_history(
                 ..Default::default()
             };
             if granularity == TimeGranularity::Day {
-                // The last successful hourly snapshot in each local day.
-                let day = usage::point_of(TimeGranularity::Day, tz, hour).start;
+                // The last successful hourly snapshot observed in each local day. Rows are ordered
+                // by hour, and each row's observation lies in its hour, so a later row is also a
+                // later observation.
+                let day = usage::point_of(TimeGranularity::Day, tz, observed_at).start;
                 match day_index.get(&(key.clone(), day)) {
                     Some(i) => entry.points[*i] = point,
                     None => {
