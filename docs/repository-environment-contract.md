@@ -39,3 +39,19 @@ Rust API development launchers pass the internal `--dev-env` flag to the compile
 Lane API settings belong to `servers/lane-api` and the `/lane-api` Infisical development folder. The `@servers/lane-api#dev` task depends on the shared server build and launches the compiled binary through Portless at `https://lane-api.localhost`. The launcher fixes `LISTEN` to `127.0.0.1:46326` and applies the Lane Compose database URL after Infisical injection. Direct service-local development uses its configured database URL. Root database reset includes Lane and runs migrations explicitly.
 
 Only the Lane API task receives its identity settings, required input/rate limits, `LANE_*`, `APNS_*`, `FCM_*`, `WEB_PUSH_*` and alert settings. Keep provider credentials, signing keys and webhook encryption keys out of frontend variables. The Lane frontend retains port `46325`; only `PUBLIC_*` configuration may enter its browser bundle. Follow the [Lane API contract](servers-lane-api-contract.md) for startup validation and credential ownership.
+
+## Managed CPA development environment
+
+Managed CPA API settings belong to `servers/mcpa-api` and the `/mcpa-api` Infisical development folder. The API `dev` script wraps its command with `infisical run --env=dev --project-config-dir=../.. --path=/mcpa-api`. It then registers the Portless route `mcpa-api` and runs the shared API launcher. The launcher fixes `LISTEN` to `127.0.0.1:46329`, applies the `mcpa-postgres` Compose database URL after Infisical injection, and executes the Go binary with `serve --dev-env`. The binary reads only the service-local `servers/mcpa-api/.env` and never overrides injected or explicitly empty process variables. Direct service-local development uses its configured database URL.
+
+Only the Managed CPA API task receives the `MCPA_*` settings, its shared identity settings (`DELCORE_URL`, `DELCORE_RESOURCE`, `LOGTO_TOKEN_URL`, `LOGTO_ISSUER`, `CLIENT_ID`, `CLIENT_SECRET`, `WEB_ORIGIN`), `DEPENDENCY_TIMEOUT`, `LOG_FORMAT`, `NO_COLOR` and `OTEL_*`. Secret classes include these values:
+
+- `DATABASE_URL`.
+- `CLIENT_SECRET`, the service's own Delcore machine-to-machine identity.
+- `MCPA_LOGTO_CLIENT_SECRET`, the console BFF and MCP broker web application.
+- `MCPA_MASTER_KEYS`, the credential envelope-encryption master keys.
+- `MCPA_METRICS_TOKEN`.
+
+These secrets live in the operator's deployment target or the `/mcpa-api` development folder. They never live in Git, workflow files, frontend environments or logs. Master keys are rotated with the server's documented procedure; old key versions stay configured until no stored row references them. Customer provider tokens, provider API keys, call key secrets and Delcore personal keys are runtime data, never configuration.
+
+The Managed CPA console keeps fixed port `46328` with Portless route `mcpa` and reads the default Infisical path. Only `PUBLIC_*` configuration may enter its browser bundle. Managed CPA image publication reuses the workflow `GITHUB_TOKEN` and adds no GitHub environment, secret or variable. Follow the [Managed CPA API contract](servers-mcpa-api-contract.md#environment-configuration) for startup validation and the complete setting list.

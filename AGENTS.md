@@ -71,10 +71,13 @@
 - `apps/delino-docs`: Public documentation app for Delino services.
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
+- `apps/mcpa`: Managed CPA web console; its API server lives in `servers/mcpa-api`.
+- `servers/mcpa-api`: Managed CPA Go API server in the root Go module, the documented exception to the Rust server default; its protocol is `protos/mcpa/v1`.
 - `servers/delitools-api`: DeliTools translation and extraction API; its protocol is `protos/delitools/v1`.
 - `protos/delcore/v1`: Delcore schemas, generated Go and TypeScript messages and Connect bindings.
 - `protos/delitools/v1`: DeliTools schemas, generated Go and TypeScript messages and Connect bindings.
 - `protos/devbase/v1`: DevBase schemas, generated Go and TypeScript messages and Connect bindings.
+- `protos/mcpa/v1`: Managed CPA schemas, generated Go and TypeScript messages and Connect bindings.
 - `scripts/`: Shared build and development support.
 - `scripts/localization/`: Local ChatGPT translation generation and offline validation for Delino Site and Delino Docs; follow its scoped instructions.
 - `scripts/ci/`: Affected selection, validation and evidence tooling.
@@ -207,6 +210,14 @@ Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfin
 - `apps/lane` owns the shared ReactLynx client and native/browser hosts.
 - Planned Lane protocol, Rust CLI/local MCP, Rust server/remote MCP and npm distribution paths are routed through the [Lane project index](docs/project-lane.md) and their parent scoped instructions.
 - Read [Lane project](docs/project-lane.md) and [application foundation](docs/apps-lane-foundation.md) before changing these paths.
+
+## Managed CPA ownership
+
+- `servers/mcpa-api`: Go API server, embedded CLIProxyAPI data plane, PostgreSQL migrations, workers, OCI packaging and operator assets. It is the documented Go exception among FSL servers and builds from the root Go module.
+- `apps/mcpa`: Web console.
+- `protos/mcpa/v1`: Connect schema and generated Go and TypeScript bindings.
+
+Read [Managed CPA contracts](docs/project-mcpa.md) before changing these paths.
 
 ## Changeset procedure
 

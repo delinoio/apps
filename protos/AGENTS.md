@@ -28,4 +28,6 @@
 
 - Perfine ownership: [project](../docs/project-perfine.md); [protocol contract](../docs/protos-perfine-v1-contract.md).
 
+- `protos/mcpa/v1` owns the Managed CPA management schema and generated bindings. Read the [Managed CPA project](../docs/project-mcpa.md), [protocol contract](../docs/protos-mcpa-v1-contract.md) and [API contract](../docs/servers-mcpa-api-contract.md).
+
 - Planned `protos/lane/v1` owns Lane schemas, generated bindings and cross-language conformance fixtures. Read the [Lane project](../docs/project-lane.md) and [Lane protocol contract](../docs/protos-lane-v1-contract.md).

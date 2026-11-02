@@ -43,6 +43,8 @@
 
 - Delcore, DevBase, Git Tracker and DeliTools production binaries and OCI images are Rust. Their runtime source and tests belong to the server Cargo workspace; Go service implementations and Air configurations are removed. Build the server workspace before direct service-local development. Shared runtime modules belong in `crates/server-common`; protocol generation belongs in `servers/crates/delino-protos` under the server workspace license.
 
+- `servers/mcpa-api` owns the Managed CPA Go API server. It is the documented Go exception to the Rust server default: a package tree in the root Go module, outside the server Cargo workspace, with dependencies in the root `go.mod`. Do not add a separate Go module, `go.work` or `replace` directive. Run its checks from the repository root through its package scripts (Go format, `go vet`, `go test`, the `integration`-tagged PostgreSQL tests and `govulncheck`). Its development build writes `servers/target/debug/mcpa-api` for the shared launcher, separately from `//#server-build`. Read the [Managed CPA project](../docs/project-mcpa.md) and [Managed CPA API contract](../docs/servers-mcpa-api-contract.md).
+
 - Perfine builds and tests must use server-owned evaluation code and fixtures; do not add path dependencies or source includes into root client crates.
 
 - Perfine ownership: [project](../docs/project-perfine.md); [api contract](../docs/servers-perfine-api-contract.md).

@@ -134,3 +134,10 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Rust CLI and local MCP](cmds-lane-cli-contract.md)
 - [API, remote MCP and operations](servers-lane-api-contract.md)
 - [Distribution and common skill](packages-lane-distribution-contract.md)
+
+### mcpa
+
+- [Project index](project-mcpa.md)
+- [API server](servers-mcpa-api-contract.md)
+- [Connect protocol](protos-mcpa-v1-contract.md)
+- [Web console](apps-mcpa-web-contract.md)
