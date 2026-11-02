@@ -29,6 +29,8 @@ import (
 	"github.com/delinoio/apps/servers/mcpa-api/internal/config"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/crypto"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/dataplane"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/mcp"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/oauth"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/obs"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
@@ -150,6 +152,9 @@ func serve(ctx context.Context, lookup config.Lookup, log *slog.Logger) error {
 	if _, err := dataplane.Install(a, dataplane.InstallOptions{}); err != nil {
 		return err
 	}
+	if err := installMCP(a); err != nil {
+		return err
+	}
 	log.Info("mcpa-api starting",
 		"public_url", cfg.PublicURL,
 		"web_origin", cfg.WebOrigin,
@@ -162,6 +167,44 @@ func serve(ctx context.Context, lookup config.Lookup, log *slog.Logger) error {
 		"outbox_interval", cfg.OutboxInterval.String(),
 	)
 	return a.Run(ctx)
+}
+
+// installMCP mounts the OAuth broker and /mcp and registers the broker
+// cleanup worker. MCP-audience tokens are accepted on /mcp and Connect once
+// the broker resolves them to grants.
+func installMCP(a *app.App) error {
+	cfg := a.Config
+	broker := oauth.New(oauth.Config{
+		Store:           store.NewMCPOAuth(a.Store),
+		Keys:            a.Keys,
+		Logto:           a.Logto,
+		Delcore:         a.Delcore,
+		Groups:          a.Authorizer,
+		Clients:         cfg.OAuthClients,
+		PublicURL:       cfg.PublicURL,
+		WebOrigin:       cfg.WebOrigin,
+		MCPResource:     cfg.MCPResource,
+		DelcoreResource: cfg.DelcoreResource,
+		MFAClaim:        cfg.MFAClaim,
+		ReauthURL:       cfg.MFAReauthURL,
+		InsecureCookies: cfg.InsecureCookies(),
+		Log:             a.Log,
+	})
+	a.Authenticator.SetGrantResolver(broker)
+	mcpMount, err := mcp.Mount(mcp.Config{
+		Service:             a.Service,
+		Authenticator:       a.Authenticator,
+		ResourceMetadataURL: oauth.ResourceMetadataURL(cfg.PublicURL),
+		WebOrigin:           cfg.WebOrigin,
+		Log:                 a.Log,
+	})
+	if err != nil {
+		return err
+	}
+	a.Mount(broker.Mounts()...)
+	a.Mount(mcpMount)
+	a.AddWorker(app.Worker{Name: "mcp-oauth-cleanup", Run: broker.RunCleanup})
+	return nil
 }
 
 func migrate(ctx context.Context, lookup config.Lookup, log *slog.Logger) error {

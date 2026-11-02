@@ -213,3 +213,8 @@ func OAuthFlowAAD(flowID, resourceID string) []byte {
 func SessionAAD(sessionID string) []byte {
 	return []byte("console-session\x00" + sessionID)
 }
+
+// MCPGrantAAD binds MCP OAuth broker tokens to their grant row.
+func MCPGrantAAD(grantID string) []byte {
+	return []byte("mcp-grant\x00" + grantID)
+}

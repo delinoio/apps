@@ -125,10 +125,15 @@ func loadMigrations(fsys fs.FS) ([]Migration, error) {
 		out = append(out, Migration{Version: v, Name: m[2], SQL: string(body)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Version < out[j].Version })
-	for i, m := range out {
-		if m.Version != i+1 {
-			return nil, fmt.Errorf("store: migration numbers must be contiguous from 0001; found %04d at position %d", m.Version, i+1)
+	want := 1
+	for _, m := range out {
+		if m.Version > want {
+			return nil, fmt.Errorf("store: migration numbers must be contiguous from 0001; %04d is missing before %04d", want, m.Version)
 		}
+		if m.Version != want {
+			return nil, fmt.Errorf("store: migration %04d is duplicated", m.Version)
+		}
+		want++
 	}
 	if len(out) == 0 {
 		return nil, errors.New("store: no migrations embedded")

@@ -56,7 +56,7 @@ func TestMigrationsAreContiguous(t *testing.T) {
 		t.Fatal(err)
 	}
 	version, err := ExpectedVersion()
-	if err != nil || version != len(ms) || version != 3 || ms[1].Name != "data_plane" || ms[2].Name != "usage_spend" {
+	if err != nil || version != len(ms) || version != 4 || ms[1].Name != "data_plane" || ms[2].Name != "usage_spend" || ms[3].Name != "mcp_oauth" {
 		t.Fatalf("expected version %d with %d migrations: %v", version, len(ms), err)
 	}
 }
