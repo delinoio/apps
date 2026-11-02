@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, describe, expect, it } from "@rstest/core";
-import { act, cleanup } from "@lynx-js/react/testing-library";
-import { fromBinary, toBinary } from "@bufbuild/protobuf";
+import { act, cleanup, waitFor } from "@lynx-js/react/testing-library";
+import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
 import {
   ErrorReason,
@@ -409,6 +409,26 @@ describe("settings", () => {
     expect(app.host.opened.at(-1)).toBe("https://delino.io/account");
     await app.key(app.find(".lui-dialog-backdrop")[0], "Escape");
     expect(app.text()).not.toContain(Copy.deleteDataTitle);
+  });
+
+  it("clears the collector's native widget snapshots on desktop sign-out", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+    });
+    await app.see(ExtraCopy.signOut);
+    const widgetId = fixtures.ids.widget(1);
+    app.host.api.snapshots.set(
+      widgetId,
+      create(NativeWidgetSnapshotSchema, { widgetId }),
+    );
+    await app.tap(ExtraCopy.signOut);
+    await waitFor(() => expect(app!.host.api.snapshots.size).toBe(0));
+    const methods = app.host.api.calls.map((call) => call.method);
+    expect(methods.lastIndexOf("PutNativeWidgetSnapshots")).toBeGreaterThan(
+      methods.indexOf("Logout"),
+    );
+    expect(methods.indexOf("Logout")).toBeGreaterThanOrEqual(0);
   });
 
   it("shows the Vercel write warning before connecting on desktop", async () => {

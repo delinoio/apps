@@ -41,7 +41,7 @@ Solo business owners (primary), Delcore team members who view and edit shared te
 - The personal space is the user's Delcore personal tenant. Team spaces are Delcore organization tenants in which the user has the Owner, Admin or Member role. Billing-only users do not see the team space.
 - Personal space onboarding starts with connecting a collector device. The personal dashboard is usable only after a collector device is connected (`OnboardingState` `READY`); until then the personal space shows the connection steps: install the desktop app (macOS, Windows) or the CLI, then approve the device. Team space dashboards are usable without a personal collector device.
 - Device enrollment: the CLI shows a connection code and a URL; the desktop app starts the same enrollment through its collector and opens the same URL in the browser. The approval page (`/connect/<enrollment_id>`) shows the device name, platform and collector version and asks the user to type the code shown on the device; the code input receives focus. It shows the remaining attempts, expiry, invalidation after 5 failures and a "request a new code" instruction. A code expires after 10 minutes and can be used once.
-- Logout on a collector device deletes the local device credentials and stops collection and upload. The server keeps the device registration and its data. Signing in again reattaches the same device.
+- Logout on a collector device deletes the local device credentials, stops collection and upload and removes the native widget snapshots stored in the collector. The server keeps the device registration and its data. Signing in again reattaches the same device.
 
 ### Dashboards, widgets and team permissions
 

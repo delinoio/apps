@@ -38,6 +38,7 @@ import {
 } from "./host";
 import { logError } from "./log";
 import { purgeUser } from "./model/cache";
+import { clearSnapshots } from "./model/snapshots";
 import { createHostTransport } from "./transport";
 
 export enum SessionPhase {
@@ -235,6 +236,10 @@ export function SessionProvider({
           if (next.kind !== ProblemKind.Unknown)
             logError("anydash_collector_logout_failed", { kind: next.kind });
         }
+        // Collector logout keeps native widget snapshots, which the macOS and
+        // Windows widget hosts keep reading; remove the signed-out user's data.
+        // Mobile hosts clear their widget stores in their own sign-out.
+        await clearSnapshots(info.platform, collector);
       }
       await purgeUser(userKey);
       queryClient.clear();
