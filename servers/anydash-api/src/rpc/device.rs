@@ -230,9 +230,17 @@ async fn load_enrollment(db: &mut PgConnection, id: Uuid, lock: bool) -> Result<
     })
 }
 
-/// The effective state, treating a pending enrollment past its expiry as expired.
+/// Whether the enrollment code lifetime ends the enrollment in its stored state. Approval does
+/// not deliver credentials, so an approved enrollment that was not consumed by a poll before its
+/// expiry expires like a pending one.
+fn expires_in(state: EnrollmentState) -> bool {
+    matches!(state, EnrollmentState::Pending | EnrollmentState::Approved)
+}
+
+/// The effective state, treating a pending or approved-but-unconsumed enrollment past its expiry
+/// as expired.
 fn effective(e: &EnrollmentRow, now: DateTime<Utc>) -> EnrollmentState {
-    if e.state == EnrollmentState::Pending && e.expires_at <= now {
+    if expires_in(e.state) && e.expires_at <= now {
         EnrollmentState::Expired
     } else {
         e.state
@@ -256,12 +264,15 @@ fn state_error(state: EnrollmentState) -> ApiError {
 }
 
 async fn mark_expired(db: &mut PgConnection, e: &EnrollmentRow, now: DateTime<Utc>) -> Result<()> {
-    if e.state == EnrollmentState::Pending && e.expires_at <= now {
+    if expires_in(e.state) && e.expires_at <= now {
         sqlx::query("UPDATE enrollments SET state=$2 WHERE id=$1")
             .bind(e.id)
             .bind(e16(EnrollmentState::Expired))
             .execute(db)
             .await?;
+        if e.state == EnrollmentState::Approved {
+            tracing::info!(enrollment_id = %e.id, device_id = ?e.device_id, "approved enrollment expired before credential delivery");
+        }
     }
     Ok(())
 }

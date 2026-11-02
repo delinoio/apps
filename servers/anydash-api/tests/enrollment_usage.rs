@@ -158,6 +158,61 @@ async fn enrollment_codes_and_device_credentials() {
         "ERROR_REASON_ENROLLMENT_EXPIRED",
     )
     .await;
+    // An approved enrollment that no poll consumed before the code expiry delivers no credentials.
+    let e = start("late").await;
+    let late_device = f
+        .ok(
+            &user,
+            "DeviceService/ApproveEnrollment",
+            json!({"enrollmentId":e["enrollmentId"],"userCode":e["userCode"]}),
+        )
+        .await["device"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    f.exec(&format!(
+        "UPDATE enrollments SET expires_at=now()-interval '1 second' WHERE id='{}'",
+        e["enrollmentId"].as_str().unwrap()
+    ))
+    .await;
+    f.fail(
+        &f.anonymous(),
+        "DeviceService/PollEnrollment",
+        json!({"enrollmentId":e["enrollmentId"],"deviceCode":e["deviceCode"]}),
+        "ERROR_REASON_ENROLLMENT_EXPIRED",
+    )
+    .await;
+    f.exec("UPDATE enrollments SET last_polled_at=NULL").await;
+    f.fail(
+        &f.anonymous(),
+        "DeviceService/PollEnrollment",
+        json!({"enrollmentId":e["enrollmentId"],"deviceCode":e["deviceCode"]}),
+        "ERROR_REASON_ENROLLMENT_EXPIRED",
+    )
+    .await;
+    assert_eq!(
+        f.ok(
+            &user,
+            "DeviceService/GetEnrollment",
+            json!({"enrollmentId":e["enrollmentId"]}),
+        )
+        .await["enrollment"]["state"],
+        "ENROLLMENT_STATE_EXPIRED"
+    );
+    assert_eq!(
+        f.count(&format!(
+            "SELECT count(*) FROM device_credentials WHERE device_id='{late_device}'"
+        ))
+        .await,
+        0
+    );
+    // The device the approval created stays logged out until the user removes it.
+    f.ok(
+        &user,
+        "DeviceService/DeleteDevice",
+        json!({"deviceId":late_device}),
+    )
+    .await;
     // Rejection invalidates polling.
     let e = start("unexpected").await;
     f.ok(
