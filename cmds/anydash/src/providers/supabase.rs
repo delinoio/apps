@@ -118,7 +118,9 @@ pub async fn poll(ctx: &Ctx, token: &str, now: i64) -> Result<Snapshot, Fail> {
             }
             Err(fail) => b.failed_soft(MetricKind::DeploymentEntitlement, slug, fail)?,
         }
-        if let Ok(v) = get(
+        // Like the other optional requests, a failed organization project list stops the cycle
+        // on rate limits and expiry and otherwise marks the snapshot partial.
+        match get(
             ctx,
             token,
             "supabase.organization_projects",
@@ -126,13 +128,16 @@ pub async fn poll(ctx: &Ctx, token: &str, now: i64) -> Result<Snapshot, Fail> {
         )
         .await
         {
-            for p in v["projects"].as_array().into_iter().flatten() {
-                if let Some(r) = p["ref"].as_str() {
-                    let mut p = p.clone();
-                    p["organization_slug"] = slug.into();
-                    projects.entry(r.to_owned()).or_insert(p);
+            Ok(v) => {
+                for p in v["projects"].as_array().into_iter().flatten() {
+                    if let Some(r) = p["ref"].as_str() {
+                        let mut p = p.clone();
+                        p["organization_slug"] = slug.into();
+                        projects.entry(r.to_owned()).or_insert(p);
+                    }
                 }
             }
+            Err(fail) => b.tolerate(fail)?,
         }
     }
     b.not_provided(MetricKind::PlanDocumentedQuota, "");

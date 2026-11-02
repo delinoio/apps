@@ -567,6 +567,55 @@ async fn supabase_projects_usage_entitlements_and_no_cost() {
     assert_eq!(quantity("disk"), Some(V::Percent(25.0)));
     assert!(mock.recorded().iter().all(|r| r.method == "GET"));
 }
+/// Replies for one Supabase organization with one project; `org_projects` answers the
+/// organization project list.
+fn supabase_reply(r: &support::Recorded, org_projects: fn() -> Reply) -> Reply {
+    match r.route() {
+        "/v1/organizations" => Reply::json(200, &json!([{"id": "o", "slug": "org1"}])),
+        "/v1/organizations/org1" => Reply::json(200, &json!({"plan": "pro"})),
+        "/v1/organizations/org1/entitlements" => Reply::json(200, &json!({"entitlements": []})),
+        "/v1/organizations/org1/projects" => org_projects(),
+        "/v1/projects" => Reply::json(
+            200,
+            &json!([{"ref": "p1", "organization_slug": "org1", "name": "db", "status": "ACTIVE_HEALTHY"}]),
+        ),
+        "/v1/projects/p1/functions" => Reply::json(200, &json!([])),
+        _ => Reply::json(200, &json!({})),
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn supabase_organization_projects_failures_are_not_discarded() {
+    let home = tempfile::tempdir().unwrap();
+    let mock = Mock::start(|r| {
+        supabase_reply(r, || {
+            Reply::text(429, "slow down").with_header("Retry-After", "900")
+        })
+    })
+    .await;
+    let ctx = support::ctx(home.path(), &mock, "grok");
+    let o = providers::poll(&ctx, &row(Provider::Supabase), Some("sbp_token"), NOW).await;
+    assert_eq!(
+        (o.snapshot.status, o.retry_after),
+        (
+            CollectionStatus::RateLimited as i32,
+            Some(Duration::from_mins(15))
+        ),
+        "the rate limit window reaches the scheduler"
+    );
+    assert_eq!(
+        mock.count("/v1/projects/p1/health"),
+        0,
+        "no further requests during the rate limit window"
+    );
+    // Other failures keep the projects but mark the snapshot partial.
+    mock.set(|r| supabase_reply(r, || Reply::text(503, "down")));
+    let o = providers::poll(&ctx, &row(Provider::Supabase), Some("sbp_token"), NOW).await;
+    assert_eq!(
+        (o.snapshot.status, o.snapshot.provider_http_status),
+        (CollectionStatus::PartiallySucceeded as i32, 503)
+    );
+    assert_eq!(o.snapshot.resources.len(), 1);
+}
 #[tokio::test(flavor = "multi_thread")]
 async fn cloudflare_resources_analytics_plans_and_enterprise_cost() {
     let home = tempfile::tempdir().unwrap();
