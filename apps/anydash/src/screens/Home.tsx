@@ -205,7 +205,13 @@ export function Home({ route, mode }: { route: Route; mode: LayoutMode }) {
         }),
       });
     },
-    onError: (error) => setProblem(toProblem(error)),
+    onError: (error) => {
+      const next = toProblem(error);
+      setProblem(next);
+      // Reload the summaries so a retry sends the latest version.
+      if (next.kind === ProblemKind.VersionConflict)
+        void queryClient.invalidateQueries({ queryKey: listKey });
+    },
   });
   const remove = useMutation(DashboardService.method.deleteDashboard, {
     onSuccess: () => {

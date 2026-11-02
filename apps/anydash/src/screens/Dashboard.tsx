@@ -20,6 +20,7 @@ import {
   SpacePermission,
   WidgetDataService,
   type Dashboard as DashboardMessage,
+  type ListDashboardsResponse,
   type QueryDashboardDataResponse,
   type Space,
   type Widget,
@@ -345,10 +346,37 @@ export function DashboardScreen({
   }, [editing]);
 
   const replaceDashboard = (next: DashboardMessage | undefined) => {
-    if (next)
-      queryClient.setQueryData(dashboardKey, (previous) =>
-        previous ? { ...previous, dashboard: next } : previous,
-      );
+    if (!next) return;
+    queryClient.setQueryData(dashboardKey, (previous) =>
+      previous ? { ...previous, dashboard: next } : previous,
+    );
+    // Home renames from its ListDashboards summary, so keep that summary's
+    // version and widget count in step with every version-changing edit.
+    queryClient.setQueriesData<ListDashboardsResponse>(
+      {
+        queryKey: createConnectQueryKey({
+          schema: DashboardService.method.listDashboards,
+          cardinality: "finite",
+        }),
+      },
+      (previous) =>
+        previous?.dashboards?.some((entry) => entry.id === next.id)
+          ? {
+              ...previous,
+              dashboards: previous.dashboards.map((entry) =>
+                entry.id === next.id
+                  ? {
+                      ...entry,
+                      name: next.name,
+                      version: next.version,
+                      widgetCount: next.widgets.length,
+                      updatedAt: next.updatedAt ?? entry.updatedAt,
+                    }
+                  : entry,
+              ),
+            }
+          : previous,
+    );
   };
   const onMutationError = async (error: unknown) => {
     const next = toProblem(error);

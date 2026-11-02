@@ -315,6 +315,38 @@ describe("editor", () => {
     expect(moved?.layout.x).toBe(1);
   });
 
+  it("renames a dashboard after widget edits with the latest version", async () => {
+    app = await renderApp({ path: dashboardPath });
+    await app.see("62% left");
+    const calls = (method: string) =>
+      app!.host.api.calls.filter((call) => call.method === method);
+    await app.tap(Copy.edit);
+    await app.see(ExtraCopy.editorHint);
+    const last = app.find(".ad-widget").at(-1)!;
+    await app.tap(last.getAttribute("accessibility-label")!);
+    await app.tap(Copy.removeWidget);
+    await waitFor(() => expect(calls("RemoveWidget").length).toBe(1));
+    const card = app.find(".ad-widget")[0];
+    await app.tap(card.getAttribute("accessibility-label")!);
+    await app.key(card, "ArrowRight");
+    await app.see("column 2, row 1, 4 columns wide, 2 rows tall.");
+    await app.tap(Copy.done);
+    await waitFor(() => expect(calls("UpdateWidgetLayout").length).toBe(1));
+    await app.see(Copy.edit);
+    await app.tap(`${ExtraCopy.chooseDashboard}: Overview`);
+    await app.tap(ExtraCopy.renameDashboard, ".lui-dialog");
+    await app.tap(ExtraCopy.save, ".lui-dialog");
+    await waitFor(() => expect(calls("RenameDashboard").length).toBe(1));
+    // RemoveWidget and UpdateWidgetLayout each advanced the version from 7.
+    expect(
+      (calls("RenameDashboard")[0].request as { expectedVersion: bigint })
+        .expectedVersion,
+    ).toBe(9n);
+    await waitFor(() =>
+      expect(app!.text()).not.toContain(Copy.dashboardChangedDetail),
+    );
+  });
+
   it("confirms the shared scope before adding a widget to a team dashboard", async () => {
     app = await renderApp({ team: true, path: teamPath });
     await app.see("62% left");
