@@ -12356,6 +12356,94 @@ func (x *RequestLocalSyncResponse) GetNextAllowedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type RequestLocalConnectionRefreshRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ConnectionId  string                 `protobuf:"bytes,1,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestLocalConnectionRefreshRequest) Reset() {
+	*x = RequestLocalConnectionRefreshRequest{}
+	mi := &file_anydash_v1_anydash_proto_msgTypes[161]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestLocalConnectionRefreshRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestLocalConnectionRefreshRequest) ProtoMessage() {}
+
+func (x *RequestLocalConnectionRefreshRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_anydash_v1_anydash_proto_msgTypes[161]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestLocalConnectionRefreshRequest.ProtoReflect.Descriptor instead.
+func (*RequestLocalConnectionRefreshRequest) Descriptor() ([]byte, []int) {
+	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{161}
+}
+
+func (x *RequestLocalConnectionRefreshRequest) GetConnectionId() string {
+	if x != nil {
+		return x.ConnectionId
+	}
+	return ""
+}
+
+type RequestLocalConnectionRefreshResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NextAllowedAt *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=next_allowed_at,json=nextAllowedAt,proto3" json:"next_allowed_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestLocalConnectionRefreshResponse) Reset() {
+	*x = RequestLocalConnectionRefreshResponse{}
+	mi := &file_anydash_v1_anydash_proto_msgTypes[162]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestLocalConnectionRefreshResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestLocalConnectionRefreshResponse) ProtoMessage() {}
+
+func (x *RequestLocalConnectionRefreshResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_anydash_v1_anydash_proto_msgTypes[162]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestLocalConnectionRefreshResponse.ProtoReflect.Descriptor instead.
+func (*RequestLocalConnectionRefreshResponse) Descriptor() ([]byte, []int) {
+	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{162}
+}
+
+func (x *RequestLocalConnectionRefreshResponse) GetNextAllowedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextAllowedAt
+	}
+	return nil
+}
+
 type NativeWidgetSnapshot struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	DashboardId  string                 `protobuf:"bytes,1,opt,name=dashboard_id,json=dashboardId,proto3" json:"dashboard_id,omitempty"`
@@ -12372,7 +12460,7 @@ type NativeWidgetSnapshot struct {
 
 func (x *NativeWidgetSnapshot) Reset() {
 	*x = NativeWidgetSnapshot{}
-	mi := &file_anydash_v1_anydash_proto_msgTypes[161]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[163]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12384,7 +12472,7 @@ func (x *NativeWidgetSnapshot) String() string {
 func (*NativeWidgetSnapshot) ProtoMessage() {}
 
 func (x *NativeWidgetSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_anydash_v1_anydash_proto_msgTypes[161]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[163]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12397,7 +12485,7 @@ func (x *NativeWidgetSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeWidgetSnapshot.ProtoReflect.Descriptor instead.
 func (*NativeWidgetSnapshot) Descriptor() ([]byte, []int) {
-	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{161}
+	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{163}
 }
 
 func (x *NativeWidgetSnapshot) GetDashboardId() string {
@@ -12460,7 +12548,7 @@ type PutNativeWidgetSnapshotsRequest struct {
 
 func (x *PutNativeWidgetSnapshotsRequest) Reset() {
 	*x = PutNativeWidgetSnapshotsRequest{}
-	mi := &file_anydash_v1_anydash_proto_msgTypes[162]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[164]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12472,7 +12560,7 @@ func (x *PutNativeWidgetSnapshotsRequest) String() string {
 func (*PutNativeWidgetSnapshotsRequest) ProtoMessage() {}
 
 func (x *PutNativeWidgetSnapshotsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_anydash_v1_anydash_proto_msgTypes[162]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[164]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12485,7 +12573,7 @@ func (x *PutNativeWidgetSnapshotsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutNativeWidgetSnapshotsRequest.ProtoReflect.Descriptor instead.
 func (*PutNativeWidgetSnapshotsRequest) Descriptor() ([]byte, []int) {
-	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{162}
+	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{164}
 }
 
 func (x *PutNativeWidgetSnapshotsRequest) GetSnapshots() []*NativeWidgetSnapshot {
@@ -12510,7 +12598,7 @@ type PutNativeWidgetSnapshotsResponse struct {
 
 func (x *PutNativeWidgetSnapshotsResponse) Reset() {
 	*x = PutNativeWidgetSnapshotsResponse{}
-	mi := &file_anydash_v1_anydash_proto_msgTypes[163]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[165]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12522,7 +12610,7 @@ func (x *PutNativeWidgetSnapshotsResponse) String() string {
 func (*PutNativeWidgetSnapshotsResponse) ProtoMessage() {}
 
 func (x *PutNativeWidgetSnapshotsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_anydash_v1_anydash_proto_msgTypes[163]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[165]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12535,7 +12623,7 @@ func (x *PutNativeWidgetSnapshotsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutNativeWidgetSnapshotsResponse.ProtoReflect.Descriptor instead.
 func (*PutNativeWidgetSnapshotsResponse) Descriptor() ([]byte, []int) {
-	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{163}
+	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{165}
 }
 
 type ListNativeWidgetSnapshotsRequest struct {
@@ -12546,7 +12634,7 @@ type ListNativeWidgetSnapshotsRequest struct {
 
 func (x *ListNativeWidgetSnapshotsRequest) Reset() {
 	*x = ListNativeWidgetSnapshotsRequest{}
-	mi := &file_anydash_v1_anydash_proto_msgTypes[164]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[166]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12558,7 +12646,7 @@ func (x *ListNativeWidgetSnapshotsRequest) String() string {
 func (*ListNativeWidgetSnapshotsRequest) ProtoMessage() {}
 
 func (x *ListNativeWidgetSnapshotsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_anydash_v1_anydash_proto_msgTypes[164]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[166]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12571,7 +12659,7 @@ func (x *ListNativeWidgetSnapshotsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNativeWidgetSnapshotsRequest.ProtoReflect.Descriptor instead.
 func (*ListNativeWidgetSnapshotsRequest) Descriptor() ([]byte, []int) {
-	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{164}
+	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{166}
 }
 
 type ListNativeWidgetSnapshotsResponse struct {
@@ -12583,7 +12671,7 @@ type ListNativeWidgetSnapshotsResponse struct {
 
 func (x *ListNativeWidgetSnapshotsResponse) Reset() {
 	*x = ListNativeWidgetSnapshotsResponse{}
-	mi := &file_anydash_v1_anydash_proto_msgTypes[165]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[167]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12595,7 +12683,7 @@ func (x *ListNativeWidgetSnapshotsResponse) String() string {
 func (*ListNativeWidgetSnapshotsResponse) ProtoMessage() {}
 
 func (x *ListNativeWidgetSnapshotsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_anydash_v1_anydash_proto_msgTypes[165]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[167]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12608,7 +12696,7 @@ func (x *ListNativeWidgetSnapshotsResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ListNativeWidgetSnapshotsResponse.ProtoReflect.Descriptor instead.
 func (*ListNativeWidgetSnapshotsResponse) Descriptor() ([]byte, []int) {
-	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{165}
+	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{167}
 }
 
 func (x *ListNativeWidgetSnapshotsResponse) GetSnapshots() []*NativeWidgetSnapshot {
@@ -12626,7 +12714,7 @@ type QuitRequest struct {
 
 func (x *QuitRequest) Reset() {
 	*x = QuitRequest{}
-	mi := &file_anydash_v1_anydash_proto_msgTypes[166]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[168]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12638,7 +12726,7 @@ func (x *QuitRequest) String() string {
 func (*QuitRequest) ProtoMessage() {}
 
 func (x *QuitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_anydash_v1_anydash_proto_msgTypes[166]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[168]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12651,7 +12739,7 @@ func (x *QuitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuitRequest.ProtoReflect.Descriptor instead.
 func (*QuitRequest) Descriptor() ([]byte, []int) {
-	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{166}
+	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{168}
 }
 
 type QuitResponse struct {
@@ -12662,7 +12750,7 @@ type QuitResponse struct {
 
 func (x *QuitResponse) Reset() {
 	*x = QuitResponse{}
-	mi := &file_anydash_v1_anydash_proto_msgTypes[167]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[169]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12674,7 +12762,7 @@ func (x *QuitResponse) String() string {
 func (*QuitResponse) ProtoMessage() {}
 
 func (x *QuitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_anydash_v1_anydash_proto_msgTypes[167]
+	mi := &file_anydash_v1_anydash_proto_msgTypes[169]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12687,7 +12775,7 @@ func (x *QuitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuitResponse.ProtoReflect.Descriptor instead.
 func (*QuitResponse) Descriptor() ([]byte, []int) {
-	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{167}
+	return file_anydash_v1_anydash_proto_rawDescGZIP(), []int{169}
 }
 
 var File_anydash_v1_anydash_proto protoreflect.FileDescriptor
@@ -13446,6 +13534,10 @@ const file_anydash_v1_anydash_proto_rawDesc = "" +
 	"\fsecret_count\x18\x02 \x01(\rR\vsecretCount\"\x19\n" +
 	"\x17RequestLocalSyncRequest\"^\n" +
 	"\x18RequestLocalSyncResponse\x12B\n" +
+	"\x0fnext_allowed_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\rnextAllowedAt\"K\n" +
+	"$RequestLocalConnectionRefreshRequest\x12#\n" +
+	"\rconnection_id\x18\x01 \x01(\tR\fconnectionId\"k\n" +
+	"%RequestLocalConnectionRefreshResponse\x12B\n" +
 	"\x0fnext_allowed_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\rnextAllowedAt\"\xd6\x02\n" +
 	"\x14NativeWidgetSnapshot\x12!\n" +
 	"\fdashboard_id\x18\x01 \x01(\tR\vdashboardId\x12\x1b\n" +
@@ -13828,8 +13920,7 @@ const file_anydash_v1_anydash_proto_rawDesc = "" +
 	"GetAccount\x12\x1d.anydash.v1.GetAccountRequest\x1a\x1e.anydash.v1.GetAccountResponse\x12l\n" +
 	"\x15UpdateAccountSettings\x12(.anydash.v1.UpdateAccountSettingsRequest\x1a).anydash.v1.UpdateAccountSettingsResponse\x12Q\n" +
 	"\fListActivity\x12\x1f.anydash.v1.ListActivityRequest\x1a .anydash.v1.ListActivityResponse\x12`\n" +
-	"\x11DeleteAccountData\x12$.anydash.v1.DeleteAccountDataRequest\x1a%.anydash.v1.DeleteAccountDataResponse2\xc3\n" +
-	"\n" +
+	"\x11DeleteAccountData\x12$.anydash.v1.DeleteAccountDataRequest\x1a%.anydash.v1.DeleteAccountDataResponse2\xca\v\n" +
 	"\x15LocalCollectorService\x12c\n" +
 	"\x12GetCollectorStatus\x12%.anydash.v1.GetCollectorStatusRequest\x1a&.anydash.v1.GetCollectorStatusResponse\x12K\n" +
 	"\n" +
@@ -13842,7 +13933,8 @@ const file_anydash_v1_anydash_proto_rawDesc = "" +
 	"\x11DisableSourcePath\x12$.anydash.v1.DisableSourcePathRequest\x1a%.anydash.v1.DisableSourcePathResponse\x12]\n" +
 	"\x10EnableSourcePath\x12#.anydash.v1.EnableSourcePathRequest\x1a$.anydash.v1.EnableSourcePathResponse\x12H\n" +
 	"\tRotateKey\x12\x1c.anydash.v1.RotateKeyRequest\x1a\x1d.anydash.v1.RotateKeyResponse\x12]\n" +
-	"\x10RequestLocalSync\x12#.anydash.v1.RequestLocalSyncRequest\x1a$.anydash.v1.RequestLocalSyncResponse\x12u\n" +
+	"\x10RequestLocalSync\x12#.anydash.v1.RequestLocalSyncRequest\x1a$.anydash.v1.RequestLocalSyncResponse\x12\x84\x01\n" +
+	"\x1dRequestLocalConnectionRefresh\x120.anydash.v1.RequestLocalConnectionRefreshRequest\x1a1.anydash.v1.RequestLocalConnectionRefreshResponse\x12u\n" +
 	"\x18PutNativeWidgetSnapshots\x12+.anydash.v1.PutNativeWidgetSnapshotsRequest\x1a,.anydash.v1.PutNativeWidgetSnapshotsResponse\x12x\n" +
 	"\x19ListNativeWidgetSnapshots\x12,.anydash.v1.ListNativeWidgetSnapshotsRequest\x1a-.anydash.v1.ListNativeWidgetSnapshotsResponse\x129\n" +
 	"\x04Quit\x12\x17.anydash.v1.QuitRequest\x1a\x18.anydash.v1.QuitResponseB6Z4github.com/delinoio/apps/protos/anydash/v1;anydashv1b\x06proto3"
@@ -13860,279 +13952,281 @@ func file_anydash_v1_anydash_proto_rawDescGZIP() []byte {
 }
 
 var file_anydash_v1_anydash_proto_enumTypes = make([]protoimpl.EnumInfo, 39)
-var file_anydash_v1_anydash_proto_msgTypes = make([]protoimpl.MessageInfo, 168)
+var file_anydash_v1_anydash_proto_msgTypes = make([]protoimpl.MessageInfo, 170)
 var file_anydash_v1_anydash_proto_goTypes = []any{
-	(ClientKind)(0),                            // 0: anydash.v1.ClientKind
-	(Provider)(0),                              // 1: anydash.v1.Provider
-	(LocalTool)(0),                             // 2: anydash.v1.LocalTool
-	(DevicePlatform)(0),                        // 3: anydash.v1.DevicePlatform
-	(CpuArchitecture)(0),                       // 4: anydash.v1.CpuArchitecture
-	(CollectorKind)(0),                         // 5: anydash.v1.CollectorKind
-	(EnrollmentState)(0),                       // 6: anydash.v1.EnrollmentState
-	(DeviceCredentialState)(0),                 // 7: anydash.v1.DeviceCredentialState
-	(ParserState)(0),                           // 8: anydash.v1.ParserState
-	(SpaceKind)(0),                             // 9: anydash.v1.SpaceKind
-	(SpacePermission)(0),                       // 10: anydash.v1.SpacePermission
-	(OnboardingState)(0),                       // 11: anydash.v1.OnboardingState
-	(WidgetType)(0),                            // 12: anydash.v1.WidgetType
-	(WidgetPresentation)(0),                    // 13: anydash.v1.WidgetPresentation
-	(QueryPeriod)(0),                           // 14: anydash.v1.QueryPeriod
-	(TimeGranularity)(0),                       // 15: anydash.v1.TimeGranularity
-	(UsageBreakdownDimension)(0),               // 16: anydash.v1.UsageBreakdownDimension
-	(SharingState)(0),                          // 17: anydash.v1.SharingState
-	(SharingEndReason)(0),                      // 18: anydash.v1.SharingEndReason
-	(DataNotice)(0),                            // 19: anydash.v1.DataNotice
-	(MetricKind)(0),                            // 20: anydash.v1.MetricKind
-	(MetricState)(0),                           // 21: anydash.v1.MetricState
-	(MetricTemporality)(0),                     // 22: anydash.v1.MetricTemporality
-	(CollectionStatus)(0),                      // 23: anydash.v1.CollectionStatus
-	(FailureClass)(0),                          // 24: anydash.v1.FailureClass
-	(ObservationSource)(0),                     // 25: anydash.v1.ObservationSource
-	(ConnectionState)(0),                       // 26: anydash.v1.ConnectionState
-	(ResourceKind)(0),                          // 27: anydash.v1.ResourceKind
-	(ResourceHealth)(0),                        // 28: anydash.v1.ResourceHealth
-	(SnapshotOutcome)(0),                       // 29: anydash.v1.SnapshotOutcome
-	(BucketOutcome)(0),                         // 30: anydash.v1.BucketOutcome
-	(ActivityKind)(0),                          // 31: anydash.v1.ActivityKind
-	(QuotaKind)(0),                             // 32: anydash.v1.QuotaKind
-	(RateLimitScope)(0),                        // 33: anydash.v1.RateLimitScope
-	(ErrorReason)(0),                           // 34: anydash.v1.ErrorReason
-	(KeySource)(0),                             // 35: anydash.v1.KeySource
-	(CollectorRunState)(0),                     // 36: anydash.v1.CollectorRunState
-	(LocalNotice)(0),                           // 37: anydash.v1.LocalNotice
-	(SourcePathOrigin)(0),                      // 38: anydash.v1.SourcePathOrigin
-	(*ErrorDetail)(nil),                        // 39: anydash.v1.ErrorDetail
-	(*QuotaInfo)(nil),                          // 40: anydash.v1.QuotaInfo
-	(*Page)(nil),                               // 41: anydash.v1.Page
-	(*Money)(nil),                              // 42: anydash.v1.Money
-	(*TokenCounts)(nil),                        // 43: anydash.v1.TokenCounts
-	(*ClientVersionStatus)(nil),                // 44: anydash.v1.ClientVersionStatus
-	(*MetricValue)(nil),                        // 45: anydash.v1.MetricValue
-	(*MetricObservation)(nil),                  // 46: anydash.v1.MetricObservation
-	(*ResourceObservation)(nil),                // 47: anydash.v1.ResourceObservation
-	(*Snapshot)(nil),                           // 48: anydash.v1.Snapshot
-	(*Lease)(nil),                              // 49: anydash.v1.Lease
-	(*ParserStatus)(nil),                       // 50: anydash.v1.ParserStatus
-	(*Device)(nil),                             // 51: anydash.v1.Device
-	(*DeviceCredentials)(nil),                  // 52: anydash.v1.DeviceCredentials
-	(*ConnectionDevice)(nil),                   // 53: anydash.v1.ConnectionDevice
-	(*Connection)(nil),                         // 54: anydash.v1.Connection
-	(*StartEnrollmentRequest)(nil),             // 55: anydash.v1.StartEnrollmentRequest
-	(*StartEnrollmentResponse)(nil),            // 56: anydash.v1.StartEnrollmentResponse
-	(*EnrollmentSummary)(nil),                  // 57: anydash.v1.EnrollmentSummary
-	(*GetEnrollmentRequest)(nil),               // 58: anydash.v1.GetEnrollmentRequest
-	(*GetEnrollmentResponse)(nil),              // 59: anydash.v1.GetEnrollmentResponse
-	(*ApproveEnrollmentRequest)(nil),           // 60: anydash.v1.ApproveEnrollmentRequest
-	(*ApproveEnrollmentResponse)(nil),          // 61: anydash.v1.ApproveEnrollmentResponse
-	(*RejectEnrollmentRequest)(nil),            // 62: anydash.v1.RejectEnrollmentRequest
-	(*RejectEnrollmentResponse)(nil),           // 63: anydash.v1.RejectEnrollmentResponse
-	(*PollEnrollmentRequest)(nil),              // 64: anydash.v1.PollEnrollmentRequest
-	(*PollEnrollmentResponse)(nil),             // 65: anydash.v1.PollEnrollmentResponse
-	(*RefreshDeviceTokenRequest)(nil),          // 66: anydash.v1.RefreshDeviceTokenRequest
-	(*RefreshDeviceTokenResponse)(nil),         // 67: anydash.v1.RefreshDeviceTokenResponse
-	(*RevokeDeviceCredentialsRequest)(nil),     // 68: anydash.v1.RevokeDeviceCredentialsRequest
-	(*RevokeDeviceCredentialsResponse)(nil),    // 69: anydash.v1.RevokeDeviceCredentialsResponse
-	(*ListDevicesRequest)(nil),                 // 70: anydash.v1.ListDevicesRequest
-	(*ListDevicesResponse)(nil),                // 71: anydash.v1.ListDevicesResponse
-	(*DeleteDeviceRequest)(nil),                // 72: anydash.v1.DeleteDeviceRequest
-	(*DeleteDeviceResponse)(nil),               // 73: anydash.v1.DeleteDeviceResponse
-	(*SetPreferredDeviceRequest)(nil),          // 74: anydash.v1.SetPreferredDeviceRequest
-	(*SetPreferredDeviceResponse)(nil),         // 75: anydash.v1.SetPreferredDeviceResponse
-	(*RequestDeviceSyncRequest)(nil),           // 76: anydash.v1.RequestDeviceSyncRequest
-	(*RequestDeviceSyncResponse)(nil),          // 77: anydash.v1.RequestDeviceSyncResponse
-	(*HeartbeatRequest)(nil),                   // 78: anydash.v1.HeartbeatRequest
-	(*ConnectionAssignment)(nil),               // 79: anydash.v1.ConnectionAssignment
-	(*HeartbeatResponse)(nil),                  // 80: anydash.v1.HeartbeatResponse
-	(*UsageBucket)(nil),                        // 81: anydash.v1.UsageBucket
-	(*BucketKey)(nil),                          // 82: anydash.v1.BucketKey
-	(*BucketResult)(nil),                       // 83: anydash.v1.BucketResult
-	(*UploadUsageRequest)(nil),                 // 84: anydash.v1.UploadUsageRequest
-	(*UploadUsageResponse)(nil),                // 85: anydash.v1.UploadUsageResponse
-	(*ReportParserStatusRequest)(nil),          // 86: anydash.v1.ReportParserStatusRequest
-	(*ReportParserStatusResponse)(nil),         // 87: anydash.v1.ReportParserStatusResponse
-	(*AcquireLeaseRequest)(nil),                // 88: anydash.v1.AcquireLeaseRequest
-	(*AcquireLeaseResponse)(nil),               // 89: anydash.v1.AcquireLeaseResponse
-	(*RenewLeaseRequest)(nil),                  // 90: anydash.v1.RenewLeaseRequest
-	(*RenewLeaseResponse)(nil),                 // 91: anydash.v1.RenewLeaseResponse
-	(*ReleaseLeaseRequest)(nil),                // 92: anydash.v1.ReleaseLeaseRequest
-	(*ReleaseLeaseResponse)(nil),               // 93: anydash.v1.ReleaseLeaseResponse
-	(*ReportSnapshotRequest)(nil),              // 94: anydash.v1.ReportSnapshotRequest
-	(*ReportSnapshotResponse)(nil),             // 95: anydash.v1.ReportSnapshotResponse
-	(*CreateConnectionRequest)(nil),            // 96: anydash.v1.CreateConnectionRequest
-	(*CreateConnectionResponse)(nil),           // 97: anydash.v1.CreateConnectionResponse
-	(*ListConnectionsRequest)(nil),             // 98: anydash.v1.ListConnectionsRequest
-	(*ListConnectionsResponse)(nil),            // 99: anydash.v1.ListConnectionsResponse
-	(*GetConnectionRequest)(nil),               // 100: anydash.v1.GetConnectionRequest
-	(*GetConnectionResponse)(nil),              // 101: anydash.v1.GetConnectionResponse
-	(*DeleteConnectionRequest)(nil),            // 102: anydash.v1.DeleteConnectionRequest
-	(*DeleteConnectionResponse)(nil),           // 103: anydash.v1.DeleteConnectionResponse
-	(*RegisterConnectionDeviceRequest)(nil),    // 104: anydash.v1.RegisterConnectionDeviceRequest
-	(*RegisterConnectionDeviceResponse)(nil),   // 105: anydash.v1.RegisterConnectionDeviceResponse
-	(*UnregisterConnectionDeviceRequest)(nil),  // 106: anydash.v1.UnregisterConnectionDeviceRequest
-	(*UnregisterConnectionDeviceResponse)(nil), // 107: anydash.v1.UnregisterConnectionDeviceResponse
-	(*RequestConnectionRefreshRequest)(nil),    // 108: anydash.v1.RequestConnectionRefreshRequest
-	(*RequestConnectionRefreshResponse)(nil),   // 109: anydash.v1.RequestConnectionRefreshResponse
-	(*Space)(nil),                              // 110: anydash.v1.Space
-	(*WidgetLayout)(nil),                       // 111: anydash.v1.WidgetLayout
-	(*WidgetQuery)(nil),                        // 112: anydash.v1.WidgetQuery
-	(*WidgetSource)(nil),                       // 113: anydash.v1.WidgetSource
-	(*Widget)(nil),                             // 114: anydash.v1.Widget
-	(*Dashboard)(nil),                          // 115: anydash.v1.Dashboard
-	(*DashboardSummary)(nil),                   // 116: anydash.v1.DashboardSummary
-	(*ListSpacesRequest)(nil),                  // 117: anydash.v1.ListSpacesRequest
-	(*ListSpacesResponse)(nil),                 // 118: anydash.v1.ListSpacesResponse
-	(*ListDashboardsRequest)(nil),              // 119: anydash.v1.ListDashboardsRequest
-	(*ListDashboardsResponse)(nil),             // 120: anydash.v1.ListDashboardsResponse
-	(*GetDashboardRequest)(nil),                // 121: anydash.v1.GetDashboardRequest
-	(*GetDashboardResponse)(nil),               // 122: anydash.v1.GetDashboardResponse
-	(*CreateDashboardRequest)(nil),             // 123: anydash.v1.CreateDashboardRequest
-	(*CreateDashboardResponse)(nil),            // 124: anydash.v1.CreateDashboardResponse
-	(*RenameDashboardRequest)(nil),             // 125: anydash.v1.RenameDashboardRequest
-	(*RenameDashboardResponse)(nil),            // 126: anydash.v1.RenameDashboardResponse
-	(*DeleteDashboardRequest)(nil),             // 127: anydash.v1.DeleteDashboardRequest
-	(*DeleteDashboardResponse)(nil),            // 128: anydash.v1.DeleteDashboardResponse
-	(*AddWidgetRequest)(nil),                   // 129: anydash.v1.AddWidgetRequest
-	(*AddWidgetResponse)(nil),                  // 130: anydash.v1.AddWidgetResponse
-	(*RemoveWidgetRequest)(nil),                // 131: anydash.v1.RemoveWidgetRequest
-	(*RemoveWidgetResponse)(nil),               // 132: anydash.v1.RemoveWidgetResponse
-	(*WidgetLayoutUpdate)(nil),                 // 133: anydash.v1.WidgetLayoutUpdate
-	(*UpdateWidgetLayoutRequest)(nil),          // 134: anydash.v1.UpdateWidgetLayoutRequest
-	(*UpdateWidgetLayoutResponse)(nil),         // 135: anydash.v1.UpdateWidgetLayoutResponse
-	(*UpdateWidgetQueryRequest)(nil),           // 136: anydash.v1.UpdateWidgetQueryRequest
-	(*UpdateWidgetQueryResponse)(nil),          // 137: anydash.v1.UpdateWidgetQueryResponse
-	(*SetWidgetSharingScopeRequest)(nil),       // 138: anydash.v1.SetWidgetSharingScopeRequest
-	(*SetWidgetSharingScopeResponse)(nil),      // 139: anydash.v1.SetWidgetSharingScopeResponse
-	(*RevokeWidgetSharingRequest)(nil),         // 140: anydash.v1.RevokeWidgetSharingRequest
-	(*RevokeWidgetSharingResponse)(nil),        // 141: anydash.v1.RevokeWidgetSharingResponse
-	(*CostEstimate)(nil),                       // 142: anydash.v1.CostEstimate
-	(*UsageTotals)(nil),                        // 143: anydash.v1.UsageTotals
-	(*UsageSummary)(nil),                       // 144: anydash.v1.UsageSummary
-	(*UsagePoint)(nil),                         // 145: anydash.v1.UsagePoint
-	(*UsageSeries)(nil),                        // 146: anydash.v1.UsageSeries
-	(*UsageBreakdownRow)(nil),                  // 147: anydash.v1.UsageBreakdownRow
-	(*UsageBreakdown)(nil),                     // 148: anydash.v1.UsageBreakdown
-	(*MetricReading)(nil),                      // 149: anydash.v1.MetricReading
-	(*MetricPanel)(nil),                        // 150: anydash.v1.MetricPanel
-	(*MetricHistoryPoint)(nil),                 // 151: anydash.v1.MetricHistoryPoint
-	(*MetricHistorySeries)(nil),                // 152: anydash.v1.MetricHistorySeries
-	(*MetricHistory)(nil),                      // 153: anydash.v1.MetricHistory
-	(*ResourceReading)(nil),                    // 154: anydash.v1.ResourceReading
-	(*ResourceList)(nil),                       // 155: anydash.v1.ResourceList
-	(*WidgetSummary)(nil),                      // 156: anydash.v1.WidgetSummary
-	(*WidgetData)(nil),                         // 157: anydash.v1.WidgetData
-	(*QueryWidgetDataRequest)(nil),             // 158: anydash.v1.QueryWidgetDataRequest
-	(*QueryWidgetDataResponse)(nil),            // 159: anydash.v1.QueryWidgetDataResponse
-	(*QueryDashboardDataRequest)(nil),          // 160: anydash.v1.QueryDashboardDataRequest
-	(*QueryDashboardDataResponse)(nil),         // 161: anydash.v1.QueryDashboardDataResponse
-	(*Account)(nil),                            // 162: anydash.v1.Account
-	(*ConnectAccountRequest)(nil),              // 163: anydash.v1.ConnectAccountRequest
-	(*ConnectAccountResponse)(nil),             // 164: anydash.v1.ConnectAccountResponse
-	(*GetAccountRequest)(nil),                  // 165: anydash.v1.GetAccountRequest
-	(*GetAccountResponse)(nil),                 // 166: anydash.v1.GetAccountResponse
-	(*UpdateAccountSettingsRequest)(nil),       // 167: anydash.v1.UpdateAccountSettingsRequest
-	(*UpdateAccountSettingsResponse)(nil),      // 168: anydash.v1.UpdateAccountSettingsResponse
-	(*ActivityEvent)(nil),                      // 169: anydash.v1.ActivityEvent
-	(*ListActivityRequest)(nil),                // 170: anydash.v1.ListActivityRequest
-	(*ListActivityResponse)(nil),               // 171: anydash.v1.ListActivityResponse
-	(*DeleteAccountDataRequest)(nil),           // 172: anydash.v1.DeleteAccountDataRequest
-	(*DeleteAccountDataResponse)(nil),          // 173: anydash.v1.DeleteAccountDataResponse
-	(*LoginProgress)(nil),                      // 174: anydash.v1.LoginProgress
-	(*LocalConnectionStatus)(nil),              // 175: anydash.v1.LocalConnectionStatus
-	(*CollectorStatus)(nil),                    // 176: anydash.v1.CollectorStatus
-	(*GetCollectorStatusRequest)(nil),          // 177: anydash.v1.GetCollectorStatusRequest
-	(*GetCollectorStatusResponse)(nil),         // 178: anydash.v1.GetCollectorStatusResponse
-	(*StartLoginRequest)(nil),                  // 179: anydash.v1.StartLoginRequest
-	(*StartLoginResponse)(nil),                 // 180: anydash.v1.StartLoginResponse
-	(*LogoutRequest)(nil),                      // 181: anydash.v1.LogoutRequest
-	(*LogoutResponse)(nil),                     // 182: anydash.v1.LogoutResponse
-	(*AddConnectionCredentialRequest)(nil),     // 183: anydash.v1.AddConnectionCredentialRequest
-	(*AddConnectionCredentialResponse)(nil),    // 184: anydash.v1.AddConnectionCredentialResponse
-	(*RemoveConnectionCredentialRequest)(nil),  // 185: anydash.v1.RemoveConnectionCredentialRequest
-	(*RemoveConnectionCredentialResponse)(nil), // 186: anydash.v1.RemoveConnectionCredentialResponse
-	(*SourcePath)(nil),                         // 187: anydash.v1.SourcePath
-	(*ListSourcePathsRequest)(nil),             // 188: anydash.v1.ListSourcePathsRequest
-	(*ListSourcePathsResponse)(nil),            // 189: anydash.v1.ListSourcePathsResponse
-	(*AddSourcePathRequest)(nil),               // 190: anydash.v1.AddSourcePathRequest
-	(*AddSourcePathResponse)(nil),              // 191: anydash.v1.AddSourcePathResponse
-	(*DisableSourcePathRequest)(nil),           // 192: anydash.v1.DisableSourcePathRequest
-	(*DisableSourcePathResponse)(nil),          // 193: anydash.v1.DisableSourcePathResponse
-	(*EnableSourcePathRequest)(nil),            // 194: anydash.v1.EnableSourcePathRequest
-	(*EnableSourcePathResponse)(nil),           // 195: anydash.v1.EnableSourcePathResponse
-	(*RotateKeyRequest)(nil),                   // 196: anydash.v1.RotateKeyRequest
-	(*RotateKeyResponse)(nil),                  // 197: anydash.v1.RotateKeyResponse
-	(*RequestLocalSyncRequest)(nil),            // 198: anydash.v1.RequestLocalSyncRequest
-	(*RequestLocalSyncResponse)(nil),           // 199: anydash.v1.RequestLocalSyncResponse
-	(*NativeWidgetSnapshot)(nil),               // 200: anydash.v1.NativeWidgetSnapshot
-	(*PutNativeWidgetSnapshotsRequest)(nil),    // 201: anydash.v1.PutNativeWidgetSnapshotsRequest
-	(*PutNativeWidgetSnapshotsResponse)(nil),   // 202: anydash.v1.PutNativeWidgetSnapshotsResponse
-	(*ListNativeWidgetSnapshotsRequest)(nil),   // 203: anydash.v1.ListNativeWidgetSnapshotsRequest
-	(*ListNativeWidgetSnapshotsResponse)(nil),  // 204: anydash.v1.ListNativeWidgetSnapshotsResponse
-	(*QuitRequest)(nil),                        // 205: anydash.v1.QuitRequest
-	(*QuitResponse)(nil),                       // 206: anydash.v1.QuitResponse
-	(*durationpb.Duration)(nil),                // 207: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),              // 208: google.protobuf.Timestamp
+	(ClientKind)(0),                               // 0: anydash.v1.ClientKind
+	(Provider)(0),                                 // 1: anydash.v1.Provider
+	(LocalTool)(0),                                // 2: anydash.v1.LocalTool
+	(DevicePlatform)(0),                           // 3: anydash.v1.DevicePlatform
+	(CpuArchitecture)(0),                          // 4: anydash.v1.CpuArchitecture
+	(CollectorKind)(0),                            // 5: anydash.v1.CollectorKind
+	(EnrollmentState)(0),                          // 6: anydash.v1.EnrollmentState
+	(DeviceCredentialState)(0),                    // 7: anydash.v1.DeviceCredentialState
+	(ParserState)(0),                              // 8: anydash.v1.ParserState
+	(SpaceKind)(0),                                // 9: anydash.v1.SpaceKind
+	(SpacePermission)(0),                          // 10: anydash.v1.SpacePermission
+	(OnboardingState)(0),                          // 11: anydash.v1.OnboardingState
+	(WidgetType)(0),                               // 12: anydash.v1.WidgetType
+	(WidgetPresentation)(0),                       // 13: anydash.v1.WidgetPresentation
+	(QueryPeriod)(0),                              // 14: anydash.v1.QueryPeriod
+	(TimeGranularity)(0),                          // 15: anydash.v1.TimeGranularity
+	(UsageBreakdownDimension)(0),                  // 16: anydash.v1.UsageBreakdownDimension
+	(SharingState)(0),                             // 17: anydash.v1.SharingState
+	(SharingEndReason)(0),                         // 18: anydash.v1.SharingEndReason
+	(DataNotice)(0),                               // 19: anydash.v1.DataNotice
+	(MetricKind)(0),                               // 20: anydash.v1.MetricKind
+	(MetricState)(0),                              // 21: anydash.v1.MetricState
+	(MetricTemporality)(0),                        // 22: anydash.v1.MetricTemporality
+	(CollectionStatus)(0),                         // 23: anydash.v1.CollectionStatus
+	(FailureClass)(0),                             // 24: anydash.v1.FailureClass
+	(ObservationSource)(0),                        // 25: anydash.v1.ObservationSource
+	(ConnectionState)(0),                          // 26: anydash.v1.ConnectionState
+	(ResourceKind)(0),                             // 27: anydash.v1.ResourceKind
+	(ResourceHealth)(0),                           // 28: anydash.v1.ResourceHealth
+	(SnapshotOutcome)(0),                          // 29: anydash.v1.SnapshotOutcome
+	(BucketOutcome)(0),                            // 30: anydash.v1.BucketOutcome
+	(ActivityKind)(0),                             // 31: anydash.v1.ActivityKind
+	(QuotaKind)(0),                                // 32: anydash.v1.QuotaKind
+	(RateLimitScope)(0),                           // 33: anydash.v1.RateLimitScope
+	(ErrorReason)(0),                              // 34: anydash.v1.ErrorReason
+	(KeySource)(0),                                // 35: anydash.v1.KeySource
+	(CollectorRunState)(0),                        // 36: anydash.v1.CollectorRunState
+	(LocalNotice)(0),                              // 37: anydash.v1.LocalNotice
+	(SourcePathOrigin)(0),                         // 38: anydash.v1.SourcePathOrigin
+	(*ErrorDetail)(nil),                           // 39: anydash.v1.ErrorDetail
+	(*QuotaInfo)(nil),                             // 40: anydash.v1.QuotaInfo
+	(*Page)(nil),                                  // 41: anydash.v1.Page
+	(*Money)(nil),                                 // 42: anydash.v1.Money
+	(*TokenCounts)(nil),                           // 43: anydash.v1.TokenCounts
+	(*ClientVersionStatus)(nil),                   // 44: anydash.v1.ClientVersionStatus
+	(*MetricValue)(nil),                           // 45: anydash.v1.MetricValue
+	(*MetricObservation)(nil),                     // 46: anydash.v1.MetricObservation
+	(*ResourceObservation)(nil),                   // 47: anydash.v1.ResourceObservation
+	(*Snapshot)(nil),                              // 48: anydash.v1.Snapshot
+	(*Lease)(nil),                                 // 49: anydash.v1.Lease
+	(*ParserStatus)(nil),                          // 50: anydash.v1.ParserStatus
+	(*Device)(nil),                                // 51: anydash.v1.Device
+	(*DeviceCredentials)(nil),                     // 52: anydash.v1.DeviceCredentials
+	(*ConnectionDevice)(nil),                      // 53: anydash.v1.ConnectionDevice
+	(*Connection)(nil),                            // 54: anydash.v1.Connection
+	(*StartEnrollmentRequest)(nil),                // 55: anydash.v1.StartEnrollmentRequest
+	(*StartEnrollmentResponse)(nil),               // 56: anydash.v1.StartEnrollmentResponse
+	(*EnrollmentSummary)(nil),                     // 57: anydash.v1.EnrollmentSummary
+	(*GetEnrollmentRequest)(nil),                  // 58: anydash.v1.GetEnrollmentRequest
+	(*GetEnrollmentResponse)(nil),                 // 59: anydash.v1.GetEnrollmentResponse
+	(*ApproveEnrollmentRequest)(nil),              // 60: anydash.v1.ApproveEnrollmentRequest
+	(*ApproveEnrollmentResponse)(nil),             // 61: anydash.v1.ApproveEnrollmentResponse
+	(*RejectEnrollmentRequest)(nil),               // 62: anydash.v1.RejectEnrollmentRequest
+	(*RejectEnrollmentResponse)(nil),              // 63: anydash.v1.RejectEnrollmentResponse
+	(*PollEnrollmentRequest)(nil),                 // 64: anydash.v1.PollEnrollmentRequest
+	(*PollEnrollmentResponse)(nil),                // 65: anydash.v1.PollEnrollmentResponse
+	(*RefreshDeviceTokenRequest)(nil),             // 66: anydash.v1.RefreshDeviceTokenRequest
+	(*RefreshDeviceTokenResponse)(nil),            // 67: anydash.v1.RefreshDeviceTokenResponse
+	(*RevokeDeviceCredentialsRequest)(nil),        // 68: anydash.v1.RevokeDeviceCredentialsRequest
+	(*RevokeDeviceCredentialsResponse)(nil),       // 69: anydash.v1.RevokeDeviceCredentialsResponse
+	(*ListDevicesRequest)(nil),                    // 70: anydash.v1.ListDevicesRequest
+	(*ListDevicesResponse)(nil),                   // 71: anydash.v1.ListDevicesResponse
+	(*DeleteDeviceRequest)(nil),                   // 72: anydash.v1.DeleteDeviceRequest
+	(*DeleteDeviceResponse)(nil),                  // 73: anydash.v1.DeleteDeviceResponse
+	(*SetPreferredDeviceRequest)(nil),             // 74: anydash.v1.SetPreferredDeviceRequest
+	(*SetPreferredDeviceResponse)(nil),            // 75: anydash.v1.SetPreferredDeviceResponse
+	(*RequestDeviceSyncRequest)(nil),              // 76: anydash.v1.RequestDeviceSyncRequest
+	(*RequestDeviceSyncResponse)(nil),             // 77: anydash.v1.RequestDeviceSyncResponse
+	(*HeartbeatRequest)(nil),                      // 78: anydash.v1.HeartbeatRequest
+	(*ConnectionAssignment)(nil),                  // 79: anydash.v1.ConnectionAssignment
+	(*HeartbeatResponse)(nil),                     // 80: anydash.v1.HeartbeatResponse
+	(*UsageBucket)(nil),                           // 81: anydash.v1.UsageBucket
+	(*BucketKey)(nil),                             // 82: anydash.v1.BucketKey
+	(*BucketResult)(nil),                          // 83: anydash.v1.BucketResult
+	(*UploadUsageRequest)(nil),                    // 84: anydash.v1.UploadUsageRequest
+	(*UploadUsageResponse)(nil),                   // 85: anydash.v1.UploadUsageResponse
+	(*ReportParserStatusRequest)(nil),             // 86: anydash.v1.ReportParserStatusRequest
+	(*ReportParserStatusResponse)(nil),            // 87: anydash.v1.ReportParserStatusResponse
+	(*AcquireLeaseRequest)(nil),                   // 88: anydash.v1.AcquireLeaseRequest
+	(*AcquireLeaseResponse)(nil),                  // 89: anydash.v1.AcquireLeaseResponse
+	(*RenewLeaseRequest)(nil),                     // 90: anydash.v1.RenewLeaseRequest
+	(*RenewLeaseResponse)(nil),                    // 91: anydash.v1.RenewLeaseResponse
+	(*ReleaseLeaseRequest)(nil),                   // 92: anydash.v1.ReleaseLeaseRequest
+	(*ReleaseLeaseResponse)(nil),                  // 93: anydash.v1.ReleaseLeaseResponse
+	(*ReportSnapshotRequest)(nil),                 // 94: anydash.v1.ReportSnapshotRequest
+	(*ReportSnapshotResponse)(nil),                // 95: anydash.v1.ReportSnapshotResponse
+	(*CreateConnectionRequest)(nil),               // 96: anydash.v1.CreateConnectionRequest
+	(*CreateConnectionResponse)(nil),              // 97: anydash.v1.CreateConnectionResponse
+	(*ListConnectionsRequest)(nil),                // 98: anydash.v1.ListConnectionsRequest
+	(*ListConnectionsResponse)(nil),               // 99: anydash.v1.ListConnectionsResponse
+	(*GetConnectionRequest)(nil),                  // 100: anydash.v1.GetConnectionRequest
+	(*GetConnectionResponse)(nil),                 // 101: anydash.v1.GetConnectionResponse
+	(*DeleteConnectionRequest)(nil),               // 102: anydash.v1.DeleteConnectionRequest
+	(*DeleteConnectionResponse)(nil),              // 103: anydash.v1.DeleteConnectionResponse
+	(*RegisterConnectionDeviceRequest)(nil),       // 104: anydash.v1.RegisterConnectionDeviceRequest
+	(*RegisterConnectionDeviceResponse)(nil),      // 105: anydash.v1.RegisterConnectionDeviceResponse
+	(*UnregisterConnectionDeviceRequest)(nil),     // 106: anydash.v1.UnregisterConnectionDeviceRequest
+	(*UnregisterConnectionDeviceResponse)(nil),    // 107: anydash.v1.UnregisterConnectionDeviceResponse
+	(*RequestConnectionRefreshRequest)(nil),       // 108: anydash.v1.RequestConnectionRefreshRequest
+	(*RequestConnectionRefreshResponse)(nil),      // 109: anydash.v1.RequestConnectionRefreshResponse
+	(*Space)(nil),                                 // 110: anydash.v1.Space
+	(*WidgetLayout)(nil),                          // 111: anydash.v1.WidgetLayout
+	(*WidgetQuery)(nil),                           // 112: anydash.v1.WidgetQuery
+	(*WidgetSource)(nil),                          // 113: anydash.v1.WidgetSource
+	(*Widget)(nil),                                // 114: anydash.v1.Widget
+	(*Dashboard)(nil),                             // 115: anydash.v1.Dashboard
+	(*DashboardSummary)(nil),                      // 116: anydash.v1.DashboardSummary
+	(*ListSpacesRequest)(nil),                     // 117: anydash.v1.ListSpacesRequest
+	(*ListSpacesResponse)(nil),                    // 118: anydash.v1.ListSpacesResponse
+	(*ListDashboardsRequest)(nil),                 // 119: anydash.v1.ListDashboardsRequest
+	(*ListDashboardsResponse)(nil),                // 120: anydash.v1.ListDashboardsResponse
+	(*GetDashboardRequest)(nil),                   // 121: anydash.v1.GetDashboardRequest
+	(*GetDashboardResponse)(nil),                  // 122: anydash.v1.GetDashboardResponse
+	(*CreateDashboardRequest)(nil),                // 123: anydash.v1.CreateDashboardRequest
+	(*CreateDashboardResponse)(nil),               // 124: anydash.v1.CreateDashboardResponse
+	(*RenameDashboardRequest)(nil),                // 125: anydash.v1.RenameDashboardRequest
+	(*RenameDashboardResponse)(nil),               // 126: anydash.v1.RenameDashboardResponse
+	(*DeleteDashboardRequest)(nil),                // 127: anydash.v1.DeleteDashboardRequest
+	(*DeleteDashboardResponse)(nil),               // 128: anydash.v1.DeleteDashboardResponse
+	(*AddWidgetRequest)(nil),                      // 129: anydash.v1.AddWidgetRequest
+	(*AddWidgetResponse)(nil),                     // 130: anydash.v1.AddWidgetResponse
+	(*RemoveWidgetRequest)(nil),                   // 131: anydash.v1.RemoveWidgetRequest
+	(*RemoveWidgetResponse)(nil),                  // 132: anydash.v1.RemoveWidgetResponse
+	(*WidgetLayoutUpdate)(nil),                    // 133: anydash.v1.WidgetLayoutUpdate
+	(*UpdateWidgetLayoutRequest)(nil),             // 134: anydash.v1.UpdateWidgetLayoutRequest
+	(*UpdateWidgetLayoutResponse)(nil),            // 135: anydash.v1.UpdateWidgetLayoutResponse
+	(*UpdateWidgetQueryRequest)(nil),              // 136: anydash.v1.UpdateWidgetQueryRequest
+	(*UpdateWidgetQueryResponse)(nil),             // 137: anydash.v1.UpdateWidgetQueryResponse
+	(*SetWidgetSharingScopeRequest)(nil),          // 138: anydash.v1.SetWidgetSharingScopeRequest
+	(*SetWidgetSharingScopeResponse)(nil),         // 139: anydash.v1.SetWidgetSharingScopeResponse
+	(*RevokeWidgetSharingRequest)(nil),            // 140: anydash.v1.RevokeWidgetSharingRequest
+	(*RevokeWidgetSharingResponse)(nil),           // 141: anydash.v1.RevokeWidgetSharingResponse
+	(*CostEstimate)(nil),                          // 142: anydash.v1.CostEstimate
+	(*UsageTotals)(nil),                           // 143: anydash.v1.UsageTotals
+	(*UsageSummary)(nil),                          // 144: anydash.v1.UsageSummary
+	(*UsagePoint)(nil),                            // 145: anydash.v1.UsagePoint
+	(*UsageSeries)(nil),                           // 146: anydash.v1.UsageSeries
+	(*UsageBreakdownRow)(nil),                     // 147: anydash.v1.UsageBreakdownRow
+	(*UsageBreakdown)(nil),                        // 148: anydash.v1.UsageBreakdown
+	(*MetricReading)(nil),                         // 149: anydash.v1.MetricReading
+	(*MetricPanel)(nil),                           // 150: anydash.v1.MetricPanel
+	(*MetricHistoryPoint)(nil),                    // 151: anydash.v1.MetricHistoryPoint
+	(*MetricHistorySeries)(nil),                   // 152: anydash.v1.MetricHistorySeries
+	(*MetricHistory)(nil),                         // 153: anydash.v1.MetricHistory
+	(*ResourceReading)(nil),                       // 154: anydash.v1.ResourceReading
+	(*ResourceList)(nil),                          // 155: anydash.v1.ResourceList
+	(*WidgetSummary)(nil),                         // 156: anydash.v1.WidgetSummary
+	(*WidgetData)(nil),                            // 157: anydash.v1.WidgetData
+	(*QueryWidgetDataRequest)(nil),                // 158: anydash.v1.QueryWidgetDataRequest
+	(*QueryWidgetDataResponse)(nil),               // 159: anydash.v1.QueryWidgetDataResponse
+	(*QueryDashboardDataRequest)(nil),             // 160: anydash.v1.QueryDashboardDataRequest
+	(*QueryDashboardDataResponse)(nil),            // 161: anydash.v1.QueryDashboardDataResponse
+	(*Account)(nil),                               // 162: anydash.v1.Account
+	(*ConnectAccountRequest)(nil),                 // 163: anydash.v1.ConnectAccountRequest
+	(*ConnectAccountResponse)(nil),                // 164: anydash.v1.ConnectAccountResponse
+	(*GetAccountRequest)(nil),                     // 165: anydash.v1.GetAccountRequest
+	(*GetAccountResponse)(nil),                    // 166: anydash.v1.GetAccountResponse
+	(*UpdateAccountSettingsRequest)(nil),          // 167: anydash.v1.UpdateAccountSettingsRequest
+	(*UpdateAccountSettingsResponse)(nil),         // 168: anydash.v1.UpdateAccountSettingsResponse
+	(*ActivityEvent)(nil),                         // 169: anydash.v1.ActivityEvent
+	(*ListActivityRequest)(nil),                   // 170: anydash.v1.ListActivityRequest
+	(*ListActivityResponse)(nil),                  // 171: anydash.v1.ListActivityResponse
+	(*DeleteAccountDataRequest)(nil),              // 172: anydash.v1.DeleteAccountDataRequest
+	(*DeleteAccountDataResponse)(nil),             // 173: anydash.v1.DeleteAccountDataResponse
+	(*LoginProgress)(nil),                         // 174: anydash.v1.LoginProgress
+	(*LocalConnectionStatus)(nil),                 // 175: anydash.v1.LocalConnectionStatus
+	(*CollectorStatus)(nil),                       // 176: anydash.v1.CollectorStatus
+	(*GetCollectorStatusRequest)(nil),             // 177: anydash.v1.GetCollectorStatusRequest
+	(*GetCollectorStatusResponse)(nil),            // 178: anydash.v1.GetCollectorStatusResponse
+	(*StartLoginRequest)(nil),                     // 179: anydash.v1.StartLoginRequest
+	(*StartLoginResponse)(nil),                    // 180: anydash.v1.StartLoginResponse
+	(*LogoutRequest)(nil),                         // 181: anydash.v1.LogoutRequest
+	(*LogoutResponse)(nil),                        // 182: anydash.v1.LogoutResponse
+	(*AddConnectionCredentialRequest)(nil),        // 183: anydash.v1.AddConnectionCredentialRequest
+	(*AddConnectionCredentialResponse)(nil),       // 184: anydash.v1.AddConnectionCredentialResponse
+	(*RemoveConnectionCredentialRequest)(nil),     // 185: anydash.v1.RemoveConnectionCredentialRequest
+	(*RemoveConnectionCredentialResponse)(nil),    // 186: anydash.v1.RemoveConnectionCredentialResponse
+	(*SourcePath)(nil),                            // 187: anydash.v1.SourcePath
+	(*ListSourcePathsRequest)(nil),                // 188: anydash.v1.ListSourcePathsRequest
+	(*ListSourcePathsResponse)(nil),               // 189: anydash.v1.ListSourcePathsResponse
+	(*AddSourcePathRequest)(nil),                  // 190: anydash.v1.AddSourcePathRequest
+	(*AddSourcePathResponse)(nil),                 // 191: anydash.v1.AddSourcePathResponse
+	(*DisableSourcePathRequest)(nil),              // 192: anydash.v1.DisableSourcePathRequest
+	(*DisableSourcePathResponse)(nil),             // 193: anydash.v1.DisableSourcePathResponse
+	(*EnableSourcePathRequest)(nil),               // 194: anydash.v1.EnableSourcePathRequest
+	(*EnableSourcePathResponse)(nil),              // 195: anydash.v1.EnableSourcePathResponse
+	(*RotateKeyRequest)(nil),                      // 196: anydash.v1.RotateKeyRequest
+	(*RotateKeyResponse)(nil),                     // 197: anydash.v1.RotateKeyResponse
+	(*RequestLocalSyncRequest)(nil),               // 198: anydash.v1.RequestLocalSyncRequest
+	(*RequestLocalSyncResponse)(nil),              // 199: anydash.v1.RequestLocalSyncResponse
+	(*RequestLocalConnectionRefreshRequest)(nil),  // 200: anydash.v1.RequestLocalConnectionRefreshRequest
+	(*RequestLocalConnectionRefreshResponse)(nil), // 201: anydash.v1.RequestLocalConnectionRefreshResponse
+	(*NativeWidgetSnapshot)(nil),                  // 202: anydash.v1.NativeWidgetSnapshot
+	(*PutNativeWidgetSnapshotsRequest)(nil),       // 203: anydash.v1.PutNativeWidgetSnapshotsRequest
+	(*PutNativeWidgetSnapshotsResponse)(nil),      // 204: anydash.v1.PutNativeWidgetSnapshotsResponse
+	(*ListNativeWidgetSnapshotsRequest)(nil),      // 205: anydash.v1.ListNativeWidgetSnapshotsRequest
+	(*ListNativeWidgetSnapshotsResponse)(nil),     // 206: anydash.v1.ListNativeWidgetSnapshotsResponse
+	(*QuitRequest)(nil),                           // 207: anydash.v1.QuitRequest
+	(*QuitResponse)(nil),                          // 208: anydash.v1.QuitResponse
+	(*durationpb.Duration)(nil),                   // 209: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),                 // 210: google.protobuf.Timestamp
 }
 var file_anydash_v1_anydash_proto_depIdxs = []int32{
 	34,  // 0: anydash.v1.ErrorDetail.reason:type_name -> anydash.v1.ErrorReason
-	207, // 1: anydash.v1.ErrorDetail.retry_after:type_name -> google.protobuf.Duration
+	209, // 1: anydash.v1.ErrorDetail.retry_after:type_name -> google.protobuf.Duration
 	33,  // 2: anydash.v1.ErrorDetail.rate_limit_scope:type_name -> anydash.v1.RateLimitScope
 	40,  // 3: anydash.v1.ErrorDetail.quota:type_name -> anydash.v1.QuotaInfo
 	0,   // 4: anydash.v1.ErrorDetail.client_kind:type_name -> anydash.v1.ClientKind
 	32,  // 5: anydash.v1.QuotaInfo.kind:type_name -> anydash.v1.QuotaKind
 	21,  // 6: anydash.v1.MetricValue.state:type_name -> anydash.v1.MetricState
 	42,  // 7: anydash.v1.MetricValue.money:type_name -> anydash.v1.Money
-	208, // 8: anydash.v1.MetricValue.time:type_name -> google.protobuf.Timestamp
-	207, // 9: anydash.v1.MetricValue.duration:type_name -> google.protobuf.Duration
+	210, // 8: anydash.v1.MetricValue.time:type_name -> google.protobuf.Timestamp
+	209, // 9: anydash.v1.MetricValue.duration:type_name -> google.protobuf.Duration
 	20,  // 10: anydash.v1.MetricObservation.kind:type_name -> anydash.v1.MetricKind
 	45,  // 11: anydash.v1.MetricObservation.value:type_name -> anydash.v1.MetricValue
 	22,  // 12: anydash.v1.MetricObservation.temporality:type_name -> anydash.v1.MetricTemporality
-	208, // 13: anydash.v1.MetricObservation.period_start:type_name -> google.protobuf.Timestamp
-	208, // 14: anydash.v1.MetricObservation.period_end:type_name -> google.protobuf.Timestamp
+	210, // 13: anydash.v1.MetricObservation.period_start:type_name -> google.protobuf.Timestamp
+	210, // 14: anydash.v1.MetricObservation.period_end:type_name -> google.protobuf.Timestamp
 	27,  // 15: anydash.v1.ResourceObservation.kind:type_name -> anydash.v1.ResourceKind
 	28,  // 16: anydash.v1.ResourceObservation.health:type_name -> anydash.v1.ResourceHealth
 	21,  // 17: anydash.v1.ResourceObservation.status_state:type_name -> anydash.v1.MetricState
 	46,  // 18: anydash.v1.ResourceObservation.metrics:type_name -> anydash.v1.MetricObservation
-	208, // 19: anydash.v1.Snapshot.observed_at:type_name -> google.protobuf.Timestamp
+	210, // 19: anydash.v1.Snapshot.observed_at:type_name -> google.protobuf.Timestamp
 	23,  // 20: anydash.v1.Snapshot.status:type_name -> anydash.v1.CollectionStatus
 	24,  // 21: anydash.v1.Snapshot.failure_class:type_name -> anydash.v1.FailureClass
-	208, // 22: anydash.v1.Snapshot.next_attempt_at:type_name -> google.protobuf.Timestamp
+	210, // 22: anydash.v1.Snapshot.next_attempt_at:type_name -> google.protobuf.Timestamp
 	46,  // 23: anydash.v1.Snapshot.metrics:type_name -> anydash.v1.MetricObservation
 	47,  // 24: anydash.v1.Snapshot.resources:type_name -> anydash.v1.ResourceObservation
 	25,  // 25: anydash.v1.Snapshot.source:type_name -> anydash.v1.ObservationSource
-	208, // 26: anydash.v1.Lease.acquired_at:type_name -> google.protobuf.Timestamp
-	208, // 27: anydash.v1.Lease.expires_at:type_name -> google.protobuf.Timestamp
+	210, // 26: anydash.v1.Lease.acquired_at:type_name -> google.protobuf.Timestamp
+	210, // 27: anydash.v1.Lease.expires_at:type_name -> google.protobuf.Timestamp
 	2,   // 28: anydash.v1.ParserStatus.tool:type_name -> anydash.v1.LocalTool
 	8,   // 29: anydash.v1.ParserStatus.state:type_name -> anydash.v1.ParserState
-	208, // 30: anydash.v1.ParserStatus.observed_at:type_name -> google.protobuf.Timestamp
+	210, // 30: anydash.v1.ParserStatus.observed_at:type_name -> google.protobuf.Timestamp
 	3,   // 31: anydash.v1.Device.platform:type_name -> anydash.v1.DevicePlatform
 	4,   // 32: anydash.v1.Device.architecture:type_name -> anydash.v1.CpuArchitecture
 	5,   // 33: anydash.v1.Device.collector_kind:type_name -> anydash.v1.CollectorKind
-	208, // 34: anydash.v1.Device.enrolled_at:type_name -> google.protobuf.Timestamp
-	208, // 35: anydash.v1.Device.last_heartbeat_at:type_name -> google.protobuf.Timestamp
-	208, // 36: anydash.v1.Device.last_upload_at:type_name -> google.protobuf.Timestamp
+	210, // 34: anydash.v1.Device.enrolled_at:type_name -> google.protobuf.Timestamp
+	210, // 35: anydash.v1.Device.last_heartbeat_at:type_name -> google.protobuf.Timestamp
+	210, // 36: anydash.v1.Device.last_upload_at:type_name -> google.protobuf.Timestamp
 	7,   // 37: anydash.v1.Device.credential_state:type_name -> anydash.v1.DeviceCredentialState
 	50,  // 38: anydash.v1.Device.parser_statuses:type_name -> anydash.v1.ParserStatus
-	208, // 39: anydash.v1.DeviceCredentials.access_token_expires_at:type_name -> google.protobuf.Timestamp
-	208, // 40: anydash.v1.DeviceCredentials.refresh_token_expires_at:type_name -> google.protobuf.Timestamp
-	208, // 41: anydash.v1.ConnectionDevice.registered_at:type_name -> google.protobuf.Timestamp
+	210, // 39: anydash.v1.DeviceCredentials.access_token_expires_at:type_name -> google.protobuf.Timestamp
+	210, // 40: anydash.v1.DeviceCredentials.refresh_token_expires_at:type_name -> google.protobuf.Timestamp
+	210, // 41: anydash.v1.ConnectionDevice.registered_at:type_name -> google.protobuf.Timestamp
 	1,   // 42: anydash.v1.Connection.provider:type_name -> anydash.v1.Provider
-	208, // 43: anydash.v1.Connection.created_at:type_name -> google.protobuf.Timestamp
+	210, // 43: anydash.v1.Connection.created_at:type_name -> google.protobuf.Timestamp
 	26,  // 44: anydash.v1.Connection.state:type_name -> anydash.v1.ConnectionState
-	208, // 45: anydash.v1.Connection.last_success_at:type_name -> google.protobuf.Timestamp
+	210, // 45: anydash.v1.Connection.last_success_at:type_name -> google.protobuf.Timestamp
 	24,  // 46: anydash.v1.Connection.last_failure_class:type_name -> anydash.v1.FailureClass
 	53,  // 47: anydash.v1.Connection.devices:type_name -> anydash.v1.ConnectionDevice
 	49,  // 48: anydash.v1.Connection.lease:type_name -> anydash.v1.Lease
-	208, // 49: anydash.v1.Connection.next_manual_refresh_at:type_name -> google.protobuf.Timestamp
+	210, // 49: anydash.v1.Connection.next_manual_refresh_at:type_name -> google.protobuf.Timestamp
 	3,   // 50: anydash.v1.StartEnrollmentRequest.platform:type_name -> anydash.v1.DevicePlatform
 	4,   // 51: anydash.v1.StartEnrollmentRequest.architecture:type_name -> anydash.v1.CpuArchitecture
 	5,   // 52: anydash.v1.StartEnrollmentRequest.collector_kind:type_name -> anydash.v1.CollectorKind
-	208, // 53: anydash.v1.StartEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
-	207, // 54: anydash.v1.StartEnrollmentResponse.poll_interval:type_name -> google.protobuf.Duration
+	210, // 53: anydash.v1.StartEnrollmentResponse.expires_at:type_name -> google.protobuf.Timestamp
+	209, // 54: anydash.v1.StartEnrollmentResponse.poll_interval:type_name -> google.protobuf.Duration
 	6,   // 55: anydash.v1.EnrollmentSummary.state:type_name -> anydash.v1.EnrollmentState
 	3,   // 56: anydash.v1.EnrollmentSummary.platform:type_name -> anydash.v1.DevicePlatform
 	4,   // 57: anydash.v1.EnrollmentSummary.architecture:type_name -> anydash.v1.CpuArchitecture
 	5,   // 58: anydash.v1.EnrollmentSummary.collector_kind:type_name -> anydash.v1.CollectorKind
-	208, // 59: anydash.v1.EnrollmentSummary.expires_at:type_name -> google.protobuf.Timestamp
+	210, // 59: anydash.v1.EnrollmentSummary.expires_at:type_name -> google.protobuf.Timestamp
 	57,  // 60: anydash.v1.GetEnrollmentResponse.enrollment:type_name -> anydash.v1.EnrollmentSummary
 	51,  // 61: anydash.v1.ApproveEnrollmentResponse.device:type_name -> anydash.v1.Device
 	6,   // 62: anydash.v1.PollEnrollmentResponse.state:type_name -> anydash.v1.EnrollmentState
@@ -14141,24 +14235,24 @@ var file_anydash_v1_anydash_proto_depIdxs = []int32{
 	52,  // 65: anydash.v1.RefreshDeviceTokenResponse.credentials:type_name -> anydash.v1.DeviceCredentials
 	41,  // 66: anydash.v1.ListDevicesRequest.page:type_name -> anydash.v1.Page
 	51,  // 67: anydash.v1.ListDevicesResponse.devices:type_name -> anydash.v1.Device
-	208, // 68: anydash.v1.DeleteDeviceResponse.purge_deadline:type_name -> google.protobuf.Timestamp
-	208, // 69: anydash.v1.RequestDeviceSyncResponse.next_allowed_at:type_name -> google.protobuf.Timestamp
+	210, // 68: anydash.v1.DeleteDeviceResponse.purge_deadline:type_name -> google.protobuf.Timestamp
+	210, // 69: anydash.v1.RequestDeviceSyncResponse.next_allowed_at:type_name -> google.protobuf.Timestamp
 	1,   // 70: anydash.v1.ConnectionAssignment.provider:type_name -> anydash.v1.Provider
 	49,  // 71: anydash.v1.ConnectionAssignment.lease:type_name -> anydash.v1.Lease
-	208, // 72: anydash.v1.HeartbeatResponse.server_time:type_name -> google.protobuf.Timestamp
+	210, // 72: anydash.v1.HeartbeatResponse.server_time:type_name -> google.protobuf.Timestamp
 	44,  // 73: anydash.v1.HeartbeatResponse.version_status:type_name -> anydash.v1.ClientVersionStatus
 	79,  // 74: anydash.v1.HeartbeatResponse.assignments:type_name -> anydash.v1.ConnectionAssignment
-	207, // 75: anydash.v1.HeartbeatResponse.heartbeat_interval:type_name -> google.protobuf.Duration
+	209, // 75: anydash.v1.HeartbeatResponse.heartbeat_interval:type_name -> google.protobuf.Duration
 	2,   // 76: anydash.v1.UsageBucket.tool:type_name -> anydash.v1.LocalTool
-	208, // 77: anydash.v1.UsageBucket.bucket_start:type_name -> google.protobuf.Timestamp
+	210, // 77: anydash.v1.UsageBucket.bucket_start:type_name -> google.protobuf.Timestamp
 	43,  // 78: anydash.v1.UsageBucket.tokens:type_name -> anydash.v1.TokenCounts
 	2,   // 79: anydash.v1.BucketKey.tool:type_name -> anydash.v1.LocalTool
-	208, // 80: anydash.v1.BucketKey.bucket_start:type_name -> google.protobuf.Timestamp
+	210, // 80: anydash.v1.BucketKey.bucket_start:type_name -> google.protobuf.Timestamp
 	82,  // 81: anydash.v1.BucketResult.key:type_name -> anydash.v1.BucketKey
 	30,  // 82: anydash.v1.BucketResult.outcome:type_name -> anydash.v1.BucketOutcome
 	81,  // 83: anydash.v1.UploadUsageRequest.buckets:type_name -> anydash.v1.UsageBucket
 	83,  // 84: anydash.v1.UploadUsageResponse.results:type_name -> anydash.v1.BucketResult
-	208, // 85: anydash.v1.UploadUsageResponse.retention_start:type_name -> google.protobuf.Timestamp
+	210, // 85: anydash.v1.UploadUsageResponse.retention_start:type_name -> google.protobuf.Timestamp
 	50,  // 86: anydash.v1.ReportParserStatusRequest.statuses:type_name -> anydash.v1.ParserStatus
 	49,  // 87: anydash.v1.AcquireLeaseResponse.lease:type_name -> anydash.v1.Lease
 	49,  // 88: anydash.v1.RenewLeaseResponse.lease:type_name -> anydash.v1.Lease
@@ -14169,10 +14263,10 @@ var file_anydash_v1_anydash_proto_depIdxs = []int32{
 	41,  // 93: anydash.v1.ListConnectionsRequest.page:type_name -> anydash.v1.Page
 	54,  // 94: anydash.v1.ListConnectionsResponse.connections:type_name -> anydash.v1.Connection
 	54,  // 95: anydash.v1.GetConnectionResponse.connection:type_name -> anydash.v1.Connection
-	208, // 96: anydash.v1.DeleteConnectionResponse.purge_deadline:type_name -> google.protobuf.Timestamp
+	210, // 96: anydash.v1.DeleteConnectionResponse.purge_deadline:type_name -> google.protobuf.Timestamp
 	54,  // 97: anydash.v1.RegisterConnectionDeviceResponse.connection:type_name -> anydash.v1.Connection
 	54,  // 98: anydash.v1.UnregisterConnectionDeviceResponse.connection:type_name -> anydash.v1.Connection
-	208, // 99: anydash.v1.RequestConnectionRefreshResponse.next_allowed_at:type_name -> google.protobuf.Timestamp
+	210, // 99: anydash.v1.RequestConnectionRefreshResponse.next_allowed_at:type_name -> google.protobuf.Timestamp
 	9,   // 100: anydash.v1.Space.kind:type_name -> anydash.v1.SpaceKind
 	10,  // 101: anydash.v1.Space.permissions:type_name -> anydash.v1.SpacePermission
 	11,  // 102: anydash.v1.Space.onboarding_state:type_name -> anydash.v1.OnboardingState
@@ -14188,18 +14282,18 @@ var file_anydash_v1_anydash_proto_depIdxs = []int32{
 	113, // 112: anydash.v1.Widget.source:type_name -> anydash.v1.WidgetSource
 	17,  // 113: anydash.v1.Widget.sharing_state:type_name -> anydash.v1.SharingState
 	18,  // 114: anydash.v1.Widget.sharing_end_reason:type_name -> anydash.v1.SharingEndReason
-	208, // 115: anydash.v1.Widget.created_at:type_name -> google.protobuf.Timestamp
+	210, // 115: anydash.v1.Widget.created_at:type_name -> google.protobuf.Timestamp
 	114, // 116: anydash.v1.Dashboard.widgets:type_name -> anydash.v1.Widget
-	208, // 117: anydash.v1.Dashboard.created_at:type_name -> google.protobuf.Timestamp
-	208, // 118: anydash.v1.Dashboard.updated_at:type_name -> google.protobuf.Timestamp
-	208, // 119: anydash.v1.DashboardSummary.updated_at:type_name -> google.protobuf.Timestamp
+	210, // 117: anydash.v1.Dashboard.created_at:type_name -> google.protobuf.Timestamp
+	210, // 118: anydash.v1.Dashboard.updated_at:type_name -> google.protobuf.Timestamp
+	210, // 119: anydash.v1.DashboardSummary.updated_at:type_name -> google.protobuf.Timestamp
 	110, // 120: anydash.v1.ListSpacesResponse.spaces:type_name -> anydash.v1.Space
 	41,  // 121: anydash.v1.ListDashboardsRequest.page:type_name -> anydash.v1.Page
 	116, // 122: anydash.v1.ListDashboardsResponse.dashboards:type_name -> anydash.v1.DashboardSummary
 	115, // 123: anydash.v1.GetDashboardResponse.dashboard:type_name -> anydash.v1.Dashboard
 	115, // 124: anydash.v1.CreateDashboardResponse.dashboard:type_name -> anydash.v1.Dashboard
 	115, // 125: anydash.v1.RenameDashboardResponse.dashboard:type_name -> anydash.v1.Dashboard
-	208, // 126: anydash.v1.DeleteDashboardResponse.purge_deadline:type_name -> google.protobuf.Timestamp
+	210, // 126: anydash.v1.DeleteDashboardResponse.purge_deadline:type_name -> google.protobuf.Timestamp
 	12,  // 127: anydash.v1.AddWidgetRequest.type:type_name -> anydash.v1.WidgetType
 	111, // 128: anydash.v1.AddWidgetRequest.layout:type_name -> anydash.v1.WidgetLayout
 	112, // 129: anydash.v1.AddWidgetRequest.query:type_name -> anydash.v1.WidgetQuery
@@ -14218,8 +14312,8 @@ var file_anydash_v1_anydash_proto_depIdxs = []int32{
 	43,  // 142: anydash.v1.UsageTotals.tokens:type_name -> anydash.v1.TokenCounts
 	142, // 143: anydash.v1.UsageTotals.estimated_cost:type_name -> anydash.v1.CostEstimate
 	143, // 144: anydash.v1.UsageSummary.totals:type_name -> anydash.v1.UsageTotals
-	208, // 145: anydash.v1.UsagePoint.start:type_name -> google.protobuf.Timestamp
-	208, // 146: anydash.v1.UsagePoint.end:type_name -> google.protobuf.Timestamp
+	210, // 145: anydash.v1.UsagePoint.start:type_name -> google.protobuf.Timestamp
+	210, // 146: anydash.v1.UsagePoint.end:type_name -> google.protobuf.Timestamp
 	143, // 147: anydash.v1.UsagePoint.totals:type_name -> anydash.v1.UsageTotals
 	15,  // 148: anydash.v1.UsageSeries.granularity:type_name -> anydash.v1.TimeGranularity
 	145, // 149: anydash.v1.UsageSeries.points:type_name -> anydash.v1.UsagePoint
@@ -14233,15 +14327,15 @@ var file_anydash_v1_anydash_proto_depIdxs = []int32{
 	20,  // 157: anydash.v1.MetricReading.kind:type_name -> anydash.v1.MetricKind
 	22,  // 158: anydash.v1.MetricReading.temporality:type_name -> anydash.v1.MetricTemporality
 	45,  // 159: anydash.v1.MetricReading.current:type_name -> anydash.v1.MetricValue
-	208, // 160: anydash.v1.MetricReading.observed_at:type_name -> google.protobuf.Timestamp
+	210, // 160: anydash.v1.MetricReading.observed_at:type_name -> google.protobuf.Timestamp
 	45,  // 161: anydash.v1.MetricReading.last_success:type_name -> anydash.v1.MetricValue
-	208, // 162: anydash.v1.MetricReading.last_success_at:type_name -> google.protobuf.Timestamp
+	210, // 162: anydash.v1.MetricReading.last_success_at:type_name -> google.protobuf.Timestamp
 	24,  // 163: anydash.v1.MetricReading.failure_class:type_name -> anydash.v1.FailureClass
-	208, // 164: anydash.v1.MetricReading.period_start:type_name -> google.protobuf.Timestamp
-	208, // 165: anydash.v1.MetricReading.period_end:type_name -> google.protobuf.Timestamp
+	210, // 164: anydash.v1.MetricReading.period_start:type_name -> google.protobuf.Timestamp
+	210, // 165: anydash.v1.MetricReading.period_end:type_name -> google.protobuf.Timestamp
 	149, // 166: anydash.v1.MetricPanel.readings:type_name -> anydash.v1.MetricReading
-	208, // 167: anydash.v1.MetricHistoryPoint.hour_start:type_name -> google.protobuf.Timestamp
-	208, // 168: anydash.v1.MetricHistoryPoint.observed_at:type_name -> google.protobuf.Timestamp
+	210, // 167: anydash.v1.MetricHistoryPoint.hour_start:type_name -> google.protobuf.Timestamp
+	210, // 168: anydash.v1.MetricHistoryPoint.observed_at:type_name -> google.protobuf.Timestamp
 	45,  // 169: anydash.v1.MetricHistoryPoint.value:type_name -> anydash.v1.MetricValue
 	20,  // 170: anydash.v1.MetricHistorySeries.kind:type_name -> anydash.v1.MetricKind
 	22,  // 171: anydash.v1.MetricHistorySeries.temporality:type_name -> anydash.v1.MetricTemporality
@@ -14251,18 +14345,18 @@ var file_anydash_v1_anydash_proto_depIdxs = []int32{
 	27,  // 175: anydash.v1.ResourceReading.kind:type_name -> anydash.v1.ResourceKind
 	28,  // 176: anydash.v1.ResourceReading.health:type_name -> anydash.v1.ResourceHealth
 	21,  // 177: anydash.v1.ResourceReading.status_state:type_name -> anydash.v1.MetricState
-	208, // 178: anydash.v1.ResourceReading.observed_at:type_name -> google.protobuf.Timestamp
+	210, // 178: anydash.v1.ResourceReading.observed_at:type_name -> google.protobuf.Timestamp
 	149, // 179: anydash.v1.ResourceReading.metrics:type_name -> anydash.v1.MetricReading
 	154, // 180: anydash.v1.ResourceList.resources:type_name -> anydash.v1.ResourceReading
 	45,  // 181: anydash.v1.WidgetSummary.primary_value:type_name -> anydash.v1.MetricValue
 	45,  // 182: anydash.v1.WidgetSummary.secondary_value:type_name -> anydash.v1.MetricValue
-	208, // 183: anydash.v1.WidgetSummary.data_updated_at:type_name -> google.protobuf.Timestamp
+	210, // 183: anydash.v1.WidgetSummary.data_updated_at:type_name -> google.protobuf.Timestamp
 	12,  // 184: anydash.v1.WidgetData.type:type_name -> anydash.v1.WidgetType
 	17,  // 185: anydash.v1.WidgetData.sharing_state:type_name -> anydash.v1.SharingState
 	18,  // 186: anydash.v1.WidgetData.sharing_end_reason:type_name -> anydash.v1.SharingEndReason
-	208, // 187: anydash.v1.WidgetData.generated_at:type_name -> google.protobuf.Timestamp
-	208, // 188: anydash.v1.WidgetData.range_start:type_name -> google.protobuf.Timestamp
-	208, // 189: anydash.v1.WidgetData.range_end:type_name -> google.protobuf.Timestamp
+	210, // 187: anydash.v1.WidgetData.generated_at:type_name -> google.protobuf.Timestamp
+	210, // 188: anydash.v1.WidgetData.range_start:type_name -> google.protobuf.Timestamp
+	210, // 189: anydash.v1.WidgetData.range_end:type_name -> google.protobuf.Timestamp
 	156, // 190: anydash.v1.WidgetData.summary:type_name -> anydash.v1.WidgetSummary
 	19,  // 191: anydash.v1.WidgetData.notices:type_name -> anydash.v1.DataNotice
 	144, // 192: anydash.v1.WidgetData.usage_summary:type_name -> anydash.v1.UsageSummary
@@ -14278,30 +14372,30 @@ var file_anydash_v1_anydash_proto_depIdxs = []int32{
 	162, // 202: anydash.v1.ConnectAccountResponse.account:type_name -> anydash.v1.Account
 	162, // 203: anydash.v1.GetAccountResponse.account:type_name -> anydash.v1.Account
 	162, // 204: anydash.v1.UpdateAccountSettingsResponse.account:type_name -> anydash.v1.Account
-	208, // 205: anydash.v1.ActivityEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	210, // 205: anydash.v1.ActivityEvent.occurred_at:type_name -> google.protobuf.Timestamp
 	31,  // 206: anydash.v1.ActivityEvent.kind:type_name -> anydash.v1.ActivityKind
 	0,   // 207: anydash.v1.ActivityEvent.client_kind:type_name -> anydash.v1.ClientKind
 	41,  // 208: anydash.v1.ListActivityRequest.page:type_name -> anydash.v1.Page
 	31,  // 209: anydash.v1.ListActivityRequest.kinds:type_name -> anydash.v1.ActivityKind
 	169, // 210: anydash.v1.ListActivityResponse.events:type_name -> anydash.v1.ActivityEvent
-	208, // 211: anydash.v1.DeleteAccountDataResponse.purge_deadline:type_name -> google.protobuf.Timestamp
+	210, // 211: anydash.v1.DeleteAccountDataResponse.purge_deadline:type_name -> google.protobuf.Timestamp
 	6,   // 212: anydash.v1.LoginProgress.state:type_name -> anydash.v1.EnrollmentState
-	208, // 213: anydash.v1.LoginProgress.expires_at:type_name -> google.protobuf.Timestamp
+	210, // 213: anydash.v1.LoginProgress.expires_at:type_name -> google.protobuf.Timestamp
 	1,   // 214: anydash.v1.LocalConnectionStatus.provider:type_name -> anydash.v1.Provider
 	23,  // 215: anydash.v1.LocalConnectionStatus.last_status:type_name -> anydash.v1.CollectionStatus
 	24,  // 216: anydash.v1.LocalConnectionStatus.failure_class:type_name -> anydash.v1.FailureClass
-	208, // 217: anydash.v1.LocalConnectionStatus.last_success_at:type_name -> google.protobuf.Timestamp
-	208, // 218: anydash.v1.LocalConnectionStatus.next_attempt_at:type_name -> google.protobuf.Timestamp
+	210, // 217: anydash.v1.LocalConnectionStatus.last_success_at:type_name -> google.protobuf.Timestamp
+	210, // 218: anydash.v1.LocalConnectionStatus.next_attempt_at:type_name -> google.protobuf.Timestamp
 	36,  // 219: anydash.v1.CollectorStatus.run_state:type_name -> anydash.v1.CollectorRunState
 	5,   // 220: anydash.v1.CollectorStatus.owner_kind:type_name -> anydash.v1.CollectorKind
-	208, // 221: anydash.v1.CollectorStatus.started_at:type_name -> google.protobuf.Timestamp
-	208, // 222: anydash.v1.CollectorStatus.last_local_sync_at:type_name -> google.protobuf.Timestamp
-	208, // 223: anydash.v1.CollectorStatus.last_upload_at:type_name -> google.protobuf.Timestamp
-	208, // 224: anydash.v1.CollectorStatus.oldest_pending_bucket_start:type_name -> google.protobuf.Timestamp
+	210, // 221: anydash.v1.CollectorStatus.started_at:type_name -> google.protobuf.Timestamp
+	210, // 222: anydash.v1.CollectorStatus.last_local_sync_at:type_name -> google.protobuf.Timestamp
+	210, // 223: anydash.v1.CollectorStatus.last_upload_at:type_name -> google.protobuf.Timestamp
+	210, // 224: anydash.v1.CollectorStatus.oldest_pending_bucket_start:type_name -> google.protobuf.Timestamp
 	175, // 225: anydash.v1.CollectorStatus.connections:type_name -> anydash.v1.LocalConnectionStatus
 	50,  // 226: anydash.v1.CollectorStatus.parsers:type_name -> anydash.v1.ParserStatus
 	34,  // 227: anydash.v1.CollectorStatus.last_error_reason:type_name -> anydash.v1.ErrorReason
-	208, // 228: anydash.v1.CollectorStatus.last_error_at:type_name -> google.protobuf.Timestamp
+	210, // 228: anydash.v1.CollectorStatus.last_error_at:type_name -> google.protobuf.Timestamp
 	44,  // 229: anydash.v1.CollectorStatus.version_status:type_name -> anydash.v1.ClientVersionStatus
 	37,  // 230: anydash.v1.CollectorStatus.notices:type_name -> anydash.v1.LocalNotice
 	35,  // 231: anydash.v1.CollectorStatus.key_source:type_name -> anydash.v1.KeySource
@@ -14319,135 +14413,138 @@ var file_anydash_v1_anydash_proto_depIdxs = []int32{
 	187, // 243: anydash.v1.DisableSourcePathResponse.path:type_name -> anydash.v1.SourcePath
 	2,   // 244: anydash.v1.EnableSourcePathRequest.tool:type_name -> anydash.v1.LocalTool
 	187, // 245: anydash.v1.EnableSourcePathResponse.path:type_name -> anydash.v1.SourcePath
-	208, // 246: anydash.v1.RotateKeyResponse.rotated_at:type_name -> google.protobuf.Timestamp
-	208, // 247: anydash.v1.RequestLocalSyncResponse.next_allowed_at:type_name -> google.protobuf.Timestamp
-	17,  // 248: anydash.v1.NativeWidgetSnapshot.sharing_state:type_name -> anydash.v1.SharingState
-	156, // 249: anydash.v1.NativeWidgetSnapshot.summary:type_name -> anydash.v1.WidgetSummary
-	208, // 250: anydash.v1.NativeWidgetSnapshot.refreshed_at:type_name -> google.protobuf.Timestamp
-	19,  // 251: anydash.v1.NativeWidgetSnapshot.notices:type_name -> anydash.v1.DataNotice
-	200, // 252: anydash.v1.PutNativeWidgetSnapshotsRequest.snapshots:type_name -> anydash.v1.NativeWidgetSnapshot
-	200, // 253: anydash.v1.ListNativeWidgetSnapshotsResponse.snapshots:type_name -> anydash.v1.NativeWidgetSnapshot
-	55,  // 254: anydash.v1.DeviceService.StartEnrollment:input_type -> anydash.v1.StartEnrollmentRequest
-	58,  // 255: anydash.v1.DeviceService.GetEnrollment:input_type -> anydash.v1.GetEnrollmentRequest
-	60,  // 256: anydash.v1.DeviceService.ApproveEnrollment:input_type -> anydash.v1.ApproveEnrollmentRequest
-	62,  // 257: anydash.v1.DeviceService.RejectEnrollment:input_type -> anydash.v1.RejectEnrollmentRequest
-	64,  // 258: anydash.v1.DeviceService.PollEnrollment:input_type -> anydash.v1.PollEnrollmentRequest
-	66,  // 259: anydash.v1.DeviceService.RefreshDeviceToken:input_type -> anydash.v1.RefreshDeviceTokenRequest
-	68,  // 260: anydash.v1.DeviceService.RevokeDeviceCredentials:input_type -> anydash.v1.RevokeDeviceCredentialsRequest
-	70,  // 261: anydash.v1.DeviceService.ListDevices:input_type -> anydash.v1.ListDevicesRequest
-	72,  // 262: anydash.v1.DeviceService.DeleteDevice:input_type -> anydash.v1.DeleteDeviceRequest
-	74,  // 263: anydash.v1.DeviceService.SetPreferredDevice:input_type -> anydash.v1.SetPreferredDeviceRequest
-	76,  // 264: anydash.v1.DeviceService.RequestDeviceSync:input_type -> anydash.v1.RequestDeviceSyncRequest
-	78,  // 265: anydash.v1.CollectorService.Heartbeat:input_type -> anydash.v1.HeartbeatRequest
-	84,  // 266: anydash.v1.CollectorService.UploadUsage:input_type -> anydash.v1.UploadUsageRequest
-	86,  // 267: anydash.v1.CollectorService.ReportParserStatus:input_type -> anydash.v1.ReportParserStatusRequest
-	88,  // 268: anydash.v1.CollectorService.AcquireLease:input_type -> anydash.v1.AcquireLeaseRequest
-	90,  // 269: anydash.v1.CollectorService.RenewLease:input_type -> anydash.v1.RenewLeaseRequest
-	92,  // 270: anydash.v1.CollectorService.ReleaseLease:input_type -> anydash.v1.ReleaseLeaseRequest
-	94,  // 271: anydash.v1.CollectorService.ReportSnapshot:input_type -> anydash.v1.ReportSnapshotRequest
-	96,  // 272: anydash.v1.ConnectionService.CreateConnection:input_type -> anydash.v1.CreateConnectionRequest
-	98,  // 273: anydash.v1.ConnectionService.ListConnections:input_type -> anydash.v1.ListConnectionsRequest
-	100, // 274: anydash.v1.ConnectionService.GetConnection:input_type -> anydash.v1.GetConnectionRequest
-	102, // 275: anydash.v1.ConnectionService.DeleteConnection:input_type -> anydash.v1.DeleteConnectionRequest
-	104, // 276: anydash.v1.ConnectionService.RegisterConnectionDevice:input_type -> anydash.v1.RegisterConnectionDeviceRequest
-	106, // 277: anydash.v1.ConnectionService.UnregisterConnectionDevice:input_type -> anydash.v1.UnregisterConnectionDeviceRequest
-	108, // 278: anydash.v1.ConnectionService.RequestConnectionRefresh:input_type -> anydash.v1.RequestConnectionRefreshRequest
-	117, // 279: anydash.v1.DashboardService.ListSpaces:input_type -> anydash.v1.ListSpacesRequest
-	119, // 280: anydash.v1.DashboardService.ListDashboards:input_type -> anydash.v1.ListDashboardsRequest
-	121, // 281: anydash.v1.DashboardService.GetDashboard:input_type -> anydash.v1.GetDashboardRequest
-	123, // 282: anydash.v1.DashboardService.CreateDashboard:input_type -> anydash.v1.CreateDashboardRequest
-	125, // 283: anydash.v1.DashboardService.RenameDashboard:input_type -> anydash.v1.RenameDashboardRequest
-	127, // 284: anydash.v1.DashboardService.DeleteDashboard:input_type -> anydash.v1.DeleteDashboardRequest
-	129, // 285: anydash.v1.DashboardService.AddWidget:input_type -> anydash.v1.AddWidgetRequest
-	131, // 286: anydash.v1.DashboardService.RemoveWidget:input_type -> anydash.v1.RemoveWidgetRequest
-	134, // 287: anydash.v1.DashboardService.UpdateWidgetLayout:input_type -> anydash.v1.UpdateWidgetLayoutRequest
-	136, // 288: anydash.v1.DashboardService.UpdateWidgetQuery:input_type -> anydash.v1.UpdateWidgetQueryRequest
-	138, // 289: anydash.v1.DashboardService.SetWidgetSharingScope:input_type -> anydash.v1.SetWidgetSharingScopeRequest
-	140, // 290: anydash.v1.DashboardService.RevokeWidgetSharing:input_type -> anydash.v1.RevokeWidgetSharingRequest
-	158, // 291: anydash.v1.WidgetDataService.QueryWidgetData:input_type -> anydash.v1.QueryWidgetDataRequest
-	160, // 292: anydash.v1.WidgetDataService.QueryDashboardData:input_type -> anydash.v1.QueryDashboardDataRequest
-	163, // 293: anydash.v1.AccountService.ConnectAccount:input_type -> anydash.v1.ConnectAccountRequest
-	165, // 294: anydash.v1.AccountService.GetAccount:input_type -> anydash.v1.GetAccountRequest
-	167, // 295: anydash.v1.AccountService.UpdateAccountSettings:input_type -> anydash.v1.UpdateAccountSettingsRequest
-	170, // 296: anydash.v1.AccountService.ListActivity:input_type -> anydash.v1.ListActivityRequest
-	172, // 297: anydash.v1.AccountService.DeleteAccountData:input_type -> anydash.v1.DeleteAccountDataRequest
-	177, // 298: anydash.v1.LocalCollectorService.GetCollectorStatus:input_type -> anydash.v1.GetCollectorStatusRequest
-	179, // 299: anydash.v1.LocalCollectorService.StartLogin:input_type -> anydash.v1.StartLoginRequest
-	181, // 300: anydash.v1.LocalCollectorService.Logout:input_type -> anydash.v1.LogoutRequest
-	183, // 301: anydash.v1.LocalCollectorService.AddConnectionCredential:input_type -> anydash.v1.AddConnectionCredentialRequest
-	185, // 302: anydash.v1.LocalCollectorService.RemoveConnectionCredential:input_type -> anydash.v1.RemoveConnectionCredentialRequest
-	188, // 303: anydash.v1.LocalCollectorService.ListSourcePaths:input_type -> anydash.v1.ListSourcePathsRequest
-	190, // 304: anydash.v1.LocalCollectorService.AddSourcePath:input_type -> anydash.v1.AddSourcePathRequest
-	192, // 305: anydash.v1.LocalCollectorService.DisableSourcePath:input_type -> anydash.v1.DisableSourcePathRequest
-	194, // 306: anydash.v1.LocalCollectorService.EnableSourcePath:input_type -> anydash.v1.EnableSourcePathRequest
-	196, // 307: anydash.v1.LocalCollectorService.RotateKey:input_type -> anydash.v1.RotateKeyRequest
-	198, // 308: anydash.v1.LocalCollectorService.RequestLocalSync:input_type -> anydash.v1.RequestLocalSyncRequest
-	201, // 309: anydash.v1.LocalCollectorService.PutNativeWidgetSnapshots:input_type -> anydash.v1.PutNativeWidgetSnapshotsRequest
-	203, // 310: anydash.v1.LocalCollectorService.ListNativeWidgetSnapshots:input_type -> anydash.v1.ListNativeWidgetSnapshotsRequest
-	205, // 311: anydash.v1.LocalCollectorService.Quit:input_type -> anydash.v1.QuitRequest
-	56,  // 312: anydash.v1.DeviceService.StartEnrollment:output_type -> anydash.v1.StartEnrollmentResponse
-	59,  // 313: anydash.v1.DeviceService.GetEnrollment:output_type -> anydash.v1.GetEnrollmentResponse
-	61,  // 314: anydash.v1.DeviceService.ApproveEnrollment:output_type -> anydash.v1.ApproveEnrollmentResponse
-	63,  // 315: anydash.v1.DeviceService.RejectEnrollment:output_type -> anydash.v1.RejectEnrollmentResponse
-	65,  // 316: anydash.v1.DeviceService.PollEnrollment:output_type -> anydash.v1.PollEnrollmentResponse
-	67,  // 317: anydash.v1.DeviceService.RefreshDeviceToken:output_type -> anydash.v1.RefreshDeviceTokenResponse
-	69,  // 318: anydash.v1.DeviceService.RevokeDeviceCredentials:output_type -> anydash.v1.RevokeDeviceCredentialsResponse
-	71,  // 319: anydash.v1.DeviceService.ListDevices:output_type -> anydash.v1.ListDevicesResponse
-	73,  // 320: anydash.v1.DeviceService.DeleteDevice:output_type -> anydash.v1.DeleteDeviceResponse
-	75,  // 321: anydash.v1.DeviceService.SetPreferredDevice:output_type -> anydash.v1.SetPreferredDeviceResponse
-	77,  // 322: anydash.v1.DeviceService.RequestDeviceSync:output_type -> anydash.v1.RequestDeviceSyncResponse
-	80,  // 323: anydash.v1.CollectorService.Heartbeat:output_type -> anydash.v1.HeartbeatResponse
-	85,  // 324: anydash.v1.CollectorService.UploadUsage:output_type -> anydash.v1.UploadUsageResponse
-	87,  // 325: anydash.v1.CollectorService.ReportParserStatus:output_type -> anydash.v1.ReportParserStatusResponse
-	89,  // 326: anydash.v1.CollectorService.AcquireLease:output_type -> anydash.v1.AcquireLeaseResponse
-	91,  // 327: anydash.v1.CollectorService.RenewLease:output_type -> anydash.v1.RenewLeaseResponse
-	93,  // 328: anydash.v1.CollectorService.ReleaseLease:output_type -> anydash.v1.ReleaseLeaseResponse
-	95,  // 329: anydash.v1.CollectorService.ReportSnapshot:output_type -> anydash.v1.ReportSnapshotResponse
-	97,  // 330: anydash.v1.ConnectionService.CreateConnection:output_type -> anydash.v1.CreateConnectionResponse
-	99,  // 331: anydash.v1.ConnectionService.ListConnections:output_type -> anydash.v1.ListConnectionsResponse
-	101, // 332: anydash.v1.ConnectionService.GetConnection:output_type -> anydash.v1.GetConnectionResponse
-	103, // 333: anydash.v1.ConnectionService.DeleteConnection:output_type -> anydash.v1.DeleteConnectionResponse
-	105, // 334: anydash.v1.ConnectionService.RegisterConnectionDevice:output_type -> anydash.v1.RegisterConnectionDeviceResponse
-	107, // 335: anydash.v1.ConnectionService.UnregisterConnectionDevice:output_type -> anydash.v1.UnregisterConnectionDeviceResponse
-	109, // 336: anydash.v1.ConnectionService.RequestConnectionRefresh:output_type -> anydash.v1.RequestConnectionRefreshResponse
-	118, // 337: anydash.v1.DashboardService.ListSpaces:output_type -> anydash.v1.ListSpacesResponse
-	120, // 338: anydash.v1.DashboardService.ListDashboards:output_type -> anydash.v1.ListDashboardsResponse
-	122, // 339: anydash.v1.DashboardService.GetDashboard:output_type -> anydash.v1.GetDashboardResponse
-	124, // 340: anydash.v1.DashboardService.CreateDashboard:output_type -> anydash.v1.CreateDashboardResponse
-	126, // 341: anydash.v1.DashboardService.RenameDashboard:output_type -> anydash.v1.RenameDashboardResponse
-	128, // 342: anydash.v1.DashboardService.DeleteDashboard:output_type -> anydash.v1.DeleteDashboardResponse
-	130, // 343: anydash.v1.DashboardService.AddWidget:output_type -> anydash.v1.AddWidgetResponse
-	132, // 344: anydash.v1.DashboardService.RemoveWidget:output_type -> anydash.v1.RemoveWidgetResponse
-	135, // 345: anydash.v1.DashboardService.UpdateWidgetLayout:output_type -> anydash.v1.UpdateWidgetLayoutResponse
-	137, // 346: anydash.v1.DashboardService.UpdateWidgetQuery:output_type -> anydash.v1.UpdateWidgetQueryResponse
-	139, // 347: anydash.v1.DashboardService.SetWidgetSharingScope:output_type -> anydash.v1.SetWidgetSharingScopeResponse
-	141, // 348: anydash.v1.DashboardService.RevokeWidgetSharing:output_type -> anydash.v1.RevokeWidgetSharingResponse
-	159, // 349: anydash.v1.WidgetDataService.QueryWidgetData:output_type -> anydash.v1.QueryWidgetDataResponse
-	161, // 350: anydash.v1.WidgetDataService.QueryDashboardData:output_type -> anydash.v1.QueryDashboardDataResponse
-	164, // 351: anydash.v1.AccountService.ConnectAccount:output_type -> anydash.v1.ConnectAccountResponse
-	166, // 352: anydash.v1.AccountService.GetAccount:output_type -> anydash.v1.GetAccountResponse
-	168, // 353: anydash.v1.AccountService.UpdateAccountSettings:output_type -> anydash.v1.UpdateAccountSettingsResponse
-	171, // 354: anydash.v1.AccountService.ListActivity:output_type -> anydash.v1.ListActivityResponse
-	173, // 355: anydash.v1.AccountService.DeleteAccountData:output_type -> anydash.v1.DeleteAccountDataResponse
-	178, // 356: anydash.v1.LocalCollectorService.GetCollectorStatus:output_type -> anydash.v1.GetCollectorStatusResponse
-	180, // 357: anydash.v1.LocalCollectorService.StartLogin:output_type -> anydash.v1.StartLoginResponse
-	182, // 358: anydash.v1.LocalCollectorService.Logout:output_type -> anydash.v1.LogoutResponse
-	184, // 359: anydash.v1.LocalCollectorService.AddConnectionCredential:output_type -> anydash.v1.AddConnectionCredentialResponse
-	186, // 360: anydash.v1.LocalCollectorService.RemoveConnectionCredential:output_type -> anydash.v1.RemoveConnectionCredentialResponse
-	189, // 361: anydash.v1.LocalCollectorService.ListSourcePaths:output_type -> anydash.v1.ListSourcePathsResponse
-	191, // 362: anydash.v1.LocalCollectorService.AddSourcePath:output_type -> anydash.v1.AddSourcePathResponse
-	193, // 363: anydash.v1.LocalCollectorService.DisableSourcePath:output_type -> anydash.v1.DisableSourcePathResponse
-	195, // 364: anydash.v1.LocalCollectorService.EnableSourcePath:output_type -> anydash.v1.EnableSourcePathResponse
-	197, // 365: anydash.v1.LocalCollectorService.RotateKey:output_type -> anydash.v1.RotateKeyResponse
-	199, // 366: anydash.v1.LocalCollectorService.RequestLocalSync:output_type -> anydash.v1.RequestLocalSyncResponse
-	202, // 367: anydash.v1.LocalCollectorService.PutNativeWidgetSnapshots:output_type -> anydash.v1.PutNativeWidgetSnapshotsResponse
-	204, // 368: anydash.v1.LocalCollectorService.ListNativeWidgetSnapshots:output_type -> anydash.v1.ListNativeWidgetSnapshotsResponse
-	206, // 369: anydash.v1.LocalCollectorService.Quit:output_type -> anydash.v1.QuitResponse
-	312, // [312:370] is the sub-list for method output_type
-	254, // [254:312] is the sub-list for method input_type
-	254, // [254:254] is the sub-list for extension type_name
-	254, // [254:254] is the sub-list for extension extendee
-	0,   // [0:254] is the sub-list for field type_name
+	210, // 246: anydash.v1.RotateKeyResponse.rotated_at:type_name -> google.protobuf.Timestamp
+	210, // 247: anydash.v1.RequestLocalSyncResponse.next_allowed_at:type_name -> google.protobuf.Timestamp
+	210, // 248: anydash.v1.RequestLocalConnectionRefreshResponse.next_allowed_at:type_name -> google.protobuf.Timestamp
+	17,  // 249: anydash.v1.NativeWidgetSnapshot.sharing_state:type_name -> anydash.v1.SharingState
+	156, // 250: anydash.v1.NativeWidgetSnapshot.summary:type_name -> anydash.v1.WidgetSummary
+	210, // 251: anydash.v1.NativeWidgetSnapshot.refreshed_at:type_name -> google.protobuf.Timestamp
+	19,  // 252: anydash.v1.NativeWidgetSnapshot.notices:type_name -> anydash.v1.DataNotice
+	202, // 253: anydash.v1.PutNativeWidgetSnapshotsRequest.snapshots:type_name -> anydash.v1.NativeWidgetSnapshot
+	202, // 254: anydash.v1.ListNativeWidgetSnapshotsResponse.snapshots:type_name -> anydash.v1.NativeWidgetSnapshot
+	55,  // 255: anydash.v1.DeviceService.StartEnrollment:input_type -> anydash.v1.StartEnrollmentRequest
+	58,  // 256: anydash.v1.DeviceService.GetEnrollment:input_type -> anydash.v1.GetEnrollmentRequest
+	60,  // 257: anydash.v1.DeviceService.ApproveEnrollment:input_type -> anydash.v1.ApproveEnrollmentRequest
+	62,  // 258: anydash.v1.DeviceService.RejectEnrollment:input_type -> anydash.v1.RejectEnrollmentRequest
+	64,  // 259: anydash.v1.DeviceService.PollEnrollment:input_type -> anydash.v1.PollEnrollmentRequest
+	66,  // 260: anydash.v1.DeviceService.RefreshDeviceToken:input_type -> anydash.v1.RefreshDeviceTokenRequest
+	68,  // 261: anydash.v1.DeviceService.RevokeDeviceCredentials:input_type -> anydash.v1.RevokeDeviceCredentialsRequest
+	70,  // 262: anydash.v1.DeviceService.ListDevices:input_type -> anydash.v1.ListDevicesRequest
+	72,  // 263: anydash.v1.DeviceService.DeleteDevice:input_type -> anydash.v1.DeleteDeviceRequest
+	74,  // 264: anydash.v1.DeviceService.SetPreferredDevice:input_type -> anydash.v1.SetPreferredDeviceRequest
+	76,  // 265: anydash.v1.DeviceService.RequestDeviceSync:input_type -> anydash.v1.RequestDeviceSyncRequest
+	78,  // 266: anydash.v1.CollectorService.Heartbeat:input_type -> anydash.v1.HeartbeatRequest
+	84,  // 267: anydash.v1.CollectorService.UploadUsage:input_type -> anydash.v1.UploadUsageRequest
+	86,  // 268: anydash.v1.CollectorService.ReportParserStatus:input_type -> anydash.v1.ReportParserStatusRequest
+	88,  // 269: anydash.v1.CollectorService.AcquireLease:input_type -> anydash.v1.AcquireLeaseRequest
+	90,  // 270: anydash.v1.CollectorService.RenewLease:input_type -> anydash.v1.RenewLeaseRequest
+	92,  // 271: anydash.v1.CollectorService.ReleaseLease:input_type -> anydash.v1.ReleaseLeaseRequest
+	94,  // 272: anydash.v1.CollectorService.ReportSnapshot:input_type -> anydash.v1.ReportSnapshotRequest
+	96,  // 273: anydash.v1.ConnectionService.CreateConnection:input_type -> anydash.v1.CreateConnectionRequest
+	98,  // 274: anydash.v1.ConnectionService.ListConnections:input_type -> anydash.v1.ListConnectionsRequest
+	100, // 275: anydash.v1.ConnectionService.GetConnection:input_type -> anydash.v1.GetConnectionRequest
+	102, // 276: anydash.v1.ConnectionService.DeleteConnection:input_type -> anydash.v1.DeleteConnectionRequest
+	104, // 277: anydash.v1.ConnectionService.RegisterConnectionDevice:input_type -> anydash.v1.RegisterConnectionDeviceRequest
+	106, // 278: anydash.v1.ConnectionService.UnregisterConnectionDevice:input_type -> anydash.v1.UnregisterConnectionDeviceRequest
+	108, // 279: anydash.v1.ConnectionService.RequestConnectionRefresh:input_type -> anydash.v1.RequestConnectionRefreshRequest
+	117, // 280: anydash.v1.DashboardService.ListSpaces:input_type -> anydash.v1.ListSpacesRequest
+	119, // 281: anydash.v1.DashboardService.ListDashboards:input_type -> anydash.v1.ListDashboardsRequest
+	121, // 282: anydash.v1.DashboardService.GetDashboard:input_type -> anydash.v1.GetDashboardRequest
+	123, // 283: anydash.v1.DashboardService.CreateDashboard:input_type -> anydash.v1.CreateDashboardRequest
+	125, // 284: anydash.v1.DashboardService.RenameDashboard:input_type -> anydash.v1.RenameDashboardRequest
+	127, // 285: anydash.v1.DashboardService.DeleteDashboard:input_type -> anydash.v1.DeleteDashboardRequest
+	129, // 286: anydash.v1.DashboardService.AddWidget:input_type -> anydash.v1.AddWidgetRequest
+	131, // 287: anydash.v1.DashboardService.RemoveWidget:input_type -> anydash.v1.RemoveWidgetRequest
+	134, // 288: anydash.v1.DashboardService.UpdateWidgetLayout:input_type -> anydash.v1.UpdateWidgetLayoutRequest
+	136, // 289: anydash.v1.DashboardService.UpdateWidgetQuery:input_type -> anydash.v1.UpdateWidgetQueryRequest
+	138, // 290: anydash.v1.DashboardService.SetWidgetSharingScope:input_type -> anydash.v1.SetWidgetSharingScopeRequest
+	140, // 291: anydash.v1.DashboardService.RevokeWidgetSharing:input_type -> anydash.v1.RevokeWidgetSharingRequest
+	158, // 292: anydash.v1.WidgetDataService.QueryWidgetData:input_type -> anydash.v1.QueryWidgetDataRequest
+	160, // 293: anydash.v1.WidgetDataService.QueryDashboardData:input_type -> anydash.v1.QueryDashboardDataRequest
+	163, // 294: anydash.v1.AccountService.ConnectAccount:input_type -> anydash.v1.ConnectAccountRequest
+	165, // 295: anydash.v1.AccountService.GetAccount:input_type -> anydash.v1.GetAccountRequest
+	167, // 296: anydash.v1.AccountService.UpdateAccountSettings:input_type -> anydash.v1.UpdateAccountSettingsRequest
+	170, // 297: anydash.v1.AccountService.ListActivity:input_type -> anydash.v1.ListActivityRequest
+	172, // 298: anydash.v1.AccountService.DeleteAccountData:input_type -> anydash.v1.DeleteAccountDataRequest
+	177, // 299: anydash.v1.LocalCollectorService.GetCollectorStatus:input_type -> anydash.v1.GetCollectorStatusRequest
+	179, // 300: anydash.v1.LocalCollectorService.StartLogin:input_type -> anydash.v1.StartLoginRequest
+	181, // 301: anydash.v1.LocalCollectorService.Logout:input_type -> anydash.v1.LogoutRequest
+	183, // 302: anydash.v1.LocalCollectorService.AddConnectionCredential:input_type -> anydash.v1.AddConnectionCredentialRequest
+	185, // 303: anydash.v1.LocalCollectorService.RemoveConnectionCredential:input_type -> anydash.v1.RemoveConnectionCredentialRequest
+	188, // 304: anydash.v1.LocalCollectorService.ListSourcePaths:input_type -> anydash.v1.ListSourcePathsRequest
+	190, // 305: anydash.v1.LocalCollectorService.AddSourcePath:input_type -> anydash.v1.AddSourcePathRequest
+	192, // 306: anydash.v1.LocalCollectorService.DisableSourcePath:input_type -> anydash.v1.DisableSourcePathRequest
+	194, // 307: anydash.v1.LocalCollectorService.EnableSourcePath:input_type -> anydash.v1.EnableSourcePathRequest
+	196, // 308: anydash.v1.LocalCollectorService.RotateKey:input_type -> anydash.v1.RotateKeyRequest
+	198, // 309: anydash.v1.LocalCollectorService.RequestLocalSync:input_type -> anydash.v1.RequestLocalSyncRequest
+	200, // 310: anydash.v1.LocalCollectorService.RequestLocalConnectionRefresh:input_type -> anydash.v1.RequestLocalConnectionRefreshRequest
+	203, // 311: anydash.v1.LocalCollectorService.PutNativeWidgetSnapshots:input_type -> anydash.v1.PutNativeWidgetSnapshotsRequest
+	205, // 312: anydash.v1.LocalCollectorService.ListNativeWidgetSnapshots:input_type -> anydash.v1.ListNativeWidgetSnapshotsRequest
+	207, // 313: anydash.v1.LocalCollectorService.Quit:input_type -> anydash.v1.QuitRequest
+	56,  // 314: anydash.v1.DeviceService.StartEnrollment:output_type -> anydash.v1.StartEnrollmentResponse
+	59,  // 315: anydash.v1.DeviceService.GetEnrollment:output_type -> anydash.v1.GetEnrollmentResponse
+	61,  // 316: anydash.v1.DeviceService.ApproveEnrollment:output_type -> anydash.v1.ApproveEnrollmentResponse
+	63,  // 317: anydash.v1.DeviceService.RejectEnrollment:output_type -> anydash.v1.RejectEnrollmentResponse
+	65,  // 318: anydash.v1.DeviceService.PollEnrollment:output_type -> anydash.v1.PollEnrollmentResponse
+	67,  // 319: anydash.v1.DeviceService.RefreshDeviceToken:output_type -> anydash.v1.RefreshDeviceTokenResponse
+	69,  // 320: anydash.v1.DeviceService.RevokeDeviceCredentials:output_type -> anydash.v1.RevokeDeviceCredentialsResponse
+	71,  // 321: anydash.v1.DeviceService.ListDevices:output_type -> anydash.v1.ListDevicesResponse
+	73,  // 322: anydash.v1.DeviceService.DeleteDevice:output_type -> anydash.v1.DeleteDeviceResponse
+	75,  // 323: anydash.v1.DeviceService.SetPreferredDevice:output_type -> anydash.v1.SetPreferredDeviceResponse
+	77,  // 324: anydash.v1.DeviceService.RequestDeviceSync:output_type -> anydash.v1.RequestDeviceSyncResponse
+	80,  // 325: anydash.v1.CollectorService.Heartbeat:output_type -> anydash.v1.HeartbeatResponse
+	85,  // 326: anydash.v1.CollectorService.UploadUsage:output_type -> anydash.v1.UploadUsageResponse
+	87,  // 327: anydash.v1.CollectorService.ReportParserStatus:output_type -> anydash.v1.ReportParserStatusResponse
+	89,  // 328: anydash.v1.CollectorService.AcquireLease:output_type -> anydash.v1.AcquireLeaseResponse
+	91,  // 329: anydash.v1.CollectorService.RenewLease:output_type -> anydash.v1.RenewLeaseResponse
+	93,  // 330: anydash.v1.CollectorService.ReleaseLease:output_type -> anydash.v1.ReleaseLeaseResponse
+	95,  // 331: anydash.v1.CollectorService.ReportSnapshot:output_type -> anydash.v1.ReportSnapshotResponse
+	97,  // 332: anydash.v1.ConnectionService.CreateConnection:output_type -> anydash.v1.CreateConnectionResponse
+	99,  // 333: anydash.v1.ConnectionService.ListConnections:output_type -> anydash.v1.ListConnectionsResponse
+	101, // 334: anydash.v1.ConnectionService.GetConnection:output_type -> anydash.v1.GetConnectionResponse
+	103, // 335: anydash.v1.ConnectionService.DeleteConnection:output_type -> anydash.v1.DeleteConnectionResponse
+	105, // 336: anydash.v1.ConnectionService.RegisterConnectionDevice:output_type -> anydash.v1.RegisterConnectionDeviceResponse
+	107, // 337: anydash.v1.ConnectionService.UnregisterConnectionDevice:output_type -> anydash.v1.UnregisterConnectionDeviceResponse
+	109, // 338: anydash.v1.ConnectionService.RequestConnectionRefresh:output_type -> anydash.v1.RequestConnectionRefreshResponse
+	118, // 339: anydash.v1.DashboardService.ListSpaces:output_type -> anydash.v1.ListSpacesResponse
+	120, // 340: anydash.v1.DashboardService.ListDashboards:output_type -> anydash.v1.ListDashboardsResponse
+	122, // 341: anydash.v1.DashboardService.GetDashboard:output_type -> anydash.v1.GetDashboardResponse
+	124, // 342: anydash.v1.DashboardService.CreateDashboard:output_type -> anydash.v1.CreateDashboardResponse
+	126, // 343: anydash.v1.DashboardService.RenameDashboard:output_type -> anydash.v1.RenameDashboardResponse
+	128, // 344: anydash.v1.DashboardService.DeleteDashboard:output_type -> anydash.v1.DeleteDashboardResponse
+	130, // 345: anydash.v1.DashboardService.AddWidget:output_type -> anydash.v1.AddWidgetResponse
+	132, // 346: anydash.v1.DashboardService.RemoveWidget:output_type -> anydash.v1.RemoveWidgetResponse
+	135, // 347: anydash.v1.DashboardService.UpdateWidgetLayout:output_type -> anydash.v1.UpdateWidgetLayoutResponse
+	137, // 348: anydash.v1.DashboardService.UpdateWidgetQuery:output_type -> anydash.v1.UpdateWidgetQueryResponse
+	139, // 349: anydash.v1.DashboardService.SetWidgetSharingScope:output_type -> anydash.v1.SetWidgetSharingScopeResponse
+	141, // 350: anydash.v1.DashboardService.RevokeWidgetSharing:output_type -> anydash.v1.RevokeWidgetSharingResponse
+	159, // 351: anydash.v1.WidgetDataService.QueryWidgetData:output_type -> anydash.v1.QueryWidgetDataResponse
+	161, // 352: anydash.v1.WidgetDataService.QueryDashboardData:output_type -> anydash.v1.QueryDashboardDataResponse
+	164, // 353: anydash.v1.AccountService.ConnectAccount:output_type -> anydash.v1.ConnectAccountResponse
+	166, // 354: anydash.v1.AccountService.GetAccount:output_type -> anydash.v1.GetAccountResponse
+	168, // 355: anydash.v1.AccountService.UpdateAccountSettings:output_type -> anydash.v1.UpdateAccountSettingsResponse
+	171, // 356: anydash.v1.AccountService.ListActivity:output_type -> anydash.v1.ListActivityResponse
+	173, // 357: anydash.v1.AccountService.DeleteAccountData:output_type -> anydash.v1.DeleteAccountDataResponse
+	178, // 358: anydash.v1.LocalCollectorService.GetCollectorStatus:output_type -> anydash.v1.GetCollectorStatusResponse
+	180, // 359: anydash.v1.LocalCollectorService.StartLogin:output_type -> anydash.v1.StartLoginResponse
+	182, // 360: anydash.v1.LocalCollectorService.Logout:output_type -> anydash.v1.LogoutResponse
+	184, // 361: anydash.v1.LocalCollectorService.AddConnectionCredential:output_type -> anydash.v1.AddConnectionCredentialResponse
+	186, // 362: anydash.v1.LocalCollectorService.RemoveConnectionCredential:output_type -> anydash.v1.RemoveConnectionCredentialResponse
+	189, // 363: anydash.v1.LocalCollectorService.ListSourcePaths:output_type -> anydash.v1.ListSourcePathsResponse
+	191, // 364: anydash.v1.LocalCollectorService.AddSourcePath:output_type -> anydash.v1.AddSourcePathResponse
+	193, // 365: anydash.v1.LocalCollectorService.DisableSourcePath:output_type -> anydash.v1.DisableSourcePathResponse
+	195, // 366: anydash.v1.LocalCollectorService.EnableSourcePath:output_type -> anydash.v1.EnableSourcePathResponse
+	197, // 367: anydash.v1.LocalCollectorService.RotateKey:output_type -> anydash.v1.RotateKeyResponse
+	199, // 368: anydash.v1.LocalCollectorService.RequestLocalSync:output_type -> anydash.v1.RequestLocalSyncResponse
+	201, // 369: anydash.v1.LocalCollectorService.RequestLocalConnectionRefresh:output_type -> anydash.v1.RequestLocalConnectionRefreshResponse
+	204, // 370: anydash.v1.LocalCollectorService.PutNativeWidgetSnapshots:output_type -> anydash.v1.PutNativeWidgetSnapshotsResponse
+	206, // 371: anydash.v1.LocalCollectorService.ListNativeWidgetSnapshots:output_type -> anydash.v1.ListNativeWidgetSnapshotsResponse
+	208, // 372: anydash.v1.LocalCollectorService.Quit:output_type -> anydash.v1.QuitResponse
+	314, // [314:373] is the sub-list for method output_type
+	255, // [255:314] is the sub-list for method input_type
+	255, // [255:255] is the sub-list for extension type_name
+	255, // [255:255] is the sub-list for extension extendee
+	0,   // [0:255] is the sub-list for field type_name
 }
 
 func init() { file_anydash_v1_anydash_proto_init() }
@@ -14480,7 +14577,7 @@ func file_anydash_v1_anydash_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anydash_v1_anydash_proto_rawDesc), len(file_anydash_v1_anydash_proto_rawDesc)),
 			NumEnums:      39,
-			NumMessages:   168,
+			NumMessages:   170,
 			NumExtensions: 0,
 			NumServices:   7,
 		},

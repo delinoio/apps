@@ -212,6 +212,9 @@ const (
 	// LocalCollectorServiceRequestLocalSyncProcedure is the fully-qualified name of the
 	// LocalCollectorService's RequestLocalSync RPC.
 	LocalCollectorServiceRequestLocalSyncProcedure = "/anydash.v1.LocalCollectorService/RequestLocalSync"
+	// LocalCollectorServiceRequestLocalConnectionRefreshProcedure is the fully-qualified name of the
+	// LocalCollectorService's RequestLocalConnectionRefresh RPC.
+	LocalCollectorServiceRequestLocalConnectionRefreshProcedure = "/anydash.v1.LocalCollectorService/RequestLocalConnectionRefresh"
 	// LocalCollectorServicePutNativeWidgetSnapshotsProcedure is the fully-qualified name of the
 	// LocalCollectorService's PutNativeWidgetSnapshots RPC.
 	LocalCollectorServicePutNativeWidgetSnapshotsProcedure = "/anydash.v1.LocalCollectorService/PutNativeWidgetSnapshots"
@@ -1686,6 +1689,9 @@ type LocalCollectorServiceClient interface {
 	EnableSourcePath(context.Context, *connect.Request[v1.EnableSourcePathRequest]) (*connect.Response[v1.EnableSourcePathResponse], error)
 	RotateKey(context.Context, *connect.Request[v1.RotateKeyRequest]) (*connect.Response[v1.RotateKeyResponse], error)
 	RequestLocalSync(context.Context, *connect.Request[v1.RequestLocalSyncRequest]) (*connect.Response[v1.RequestLocalSyncResponse], error)
+	// Makes the collector call ConnectionService.RequestConnectionRefresh with
+	// its own device token, so local clients never use the device credentials.
+	RequestLocalConnectionRefresh(context.Context, *connect.Request[v1.RequestLocalConnectionRefreshRequest]) (*connect.Response[v1.RequestLocalConnectionRefreshResponse], error)
 	PutNativeWidgetSnapshots(context.Context, *connect.Request[v1.PutNativeWidgetSnapshotsRequest]) (*connect.Response[v1.PutNativeWidgetSnapshotsResponse], error)
 	ListNativeWidgetSnapshots(context.Context, *connect.Request[v1.ListNativeWidgetSnapshotsRequest]) (*connect.Response[v1.ListNativeWidgetSnapshotsResponse], error)
 	Quit(context.Context, *connect.Request[v1.QuitRequest]) (*connect.Response[v1.QuitResponse], error)
@@ -1768,6 +1774,12 @@ func NewLocalCollectorServiceClient(httpClient connect.HTTPClient, baseURL strin
 			connect.WithSchema(localCollectorServiceMethods.ByName("RequestLocalSync")),
 			connect.WithClientOptions(opts...),
 		),
+		requestLocalConnectionRefresh: connect.NewClient[v1.RequestLocalConnectionRefreshRequest, v1.RequestLocalConnectionRefreshResponse](
+			httpClient,
+			baseURL+LocalCollectorServiceRequestLocalConnectionRefreshProcedure,
+			connect.WithSchema(localCollectorServiceMethods.ByName("RequestLocalConnectionRefresh")),
+			connect.WithClientOptions(opts...),
+		),
 		putNativeWidgetSnapshots: connect.NewClient[v1.PutNativeWidgetSnapshotsRequest, v1.PutNativeWidgetSnapshotsResponse](
 			httpClient,
 			baseURL+LocalCollectorServicePutNativeWidgetSnapshotsProcedure,
@@ -1791,20 +1803,21 @@ func NewLocalCollectorServiceClient(httpClient connect.HTTPClient, baseURL strin
 
 // localCollectorServiceClient implements LocalCollectorServiceClient.
 type localCollectorServiceClient struct {
-	getCollectorStatus         *connect.Client[v1.GetCollectorStatusRequest, v1.GetCollectorStatusResponse]
-	startLogin                 *connect.Client[v1.StartLoginRequest, v1.StartLoginResponse]
-	logout                     *connect.Client[v1.LogoutRequest, v1.LogoutResponse]
-	addConnectionCredential    *connect.Client[v1.AddConnectionCredentialRequest, v1.AddConnectionCredentialResponse]
-	removeConnectionCredential *connect.Client[v1.RemoveConnectionCredentialRequest, v1.RemoveConnectionCredentialResponse]
-	listSourcePaths            *connect.Client[v1.ListSourcePathsRequest, v1.ListSourcePathsResponse]
-	addSourcePath              *connect.Client[v1.AddSourcePathRequest, v1.AddSourcePathResponse]
-	disableSourcePath          *connect.Client[v1.DisableSourcePathRequest, v1.DisableSourcePathResponse]
-	enableSourcePath           *connect.Client[v1.EnableSourcePathRequest, v1.EnableSourcePathResponse]
-	rotateKey                  *connect.Client[v1.RotateKeyRequest, v1.RotateKeyResponse]
-	requestLocalSync           *connect.Client[v1.RequestLocalSyncRequest, v1.RequestLocalSyncResponse]
-	putNativeWidgetSnapshots   *connect.Client[v1.PutNativeWidgetSnapshotsRequest, v1.PutNativeWidgetSnapshotsResponse]
-	listNativeWidgetSnapshots  *connect.Client[v1.ListNativeWidgetSnapshotsRequest, v1.ListNativeWidgetSnapshotsResponse]
-	quit                       *connect.Client[v1.QuitRequest, v1.QuitResponse]
+	getCollectorStatus            *connect.Client[v1.GetCollectorStatusRequest, v1.GetCollectorStatusResponse]
+	startLogin                    *connect.Client[v1.StartLoginRequest, v1.StartLoginResponse]
+	logout                        *connect.Client[v1.LogoutRequest, v1.LogoutResponse]
+	addConnectionCredential       *connect.Client[v1.AddConnectionCredentialRequest, v1.AddConnectionCredentialResponse]
+	removeConnectionCredential    *connect.Client[v1.RemoveConnectionCredentialRequest, v1.RemoveConnectionCredentialResponse]
+	listSourcePaths               *connect.Client[v1.ListSourcePathsRequest, v1.ListSourcePathsResponse]
+	addSourcePath                 *connect.Client[v1.AddSourcePathRequest, v1.AddSourcePathResponse]
+	disableSourcePath             *connect.Client[v1.DisableSourcePathRequest, v1.DisableSourcePathResponse]
+	enableSourcePath              *connect.Client[v1.EnableSourcePathRequest, v1.EnableSourcePathResponse]
+	rotateKey                     *connect.Client[v1.RotateKeyRequest, v1.RotateKeyResponse]
+	requestLocalSync              *connect.Client[v1.RequestLocalSyncRequest, v1.RequestLocalSyncResponse]
+	requestLocalConnectionRefresh *connect.Client[v1.RequestLocalConnectionRefreshRequest, v1.RequestLocalConnectionRefreshResponse]
+	putNativeWidgetSnapshots      *connect.Client[v1.PutNativeWidgetSnapshotsRequest, v1.PutNativeWidgetSnapshotsResponse]
+	listNativeWidgetSnapshots     *connect.Client[v1.ListNativeWidgetSnapshotsRequest, v1.ListNativeWidgetSnapshotsResponse]
+	quit                          *connect.Client[v1.QuitRequest, v1.QuitResponse]
 }
 
 // GetCollectorStatus calls anydash.v1.LocalCollectorService.GetCollectorStatus.
@@ -1862,6 +1875,12 @@ func (c *localCollectorServiceClient) RequestLocalSync(ctx context.Context, req 
 	return c.requestLocalSync.CallUnary(ctx, req)
 }
 
+// RequestLocalConnectionRefresh calls
+// anydash.v1.LocalCollectorService.RequestLocalConnectionRefresh.
+func (c *localCollectorServiceClient) RequestLocalConnectionRefresh(ctx context.Context, req *connect.Request[v1.RequestLocalConnectionRefreshRequest]) (*connect.Response[v1.RequestLocalConnectionRefreshResponse], error) {
+	return c.requestLocalConnectionRefresh.CallUnary(ctx, req)
+}
+
 // PutNativeWidgetSnapshots calls anydash.v1.LocalCollectorService.PutNativeWidgetSnapshots.
 func (c *localCollectorServiceClient) PutNativeWidgetSnapshots(ctx context.Context, req *connect.Request[v1.PutNativeWidgetSnapshotsRequest]) (*connect.Response[v1.PutNativeWidgetSnapshotsResponse], error) {
 	return c.putNativeWidgetSnapshots.CallUnary(ctx, req)
@@ -1891,6 +1910,9 @@ type LocalCollectorServiceHandler interface {
 	EnableSourcePath(context.Context, *connect.Request[v1.EnableSourcePathRequest]) (*connect.Response[v1.EnableSourcePathResponse], error)
 	RotateKey(context.Context, *connect.Request[v1.RotateKeyRequest]) (*connect.Response[v1.RotateKeyResponse], error)
 	RequestLocalSync(context.Context, *connect.Request[v1.RequestLocalSyncRequest]) (*connect.Response[v1.RequestLocalSyncResponse], error)
+	// Makes the collector call ConnectionService.RequestConnectionRefresh with
+	// its own device token, so local clients never use the device credentials.
+	RequestLocalConnectionRefresh(context.Context, *connect.Request[v1.RequestLocalConnectionRefreshRequest]) (*connect.Response[v1.RequestLocalConnectionRefreshResponse], error)
 	PutNativeWidgetSnapshots(context.Context, *connect.Request[v1.PutNativeWidgetSnapshotsRequest]) (*connect.Response[v1.PutNativeWidgetSnapshotsResponse], error)
 	ListNativeWidgetSnapshots(context.Context, *connect.Request[v1.ListNativeWidgetSnapshotsRequest]) (*connect.Response[v1.ListNativeWidgetSnapshotsResponse], error)
 	Quit(context.Context, *connect.Request[v1.QuitRequest]) (*connect.Response[v1.QuitResponse], error)
@@ -1969,6 +1991,12 @@ func NewLocalCollectorServiceHandler(svc LocalCollectorServiceHandler, opts ...c
 		connect.WithSchema(localCollectorServiceMethods.ByName("RequestLocalSync")),
 		connect.WithHandlerOptions(opts...),
 	)
+	localCollectorServiceRequestLocalConnectionRefreshHandler := connect.NewUnaryHandler(
+		LocalCollectorServiceRequestLocalConnectionRefreshProcedure,
+		svc.RequestLocalConnectionRefresh,
+		connect.WithSchema(localCollectorServiceMethods.ByName("RequestLocalConnectionRefresh")),
+		connect.WithHandlerOptions(opts...),
+	)
 	localCollectorServicePutNativeWidgetSnapshotsHandler := connect.NewUnaryHandler(
 		LocalCollectorServicePutNativeWidgetSnapshotsProcedure,
 		svc.PutNativeWidgetSnapshots,
@@ -2011,6 +2039,8 @@ func NewLocalCollectorServiceHandler(svc LocalCollectorServiceHandler, opts ...c
 			localCollectorServiceRotateKeyHandler.ServeHTTP(w, r)
 		case LocalCollectorServiceRequestLocalSyncProcedure:
 			localCollectorServiceRequestLocalSyncHandler.ServeHTTP(w, r)
+		case LocalCollectorServiceRequestLocalConnectionRefreshProcedure:
+			localCollectorServiceRequestLocalConnectionRefreshHandler.ServeHTTP(w, r)
 		case LocalCollectorServicePutNativeWidgetSnapshotsProcedure:
 			localCollectorServicePutNativeWidgetSnapshotsHandler.ServeHTTP(w, r)
 		case LocalCollectorServiceListNativeWidgetSnapshotsProcedure:
@@ -2068,6 +2098,10 @@ func (UnimplementedLocalCollectorServiceHandler) RotateKey(context.Context, *con
 
 func (UnimplementedLocalCollectorServiceHandler) RequestLocalSync(context.Context, *connect.Request[v1.RequestLocalSyncRequest]) (*connect.Response[v1.RequestLocalSyncResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("anydash.v1.LocalCollectorService.RequestLocalSync is not implemented"))
+}
+
+func (UnimplementedLocalCollectorServiceHandler) RequestLocalConnectionRefresh(context.Context, *connect.Request[v1.RequestLocalConnectionRefreshRequest]) (*connect.Response[v1.RequestLocalConnectionRefreshResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("anydash.v1.LocalCollectorService.RequestLocalConnectionRefresh is not implemented"))
 }
 
 func (UnimplementedLocalCollectorServiceHandler) PutNativeWidgetSnapshots(context.Context, *connect.Request[v1.PutNativeWidgetSnapshotsRequest]) (*connect.Response[v1.PutNativeWidgetSnapshotsResponse], error) {

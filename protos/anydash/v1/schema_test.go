@@ -76,8 +76,8 @@ func TestServices(t *testing.T) {
 		"LocalCollectorService": {
 			"GetCollectorStatus", "StartLogin", "Logout", "AddConnectionCredential",
 			"RemoveConnectionCredential", "ListSourcePaths", "AddSourcePath", "DisableSourcePath",
-			"EnableSourcePath", "RotateKey", "RequestLocalSync", "PutNativeWidgetSnapshots",
-			"ListNativeWidgetSnapshots", "Quit",
+			"EnableSourcePath", "RotateKey", "RequestLocalSync", "RequestLocalConnectionRefresh",
+			"PutNativeWidgetSnapshots", "ListNativeWidgetSnapshots", "Quit",
 		},
 	}
 	services := anydashv1.File_anydash_v1_anydash_proto.Services()

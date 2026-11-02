@@ -1394,6 +1394,9 @@ service LocalCollectorService {
   rpc EnableSourcePath(EnableSourcePathRequest) returns (EnableSourcePathResponse);
   rpc RotateKey(RotateKeyRequest) returns (RotateKeyResponse);
   rpc RequestLocalSync(RequestLocalSyncRequest) returns (RequestLocalSyncResponse);
+  // Makes the collector call ConnectionService.RequestConnectionRefresh with
+  // its own device token, so local clients never use the device credentials.
+  rpc RequestLocalConnectionRefresh(RequestLocalConnectionRefreshRequest) returns (RequestLocalConnectionRefreshResponse);
   rpc PutNativeWidgetSnapshots(PutNativeWidgetSnapshotsRequest) returns (PutNativeWidgetSnapshotsResponse);
   rpc ListNativeWidgetSnapshots(ListNativeWidgetSnapshotsRequest) returns (ListNativeWidgetSnapshotsResponse);
   rpc Quit(QuitRequest) returns (QuitResponse);
@@ -1522,6 +1525,13 @@ message RotateKeyResponse {
 
 message RequestLocalSyncRequest {}
 message RequestLocalSyncResponse {
+  google.protobuf.Timestamp next_allowed_at = 1;
+}
+
+message RequestLocalConnectionRefreshRequest {
+  string connection_id = 1;
+}
+message RequestLocalConnectionRefreshResponse {
   google.protobuf.Timestamp next_allowed_at = 1;
 }
 
