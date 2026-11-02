@@ -480,6 +480,19 @@ async fn vercel_projects_plan_and_focus_charges() {
     )
     .await;
     assert_eq!(o.snapshot.status, CollectionStatus::AuthExpired as i32);
+    // A whole-cycle failure of a deployment provider carries no metrics and no resources, so the
+    // AnyDash API marks every earlier usage, cost and resource reading failed, not only the plan.
+    assert!(o.snapshot.metrics.is_empty() && o.snapshot.resources.is_empty());
+    mock.set(|_| Reply::text(503, ""));
+    let o = providers::poll(
+        &support::ctx(home.path(), &mock, "grok"),
+        &row(Provider::Vercel),
+        Some("vercel-token"),
+        NOW,
+    )
+    .await;
+    assert_eq!(o.snapshot.status, CollectionStatus::Failed as i32);
+    assert!(o.snapshot.metrics.is_empty() && o.snapshot.resources.is_empty());
 }
 #[tokio::test(flavor = "multi_thread")]
 async fn supabase_projects_usage_entitlements_and_no_cost() {
@@ -784,6 +797,11 @@ async fn grok_billing_over_acp() {
     )
     .await;
     assert_eq!(o.snapshot.status, CollectionStatus::AuthExpired as i32);
+    // Subscription providers keep the failure state on their main keys.
+    assert_eq!(
+        metric(&o.snapshot, MetricKind::SubscriptionUsedPercent, "credits").state,
+        MetricState::AuthExpired as i32
+    );
     let o = providers::poll(
         &support::ctx(home.path(), &mock, "/nonexistent/grok"),
         &row(Provider::Grok),

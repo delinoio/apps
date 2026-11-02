@@ -363,8 +363,12 @@ pub fn cumulative(
     o.period_end = Some(time::timestamp(period.1));
     o
 }
-/// A failure snapshot. Metrics carry the failure state for the provider's main keys so that
-/// clients show the last successful value with the error.
+/// A failure snapshot for a cycle that failed as a whole.
+///
+/// Subscription providers carry the failure state for their main keys so that clients show the last successful value with the
+/// error. Deployment providers report many usage, cost and resource metrics that no fixed key
+/// list covers, so their failure snapshot carries no metrics: the AnyDash API then marks every
+/// latest metric of the connection failed and keeps its last successful value.
 #[must_use]
 pub fn failure_snapshot(provider: Provider, fail: &Fail, now: i64) -> Snapshot {
     let state = match fail.class {
@@ -386,7 +390,7 @@ pub fn failure_snapshot(provider: Provider, fail: &Fail, now: i64) -> Snapshot {
             (MetricKind::SubscriptionUsedPercent, "credits"),
             (MetricKind::SubscriptionPlan, ""),
         ],
-        _ => &[(MetricKind::DeploymentPlan, "")],
+        Provider::Vercel | Provider::Supabase | Provider::Cloudflare | Provider::Unspecified => &[],
     };
     Snapshot {
         observed_at: Some(time::timestamp(now)),
