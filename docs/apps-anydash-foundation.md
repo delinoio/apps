@@ -78,6 +78,7 @@ Solo business owners (primary), Delcore team members who view and edit shared te
 - The desktop app embeds the matching `anydash` executable and connects to the shared collector through local IPC; it starts the embedded collector when none runs. The app and the CLI never collect twice.
 - Closing the app window does not stop collection; the app stays in the menu bar (macOS) or notification area (Windows). An explicit Quit stops the app and the collector it started. Starting at login is opt-in in settings.
 - Settings expose devices (list, delete, set preferred device), connections (add with credential, register this device, remove, delete), session paths, key rotation, the collector status fields and an "about" view with versions.
+- When the collector has no active device credentials (`CollectorRunState` `NOT_LOGGED_IN` or `CREDENTIALS_INACTIVE`), the This computer section in Settings offers "Connect this computer". It starts the same enrollment as the personal space's onboarding, independently of the account's onboarding state, so an already-onboarded account can enroll a new computer or reconnect one after logout.
 - Desktop updates: installers and a signed auto-update feed are published on GitHub Releases. The app installs an update only after its signature verifies and the user confirms.
 
 ### Account data, errors and support

@@ -54,6 +54,8 @@ export interface MockOptions {
   /** Rejects the first ApproveEnrollment code. */
   codeMismatch?: boolean;
   enrollmentState?: EnrollmentState;
+  /** The local collector's state; the default is a running, enrolled collector. */
+  collectorRunState?: CollectorRunState;
 }
 
 export class MockError extends Error {
@@ -88,6 +90,9 @@ export class MockApi {
   private mismatchPending: boolean;
   private enrollmentAttempts = 4;
   private enrollmentState: EnrollmentState;
+  collectorRunState: CollectorRunState;
+  /** The collector's pending enrollment started by StartLogin. */
+  collectorLogin?: { userCode: string; verificationUrl: string; state: EnrollmentState };
 
   constructor(readonly options: MockOptions = {}) {
     this.personal = fixtures.personalSpace(options.onboarding);
@@ -102,6 +107,7 @@ export class MockApi {
     this.conflictPending = options.conflictOnLayout === true;
     this.mismatchPending = options.codeMismatch === true;
     this.enrollmentState = options.enrollmentState ?? EnrollmentState.PENDING;
+    this.collectorRunState = options.collectorRunState ?? CollectorRunState.RUNNING;
   }
 
   private data(dashboard: Dashboard): WidgetData[] {
@@ -259,8 +265,9 @@ export class MockApi {
       "ConnectionService/DeleteConnection": () => ({ purgeDeadline: timestampFromDate(fixtures.NOW) }),
       "LocalCollectorService/GetCollectorStatus": () => ({
         status: {
-          runState: CollectorRunState.RUNNING,
-          deviceId: fixtures.ids.studio,
+          runState: this.collectorRunState,
+          deviceId: this.collectorRunState === CollectorRunState.NOT_LOGGED_IN ? "" : fixtures.ids.studio,
+          login: this.collectorLogin,
           collectorVersion: "1.0.3",
           keySource: KeySource.OS_SECURE_STORE,
           connections: [fixtures.ids.claude, ...this.localCredentials]
@@ -288,6 +295,19 @@ export class MockApi {
         });
       },
       "LocalCollectorService/Logout": () => ({}),
+      "LocalCollectorService/StartLogin": () => {
+        if (
+          this.collectorRunState !== CollectorRunState.NOT_LOGGED_IN &&
+          this.collectorRunState !== CollectorRunState.CREDENTIALS_INACTIVE
+        )
+          throw new MockError("failed_precondition", 400, ErrorReason.ALREADY_LOGGED_IN);
+        this.collectorLogin = {
+          userCode: "WDJB-MJHT",
+          verificationUrl: `https://anydash.delino.io/connect/${fixtures.ids.enrollment}`,
+          state: EnrollmentState.PENDING,
+        };
+        return { login: this.collectorLogin };
+      },
       "LocalCollectorService/AddConnectionCredential": (request: { connectionId: string }) => {
         this.localCredentials.add(request.connectionId);
         return { connectionId: request.connectionId };

@@ -32,6 +32,10 @@ import {
   type Connection,
   type SourcePath,
 } from "@repo/protos/anydash/v1/anydash_pb";
+import {
+  CollectorLoginError,
+  useCollectorLogin,
+} from "../components/ConnectDevice";
 import { Modal } from "../components/dialog";
 import { LinkText, SmallButton, StateBadge, T } from "../components/primitives";
 import { LimitReached } from "../components/States";
@@ -553,6 +557,16 @@ function ComputerSection({
   const [rotating, setRotating] = useState(false);
   const [rotated, setRotated] = useState("");
   const tz = session.account?.timeZone || "UTC";
+  // Without active device credentials this computer enrolls (again) through the
+  // same flow as the personal space's onboarding, which already-onboarded
+  // accounts never show.
+  const login = useCollectorLogin(() => {
+    reload();
+    void session.reloadSpaces();
+  });
+  const signedOut =
+    status?.runState === CollectorRunState.NOT_LOGGED_IN ||
+    status?.runState === CollectorRunState.CREDENTIALS_INACTIVE;
   const loadPaths = () =>
     collector
       .listSourcePaths({})
@@ -594,6 +608,15 @@ function ComputerSection({
           <text className="ad-mono">{`${Copy.correlationId} ${status.lastErrorCorrelationId}`}</text>
         ) : null}
       </view>
+      {signedOut && login.start ? (
+        <view className="lui-stack lui-row lui-gap-8 lui-wrap">
+          <Button onPress={() => void login.start?.()}>
+            {ExtraCopy.connectThisComputer}
+          </Button>
+        </view>
+      ) : null}
+      <CollectorLoginError error={login.error} />
+      {login.dialog}
       <view className="lui-stack lui-row lui-gap-8 lui-wrap">
         <SmallButton
           onPress={() => void run(() => collector.requestLocalSync({}))}

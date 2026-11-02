@@ -4,6 +4,8 @@ import { act, cleanup, waitFor } from "@lynx-js/react/testing-library";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
 import {
+  CollectorRunState,
+  EnrollmentState,
   ErrorReason,
   NativeWidgetSnapshotSchema,
   OnboardingState,
@@ -616,6 +618,59 @@ describe("settings", () => {
     await app.tap(ExtraCopy.useOnComputer);
     await app.tap(Copy.connect, ".lui-dialog");
     await waitFor(() => expect(count(ExtraCopy.removeFromComputer)).toBe(1));
+  });
+
+  it("enrolls this computer from Settings when the collector is not signed in", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+      collectorRunState: CollectorRunState.NOT_LOGGED_IN,
+    });
+    await app.see(ExtraCopy.collectorNotLoggedIn);
+    await app.tap(ExtraCopy.connectThisComputer);
+    await app.see(ExtraCopy.approveInBrowser);
+    await app.see("WDJB-MJHT");
+    const api = app.host.api;
+    expect(
+      api.calls.filter((call) => call.method === "StartLogin").length,
+    ).toBe(1);
+    expect(app.host.opened.at(-1)).toBe(api.collectorLogin?.verificationUrl);
+    const spaceLoads = api.calls.filter(
+      (call) => call.method === "ListSpaces",
+    ).length;
+    // The collector finishes the enrollment after browser approval.
+    api.collectorLogin!.state = EnrollmentState.CONSUMED;
+    api.collectorRunState = CollectorRunState.RUNNING;
+    await app.see(ExtraCopy.collectorRunning, 6_000);
+    expect(app.text()).not.toContain(ExtraCopy.approveInBrowser);
+    expect(app.text()).not.toContain(ExtraCopy.connectThisComputer);
+    await waitFor(() =>
+      expect(
+        api.calls.filter((call) => call.method === "ListSpaces").length,
+      ).toBeGreaterThan(spaceLoads),
+    );
+  }, 15_000);
+
+  it("offers enrolling again when the collector's credentials are inactive", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+      collectorRunState: CollectorRunState.CREDENTIALS_INACTIVE,
+    });
+    await app.see(ExtraCopy.collectorInactive);
+    await app.tap(ExtraCopy.connectThisComputer);
+    await app.see(ExtraCopy.approveInBrowser);
+    await app.key(app.find(".lui-dialog-backdrop")[0], "Escape");
+    expect(app.text()).not.toContain(ExtraCopy.approveInBrowser);
+  });
+
+  it("offers no enrollment while the collector is signed in", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+    });
+    await app.see(ExtraCopy.collectorRunning);
+    expect(app.text()).not.toContain(ExtraCopy.connectThisComputer);
   });
 
   it("shows the Vercel write warning before connecting on desktop", async () => {
