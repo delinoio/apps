@@ -787,7 +787,18 @@ contain synthetic data only. Reports are written under the ignored
 `tests/midscene/.midscene` and `tests/midscene/midscene_run` directories.
 
 These checks are opt-in and do not add a model credential requirement to
-`pnpm test` or ordinary CI. They establish shared browser UI behavior against
+`pnpm test` or automatic PR CI. In GitHub Actions, set repository variable
+`LANE_MIDSCENE_ENABLED=true`, variables `MIDSCENE_MODEL_NAME`,
+`MIDSCENE_MODEL_FAMILY`, `MIDSCENE_MODEL_BASE_URL`, and repository secret
+`MIDSCENE_MODEL_API_KEY`. Manually dispatch `CI` on a reviewed branch whose
+affected plan selects Lane. The existing Ubuntu `lane-frontend` job installs
+Chromium and runs the suite against its freshly built fixture. Missing model
+configuration or a failed assertion fails that job and the CI result gate.
+Credentials are scoped to the test step and never injected into automatic PR
+runs. Only dispatch trusted, reviewed revisions: manual runs execute that
+revision with the model credential. Reports and result summaries are uploaded
+as `lane-midscene-<attempt>` for seven days, including on test failure.
+They establish shared browser UI behavior against
 fixtures, not native persistence, real-account synchronization or device
 acceptance. Record first-pass results, model, elapsed time and report paths when
 running them; a retry does not replace the first result.

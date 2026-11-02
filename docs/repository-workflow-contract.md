@@ -413,3 +413,12 @@ component identities. Public changelog previews select explicitly authored publi
 notes only. The unconditional formatting job validates records, runs CLI tests
 and vet, and checks Go formatting in this directory. Release preparation and
 record deletion remain separate from this workflow.
+
+### Optional Lane AI validation
+
+Affected manual CI can run the Lane Midscene browser suite when repository variable
+`LANE_MIDSCENE_ENABLED` is `true`. Configuration, credential boundaries and report
+retention follow [Lane AI browser checks](apps-lane-foundation.md#optional-ai-browser-checks).
+The checks run inside `lane-frontend`, so failures propagate to `ci-result`.
+Automatic PR and main-push runs do not receive the model credential. This adds
+no full manual mode, platform runner or publication step.
