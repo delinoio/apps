@@ -1,0 +1,16 @@
+{
+  "name": "@servers/mcpa-api",
+  "version": "0.1.0",
+  "private": true,
+  "license": "FSL-1.1-ALv2",
+  "scripts": {
+    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/mcpa-api -- portless run --name mcpa-api --app-port 46329 node ../scripts/dev-api.mjs mcpa",
+    "build": "node ../../scripts/ci/from-root.mjs go build -o servers/target/debug/mcpa-api ./servers/mcpa-api",
+    "ci:format": "node ../../scripts/ci/from-root.mjs node scripts/ci/check-go-format.mjs servers/mcpa-api",
+    "ci:vet": "node ../../scripts/ci/from-root.mjs go vet ./servers/mcpa-api/...",
+    "ci:unit": "node ../../scripts/ci/from-root.mjs go test ./servers/mcpa-api/...",
+    "ci:integration": "node ../../scripts/ci/from-root.mjs go test -tags integration ./servers/mcpa-api/...",
+    "ci:vuln": "node ../../scripts/ci/from-root.mjs go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./servers/mcpa-api/...",
+    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/mcpa-api/Dockerfile -t mcpa-api:validation ."
+  }
+}

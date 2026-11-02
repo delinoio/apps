@@ -1,0 +1,251 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+
+package auth
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+)
+
+// ErrInvalidGrant means Logto rejected a code or refresh token. The user
+// must sign in again.
+var ErrInvalidGrant = errors.New("logto: invalid grant")
+
+// ErrLogtoUnavailable means Logto could not be reached or answered with an
+// unexpected response.
+var ErrLogtoUnavailable = errors.New("logto: unavailable")
+
+// Logto talks to the Logto OIDC provider. Discovery is lazy so the API can
+// start while Logto is unreachable; a failed discovery is retried on the
+// next use.
+type Logto struct {
+	issuer       string
+	clientID     string
+	clientSecret string
+	httpClient   *http.Client
+
+	mu       sync.Mutex
+	provider *oidc.Provider
+	meta     providerMetadata
+}
+
+type providerMetadata struct {
+	AuthorizationEndpoint string `json:"authorization_endpoint"`
+	TokenEndpoint         string `json:"token_endpoint"`
+	EndSessionEndpoint    string `json:"end_session_endpoint"`
+	RevocationEndpoint    string `json:"revocation_endpoint"`
+}
+
+// NewLogto configures the provider. clientID and clientSecret identify the
+// mcpa traditional web application used by the console BFF and the MCP
+// OAuth broker.
+func NewLogto(issuer, clientID, clientSecret string, httpClient *http.Client) *Logto {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 10 * time.Second}
+	}
+	return &Logto{issuer: issuer, clientID: clientID, clientSecret: clientSecret, httpClient: httpClient}
+}
+
+// ClientID returns the Logto application client ID.
+func (l *Logto) ClientID() string { return l.clientID }
+
+func (l *Logto) discover(ctx context.Context) (*oidc.Provider, providerMetadata, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.provider != nil {
+		return l.provider, l.meta, nil
+	}
+	p, err := oidc.NewProvider(oidc.ClientContext(ctx, l.httpClient), l.issuer)
+	if err != nil {
+		return nil, providerMetadata{}, fmt.Errorf("%w: discovery: %v", ErrLogtoUnavailable, err)
+	}
+	var meta providerMetadata
+	if err := p.Claims(&meta); err != nil || meta.AuthorizationEndpoint == "" || meta.TokenEndpoint == "" {
+		return nil, providerMetadata{}, fmt.Errorf("%w: discovery metadata is incomplete", ErrLogtoUnavailable)
+	}
+	l.provider = p
+	l.meta = meta
+	return p, meta, nil
+}
+
+// Endpoints returns the discovered authorization, token and end-session
+// endpoints.
+func (l *Logto) Endpoints(ctx context.Context) (authorization, token, endSession string, err error) {
+	_, meta, err := l.discover(ctx)
+	if err != nil {
+		return "", "", "", err
+	}
+	return meta.AuthorizationEndpoint, meta.TokenEndpoint, meta.EndSessionEndpoint, nil
+}
+
+// VerifiedToken is a verified Logto JWT.
+type VerifiedToken struct {
+	Subject  string
+	Audience []string
+	Expiry   time.Time
+	IssuedAt time.Time
+	// ClientID is the client_id claim of an access token, when present.
+	ClientID string
+	Claims   map[string]any
+}
+
+// VerifyAccessToken verifies the signature, issuer and expiry of a Logto
+// access token and requires audience among its aud values.
+func (l *Logto) VerifyAccessToken(ctx context.Context, raw, audience string) (*VerifiedToken, error) {
+	p, _, err := l.discover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Access tokens are not ID tokens: the audience is the API resource, not
+	// the client ID, so the client check is replaced by an explicit audience
+	// check below.
+	v := p.VerifierContext(oidc.ClientContext(ctx, l.httpClient), &oidc.Config{SkipClientIDCheck: true})
+	tok, err := v.Verify(ctx, raw)
+	if err != nil {
+		return nil, fmt.Errorf("verify access token: %w", err)
+	}
+	if !slices.Contains(tok.Audience, audience) {
+		return nil, errors.New("verify access token: audience mismatch")
+	}
+	return toVerified(tok)
+}
+
+// VerifyIDToken verifies an ID token for the configured client and nonce.
+func (l *Logto) VerifyIDToken(ctx context.Context, raw, nonce string) (*VerifiedToken, error) {
+	p, _, err := l.discover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v := p.VerifierContext(oidc.ClientContext(ctx, l.httpClient), &oidc.Config{ClientID: l.clientID})
+	tok, err := v.Verify(ctx, raw)
+	if err != nil {
+		return nil, fmt.Errorf("verify id token: %w", err)
+	}
+	if tok.Nonce != nonce {
+		return nil, errors.New("verify id token: nonce mismatch")
+	}
+	return toVerified(tok)
+}
+
+func toVerified(tok *oidc.IDToken) (*VerifiedToken, error) {
+	claims := map[string]any{}
+	if err := tok.Claims(&claims); err != nil {
+		return nil, err
+	}
+	out := &VerifiedToken{Subject: tok.Subject, Audience: tok.Audience, Expiry: tok.Expiry, IssuedAt: tok.IssuedAt, Claims: claims}
+	if cid, ok := claims["client_id"].(string); ok {
+		out.ClientID = cid
+	}
+	if out.Subject == "" {
+		return nil, errors.New("token has no subject")
+	}
+	return out, nil
+}
+
+// TokenResponse is a Logto token endpoint response. Its fields are secrets.
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
+	Scope        string `json:"scope"`
+}
+
+type tokenError struct {
+	Error string `json:"error"`
+}
+
+// ExchangeCode redeems an authorization code with PKCE for an access token
+// of resource.
+func (l *Logto) ExchangeCode(ctx context.Context, code, verifier, redirectURI, resource string) (*TokenResponse, error) {
+	return l.token(ctx, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"code_verifier": {verifier},
+		"redirect_uri":  {redirectURI},
+		"resource":      {resource},
+	})
+}
+
+// RefreshForResource redeems a refresh token for an access token of
+// resource. Logto may rotate the refresh token; callers must keep the
+// returned one when it is non-empty.
+func (l *Logto) RefreshForResource(ctx context.Context, refreshToken, resource string) (*TokenResponse, error) {
+	return l.token(ctx, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"resource":      {resource},
+	})
+}
+
+func (l *Logto) token(ctx context.Context, form url.Values) (*TokenResponse, error) {
+	_, meta, err := l.discover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, meta.TokenEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.SetBasicAuth(url.QueryEscape(l.clientID), url.QueryEscape(l.clientSecret))
+	resp, err := l.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: token request: %v", ErrLogtoUnavailable, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("%w: token response: %v", ErrLogtoUnavailable, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		var te tokenError
+		_ = json.Unmarshal(body, &te)
+		// Only the OAuth error code is kept; descriptions may echo input.
+		if te.Error == "invalid_grant" {
+			return nil, ErrInvalidGrant
+		}
+		if resp.StatusCode >= 500 {
+			return nil, fmt.Errorf("%w: token endpoint status %d", ErrLogtoUnavailable, resp.StatusCode)
+		}
+		return nil, fmt.Errorf("logto: token endpoint status %d error %q", resp.StatusCode, te.Error)
+	}
+	var tr TokenResponse
+	if err := json.Unmarshal(body, &tr); err != nil || tr.AccessToken == "" {
+		return nil, fmt.Errorf("%w: malformed token response", ErrLogtoUnavailable)
+	}
+	return &tr, nil
+}
+
+// MFAEvidence reports whether verified token claims carry MFA evidence: the
+// configured boolean claim set to true, or a standard amr array containing
+// mfa, otp or hwk.
+func MFAEvidence(claims map[string]any, claimName string) bool {
+	if v, ok := claims[claimName].(bool); ok && v {
+		return true
+	}
+	amr, ok := claims["amr"].([]any)
+	if !ok {
+		return false
+	}
+	for _, m := range amr {
+		switch m {
+		case "mfa", "otp", "hwk":
+			return true
+		}
+	}
+	return false
+}
