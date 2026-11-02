@@ -813,6 +813,92 @@ async fn provider_backoff_and_official_auth_expiry_stop() {
     assert_eq!(mock.count("/v10/projects"), count);
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn official_auth_expiry_releases_the_lease_until_reconnection() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let (mock, core) = logged_in(home.path(), &state, Owner::Foreground).await;
+    vercel_connection(&core).await.unwrap();
+    let now = time::now();
+    core.heartbeat(now).await.unwrap();
+    // The stored token is rejected, and the first lease release fails.
+    let base = api(state.clone());
+    let release_fails = Arc::new(Mutex::new(true));
+    let fails = release_fails.clone();
+    mock.set(move |r| match r.route() {
+        "/v10/projects" if r.header("authorization") == Some("Bearer vercel-token") => {
+            Reply::text(401, "")
+        }
+        "/anydash.v1.CollectorService/ReleaseLease"
+            if std::mem::take(&mut *fails.lock().unwrap()) =>
+        {
+            Reply::reason(503, "unavailable", ErrorReason::DependencyUnavailable)
+        }
+        "/anydash.v1.ConnectionService/RegisterConnectionDevice" => {
+            Reply::proto(&pb::RegisterConnectionDeviceResponse {
+                connection: Some(Connection {
+                    id: "c1".into(),
+                    provider: Provider::Vercel.into(),
+                    display_name: "Vercel".into(),
+                    ..Default::default()
+                }),
+            })
+        }
+        _ => base(r),
+    });
+    mock.clear();
+    assert_eq!(
+        core.poll_connection("c1", now).await.unwrap(),
+        Some(CollectionStatus::AuthExpired)
+    );
+    assert_eq!(mock.count("/anydash.v1.CollectorService/ReleaseLease"), 1);
+    assert!(!core.status(true).unwrap().connections[0].lease_held);
+    // The stopped token is not ready; the lease the failed release left on the server is
+    // released on the next due cycle without calling the provider.
+    let ready = |mock: &Mock| -> Vec<String> {
+        let hb: HeartbeatRequest = support::decode(
+            &mock
+                .recorded()
+                .into_iter()
+                .rfind(|r| r.route().ends_with("Heartbeat"))
+                .unwrap(),
+        );
+        hb.ready_connection_ids
+    };
+    core.heartbeat(now + 60).await.unwrap();
+    assert_eq!(
+        ready(&mock),
+        Vec::<String>::new(),
+        "a stopped token is not ready"
+    );
+    assert!(core.status(true).unwrap().connections[0].lease_held);
+    assert_eq!(core.poll_connection("c1", now + 300).await.unwrap(), None);
+    assert_eq!(mock.count("/anydash.v1.CollectorService/ReleaseLease"), 2);
+    assert_eq!(mock.count("/v10/projects"), 1);
+    assert!(state.lock().unwrap().holder.is_empty(), "the lease is free");
+    assert!(!core.status(true).unwrap().connections[0].lease_held);
+    // Another registered device with a valid token takes over.
+    {
+        let mut s = state.lock().unwrap();
+        s.epoch += 1;
+        s.holder = "01890000-0000-7000-8000-00000000d002".into();
+    }
+    core.heartbeat(now + 360).await.unwrap();
+    assert_eq!(ready(&mock), Vec::<String>::new());
+    assert!(!core.status(true).unwrap().connections[0].lease_held);
+    // Reconnecting with a new token makes the device ready again.
+    core.add_connection(AddConnectionCredentialRequest {
+        provider: Provider::Vercel.into(),
+        connection_id: "c1".into(),
+        display_name: String::new(),
+        secret: "vercel-token-2".into(),
+        scope_id: "team_1".into(),
+    })
+    .await
+    .unwrap();
+    core.heartbeat(now + 420).await.unwrap();
+    assert_eq!(ready(&mock), vec!["c1".to_owned()]);
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn a_poll_of_a_replaced_token_does_not_overwrite_the_reconnection() {
     let home = tempfile::tempdir().unwrap();
     let state = Arc::new(Mutex::new(Api::default()));

@@ -1346,8 +1346,13 @@ impl Core {
         if !row.lease_held || row.next_attempt > now {
             return Ok(None);
         }
-        // Official tokens stop after authentication expiry until the user reconnects.
+        // Official tokens stop after authentication expiry until the user reconnects. The device
+        // is not ready for the connection meanwhile; a lease it still holds (for example after a
+        // failed release) is released so another registered device with a valid token can take
+        // over.
         if row.auth_stopped && !providers::uses_local_cli(provider) {
+            self.release_lease(&mut row).await;
+            self.save_connection(&row, generation)?;
             return Ok(None);
         }
         let renewed: Result<RenewLeaseResponse> = self
@@ -1508,9 +1513,11 @@ impl Core {
             row.last_active_observed = observed_seconds;
         }
         let result = self.report(&mut row, snapshot).await;
-        if outcome.account_mismatch && row.lease_held {
-            // This device stays not ready while its CLI belongs to another account; release the
-            // lease so a ready device of the connection's account can take over.
+        // This device stays not ready while its CLI belongs to another account or while its
+        // official token is stopped after authentication expiry; release the lease so a ready
+        // device of the connection can take over.
+        let official_stopped = row.auth_stopped && !providers::uses_local_cli(provider);
+        if (outcome.account_mismatch || official_stopped) && row.lease_held {
             self.release_lease(&mut row).await;
         }
         self.save_connection(&row, generation)?;

@@ -107,7 +107,7 @@ Provider references: [Vercel projects](https://vercel.com/docs/rest-api/projects
 | Missing `grok` executable                                      | `CLI_UNAVAILABLE`     | `NOT_PROVIDED`      | Next regular cycle                           |
 | Missing local CLI credential or stored token                   | `CREDENTIAL_MISSING`  | `AUTH_EXPIRED`      | Next regular cycle                           |
 
-For official API tokens (Vercel, Supabase, Cloudflare), `AUTH_EXPIRED` stops the connection until the user reconnects with a new token.
+For official API tokens (Vercel, Supabase, Cloudflare), `AUTH_EXPIRED` stops the connection on the device until the user reconnects with a new token. The device stops listing the connection as ready and releases a held lease, so another registered device with a valid token can take over.
 
 ### Known risks
 

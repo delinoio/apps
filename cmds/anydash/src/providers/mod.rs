@@ -600,12 +600,15 @@ pub async fn validate(
     }
 }
 /// Whether this device can read a usable credential for the connection now.
+///
+/// An official token that authentication expiry stopped is not usable until the user reconnects
+/// with a new token, which clears the stop.
 #[must_use]
 pub fn ready(ctx: &Ctx, conn: &ConnectionRow, has_secret: bool) -> bool {
     match Provider::try_from(conn.provider).unwrap_or(Provider::Unspecified) {
         Provider::Codex => codex::ready(ctx, conn),
         Provider::ClaudeCode => claude::read(ctx).is_ok(),
         Provider::Grok => grok::executable(ctx).is_some(),
-        _ => has_secret,
+        _ => has_secret && !conn.auth_stopped,
     }
 }
