@@ -297,6 +297,74 @@ async fn client_policy_quotas_and_rate_limits() {
     f.cleanup().await;
 }
 
+/// An `AddWidget` retry that overlaps the original request waits for the dashboard lock before
+/// it looks up its request ID, so it returns the original result instead of `VERSION_CONFLICT`.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn overlapping_add_widget_retry_replays_the_original() {
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    f.enroll(&a, "laptop", "").await;
+    let user = f.user(&a);
+    let dash = f
+        .ok(
+            &user,
+            "DashboardService/CreateDashboard",
+            json!({"requestId":id(),"spaceId":a.personal,"name":"Main"}),
+        )
+        .await["dashboard"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let body = json!({"dashboardId":dash,"expectedVersion":"1","requestId":id(),"type":"WIDGET_TYPE_LOCAL_USAGE_SUMMARY",
+        "layout":{"x":0,"y":0,"width":2,"height":2,"presentation":"WIDGET_PRESENTATION_NUMBER"},"query":{"period":"QUERY_PERIOD_TODAY"},"source":{"allDevices":true}});
+    // Hold the dashboard row so that the original request and its retry overlap.
+    let mut blocker = f.db.begin().await.unwrap();
+    sqlx::query(&format!(
+        "SELECT 1 FROM dashboards WHERE id='{dash}' FOR UPDATE"
+    ))
+    .execute(&mut *blocker)
+    .await
+    .unwrap();
+    let release = async {
+        for _ in 0..200 {
+            let waiting: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pg_stat_activity WHERE application_name=current_setting('application_name') AND wait_event_type='Lock'",
+            )
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+            if waiting == 2 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        blocker.commit().await.unwrap();
+    };
+    let (first, retry, ()) = tokio::join!(
+        f.call(&user, "DashboardService/AddWidget", body.clone()),
+        f.call(&user, "DashboardService/AddWidget", body.clone()),
+        release,
+    );
+    let first = first.expect("original AddWidget");
+    let retry = retry.expect("overlapping AddWidget retry");
+    assert_eq!(first["widgetId"], retry["widgetId"]);
+    assert_eq!(
+        f.count(&format!(
+            "SELECT count(*) FROM widgets WHERE dashboard_id='{dash}'"
+        ))
+        .await,
+        1
+    );
+    assert_eq!(
+        f.count(&format!("SELECT version FROM dashboards WHERE id='{dash}'"))
+            .await,
+        2
+    );
+    f.cleanup().await;
+}
+
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn deletion_deadlines_and_account_data_deletion() {

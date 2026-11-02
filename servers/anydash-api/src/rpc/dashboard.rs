@@ -1034,6 +1034,9 @@ pub async fn add_widget(s: &Server, call: &Call, q: AddWidgetRequest) -> Result<
     let caller = format!("user:{}", user.user_id);
     let print = fingerprint(&q);
     let mut tx = s.db.begin().await?;
+    // Lock the dashboard before the replay lookup: a retry that overlaps the original request
+    // waits for its commit and then returns the original result instead of VERSION_CONFLICT.
+    let locked = lock_version(&mut tx, id, None).await?;
     if let Some(existing) =
         replay(&mut tx, &caller, "AddWidget", request_id, &print, call.now).await?
     {
@@ -1045,7 +1048,9 @@ pub async fn add_widget(s: &Server, call: &Call, q: AddWidgetRequest) -> Result<
             ..Default::default()
         });
     }
-    lock_version(&mut tx, id, Some(q.expected_version)).await?;
+    if locked.version as u64 != q.expected_version {
+        return Err(ApiError::version_conflict(locked.version as u64));
+    }
     let source = check_source(
         &mut tx,
         user.user_id,
