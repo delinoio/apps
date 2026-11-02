@@ -13,6 +13,9 @@ import { basename, dirname, join } from "node:path";
 const tagPattern = /^anydash@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const api = "https://api.github.com/repos/delinoio/apps/releases?per_page=100";
 const MAX_ARCHIVE = 600 * 1024 * 1024;
+// The Windows package keeps the Lynxtron runtime executable name; the installer
+// shortcut presents it as AnyDash.
+const WINDOWS_EXECUTABLE = "lynxtron.exe";
 
 export function compareVersions(a, b) {
   const parse = (value) =>
@@ -147,7 +150,7 @@ export async function verifyCodeSignature(
     return details.output.includes(`TeamIdentifier=${teamId}`);
   }
   if (platform === "win32") {
-    const exe = join(app, "AnyDash.exe");
+    const exe = join(app, WINDOWS_EXECUTABLE);
     const script = `$s = Get-AuthenticodeSignature -LiteralPath '${exe.replace(/'/g, "''")}'; if ($s.Status -ne 'Valid') { exit 1 }; [Console]::Out.Write($s.SignerCertificate.Subject)`;
     const result = await exec("powershell.exe", [
       "-NoProfile",
@@ -312,7 +315,7 @@ export class DesktopUpdater {
     const sh = (value) => `'${value.replace(/'/g, "'\\''")}'`;
     const script =
       this.platform === "win32"
-        ? `$p=${process.pid}; while (Get-Process -Id $p -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 200 }; Remove-Item -LiteralPath ${ps(backup)} -Recurse -Force -ErrorAction SilentlyContinue; Move-Item -LiteralPath ${ps(this.install)} -Destination ${ps(backup)}; Move-Item -LiteralPath ${ps(app)} -Destination ${ps(this.install)}; Start-Process -FilePath ${ps(join(this.install, "AnyDash.exe"))}; Remove-Item -LiteralPath ${ps(staging)} -Recurse -Force`
+        ? `$p=${process.pid}; while (Get-Process -Id $p -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 200 }; Remove-Item -LiteralPath ${ps(backup)} -Recurse -Force -ErrorAction SilentlyContinue; Move-Item -LiteralPath ${ps(this.install)} -Destination ${ps(backup)}; Move-Item -LiteralPath ${ps(app)} -Destination ${ps(this.install)}; Start-Process -FilePath ${ps(join(this.install, WINDOWS_EXECUTABLE))}; Remove-Item -LiteralPath ${ps(staging)} -Recurse -Force`
         : `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.2; done; rm -rf ${sh(backup)}; mv ${sh(this.install)} ${sh(backup)} && mv ${sh(app)} ${sh(this.install)} && open ${sh(this.install)}; rm -rf ${sh(staging)}`;
     const child =
       this.platform === "win32"

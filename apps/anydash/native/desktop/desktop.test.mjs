@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,7 @@ import {
   expectedDigest,
   platformKey,
   selectRelease,
+  verifyCodeSignature,
   verifySums,
 } from "./updater.mjs";
 
@@ -384,6 +385,29 @@ test("selects the newest stable signed release for this platform", () => {
   assert.equal(compareVersions("anydash@v1.10.0", "1.9.9"), 1);
   assert.equal(platformKey("win32", "arm64"), undefined);
   assert.equal(platformKey("darwin", "x64"), "darwin-x64");
+});
+
+test("checks the Authenticode signature of the packaged Windows executable", async () => {
+  // scripts/desktop.mjs copies the Lynxtron runtime without renaming it.
+  const packaging = await readFile(
+    new URL("../../scripts/desktop.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(packaging, /join\(app, "lynxtron\.exe"\)/);
+  const calls = [];
+  const app = join("C:", "Users", "u", "AnyDash");
+  const verified = await verifyCodeSignature(app, {
+    platform: "win32",
+    publisher: "CN=Delino",
+    exec: async (command, args) => {
+      calls.push({ command, args });
+      return { code: 0, output: "CN=Delino" };
+    },
+  });
+  assert.equal(verified, true);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].args.at(-1).includes(join(app, "lynxtron.exe")));
+  assert.ok(!calls[0].args.at(-1).includes("AnyDash.exe"));
 });
 
 test("verifies the Ed25519 signature and checksum before installing", () => {
