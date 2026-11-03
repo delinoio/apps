@@ -12,7 +12,6 @@ import (
 	"github.com/delinoio/apps/servers/mcpa-api/internal/apperr"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/auth"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/delcore"
-	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
 
 // userTokenErr maps a failure to obtain or use a Delcore user token.
@@ -59,8 +58,9 @@ func (s *Service) GetViewer(ctx context.Context, _ *connect.Request[mcpav1.GetVi
 }
 
 // ListTenantGroups lists the tenant's Delcore groups for ACL editing. User
-// sessions read Delcore and refresh the group snapshot; personal keys read
-// the latest snapshot.
+// sessions refresh the group snapshot from Delcore at most once per
+// MCPA_AUTHORIZE_CACHE_TTL for the tenant and read it; personal keys read the
+// latest snapshot.
 func (s *Service) ListTenantGroups(ctx context.Context, req *connect.Request[mcpav1.ListTenantGroupsRequest]) (*connect.Response[mcpav1.ListTenantGroupsResponse], error) {
 	p, err := principal(ctx)
 	if err != nil {
@@ -70,17 +70,9 @@ func (s *Service) ListTenantGroups(ctx context.Context, req *connect.Request[mcp
 	if err := s.authz.Capability(ctx, p, tenant, delcore.CapabilityAccessResources); err != nil {
 		return nil, err
 	}
-	var groups []store.Group
-	if p.HasUserToken() {
-		groups, err = s.authz.ReplaceGroups(ctx, p, tenant)
-		if err != nil {
-			return nil, userTokenErr(err)
-		}
-	} else {
-		groups, err = store.SnapshotGroups(ctx, s.db.Pool, tenant)
-		if err != nil {
-			return nil, dbErr(err)
-		}
+	groups, err := s.authz.SnapshotGroups(ctx, p, tenant)
+	if err != nil {
+		return nil, userTokenErr(err)
 	}
 	out := &mcpav1.ListTenantGroupsResponse{Metadata: apperr.Metadata(ctx)}
 	for _, g := range groups {

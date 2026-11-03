@@ -143,3 +143,47 @@ func TestCapabilityRequirement(t *testing.T) {
 		t.Fatalf("key without grant: %v", err)
 	}
 }
+
+func TestCapabilityPersonalKeyDeletingTenant(t *testing.T) {
+	ctx := context.Background()
+	deleting := delcorev1.BlockReason_BLOCK_REASON_DELETING
+	permission := delcorev1.BlockReason_BLOCK_REASON_PERMISSION
+	key := auth.NewPersonalKeyPrincipal("u1", "t1", "dlk_x")
+	cases := []struct {
+		name    string
+		d       delcore.KeyDecision
+		allowed bool
+	}{
+		{"deleting only", delcore.KeyDecision{Reasons: []delcorev1.BlockReason{deleting}, TenantID: "t1", UserID: "u1"}, true},
+		{"deleting repeated", delcore.KeyDecision{Reasons: []delcorev1.BlockReason{deleting, deleting}, TenantID: "t1", UserID: "u1"}, true},
+		{"deleting and permission", delcore.KeyDecision{Reasons: []delcorev1.BlockReason{deleting, permission}, TenantID: "t1", UserID: "u1"}, false},
+		{"permission only", delcore.KeyDecision{Reasons: []delcorev1.BlockReason{permission}, TenantID: "t1", UserID: "u1"}, false},
+		{"denied without reasons", delcore.KeyDecision{TenantID: "t1", UserID: "u1"}, false},
+		{"deleting but tenant mismatch", delcore.KeyDecision{Reasons: []delcorev1.BlockReason{deleting}, TenantID: "t2", UserID: "u1"}, false},
+		{"deleting but user mismatch", delcore.KeyDecision{Reasons: []delcorev1.BlockReason{deleting}, TenantID: "t1", UserID: "u2"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &Authorizer{dc: &fakeDelcore{key: tc.d}}
+			err := a.Capability(ctx, key, "t1", delcore.CapabilityAccessResources)
+			if tc.allowed {
+				if err != nil {
+					t.Fatalf("want allowed, got %v", err)
+				}
+				return
+			}
+			if apperr.As(err).Reason != mcpav1.ErrorReason_ERROR_REASON_PERMISSION_DENIED {
+				t.Fatalf("want permission denied, got %v", err)
+			}
+		})
+	}
+}
+
+func TestCapabilityConsoleDeletingTenantStaysDenied(t *testing.T) {
+	// User-token paths use Authorize, whose result is not reinterpreted here.
+	a := &Authorizer{dc: &fakeDelcore{allowed: false}}
+	console := auth.NewUserPrincipal(mcpav1.ActorKind_ACTOR_KIND_CONSOLE, "u1", "s", nil)
+	if err := a.Capability(context.Background(), console, "t1", delcore.CapabilityAccessResources); apperr.As(err).Reason != mcpav1.ErrorReason_ERROR_REASON_PERMISSION_DENIED {
+		t.Fatalf("console denial: %v", err)
+	}
+}
