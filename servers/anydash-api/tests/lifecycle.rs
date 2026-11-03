@@ -867,3 +867,90 @@ async fn tenant_states_and_user_withdrawal() {
     f.ok(&o, "AccountService/GetAccount", json!({})).await;
     f.cleanup().await;
 }
+
+/// Layout validation names the violating layout field in `ErrorDetail.field` for both
+/// `AddWidget` and `UpdateWidgetLayout`.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn widget_layout_errors_name_the_violating_field() {
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    let user = f.user(&a);
+    f.connect(&a).await;
+    f.enroll(&a, "laptop", "").await;
+    let dash = f
+        .ok(
+            &user,
+            "DashboardService/CreateDashboard",
+            json!({"requestId":id(),"spaceId":a.personal,"name":"Layouts"}),
+        )
+        .await["dashboard"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let layout = |x: u32, y: u32, width: u32, height: u32| json!({"x":x,"y":y,"width":width,"height":height,"presentation":"WIDGET_PRESENTATION_NUMBER"});
+    let add = |version: &str, layout: serde_json::Value| {
+        json!({"dashboardId":dash,"expectedVersion":version,"requestId":id(),"type":"WIDGET_TYPE_LOCAL_USAGE_SUMMARY",
+            "layout":layout,"query":{"period":"QUERY_PERIOD_TODAY"},"source":{"allDevices":true}})
+    };
+    for (bad, field) in [
+        (layout(12, 0, 1, 1), "layout.x"),
+        (layout(0, 0, 0, 1), "layout.width"),
+        (layout(0, 0, 13, 1), "layout.width"),
+        (layout(8, 0, 6, 1), "layout.width"),
+        (layout(0, 1000, 1, 1), "layout.y"),
+        (layout(0, 0, 1, 0), "layout.height"),
+        (layout(0, 0, 1, 13), "layout.height"),
+    ] {
+        let e = f
+            .fail(
+                &user,
+                "DashboardService/AddWidget",
+                add("1", bad.clone()),
+                "ERROR_REASON_INVALID_ARGUMENT",
+            )
+            .await;
+        assert_eq!(e.detail.field, field, "layout {bad}");
+    }
+
+    // The far corner of the grid is valid.
+    let edge = f
+        .ok(
+            &user,
+            "DashboardService/AddWidget",
+            add("1", layout(11, 999, 1, 12)),
+        )
+        .await;
+    let widget = edge["widgetId"].as_str().unwrap().to_owned();
+    let version = edge["dashboard"]["version"].as_str().unwrap().to_owned();
+    let second = f
+        .ok(
+            &user,
+            "DashboardService/AddWidget",
+            add(&version, layout(0, 0, 2, 2)),
+        )
+        .await;
+    let other = second["widgetId"].as_str().unwrap().to_owned();
+    let version = second["dashboard"]["version"].as_str().unwrap().to_owned();
+
+    let update = |updates: serde_json::Value| json!({"dashboardId":dash,"expectedVersion":version,"updates":updates});
+    let e = f
+        .fail(
+            &user,
+            "DashboardService/UpdateWidgetLayout",
+            update(json!([
+                {"widgetId":widget,"layout":layout(0, 0, 12, 12)},
+                {"widgetId":other,"layout":layout(0, 0, 1, 13)},
+            ])),
+            "ERROR_REASON_INVALID_ARGUMENT",
+        )
+        .await;
+    assert_eq!(e.detail.field, "updates[1].layout.height");
+    f.ok(
+        &user,
+        "DashboardService/UpdateWidgetLayout",
+        update(json!([{"widgetId":widget,"layout":layout(0, 0, 12, 12)}])),
+    )
+    .await;
+    f.cleanup().await;
+}
