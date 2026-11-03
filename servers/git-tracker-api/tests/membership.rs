@@ -140,6 +140,14 @@ async fn handle(State(shared): State<Shared>, request: Request) -> (StatusCode, 
             StatusCode::OK,
             json!({"ref":"refs/heads/main","object":{"type":"commit","sha":p.head}}),
         )
+    } else if path == "/repos/owner/repo/issues/1/comments" {
+        // Pull request comment listing (no existing comment) and creation; the posted body is
+        // read back from the recorded calls.
+        if body.is_null() {
+            (StatusCode::OK, json!([]))
+        } else {
+            (StatusCode::CREATED, json!({"id":1}))
+        }
     } else if path == "/repos/owner/repo/pulls/1" {
         (
             StatusCode::OK,
@@ -892,11 +900,14 @@ async fn postgres_commit_beyond_rest_cap_uploads_appends_and_completes_after_hea
         "http://{}/gittracker.v1.GitTrackerService",
         listener.local_addr().unwrap()
     );
-    let router = Router::new().fallback_service(
-        connectrpc::Router::new()
-            .add_service(server.clone())
-            .into_axum_service(),
-    );
+    // The ingress marker gives pull request comment publication its time budget, as in main.rs.
+    let router = Router::new()
+        .fallback_service(
+            connectrpc::Router::new()
+                .add_service(server.clone())
+                .into_axum_service(),
+        )
+        .layer(axum::middleware::from_fn(git_tracker_api::capture_ingress));
     let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     async fn call(
         http: &reqwest::Client,
@@ -1117,6 +1128,82 @@ async fn postgres_commit_beyond_rest_cap_uploads_appends_and_completes_after_hea
     )
     .await;
     assert!(missing.get("execution").is_none(), "{missing}");
+
+    // Uploaded identifiers reach the pull request comment only as literal inline code spans.
+    let head = sha(777);
+    shared.lock().unwrap().head = head.clone();
+    let hostile_row =
+        "[x](https://example.invalid/)![i](https://example.invalid/i.png) #1 :+1: x\\";
+    let long_row = "r".repeat(300);
+    let hostile_context = json!({"repositoryId":rid,"executionId":"run-hostile","commit":head,"branch":"main","pullRequest":"1"});
+    let hostile_dataset = json!({"id":"@org/team","name":"Team","columns":[{"id":"c|d","unit":"B","direction":"DIRECTION_LOWER"}]});
+    let (status, hostile) = call(
+        &http,
+        &api,
+        "Upload",
+        &auth,
+        json!({"context":hostile_context,"dataset":hostile_dataset,"rows":[
+            {"id":hostile_row,"values":{"c|d":"1"}},
+            {"id":"a`b","values":{"c|d":"2"}},
+            {"id":long_row,"values":{"c|d":"3"}},
+        ]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{hostile}");
+    assert!(
+        hostile.get("warnings").is_none(),
+        "{:?}",
+        shared
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .rev()
+            .take(8)
+            .map(|c| (c.0.clone(), c.2.clone()))
+            .collect::<Vec<_>>()
+    );
+    let posted: Vec<String> = shared
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .filter(|c| c.0 == "/repos/owner/repo/issues/1/comments")
+        .filter_map(|c| c.2["body"].as_str().map(str::to_owned))
+        .collect();
+    let comment = posted.last().unwrap_or_else(|| {
+        panic!(
+            "no comment posted; calls: {:?}",
+            shared
+                .lock()
+                .unwrap()
+                .calls
+                .iter()
+                .map(|c| c.0.clone())
+                .collect::<Vec<_>>()
+        )
+    });
+    println!("COMMENT-BODY-START\n{comment}\nCOMMENT-BODY-END");
+    assert!(comment.starts_with("<!-- git-tracker -->\n### Git Tracker\n"));
+    let rows: Vec<&str> = comment.lines().filter(|l| l.starts_with("| `")).collect();
+    assert_eq!(rows.len(), 3, "{comment}");
+    assert!(
+        rows.iter().any(|l| l.starts_with(&format!(
+            "| `@org/team` / `{hostile_row}` / `c\\|d` | `1` `B` |"
+        ))),
+        "{comment}"
+    );
+    assert!(
+        rows.iter()
+            .any(|l| l.starts_with("| `@org/team` / ``a`b`` / `c\\|d` | `2` `B` |")),
+        "{comment}"
+    );
+    assert!(
+        rows.iter()
+            .any(|l| l.contains(&format!("`{}\u{2026}`", "r".repeat(120)))
+                && !l.contains(&"r".repeat(121))),
+        "{comment}"
+    );
 
     task.abort();
     drop(server);

@@ -624,27 +624,9 @@ impl GitHub {
             escape(&r.id),
             escape(&c.execution_id)
         );
-        fn clean(v: &str) -> String {
-            v.replace('|', "\\|")
-                .replace(['\n', '\r'], " ")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;")
-        }
         for v in comparisons {
             let status = serde_json::to_value(v.status)?;
-            let line = format!(
-                "| {} / {} / {} | {} {} | {} | {} |\n",
-                clean(&v.dataset_id),
-                clean(&v.row_id),
-                clean(&v.column_id),
-                clean(&v.value),
-                clean(&v.unit),
-                clean(&v.delta),
-                status
-                    .as_str()
-                    .unwrap_or("")
-                    .trim_start_matches("COMPARISON_STATUS_")
-            );
+            let line = comparison_row(&v, status.as_str().unwrap_or(""));
             if body.len() + line.len() > 60000 {
                 body.push_str("\nMore rows are available in the execution details.\n");
                 break;
@@ -693,6 +675,84 @@ impl GitHub {
     }
 }
 
+/// Longest uploaded text, in characters, that the pull request comment displays. The execution
+/// details page keeps the full value.
+const DISPLAY_LIMIT: usize = 120;
+
+/// Renders uploaded text for a pull request comment table cell so that Markdown and HTML in it
+/// stay literal. The text is truncated to `DISPLAY_LIMIT` characters (plus an ellipsis), line
+/// breaks become spaces and the result is one inline code span: the backtick fence is one
+/// longer than the longest backtick run inside, a space pads text that starts or ends with a
+/// backtick (or that a code span would trim), and every pipe is escaped for the table. Empty
+/// text renders as nothing.
+pub fn code_span(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    let mut shown: String = text
+        .chars()
+        .take(DISPLAY_LIMIT)
+        .map(|c| if matches!(c, '\n' | '\r') { ' ' } else { c })
+        .collect();
+    if text.chars().nth(DISPLAY_LIMIT).is_some() {
+        shown.push('\u{2026}');
+    }
+    let longest = shown
+        .split(|c| c != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or_default();
+    let fence = "`".repeat(longest + 1);
+    // A code span strips one space from both ends when both are spaces (unless all spaces).
+    let trimmed =
+        shown.starts_with(' ') && shown.ends_with(' ') && !shown.trim_matches(' ').is_empty();
+    let pad = if shown.starts_with('`') || shown.ends_with('`') || trimmed {
+        " "
+    } else {
+        ""
+    };
+    format!("{fence}{pad}{}{pad}{fence}", escape_pipes(&shown))
+}
+
+/// Escapes every pipe as `\|`. A table splitter pairs backslashes from the left, so a pipe that
+/// follows an odd number of literal backslashes would stay unescaped after one more backslash
+/// (an even run) and split the cell. One extra backslash keeps such a pipe escaped and the row
+/// at exactly four cells, at the cost of one additional displayed backslash.
+fn escape_pipes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut backslashes = 0;
+    for c in text.chars() {
+        if c == '|' {
+            if backslashes % 2 == 1 {
+                out.push('\\');
+            }
+            out.push('\\');
+        }
+        backslashes = if c == '\\' { backslashes + 1 } else { 0 };
+        out.push(c);
+    }
+    out
+}
+
+/// One four-cell table row of the pull request comment. Every uploaded string goes through
+/// `code_span`.
+fn comparison_row(v: &delino_protocol::gittracker::v1::Comparison, status: &str) -> String {
+    let value: Vec<String> = [&v.value, &v.unit]
+        .into_iter()
+        .map(|part| code_span(part))
+        .filter(|part| !part.is_empty())
+        .collect();
+    format!(
+        "| {} / {} / {} | {} | {} | {} |\n",
+        code_span(&v.dataset_id),
+        code_span(&v.row_id),
+        code_span(&v.column_id),
+        value.join(" "),
+        code_span(&v.delta),
+        status.trim_start_matches("COMPARISON_STATUS_")
+    )
+}
+
 /// Returns the first parent of a commit object, `None` for a root commit, and fails closed on a
 /// malformed parent list.
 fn first_parent(commit: &Value) -> Result<Option<String>> {
@@ -718,4 +778,95 @@ fn github_failure(mut fault: Fault) -> Fault {
         fault.source = server_common::error::FaultSource::GitHub;
     }
     fault
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use delino_protocol::gittracker::v1::Comparison;
+
+    #[test]
+    fn code_span_keeps_ordinary_text_literal() {
+        assert_eq!(code_span("size"), "`size`");
+        assert_eq!(code_span("a b"), "`a b`");
+        assert_eq!(code_span("@org/team"), "`@org/team`");
+        assert_eq!(code_span(""), "");
+    }
+
+    #[test]
+    fn code_span_fences_backtick_runs() {
+        // The fence is one longer than the longest inner run.
+        assert_eq!(code_span("a`b"), "``a`b``");
+        assert_eq!(code_span("a```b``c"), "````a```b``c````");
+        // Text that starts or ends with a backtick is padded so the fence stays separate.
+        assert_eq!(code_span("`a"), "`` `a ``");
+        assert_eq!(code_span("a`"), "`` a` ``");
+        assert_eq!(code_span("`"), "`` ` ``");
+        // Padding keeps spaces that a code span would otherwise trim.
+        assert_eq!(code_span(" a "), "`  a  `");
+        assert_eq!(code_span("  "), "`  `");
+    }
+
+    #[test]
+    fn code_span_flattens_line_breaks_and_escapes_pipes() {
+        assert_eq!(code_span("a\r\nb\nc"), "`a  b c`");
+        assert_eq!(code_span("a|b"), "`a\\|b`");
+        assert_eq!(code_span("||"), "`\\|\\|`");
+        // A pipe after an odd backslash run gets one more backslash so it cannot split the cell.
+        assert_eq!(code_span("a\\|b"), "`a\\\\\\|b`");
+        assert_eq!(code_span("a\\\\|b"), "`a\\\\\\|b`");
+        // A trailing backslash is literal inside a code span.
+        assert_eq!(code_span("x\\"), "`x\\`");
+    }
+
+    #[test]
+    fn code_span_truncates_on_character_boundaries() {
+        let exact = "é".repeat(DISPLAY_LIMIT);
+        assert_eq!(code_span(&exact), format!("`{exact}`"));
+        let long = "é".repeat(300);
+        assert_eq!(
+            code_span(&long),
+            format!("`{}\u{2026}`", "é".repeat(DISPLAY_LIMIT))
+        );
+        // The limit counts characters of the original text, before any escaping.
+        let pipes = "|".repeat(DISPLAY_LIMIT + 1);
+        assert_eq!(
+            code_span(&pipes),
+            format!("`{}\u{2026}`", "\\|".repeat(DISPLAY_LIMIT))
+        );
+    }
+
+    #[test]
+    fn rows_have_four_cells_and_neutralize_markdown() {
+        let hostile = Comparison {
+            dataset_id: "@org/team".into(),
+            row_id: "[x](https://example.invalid/)![i](https://example.invalid/i.png) #1 :+1: x\\"
+                .into(),
+            column_id: "c|d".into(),
+            value: "1".into(),
+            unit: "B".into(),
+            delta: "+1".into(),
+            ..Default::default()
+        };
+        let row = comparison_row(&hostile, "COMPARISON_STATUS_REGRESSION");
+        assert_eq!(
+            row,
+            "| `@org/team` / `[x](https://example.invalid/)![i](https://example.invalid/i.png) #1 :+1: x\\` / `c\\|d` | `1` `B` | `+1` | REGRESSION |\n"
+        );
+        // Outside the escaped code spans there are exactly five unescaped pipes (four cells).
+        let outside: Vec<&str> = row.split('`').step_by(2).collect();
+        assert_eq!(outside.concat().matches('|').count(), 5);
+
+        let plain = Comparison {
+            dataset_id: "d".into(),
+            row_id: "r".into(),
+            column_id: "c".into(),
+            value: "10".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            comparison_row(&plain, "COMPARISON_STATUS_UNAVAILABLE"),
+            "| `d` / `r` / `c` | `10` |  | UNAVAILABLE |\n"
+        );
+    }
 }
