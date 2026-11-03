@@ -82,6 +82,7 @@ External individuals and organizations, CI jobs and service operators.
 - Provide an English responsive web application with desktop and mobile access to graphs, comparisons, and management.
 - The flow covers Delino sign-in, space selection, GitHub linking/App repository connection, upload setup guidance, dataset/history browsing, execution details, comparisons, and authorized token/deletion management.
 - Graph controls include dataset, branch, measurement column, multiple items, date range, and commit range. A point links to its execution details.
+- The First commit and Last commit range inputs accept only full 40-character lowercase hexadecimal SHAs. A malformed value is marked invalid inline, is not sent to `GetHistory` and does not limit the graph. After a response, a valid bound that is not at the matching end of the returned first-parent path (the Last commit first, the First commit last) shows a notice that it is not on the branch's first-parent path and does not limit the graph; the loaded data stays visible. Clearing a bound removes the marking and the notice.
 - Use equally spaced commits on the horizontal axis, ordered along the branch's first-parent path. Dates appear in details.
 - Plot actual measurements only and connect surrounding measured points across skipped commits. Do not fabricate or carry forward values.
 - Provide automatic-baseline comparisons and user-selected two-commit comparisons in tables.

@@ -72,3 +72,23 @@ export function graphValue(value, source, target) {
   if (!sourceKind || sourceKind !== targetKind) return NaN;
   return (Number(value) * sourceScale) / targetScale;
 }
+
+const commitSha = /^[0-9a-f]{40}$/;
+
+// The history endpoint matches commit bounds by exact string. Anything that is
+// not a full lowercase 40-digit SHA can never match, so it is not sent.
+export function isCommitSha(value) {
+  return commitSha.test(value);
+}
+
+// Returns whether the server honored each requested bound. The response path
+// lists commits from newest to oldest; a honored `to` bound starts the path and
+// a honored `from` bound ends it. A bound that is not on the branch's
+// first-parent path is ignored by the server and so sits at neither end. An
+// empty bound is not requested and counts as honored.
+export function rangeBounds(commits, from, to) {
+  return {
+    fromHonored: !from || commits[commits.length - 1] === from,
+    toHonored: !to || commits[0] === to,
+  };
+}

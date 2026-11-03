@@ -273,6 +273,15 @@ small {
   margin: 18px 0;
   overflow-wrap: anywhere;
 }
+.field-error {
+  color: #b3261e;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+input[aria-invalid="true"] {
+  border-color: #b3261e;
+}
 .notice.error {
   background: #fff2ee;
 }

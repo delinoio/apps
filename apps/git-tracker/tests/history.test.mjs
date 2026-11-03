@@ -5,6 +5,8 @@ import {
   representatives,
   readable,
   graphValue,
+  isCommitSha,
+  rangeBounds,
 } from "../src/history.mjs";
 const execution = (commit, id, order, state = 2) => ({
   context: { commit, executionId: id },
@@ -66,4 +68,58 @@ test("graph coordinates normalize historical units and reject incompatible kinds
   assert.equal(graphValue("1000", "ms", "s"), 1);
   assert.equal(graphValue("1", "MiB/s", "KiB/s"), 1024);
   assert.ok(Number.isNaN(graphValue("1", "ms", "B")));
+});
+
+test("only full lowercase SHAs are commit bounds", () => {
+  assert.equal(isCommitSha("a".repeat(40)), true);
+  assert.equal(isCommitSha("0123456789abcdef".repeat(2) + "01234567"), true);
+  for (const value of [
+    "",
+    "a".repeat(39),
+    "a".repeat(41),
+    "A".repeat(40),
+    "g".repeat(40),
+    " " + "a".repeat(39),
+    "main",
+  ])
+    assert.equal(isCommitSha(value), false, value);
+});
+test("range bounds are honored only at the matching end of the path", () => {
+  const path = ["e", "d", "c", "b", "a"];
+  // The path runs newest first: a honored last bound starts it and a honored
+  // first bound ends it.
+  assert.deepEqual(rangeBounds(path, "a", "e"), {
+    fromHonored: true,
+    toHonored: true,
+  });
+  assert.deepEqual(rangeBounds(path, "", ""), {
+    fromHonored: true,
+    toHonored: true,
+  });
+  assert.deepEqual(rangeBounds(path, "x", ""), {
+    fromHonored: false,
+    toHonored: true,
+  });
+  assert.deepEqual(rangeBounds(path, "", "x"), {
+    fromHonored: true,
+    toHonored: false,
+  });
+  // On the path but not at the end: the server did not slice there.
+  assert.deepEqual(rangeBounds(path, "c", "d"), {
+    fromHonored: false,
+    toHonored: false,
+  });
+  // Reversed bounds: the first bound is no longer on the sliced path.
+  assert.deepEqual(rangeBounds(["c"], "a", "c"), {
+    fromHonored: false,
+    toHonored: true,
+  });
+  assert.deepEqual(rangeBounds([], "a", "b"), {
+    fromHonored: false,
+    toHonored: false,
+  });
+  assert.deepEqual(rangeBounds([], "", ""), {
+    fromHonored: true,
+    toHonored: true,
+  });
 });

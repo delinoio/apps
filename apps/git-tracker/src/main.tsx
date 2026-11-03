@@ -25,7 +25,14 @@ import {
   type Dataset,
 } from "@repo/protos/gittracker/v1/gittracker_pb";
 import { DelcoreService } from "@repo/protos/delcore/v1/delcore_pb";
-import { points, readable, graphValue, representatives } from "./history.mjs";
+import {
+  points,
+  readable,
+  graphValue,
+  representatives,
+  isCommitSha,
+  rangeBounds,
+} from "./history.mjs";
 import "./style.css";
 
 const api =
@@ -235,6 +242,14 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
       void user.fetchNextPage();
   }, [user.hasNextPage, user.isFetching, user.isError, user.fetchNextPage]);
   const repositories = useQuery(method.listRepositories, { spaceId: space });
+  // Only full lowercase SHAs can match a commit on the path, so malformed
+  // bounds are marked invalid and are not sent.
+  const fromBound = fromCommit.trim();
+  const toBound = toCommit.trim();
+  const fromInvalid = fromBound !== "" && !isCommitSha(fromBound);
+  const toInvalid = toBound !== "" && !isCommitSha(toBound);
+  const sentFrom = fromInvalid ? "" : fromBound;
+  const sentTo = toInvalid ? "" : toBound;
   const history = useInfiniteQuery(
     method.getHistory,
     {
@@ -244,8 +259,8 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
       datasetId: "",
       since: since ? `${since}T00:00:00Z` : "",
       until: until ? `${until}T23:59:59.999999999Z` : "",
-      fromCommit,
-      toCommit,
+      fromCommit: sentFrom,
+      toCommit: sentTo,
     },
     {
       pageParamKey: "cursor",
@@ -254,6 +269,12 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
       refetchInterval: 30000,
     },
   );
+  const loadedCommits = history.isError
+    ? undefined
+    : history.data?.pages[0]?.commits;
+  const bounds = loadedCommits
+    ? rangeBounds(loadedCommits, sentFrom, sentTo)
+    : { fromHonored: true, toHonored: true };
   const historyData = useMemo(
     () =>
       history.isError
@@ -498,7 +519,17 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
                     value={fromCommit}
                     onChange={(e) => setFromCommit(e.target.value)}
                     placeholder="Full SHA"
+                    aria-invalid={fromInvalid}
+                    aria-describedby={
+                      fromInvalid ? "from-commit-error" : undefined
+                    }
                   />
+                  {fromInvalid && (
+                    <span className="field-error" id="from-commit-error">
+                      Enter the full 40-character lowercase SHA. This value is
+                      not used.
+                    </span>
+                  )}
                 </label>
                 <label>
                   Last commit
@@ -506,9 +537,33 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
                     value={toCommit}
                     onChange={(e) => setToCommit(e.target.value)}
                     placeholder="Full SHA"
+                    aria-invalid={toInvalid}
+                    aria-describedby={toInvalid ? "to-commit-error" : undefined}
                   />
+                  {toInvalid && (
+                    <span className="field-error" id="to-commit-error">
+                      Enter the full 40-character lowercase SHA. This value is
+                      not used.
+                    </span>
+                  )}
                 </label>
               </div>
+              {(!bounds.fromHonored || !bounds.toHonored) && (
+                <div className="notice" role="status">
+                  <strong>
+                    {!bounds.fromHonored && !bounds.toHonored
+                      ? "Neither commit is on this branch's first-parent path."
+                      : !bounds.fromHonored
+                        ? "The first commit is not on this branch's first-parent path."
+                        : "The last commit is not on this branch's first-parent path."}
+                  </strong>
+                  <p>
+                    The graph is not limited by{" "}
+                    {!bounds.fromHonored && !bounds.toHonored ? "them" : "it"}.
+                    Check the branch and the commit, or clear the field.
+                  </p>
+                </div>
+              )}
               <fieldset className="row-picker">
                 <legend>Items</legend>
                 {rows.map((id) => (
