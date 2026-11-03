@@ -163,6 +163,49 @@ test("dataset and column scalars must be strings", () => {
   );
 });
 
+test("unknown column keys are rejected and named", () => {
+  assert.throws(
+    () => parseConfiguration(columnYaml(`${validColumn}\nabsoluteTreshold: 0`)),
+    /columns\[0\] \(id "bytes"\) has unknown key "absoluteTreshold"/u,
+  );
+  // The first unknown key in document order is reported.
+  assert.throws(
+    () =>
+      parseConfiguration(
+        columnYaml(`${validColumn}\nzeta: 1\npercentageTreshold: 5\nalpha: 2`),
+      ),
+    /unknown key "zeta"/u,
+  );
+  // An unknown key in the second column names that column.
+  assert.throws(
+    () =>
+      parseConfiguration(
+        `id: size\nname: Size\ncolumns:\n  - id: a\n    direction: lower\n  - id: b\n    direction: lower\n    Unit: B\n`,
+      ),
+    /columns\[1\] \(id "b"\) has unknown key "Unit"/u,
+  );
+  // The correctly spelled thresholds are accepted, and omitting them is fine.
+  const [column] = parseConfiguration(
+    columnYaml(`${validColumn}\nabsoluteThreshold: 0\npercentageThreshold: 5`),
+  ).columns;
+  assert.deepEqual(
+    [column.absoluteThreshold, column.percentageThreshold],
+    ["0", "5"],
+  );
+  assert.equal(
+    parseConfiguration(columnYaml(validColumn)).columns[0].absoluteThreshold,
+    undefined,
+  );
+});
+
+test("unknown keys outside columns are not rejected", () => {
+  const dataset = parseConfiguration(
+    `${columnYaml(validColumn)}description: extra\n`,
+  );
+  assert.equal(dataset.id, "size");
+  assert.deepEqual(Object.keys(dataset), ["id", "name", "columns"]);
+});
+
 test("valid configuration produces the same dataset as before", () => {
   assert.deepEqual(
     parseConfiguration(
