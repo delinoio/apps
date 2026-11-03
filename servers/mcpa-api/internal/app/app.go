@@ -64,7 +64,7 @@ func New(ctx context.Context, cfg *config.Serve, log *slog.Logger, metrics *obs.
 	if err != nil {
 		return nil, fmt.Errorf("master keys: %w", err)
 	}
-	db, err := store.Open(ctx, cfg.URL, cfg.DependencyTimeout)
+	db, err := store.Open(ctx, cfg.URL, cfg.DependencyTimeout, store.ModeServe)
 	if err != nil {
 		return nil, err
 	}

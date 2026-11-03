@@ -256,7 +256,7 @@ func newEnv(t *testing.T, options ...envOption) *itEnv {
 	}))
 	t.Cleanup(e.oauth.Close)
 
-	db, err := store.Open(ctx, e.dbURL, 5*time.Second)
+	db, err := store.Open(ctx, e.dbURL, 5*time.Second, store.ModeServe)
 	if err != nil {
 		t.Fatal(err)
 	}

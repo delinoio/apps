@@ -24,7 +24,7 @@ import (
 // ErrNotFound means the requested row does not exist or is not visible.
 var ErrNotFound = errors.New("store: not found")
 
-// DB is satisfied by *pgxpool.Pool and pgx.Tx.
+// DB is satisfied by *Pool and pgx.Tx.
 type DB interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -41,19 +41,64 @@ func IsUniqueViolation(err error, constraint string) bool {
 // ResourceNameIndex enforces unique live resource names per tenant.
 const ResourceNameIndex = "resources_tenant_name_idx"
 
+// Mode selects how a Store bounds its database calls.
+type Mode string
+
+const (
+	// ModeServe bounds every request-path call by the dependency timeout:
+	// the server enforces statement_timeout and lock_timeout, and the Pool
+	// adapter bounds connection acquisition and each statement outside a
+	// transaction with a context deadline.
+	ModeServe Mode = "serve"
+	// ModeMaintenance leaves statements unbounded for the one-shot commands
+	// (migrate, check-schema and rotate-master-key), whose statements may
+	// legitimately run longer than a request would.
+	ModeMaintenance Mode = "maintenance"
+)
+
 // Store wraps the connection pool.
 type Store struct {
-	Pool *pgxpool.Pool
+	// Pool is the database handle for all queries and transactions. In
+	// ModeServe every call through it ends within the dependency timeout.
+	Pool *Pool
+	// timeout is the dependency timeout; zero in ModeMaintenance.
+	timeout time.Duration
 }
 
-// Open connects to PostgreSQL and verifies connectivity.
-func Open(ctx context.Context, databaseURL string, timeout time.Duration) (*Store, error) {
+// timeoutMillis converts d to whole milliseconds for PostgreSQL timeout
+// parameters, rounding up so that a positive duration never becomes 0, which
+// PostgreSQL treats as "no timeout".
+func timeoutMillis(d time.Duration) int64 {
+	ms := (d + time.Millisecond - 1) / time.Millisecond
+	if ms < 1 {
+		return 1
+	}
+	return int64(ms)
+}
+
+// Open connects to PostgreSQL and verifies connectivity. In ModeServe the
+// timeout also bounds every later database call; see Mode.
+func Open(ctx context.Context, databaseURL string, timeout time.Duration, mode Mode) (*Store, error) {
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		// The URL can contain a password; never include it in the error.
 		return nil, errors.New("store: DATABASE_URL is not a valid PostgreSQL URL")
 	}
 	cfg.ConnConfig.ConnectTimeout = timeout
+	callTimeout := time.Duration(0)
+	if mode == ModeServe {
+		// The server ends lock waits and statements after the dependency
+		// timeout even when the client context is still live. Transactions
+		// are bounded per statement, so a multi-statement transaction can
+		// run longer in total.
+		callTimeout = timeout
+		if cfg.ConnConfig.RuntimeParams == nil {
+			cfg.ConnConfig.RuntimeParams = map[string]string{}
+		}
+		ms := strconv.FormatInt(timeoutMillis(timeout), 10)
+		cfg.ConnConfig.RuntimeParams["statement_timeout"] = ms
+		cfg.ConnConfig.RuntimeParams["lock_timeout"] = ms
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("store: connect: %w", err)
@@ -64,13 +109,15 @@ func Open(ctx context.Context, databaseURL string, timeout time.Duration) (*Stor
 		pool.Close()
 		return nil, fmt.Errorf("store: ping: %w", err)
 	}
-	return &Store{Pool: pool}, nil
+	return &Store{Pool: &Pool{raw: pool, timeout: callTimeout}, timeout: callTimeout}, nil
 }
 
 // Close releases the pool.
-func (s *Store) Close() { s.Pool.Close() }
+func (s *Store) Close() { s.Pool.raw.Close() }
 
-// InTx runs fn in a read-committed transaction.
+// InTx runs fn in a read-committed transaction. Acquiring the connection is
+// bounded by the dependency timeout in ModeServe, and the server bounds each
+// statement and lock wait of the transaction.
 func (s *Store) InTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
 	return pgx.BeginFunc(ctx, s.Pool, fn)
 }
@@ -162,7 +209,7 @@ func (s *Store) Migrate(ctx context.Context) ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := s.Pool.Acquire(ctx)
+	conn, err := s.Pool.raw.Acquire(ctx)
 	if err != nil {
 		return nil, err
 	}

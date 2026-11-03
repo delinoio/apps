@@ -31,7 +31,7 @@ func openTestStore(t *testing.T) *store.Store {
 		t.Skip("TEST_DATABASE_URL is not set; skipping PostgreSQL integration tests")
 	}
 	ctx := context.Background()
-	s, err := store.Open(ctx, url, 10*time.Second)
+	s, err := store.Open(ctx, url, 10*time.Second, store.ModeServe)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestMCPOAuthUpdateGrantClassifiesStorageFailures(t *testing.T) {
 	}
 
 	// An unreachable database (closed pool) fails the same way.
-	closed, err := store.Open(ctx, os.Getenv("TEST_DATABASE_URL"), 10*time.Second)
+	closed, err := store.Open(ctx, os.Getenv("TEST_DATABASE_URL"), 10*time.Second, store.ModeServe)
 	if err != nil {
 		t.Fatal(err)
 	}

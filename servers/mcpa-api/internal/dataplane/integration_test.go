@@ -1537,7 +1537,7 @@ func TestIntegrationBudgetSpendOutlivesCallRecords(t *testing.T) {
 // Migration 0003 backfills spend entries from retained call records.
 func TestIntegrationUsageSpendMigrationBackfill(t *testing.T) {
 	dbURL := testDatabase(t)
-	db, err := store.Open(t.Context(), dbURL, 10*time.Second)
+	db, err := store.Open(t.Context(), dbURL, 10*time.Second, store.ModeMaintenance)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1600,7 +1600,7 @@ func startReplica(e *itEnv) (*DataPlane, *httptest.Server) {
 	t := e.t
 	t.Helper()
 	appName := "mcpa-replica-" + store.NewID().String()
-	db, err := store.Open(e.ctx, e.dbURL+"&application_name="+appName, 5*time.Second)
+	db, err := store.Open(e.ctx, e.dbURL+"&application_name="+appName, 5*time.Second, store.ModeServe)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 )
@@ -154,10 +155,24 @@ func As(err error) *Error {
 	switch {
 	case errors.Is(err, context.Canceled):
 		return &Error{Code: connect.CodeCanceled, Reason: mcpav1.ErrorReason_ERROR_REASON_UNSPECIFIED, Message: "request canceled", Cause: err}
-	case errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, context.DeadlineExceeded), isDatabaseTimeout(err):
 		return DependencyUnavailable(err)
 	}
 	return Internal(err)
+}
+
+// isDatabaseTimeout reports whether PostgreSQL ended a statement or a lock
+// wait because of the statement_timeout or lock_timeout that serve mode sets
+// from DEPENDENCY_TIMEOUT. Such failures are dependency outages, not
+// internal errors.
+func isDatabaseTimeout(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	// 57014 query_canceled covers statement_timeout; 55P03 lock_not_available
+	// covers lock_timeout.
+	return pgErr.Code == "57014" || pgErr.Code == "55P03"
 }
 
 // ToConnect renders err as a Connect error with a typed ErrorDetail.
