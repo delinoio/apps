@@ -9,7 +9,6 @@ use server_common::{
     integer, string,
 };
 use sha2::{Digest, Sha256};
-use sqlx::PgConnection;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -255,9 +254,10 @@ impl Actions {
     }
 }
 impl Server {
+    /// Authorizes a request against a lock-free repository snapshot. It holds no connection
+    /// except for the single token digest lookup.
     pub async fn authorize(
         &self,
-        db: &mut PgConnection,
         h: &str,
         r: &Repository,
         role: Role,
@@ -274,7 +274,7 @@ impl Server {
             if role != Role::Edit || !r.connected {
                 return Err(Fault::denied());
             }
-            let ok:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM git_tracker_tokens WHERE digest=$1 AND repository_id=$2 AND NOT revoked AND expires_at>$3)").bind(Sha256::digest(token).to_vec()).bind(server_common::uuid(&r.id)?).bind(server_common::now()).fetch_one(db).await?;
+            let ok:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM git_tracker_tokens WHERE digest=$1 AND repository_id=$2 AND NOT revoked AND expires_at>$3)").bind(Sha256::digest(token).to_vec()).bind(server_common::uuid(&r.id)?).bind(server_common::now()).fetch_one(&self.db).await?;
             return if ok {
                 Ok(())
             } else {
@@ -287,6 +287,31 @@ impl Server {
             return self.verify_actions(raw, r, c).await;
         }
         self.authority.allow(h, &r.space_id, role).await
+    }
+    /// Re-checks, under the repository row lock, the snapshot fields that `authorize` relied on.
+    /// A repository that was disconnected or made private between the snapshot and the lock is
+    /// rejected the same way as one that was already in that state when authorization ran.
+    pub(crate) fn recheck_locked(
+        h: &str,
+        snapshot: &Repository,
+        locked: &Repository,
+        role: Role,
+    ) -> Result<()> {
+        // Authorization passed without a credential check because the repository was public.
+        if role == Role::View
+            && snapshot.public
+            && snapshot.connected
+            && !(locked.public && locked.connected)
+        {
+            return Err(Fault::denied());
+        }
+        // Repository tokens and Actions tokens are valid only for a connected repository.
+        let token = h.strip_prefix("Bearer ").unwrap_or(h);
+        let needs_connection = token.starts_with("gt_") || h.starts_with("Actions ");
+        if role == Role::Edit && needs_connection && snapshot.connected && !locked.connected {
+            return Err(Fault::denied());
+        }
+        Ok(())
     }
     pub(crate) async fn verify_actions(
         &self,

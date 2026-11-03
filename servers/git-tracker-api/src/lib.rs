@@ -133,6 +133,19 @@ pub async fn repository(db: &mut PgConnection, id: &str) -> Result<(Repository, 
     let state: Value = row.get("state");
     Ok((repository_row(&row), serde_json::from_value(state)?))
 }
+/// Reads the repository without taking the row lock or reading the measurement state. Used to
+/// authorize a request before it holds a lock or a pooled transaction connection, because
+/// authorization may wait on Delcore or GitHub. The caller must re-check the fields that
+/// authorization depended on once it holds the lock (see `Server::recheck_locked`).
+pub async fn repository_snapshot(db: &PgPool, id: &str) -> Result<Repository> {
+    let row = sqlx::query(
+        "SELECT id,github_id,space_id,full_name,installation_id,public,connected FROM git_tracker_repositories WHERE id=$1",
+    )
+    .bind(uuid(id)?)
+    .fetch_one(db)
+    .await?;
+    Ok(repository_row(&row))
+}
 pub async fn audit(db: &mut PgConnection, space: &str, action: &str, trace: &str) -> Result<()> {
     sqlx::query("INSERT INTO git_tracker_audit VALUES($1,$2,$3,$4,$5)")
         .bind(uuid::Uuid::now_v7())
@@ -232,10 +245,15 @@ impl Server {
             .map(|c| c.repository_id.as_str())
             .unwrap_or_else(|| string(&q, "repositoryId"));
         uuid(rid)?;
+        // Authorize against a lock-free snapshot first. Authorization can wait on Delcore or
+        // GitHub, so it must hold neither the repository row lock nor a pooled connection, and a
+        // request with an invalid credential never takes the lock.
+        let snapshot = repository_snapshot(&self.db, rid).await?;
+        self.authorize(authorization, &snapshot, op.role(), context.as_ref())
+            .await?;
         let mut tx = self.db.begin().await?;
         let (repo, mut state) = repository(&mut tx, rid).await?;
-        self.authorize(&mut tx, authorization, &repo, op.role(), context.as_ref())
-            .await?;
+        Self::recheck_locked(authorization, &snapshot, &repo, op.role())?;
         if op.role() == Role::Edit && !repo.connected {
             return Err(Fault::precondition("repository is disconnected"));
         }

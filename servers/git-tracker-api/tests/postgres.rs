@@ -666,6 +666,9 @@ struct GitHubMock {
     private: std::sync::atomic::AtomicBool,
     fail_metadata: std::sync::atomic::AtomicBool,
     gate: std::sync::Mutex<Option<(Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>)>>,
+    /// One-shot gate that parks the next Delcore `Authorize` response, which holds one request
+    /// inside authorization.
+    authorize_gate: std::sync::Mutex<Option<(Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>)>>,
 }
 
 struct Fixture {
@@ -719,6 +722,7 @@ async fn fixture() -> Fixture {
         private: false.into(),
         fail_metadata: false.into(),
         gate: std::sync::Mutex::new(None),
+        authorize_gate: std::sync::Mutex::new(None),
     });
     let (commit_mock, actor_mock, github_mock) = (commit.clone(), actor.clone(), github.clone());
     let mock = Router::new().fallback(move |r: Request| {
@@ -736,6 +740,13 @@ async fn fixture() -> Fixture {
                     return (StatusCode::UNAUTHORIZED, Json(json!({"code":"unauthenticated"})));
                 }
                 let gate = github.gate.lock().unwrap().take();
+                if let Some((entered, release)) = gate {
+                    entered.notify_one();
+                    release.notified().await;
+                }
+            }
+            if p == "/delcore.v1.DelcoreService/Authorize" {
+                let gate = github.authorize_gate.lock().unwrap().take();
                 if let Some((entered, release)) = gate {
                     entered.notify_one();
                     release.notified().await;
@@ -855,6 +866,44 @@ impl Fixture {
         );
         *self.github.gate.lock().unwrap() = Some(gate.clone());
         gate
+    }
+    /// Arms the one-shot Delcore `Authorize` gate and returns `(entered, release)`.
+    fn arm_authorize_gate(&self) -> (Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>) {
+        let gate = (
+            Arc::new(tokio::sync::Notify::new()),
+            Arc::new(tokio::sync::Notify::new()),
+        );
+        *self.github.authorize_gate.lock().unwrap() = Some(gate.clone());
+        gate
+    }
+    /// Counts this fixture's sessions that hold an open transaction (and so possibly a lock).
+    async fn open_transactions(&self) -> i64 {
+        sqlx::query_scalar(
+            "SELECT count(*) FROM pg_stat_activity WHERE application_name=$1 AND xact_start IS NOT NULL AND pid<>pg_backend_pid()",
+        )
+        .bind(&self.schema)
+        .fetch_one(&self.admin)
+        .await
+        .unwrap()
+    }
+    /// Issues a repository token and returns its Authorization header value.
+    async fn token(&self, rid: &str) -> String {
+        let (status, issued) = self
+            .call(
+                "IssueToken",
+                "Bearer manager",
+                json!({"repositoryId":rid,"expiresAt":(chrono::Utc::now()+chrono::Duration::days(1)).to_rfc3339()}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{issued}");
+        format!("Bearer {}", issued["token"].as_str().unwrap())
+    }
+    fn upload_body(&self, rid: &str, execution: &str) -> Value {
+        json!({
+            "context":{"repositoryId":rid,"executionId":execution,"commit":self.commit,"branch":"main"},
+            "dataset":{"id":"size","name":"Size","columns":[{"id":"bytes","unit":"B","direction":"DIRECTION_LOWER"}]},
+            "rows":[{"id":"one","values":{"bytes":"1"}}]
+        })
     }
     /// Waits until a statement of this fixture's schema is blocked on a lock.
     async fn wait_for_lock_waiter(&self) {
@@ -1103,4 +1152,153 @@ async fn postgres_connect_aborts_without_partial_state_when_locked_refresh_fails
     assert_ne!(status, StatusCode::OK, "{failed}");
     assert_eq!(f.row().await, Some((rid, false, false)));
     assert_eq!(f.audit_count().await, audits);
+}
+
+/// Authorization may wait on Delcore or GitHub. It must hold neither the repository row lock nor
+/// a transaction connection, and a request that fails authentication must never take the lock.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_authorization_holds_no_repository_lock_or_transaction() {
+    let f = fixture().await;
+    let (status, connected) = f.connect().await;
+    assert_eq!(status, StatusCode::OK, "{connected}");
+    let rid = connected["repository"]["id"].as_str().unwrap().to_owned();
+    let token = f.token(&rid).await;
+
+    // Request A authenticates through Delcore, which never answers until released.
+    let (entered, release) = f.arm_authorize_gate();
+    let a = {
+        let (http, base, body) = (f.http.clone(), f.base.clone(), f.upload_body(&rid, "slow"));
+        tokio::spawn(async move {
+            let r = http
+                .post(format!("{base}/Upload"))
+                .header("Authorization", "Bearer manager")
+                .header("Connect-Protocol-Version", "1")
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            (r.status(), r.json::<Value>().await.unwrap())
+        })
+    };
+    entered.notified().await;
+    assert_eq!(
+        f.open_transactions().await,
+        0,
+        "a request that waits for authorization holds an open transaction"
+    );
+    // Record what the database sees while A waits for Delcore, for the validation record.
+    let sessions: Vec<(Option<String>, i64)> = sqlx::query_as(
+        "SELECT state, count(*) FROM pg_stat_activity WHERE application_name=$1 AND pid<>pg_backend_pid() GROUP BY state ORDER BY state",
+    )
+    .bind(&f.schema)
+    .fetch_all(&f.admin)
+    .await
+    .unwrap();
+    let locks: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=$1 AND l.locktype IN ('tuple','transactionid') AND a.pid<>pg_backend_pid()",
+    )
+    .bind(&f.schema)
+    .fetch_one(&f.admin)
+    .await
+    .unwrap();
+    eprintln!(
+        "while authorization waits: sessions by state {sessions:?}, row/transaction locks {locks}"
+    );
+    assert_eq!(
+        locks, 0,
+        "a request that waits for authorization holds a lock"
+    );
+
+    // An authorized upload completes within 2 seconds while A is still inside authorization.
+    let started = std::time::Instant::now();
+    let b = f
+        .http
+        .post(format!("{}/Upload", f.base))
+        .timeout(Duration::from_secs(2))
+        .header("Authorization", &token)
+        .header("Connect-Protocol-Version", "1")
+        .json(&f.upload_body(&rid, "fast"))
+        .send()
+        .await
+        .expect("the authorized upload must not wait behind the blocked authorization");
+    let (status, body) = (b.status(), b.json::<Value>().await.unwrap());
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(started.elapsed() < Duration::from_secs(2));
+
+    // A request with an invalid credential never takes the row lock: it fails while another
+    // transaction holds the lock.
+    let mut holder = f.admin.begin().await.unwrap();
+    sqlx::query(&format!(
+        "SELECT 1 FROM {}.git_tracker_repositories WHERE id=$1::uuid FOR UPDATE",
+        f.schema
+    ))
+    .bind(&rid)
+    .execute(&mut *holder)
+    .await
+    .unwrap();
+    for bad in ["Bearer junk", "Bearer gt_junk", ""] {
+        let r = f
+            .http
+            .post(format!("{}/Upload", f.base))
+            .timeout(Duration::from_secs(2))
+            .header("Authorization", bad)
+            .header("Connect-Protocol-Version", "1")
+            .json(&f.upload_body(&rid, "bad"))
+            .send()
+            .await
+            .expect("an invalid credential must be rejected without waiting for the row lock");
+        assert_ne!(r.status(), StatusCode::OK, "credential {bad:?}");
+    }
+    holder.rollback().await.unwrap();
+
+    release.notify_one();
+    let (status, body) = a.await.unwrap();
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+/// A repository disconnected after the snapshot but before the lock is rejected with the
+/// existing precondition fault, and the upload is not stored.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_repository_disconnected_while_authorizing_is_rejected() {
+    let f = fixture().await;
+    let (status, connected) = f.connect().await;
+    assert_eq!(status, StatusCode::OK, "{connected}");
+    let rid = connected["repository"]["id"].as_str().unwrap().to_owned();
+    let (entered, release) = f.arm_authorize_gate();
+    let a = {
+        let (http, base, body) = (f.http.clone(), f.base.clone(), f.upload_body(&rid, "late"));
+        tokio::spawn(async move {
+            let r = http
+                .post(format!("{base}/Upload"))
+                .header("Authorization", "Bearer manager")
+                .header("Connect-Protocol-Version", "1")
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            (r.status(), r.json::<Value>().await.unwrap())
+        })
+    };
+    entered.notified().await;
+    let (status, body) = f
+        .call("Disconnect", "Bearer manager", json!({"repositoryId":rid}))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    release.notify_one();
+    let (status, body) = a.await.unwrap();
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "failed_precondition", "{body}");
+    let stored: serde_json::Value = sqlx::query_scalar(&format!(
+        "SELECT state FROM {}.git_tracker_repositories",
+        f.schema
+    ))
+    .fetch_one(&f.admin)
+    .await
+    .unwrap();
+    assert!(
+        !stored.to_string().contains("late"),
+        "the rejected upload was stored: {stored}"
+    );
 }

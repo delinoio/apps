@@ -637,3 +637,45 @@ async fn pull_request_baseline_override_requires_a_token_from_the_connected_repo
     }
     task.abort();
 }
+
+/// The post-lock re-check rejects a repository that changed after the snapshot authorized the
+/// request, and accepts an unchanged one.
+#[test]
+fn recheck_rejects_repositories_that_changed_after_the_snapshot() {
+    use server_common::authority::Role;
+    let repo = |public, connected| Repository {
+        public,
+        connected,
+        ..Default::default()
+    };
+    let check = |h: &str, snapshot: &Repository, locked: &Repository, role| {
+        Server::recheck_locked(h, snapshot, locked, role)
+    };
+    let live = repo(true, true);
+    // Unchanged repositories pass for every credential kind.
+    for h in ["", "Bearer gt_x", "Actions x", "Bearer manager"] {
+        assert!(check(h, &live, &live, Role::View).is_ok());
+        assert!(check(h, &live, &live, Role::Edit).is_ok());
+    }
+    // Anonymous View relied on the public shortcut: losing visibility or the connection denies.
+    for locked in [repo(false, true), repo(true, false), repo(false, false)] {
+        assert_eq!(
+            check("", &live, &locked, Role::View).unwrap_err().code,
+            ErrorCode::PermissionDenied
+        );
+    }
+    // A credential check that already happened on a private repository stays valid.
+    let private = repo(false, true);
+    assert!(check("Bearer manager", &private, &repo(false, true), Role::View).is_ok());
+    // Repository and Actions tokens need the connection that the snapshot saw.
+    for h in ["Bearer gt_x", "gt_x", "Actions x"] {
+        assert_eq!(
+            check(h, &live, &repo(true, false), Role::Edit)
+                .unwrap_err()
+                .code,
+            ErrorCode::PermissionDenied
+        );
+    }
+    // Identity credentials keep the existing precondition, applied by the caller.
+    assert!(check("Bearer manager", &live, &repo(true, false), Role::Edit).is_ok());
+}

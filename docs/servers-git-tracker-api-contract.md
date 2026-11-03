@@ -124,6 +124,8 @@ PostgreSQL is authoritative for server state. Stored executions use the generate
 
 Check current space permissions on protected operations. Verify GitHub signatures and Actions OIDC identity; reject cross-repository and cross-space access.
 
+Every repository operation authorizes before it takes the repository row lock. The server reads a lock-free snapshot of the repository (identity, GitHub ID, space, full name, installation, visibility and connection state, without the measurement state), authorizes against it, and only then begins the transaction and locks the row. Authorization may wait on Delcore or GitHub, so it holds neither the row lock nor a transaction connection, and a request with an invalid credential never takes the lock. A repository token check remains one database lookup. After the lock the server re-checks the snapshot fields that authorization relied on: a repository that became private or disconnected after the snapshot lets no anonymous read pass and is denied, repository and Actions tokens are denied once the repository is disconnected, and any other Edit request keeps the existing disconnected precondition failure.
+
 ### Actions OIDC key refresh
 
 - Actions tokens must use RS256 and carry a `kid`; other headers are rejected before any key lookup or network access. Signature, issuer, audience, expiry, not-before and execution, repository, event, PR and commit binding checks are unchanged.
