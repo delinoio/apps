@@ -4,6 +4,8 @@ package server_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -13,7 +15,9 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"google.golang.org/protobuf/proto"
 
+	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 	"github.com/delinoio/apps/protos/mcpa/v1/mcpav1connect"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/auth"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/obs"
@@ -63,6 +67,71 @@ func TestEveryResponseCarriesRequestID(t *testing.T) {
 		if rec.Header().Get(server.RequestIDHeader) == "" {
 			t.Errorf("%s: missing %s", path, server.RequestIDHeader)
 		}
+	}
+}
+
+// TestMuxGeneratedResponsesCarryRequestID covers responses that the ServeMux
+// produces before any route is instrumented: unknown paths and wrong methods.
+func TestMuxGeneratedResponsesCarryRequestID(t *testing.T) {
+	h := newHandler(t, nil)
+	cases := []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodGet, "/", http.StatusNotFound},
+		{http.MethodGet, "/unknown", http.StatusNotFound},
+		{http.MethodPost, "/unknown", http.StatusNotFound},
+		// "OPTIONS /auth/" makes the mux answer other methods under /auth/ with 405.
+		{http.MethodGet, "/auth/unknown", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/healthz", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/readyz", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/auth/logout", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/auth/refresh", http.StatusMethodNotAllowed},
+	}
+	seen := map[string]bool{}
+	for _, tc := range cases {
+		rec := do(h, tc.method, tc.path, nil)
+		if rec.Code != tc.status {
+			t.Errorf("%s %s: status = %d, want %d", tc.method, tc.path, rec.Code, tc.status)
+		}
+		values := rec.Header().Values(server.RequestIDHeader)
+		if len(values) != 1 || values[0] == "" {
+			t.Errorf("%s %s: %s = %q, want exactly one non-empty value", tc.method, tc.path, server.RequestIDHeader, values)
+			continue
+		}
+		if seen[values[0]] {
+			t.Errorf("%s %s: request ID %q repeated across requests", tc.method, tc.path, values[0])
+		}
+		seen[values[0]] = true
+	}
+}
+
+// TestRoutedRequestIDMatchesConnectTraceID checks that routed responses keep
+// one ID, shared by the header and the typed Connect error detail.
+func TestRoutedRequestIDMatchesConnectTraceID(t *testing.T) {
+	rec := do(newHandler(t, nil), http.MethodPost, getViewer, map[string]string{"Content-Type": "application/json"})
+	values := rec.Header().Values(server.RequestIDHeader)
+	if len(values) != 1 || values[0] == "" {
+		t.Fatalf("%s = %q, want exactly one non-empty value", server.RequestIDHeader, values)
+	}
+	var body struct {
+		Details []struct {
+			Value string `json:"value"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || len(body.Details) == 0 {
+		t.Fatalf("Connect error body without details: %v %s", err, rec.Body.String())
+	}
+	raw, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(body.Details[0].Value, "="))
+	if err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	var detail mcpav1.ErrorDetail
+	if err := proto.Unmarshal(raw, &detail); err != nil {
+		t.Fatalf("unmarshal detail: %v", err)
+	}
+	if detail.GetTraceId() != values[0] {
+		t.Fatalf("trace_id %q != %s %q", detail.GetTraceId(), server.RequestIDHeader, values[0])
 	}
 }
 
