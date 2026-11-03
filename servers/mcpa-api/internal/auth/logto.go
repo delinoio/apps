@@ -38,6 +38,10 @@ type Logto struct {
 	mu       sync.Mutex
 	provider *oidc.Provider
 	meta     providerMetadata
+	// accessVerifier and idVerifier share one cached JWKS key set. They are
+	// built once after a successful discovery.
+	accessVerifier *oidc.IDTokenVerifier
+	idVerifier     *oidc.IDTokenVerifier
 }
 
 type providerMetadata struct {
@@ -45,6 +49,28 @@ type providerMetadata struct {
 	TokenEndpoint         string `json:"token_endpoint"`
 	EndSessionEndpoint    string `json:"end_session_endpoint"`
 	RevocationEndpoint    string `json:"revocation_endpoint"`
+	JWKSURI               string `json:"jwks_uri"`
+	// IDTokenSigningAlgs restricts accepted token algorithms the same way
+	// oidc.Provider.Verifier does.
+	IDTokenSigningAlgs []string `json:"id_token_signing_alg_values_supported"`
+}
+
+// supportedSigningAlgs lists the algorithms go-oidc accepts from discovery.
+var supportedSigningAlgs = map[string]bool{
+	"RS256": true, "RS384": true, "RS512": true,
+	"ES256": true, "ES384": true, "ES512": true,
+	"PS256": true, "PS384": true, "PS512": true,
+	"EdDSA": true,
+}
+
+func (m providerMetadata) signingAlgs() []string {
+	var algs []string
+	for _, a := range m.IDTokenSigningAlgs {
+		if supportedSigningAlgs[a] {
+			algs = append(algs, a)
+		}
+	}
+	return algs
 }
 
 // NewLogto configures the provider. clientID and clientSecret identify the
@@ -74,6 +100,18 @@ func (l *Logto) discover(ctx context.Context) (*oidc.Provider, providerMetadata,
 	if err := p.Claims(&meta); err != nil || meta.AuthorizationEndpoint == "" || meta.TokenEndpoint == "" {
 		return nil, providerMetadata{}, fmt.Errorf("%w: discovery metadata is incomplete", ErrLogtoUnavailable)
 	}
+	if meta.JWKSURI == "" {
+		return nil, providerMetadata{}, fmt.Errorf("%w: discovery metadata has no jwks_uri", ErrLogtoUnavailable)
+	}
+	// One key set serves every verification: keys are cached and refetched
+	// only for an unknown key ID.
+	keys := newJWKSKeySet(meta.JWKSURI, l.httpClient)
+	algs := meta.signingAlgs()
+	// Access tokens are not ID tokens: the audience is the API resource, not
+	// the client ID, so the client check is replaced by an explicit audience
+	// check in VerifyAccessToken.
+	l.accessVerifier = oidc.NewVerifier(l.issuer, keys, &oidc.Config{SkipClientIDCheck: true, SupportedSigningAlgs: algs})
+	l.idVerifier = oidc.NewVerifier(l.issuer, keys, &oidc.Config{ClientID: l.clientID, SupportedSigningAlgs: algs})
 	l.provider = p
 	l.meta = meta
 	return p, meta, nil
@@ -106,17 +144,22 @@ type VerifiedToken struct {
 
 // VerifyAccessToken verifies the signature, issuer and expiry of a Logto
 // access token and requires audience among its aud values.
+//
+// Failures to obtain Logto signing keys wrap ErrLogtoUnavailable. Every other
+// failure is a token failure and does not.
 func (l *Logto) VerifyAccessToken(ctx context.Context, raw, audience string) (*VerifiedToken, error) {
-	p, _, err := l.discover(ctx)
-	if err != nil {
+	if _, _, err := l.discover(ctx); err != nil {
 		return nil, err
 	}
-	// Access tokens are not ID tokens: the audience is the API resource, not
-	// the client ID, so the client check is replaced by an explicit audience
-	// check below.
-	v := p.VerifierContext(oidc.ClientContext(ctx, l.httpClient), &oidc.Config{SkipClientIDCheck: true})
+	l.mu.Lock()
+	v := l.accessVerifier
+	l.mu.Unlock()
+	ctx, outage := withJWKSOutage(ctx)
 	tok, err := v.Verify(ctx, raw)
 	if err != nil {
+		if outage.err != nil {
+			return nil, fmt.Errorf("%w: signing keys: %v", ErrLogtoUnavailable, outage.err)
+		}
 		return nil, fmt.Errorf("verify access token: %w", err)
 	}
 	if !slices.Contains(tok.Audience, audience) {
@@ -131,14 +174,20 @@ func (l *Logto) VerifyAccessToken(ctx context.Context, raw, audience string) (*V
 }
 
 // VerifyIDToken verifies an ID token for the configured client and nonce.
+// Failures to obtain Logto signing keys wrap ErrLogtoUnavailable.
 func (l *Logto) VerifyIDToken(ctx context.Context, raw, nonce string) (*VerifiedToken, error) {
-	p, _, err := l.discover(ctx)
-	if err != nil {
+	if _, _, err := l.discover(ctx); err != nil {
 		return nil, err
 	}
-	v := p.VerifierContext(oidc.ClientContext(ctx, l.httpClient), &oidc.Config{ClientID: l.clientID})
+	l.mu.Lock()
+	v := l.idVerifier
+	l.mu.Unlock()
+	ctx, outage := withJWKSOutage(ctx)
 	tok, err := v.Verify(ctx, raw)
 	if err != nil {
+		if outage.err != nil {
+			return nil, fmt.Errorf("%w: signing keys: %v", ErrLogtoUnavailable, outage.err)
+		}
 		return nil, fmt.Errorf("verify id token: %w", err)
 	}
 	if tok.Nonce != nonce {

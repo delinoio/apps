@@ -618,6 +618,24 @@ func TestCallbackDelcoreFailureIssuesNoCode(t *testing.T) {
 	}
 }
 
+func TestCallbackSigningKeyOutageIssuesNoCode(t *testing.T) {
+	e := newEnv(t)
+	e.logto.SetJWKSStatus(503)
+	q := e.login().Query()
+	if q.Get("error") != "temporarily_unavailable" || q.Get("code") != "" || q.Get("state") != "client-state" {
+		t.Fatalf("redirect %v", q)
+	}
+	if e.store.grantCount() != 0 {
+		t.Fatal("grant created while token signatures could not be verified")
+	}
+
+	// Once Logto recovers a new sign-in succeeds.
+	e.logto.SetJWKSStatus(0)
+	if q := e.login().Query(); q.Get("error") != "" || q.Get("code") == "" {
+		t.Fatalf("redirect after recovery %v", q)
+	}
+}
+
 func TestVerifyPKCE(t *testing.T) {
 	// RFC 7636 appendix B.
 	if !oauth.VerifyPKCE("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM") {

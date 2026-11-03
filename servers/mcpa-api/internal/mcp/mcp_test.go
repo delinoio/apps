@@ -421,6 +421,37 @@ func TestBearerAuthentication(t *testing.T) {
 	}
 }
 
+func TestSigningKeyOutageAnswers503(t *testing.T) {
+	e := newEnv(t)
+	bearer := func(tok string) map[string]string { return map[string]string{"Authorization": "Bearer " + tok} }
+	good := e.mcpToken(nil)
+
+	e.logto.SetJWKSStatus(503)
+	rec := e.post(bearer(good), toolsList)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "dependency_unavailable") {
+		t.Fatalf("outage: %d %s", rec.Code, rec.Body.String())
+	}
+	if c := rec.Header().Get("WWW-Authenticate"); c != "" {
+		t.Fatalf("outage must not challenge the client: %q", c)
+	}
+
+	// Recovery needs no restart, and the keys are then cached.
+	e.logto.SetJWKSStatus(0)
+	for range 3 {
+		if rec := e.post(bearer(good), toolsList); rec.Code != http.StatusOK {
+			t.Fatalf("recovered: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	forged := e.logto.SignForged(t, "k1", map[string]any{"sub": "mcp-user", "aud": mcpAudience, "mcpa_mfa": true})
+	rec = e.post(bearer(forged), toolsList)
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Header().Get("WWW-Authenticate"), `error="invalid_token"`) {
+		t.Fatalf("bad signature: %d %q", rec.Code, rec.Header().Get("WWW-Authenticate"))
+	}
+	if n := e.logto.JWKSRequests(); n != 2 {
+		t.Fatalf("JWKS requests %d, want 2 (failed outage fetch and one successful fetch)", n)
+	}
+}
+
 func TestOriginPolicy(t *testing.T) {
 	e := newEnv(t)
 	token := e.mcpToken(nil)
