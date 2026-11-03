@@ -65,6 +65,12 @@ type Options struct {
 	CheckpointTimeout time.Duration
 	// MaxRequestBodyBytes bounds inbound call bodies. Default 32 MiB.
 	MaxRequestBodyBytes int64
+	// MaxProviderResponseBytes bounds one provider response body, except
+	// server-sent event streams, and the provider-to-client bytes of one
+	// Claude relay tunnel of a non-streaming call. A call that exceeds it
+	// fails as a provider error with the error class
+	// provider_response_too_large. Default 128 MiB.
+	MaxProviderResponseBytes int64
 	// BaseTransport performs provider requests for executors that use the
 	// context RoundTripper. Default: a clone of http.DefaultTransport.
 	BaseTransport http.RoundTripper
@@ -84,6 +90,9 @@ type Options struct {
 	// Now returns the current time. Default: time.Now.
 	Now func() time.Time
 }
+
+// defaultMaxProviderResponseBytes is the default Options.MaxProviderResponseBytes.
+const defaultMaxProviderResponseBytes = 128 << 20
 
 // Engine is the embedded CLIProxyAPI data plane. It serves model calls under
 // /r/{resource_id}/ as an http.Handler.
@@ -133,6 +142,9 @@ func New(opts Options) (*Engine, error) {
 	if opts.MaxRequestBodyBytes <= 0 {
 		opts.MaxRequestBodyBytes = 32 << 20
 	}
+	if opts.MaxProviderResponseBytes <= 0 {
+		opts.MaxProviderResponseBytes = defaultMaxProviderResponseBytes
+	}
 	if opts.BaseTransport == nil {
 		opts.BaseTransport = http.DefaultTransport.(*http.Transport).Clone()
 	}
@@ -156,7 +168,7 @@ func New(opts Options) (*Engine, error) {
 		return nil, fmt.Errorf("proxy: %w", err)
 	}
 	logger := opts.Logger.With(slog.String("component", "proxy"))
-	relay, err := startUpstreamRelay(opts.DialUpstream, logger)
+	relay, err := startUpstreamRelay(opts.DialUpstream, logger, withRelayResponseLimit(opts.MaxProviderResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("proxy: %w", err)
 	}
@@ -166,7 +178,7 @@ func New(opts Options) (*Engine, error) {
 		logger:    logger,
 		cfg:       cfg,
 		executors: executors,
-		transport: &meteringTransport{base: opts.BaseTransport},
+		transport: &meteringTransport{base: opts.BaseTransport, maxResponseBytes: opts.MaxProviderResponseBytes},
 		relay:     relay,
 		persister: newAsyncPersister(opts.Tokens, logger, opts.CheckpointTimeout),
 		cp: &checkpointer{
@@ -340,7 +352,7 @@ func (e *Engine) build(ctx context.Context, rt *resourceRuntime) {
 	manager.SetRetryConfig(0, 0, 1)
 	manager.SetRoundTripperProvider(roundTripperProvider{rt: e.transport})
 	for key, executor := range e.executors {
-		manager.RegisterExecutor(&resourceExecutor{inner: executor, resourceID: rt.id, sdkProvider: key, relayURL: e.relay.URL(), logger: rt.logger})
+		manager.RegisterExecutor(&resourceExecutor{inner: executor, resourceID: rt.id, sdkProvider: key, relay: e.relay, logger: rt.logger})
 	}
 	rt.manager = manager
 	base := handlers.NewBaseAPIHandlers(&e.cfg.SDKConfig, manager)

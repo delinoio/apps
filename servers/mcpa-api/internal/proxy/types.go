@@ -139,6 +139,10 @@ const (
 	RejectionRequestTooLarge
 	RejectionNotFound
 	RejectionInternal
+	// RejectionProviderError is not a pre-provider rejection: it renders the
+	// customer response of a provider exchange that failed after the call
+	// started (see countingResponseWriter).
+	RejectionProviderError
 )
 
 // String returns the stable error type used in client error bodies.
@@ -162,6 +166,8 @@ func (c RejectionCode) String() string {
 		return "not_found"
 	case RejectionInternal:
 		return "internal_error"
+	case RejectionProviderError:
+		return "provider_error"
 	default:
 		return "unspecified"
 	}
@@ -187,6 +193,8 @@ func (c RejectionCode) HTTPStatus() int {
 		return http.StatusNotFound
 	case RejectionRequestTooLarge:
 		return http.StatusRequestEntityTooLarge
+	case RejectionProviderError:
+		return http.StatusBadGateway
 	default:
 		return http.StatusInternalServerError
 	}

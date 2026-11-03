@@ -142,7 +142,7 @@ func TestPublicTransportRefusesPrivateAddresses(t *testing.T) {
 	defer srv.Close()
 	client := &http.Client{Transport: PublicTransport(), Timeout: 2 * time.Second}
 	_, err := client.Get(srv.URL)
-	if err == nil || !errors.Is(err, errNonPublicAddress) {
+	if err == nil || !errors.Is(err, errProviderAddressNotAllowed) {
 		t.Fatalf("loopback dial: %v", err)
 	}
 	for _, addr := range []string{"10.0.0.1:443", "192.168.1.1:443", "169.254.169.254:80", "[::1]:443", "[fd00::1]:443", "100.64.0.1:443"} {
@@ -172,7 +172,7 @@ func TestPublicDialerRefusesPrivateAddresses(t *testing.T) {
 		conn.Close()
 		t.Fatal("loopback dial succeeded")
 	}
-	if !errors.Is(err, errNonPublicAddress) {
+	if !errors.Is(err, errProviderAddressNotAllowed) {
 		t.Fatalf("loopback dial: %v", err)
 	}
 	if conn, err := PublicDialer().DialContext(ctx, "tcp", "localhost:"+strings.TrimPrefix(srv.URL, "http://127.0.0.1:")); err == nil {

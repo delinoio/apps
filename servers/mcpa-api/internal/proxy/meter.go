@@ -63,6 +63,14 @@ type callState struct {
 	streamFailed    bool
 	dataBeforeError bool
 	rejection       *Rejection
+	// kimiDeviceID is the device ID that Kimi provider requests carry (see
+	// rewriteKimiDeviceHeaders). It is set only for Kimi calls.
+	kimiDeviceID string
+
+	// responseTooLarge is set when a provider response exceeded
+	// Options.MaxProviderResponseBytes and was cut off, by the metering
+	// transport or by the upstream relay.
+	responseTooLarge atomic.Bool
 
 	checkpoint checkpointState
 }
@@ -86,6 +94,32 @@ func (c *callState) selected(credentialID string, provider mcpav1.Provider) {
 	c.executorInvoked = true
 	c.credentialID = credentialID
 	c.provider = provider
+}
+
+// markResponseTooLarge records that a provider response exceeded the size
+// limit.
+func (c *callState) markResponseTooLarge() { c.responseTooLarge.Store(true) }
+
+// isStreaming reports whether the client asked for a streaming response.
+func (c *callState) isStreaming() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.streaming
+}
+
+// setKimiDeviceID records the device ID for Kimi provider requests.
+func (c *callState) setKimiDeviceID(id string) {
+	c.mu.Lock()
+	c.kimiDeviceID = id
+	c.mu.Unlock()
+}
+
+// kimiDevice returns the device ID for Kimi provider requests, or false when
+// the call is not served by a Kimi credential.
+func (c *callState) kimiDevice() (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.kimiDeviceID, c.provider == mcpav1.Provider_PROVIDER_KIMI && c.kimiDeviceID != ""
 }
 
 // observeHTTPStatus records the status of a provider response seen by the
@@ -168,6 +202,8 @@ func (c *callState) outcomeInput(clientCancelled bool, customerStatus int) outco
 		sentStreamData:  c.dataBeforeError,
 		clientCancelled: clientCancelled,
 		customerStatus:  customerStatus,
+
+		responseTooLarge: c.responseTooLarge.Load(),
 	}
 }
 
@@ -210,6 +246,25 @@ func callFromContext(ctx context.Context) *callState {
 	return nil
 }
 
+// relayCallIDKey carries the call ID of a relay tunnel into the dial
+// function, which has no other way to learn the call.
+type relayCallIDKey struct{}
+
+// CallIDFromContext returns the ID of the call a provider dial or request
+// context belongs to, or the empty string. It is meant for logging in the
+// dial path (see DialFunc).
+func CallIDFromContext(ctx context.Context) string {
+	if call := callFromContext(ctx); call != nil {
+		return call.id
+	}
+	if ctx != nil {
+		if id, ok := ctx.Value(relayCallIDKey{}).(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
 // headerFieldBytes returns the HTTP/1.1 size of header lines for one field.
 func headerFieldBytes(name string, values []string) int64 {
 	var n int64
@@ -245,6 +300,80 @@ func statusLineBytes(code int) int64 {
 // transport (internal/runtime/executor/helps/proxy_helpers.go:56).
 type meteringTransport struct {
 	base http.RoundTripper
+	// maxResponseBytes bounds provider response bodies other than event
+	// streams; zero or less disables the bound.
+	maxResponseBytes int64
+}
+
+// errProviderResponseTooLarge is returned by a provider response body that
+// exceeded the size limit.
+var errProviderResponseTooLarge = errors.New("provider response too large")
+
+// limitedBody bounds a provider response body.
+//
+// The SDK executors read non-streaming provider bodies with io.ReadAll, so
+// without a bound a provider (or a customer-controlled base URL) that sends an
+// endless body grows the server heap until it is killed. The bound counts
+// decoded bytes: the base transport decompresses before the body reaches this
+// wrapper, so a compressed bomb is bounded too.
+type limitedBody struct {
+	io.ReadCloser
+	call  *callState
+	limit int64
+	read  int64
+	// declared is the Content-Length the provider announced, or -1. A body
+	// that announces more than the limit fails at its first read without
+	// buffering anything.
+	declared int64
+	// exceeded latches after the limit was passed.
+	exceeded bool
+}
+
+// trip records the overrun and stops the transfer; the connection is not
+// reusable afterwards.
+func (b *limitedBody) trip() {
+	b.exceeded = true
+	b.call.markResponseTooLarge()
+	_ = b.ReadCloser.Close()
+}
+
+func (b *limitedBody) Read(p []byte) (int, error) {
+	if !b.exceeded && b.declared > b.limit {
+		b.trip()
+	}
+	if b.exceeded {
+		return 0, errProviderResponseTooLarge
+	}
+	// Read at most one byte beyond the limit so the overrun is detected
+	// without buffering more.
+	if remaining := b.limit - b.read + 1; int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+	n, err := b.ReadCloser.Read(p)
+	b.read += int64(n)
+	if b.read > b.limit {
+		b.trip()
+		return n - int(b.read-b.limit), errProviderResponseTooLarge
+	}
+	return n, err
+}
+
+// isEventStream reports whether a Content-Type header names a server-sent
+// event stream. The header is chosen by the provider, so it alone never
+// exempts a response from the size limit: a non-streaming call is executed by
+// buffering the whole body whatever the header says (see exemptFromLimit).
+func isEventStream(contentType string) bool {
+	mediaType, _, _ := strings.Cut(contentType, ";")
+	return strings.EqualFold(strings.TrimSpace(mediaType), "text/event-stream")
+}
+
+// exemptFromLimit reports whether a provider response is exempt from the size
+// limit. Only a response that is consumed incrementally is: the caller asked
+// for a stream (the same call property that exempts the Claude relay tunnels)
+// and the provider answered with an event stream. A streaming call's other
+// responses, and every response of a non-streaming call, stay bounded.
+func exemptFromLimit(call *callState, contentType string) bool {
+	return call.isStreaming() && isEventStream(contentType)
 }
 
 func (t *meteringTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -253,6 +382,7 @@ func (t *meteringTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return t.base.RoundTrip(req)
 	}
 	call.addRequestBytes(requestLineBytes(req.Method, req.URL.RequestURI()))
+	rewriteKimiDeviceHeaders := kimiDeviceHeaderRewrite(call, req)
 	trace := &httptrace.ClientTrace{
 		WroteHeaderField: func(name string, values []string) {
 			if strings.HasPrefix(name, ":") {
@@ -268,6 +398,9 @@ func (t *meteringTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		WroteHeaders: func() { call.addRequestBytes(int64(len("\r\n"))) },
 	}
 	out := req.Clone(httptrace.WithClientTrace(req.Context(), trace))
+	// The headers are rewritten on the clone before the transport writes
+	// them, so the byte counts above are those of the rewritten request.
+	rewriteKimiDeviceHeaders(out.Header)
 	if req.Body != nil && req.Body != http.NoBody {
 		out.Body = &countingReadCloser{ReadCloser: req.Body, call: call}
 	}
@@ -284,6 +417,9 @@ func (t *meteringTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	resp, err := t.base.RoundTrip(out)
 	if err == nil && resp != nil {
 		call.observeHTTPStatus(resp.StatusCode)
+		if t.maxResponseBytes > 0 && resp.Body != nil && !exemptFromLimit(call, resp.Header.Get("Content-Type")) {
+			resp.Body = &limitedBody{ReadCloser: resp.Body, call: call, limit: t.maxResponseBytes, declared: resp.ContentLength}
+		}
 	}
 	return resp, err
 }
@@ -391,11 +527,22 @@ func requestURIFor(baseURL, suffix string) string {
 }
 
 // countingResponseWriter counts customer-bound bytes of a call.
+//
+// When a provider response was cut off for exceeding the size limit, the SDK
+// handler answers with its own error status. The writer replaces that answer
+// before it is sent, so the customer gets a 502 provider_error in the format
+// of the endpoint (see Rejection RejectionProviderError); bytes billed are
+// those of the replacement. A response whose header was already sent keeps
+// its status.
 type countingResponseWriter struct {
 	http.ResponseWriter
 	call        *callState
 	wroteHeader bool
 	status      int
+	// replacement is the body that replaces the SDK handler's body; the
+	// handler's own body is discarded.
+	replacement      []byte
+	wroteReplacement bool
 }
 
 func newCountingResponseWriter(w http.ResponseWriter, call *callState) *countingResponseWriter {
@@ -409,6 +556,15 @@ func (w *countingResponseWriter) WriteHeader(code int) {
 	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
 		w.ResponseWriter.WriteHeader(code)
 		return
+	}
+	if w.call.responseTooLarge.Load() {
+		header := w.ResponseWriter.Header()
+		header.Del("Content-Length")
+		header.Del("Content-Encoding")
+		header.Set("Content-Type", "application/json")
+		rejection := Reject(RejectionProviderError, "the provider response was too large")
+		code = rejection.Code.HTTPStatus()
+		w.replacement = rejectionBody(w.call.format, rejection)
 	}
 	w.wroteHeader = true
 	w.status = code
@@ -424,15 +580,41 @@ func (w *countingResponseWriter) Write(p []byte) (int, error) {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
+	if w.replacement != nil {
+		if err := w.writeReplacement(); err != nil {
+			return 0, err
+		}
+		return len(p), nil
+	}
 	n, err := w.ResponseWriter.Write(p)
 	w.call.addResponseBytes(int64(n))
 	return n, err
+}
+
+// writeReplacement sends the replacement body once.
+func (w *countingResponseWriter) writeReplacement() error {
+	if w.wroteReplacement {
+		return nil
+	}
+	w.wroteReplacement = true
+	n, err := w.ResponseWriter.Write(w.replacement)
+	w.call.addResponseBytes(int64(n))
+	return err
+}
+
+// finish completes a replaced response whose handler wrote a header but no
+// body.
+func (w *countingResponseWriter) finish() {
+	if w.replacement != nil {
+		_ = w.writeReplacement()
+	}
 }
 
 func (w *countingResponseWriter) Flush() {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
+	w.finish()
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
 }
 

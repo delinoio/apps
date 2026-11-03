@@ -189,6 +189,10 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		streaming: rt.streaming,
 		start:     e.opts.Now(),
 	}
+	// The SDK Claude client never closes its idle provider connections;
+	// close the call's relay tunnels when the call ends, after the final
+	// checkpoint and also when ServeHTTP panics.
+	defer e.relay.CloseCall(call.id)
 	cw := newCountingResponseWriter(w, call)
 	var result outcome
 	record := func(final bool) CallRecordUpdate {
@@ -218,7 +222,13 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	wg.Go(func() { e.cp.run(ctx, call, record, stop) })
 
+	// A provider response that exceeds the size limit is cut off by the
+	// metering transport or, for the SDK Claude client, by its relay tunnel.
+	// Streaming calls are exempt from the relay limit because the relay
+	// cannot see the Content-Type inside TLS.
+	e.relay.watchCall(call.id, callWatch{exempt: call.isStreaming, onLimit: call.markResponseTooLarge})
 	e.serveCall(cw, r, call, rt, rest)
+	cw.finish()
 
 	close(stop)
 	wg.Wait()
