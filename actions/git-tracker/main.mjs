@@ -2,6 +2,14 @@
 import { readFile, appendFile } from "node:fs/promises";
 import { load, FAILSAFE_SCHEMA } from "js-yaml";
 
+const isPlainObject = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+// Name an input item in validation errors without echoing unbounded content.
+const describe = (kind, index, item) =>
+  typeof item?.id === "string" && item.id
+    ? `${kind}[${index}] (id ${JSON.stringify(item.id.slice(0, 64))})`
+    : `${kind}[${index}]`;
+
 // Quote numeric tokens before parsing. This preserves their original decimal
 // spelling, including integers beyond Number.MAX_SAFE_INTEGER and exponents.
 export function parseMeasurements(text) {
@@ -10,24 +18,48 @@ export function parseMeasurements(text) {
     (token) => (token.startsWith('"') ? token : JSON.stringify(token)),
   );
   const data = JSON.parse(quoted);
-  if (!Array.isArray(data.rows))
+  // Quoting turns every number into a string, so the JSON types of ids and
+  // value containers are checked on a second, unmodified parse of the same
+  // text. Both parses have the same shape; only number tokens differ.
+  const typed = JSON.parse(text);
+  if (!Array.isArray(data?.rows))
     throw new Error("Measurements require a rows array");
-  for (const row of data.rows) {
-    if (!row.id || !row.values || Array.isArray(row.values))
-      throw new Error("Each row requires an id and values");
+  data.rows.forEach((row, index) => {
+    const original = typed.rows[index];
+    if (!isPlainObject(original))
+      throw new Error(
+        `Measurement ${describe("rows", index, null)} must be an object`,
+      );
+    if (typeof original.id !== "string" || !original.id)
+      throw new Error(
+        `Measurement ${describe("rows", index, null)} requires an id that is a non-empty string`,
+      );
+    const label = describe("rows", index, original);
+    if (!isPlainObject(original.values))
+      throw new Error(
+        `Measurement ${label} requires values that are an object`,
+      );
     for (const value of Object.values(row.values)) {
       if (
         typeof value !== "string" ||
         !/^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$/u.test(value)
       )
-        throw new Error("Measurements must contain finite decimal values");
+        throw new Error(
+          `Measurement ${label} must contain finite decimal values`,
+        );
     }
-  }
+  });
   return data.rows;
 }
 export function parseConfiguration(text) {
   const data = load(text, { schema: FAILSAFE_SCHEMA });
-  if (!data?.id || !data.name || !Array.isArray(data.columns))
+  if (!isPlainObject(data)) throw new Error("Configuration must be a mapping");
+  // The FAILSAFE schema yields only strings, sequences and mappings, so a
+  // type check rejects sequences and mappings where a scalar is required.
+  for (const key of ["id", "name"])
+    if (typeof data[key] !== "string" || !data[key])
+      throw new Error(`Dataset ${key} must be a non-empty string`);
+  if (!Array.isArray(data.columns))
     throw new Error("Dataset id, name and columns are required");
   const directions = {
     lower: "DIRECTION_LOWER",
@@ -37,9 +69,25 @@ export function parseConfiguration(text) {
   return {
     id: data.id,
     name: data.name,
-    columns: data.columns.map((c) => {
+    columns: data.columns.map((c, index) => {
+      if (!isPlainObject(c))
+        throw new Error(
+          `Column ${describe("columns", index, null)} must be a mapping`,
+        );
+      const label = describe("columns", index, c);
+      if (typeof c.id !== "string" || !c.id)
+        throw new Error(
+          `Column ${describe("columns", index, null)} requires an id that is a non-empty string`,
+        );
+      for (const key of ["name", "unit"])
+        if (c[key] !== undefined && typeof c[key] !== "string")
+          throw new Error(`Column ${label} ${key} must be a string`);
+      if (typeof c.direction !== "string")
+        throw new Error(`Column ${label} direction must be a string`);
       if (!directions[c.direction])
-        throw new Error("Column direction must be lower, higher or neutral");
+        throw new Error(
+          `Column ${label} direction must be lower, higher or neutral`,
+        );
       return {
         id: c.id,
         name: c.name,

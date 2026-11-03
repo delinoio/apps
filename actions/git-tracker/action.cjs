@@ -3095,27 +3095,48 @@ var {
 } = yaml;
 
 // main.mjs
+var isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+var describe = (kind, index, item) => typeof item?.id === "string" && item.id ? `${kind}[${index}] (id ${JSON.stringify(item.id.slice(0, 64))})` : `${kind}[${index}]`;
 function parseMeasurements(text) {
   const quoted = text.replace(
     /"(?:[^"\\]|\\.)*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/gu,
     (token) => token.startsWith('"') ? token : JSON.stringify(token)
   );
   const data = JSON.parse(quoted);
-  if (!Array.isArray(data.rows))
+  const typed = JSON.parse(text);
+  if (!Array.isArray(data?.rows))
     throw new Error("Measurements require a rows array");
-  for (const row of data.rows) {
-    if (!row.id || !row.values || Array.isArray(row.values))
-      throw new Error("Each row requires an id and values");
+  data.rows.forEach((row, index) => {
+    const original = typed.rows[index];
+    if (!isPlainObject(original))
+      throw new Error(
+        `Measurement ${describe("rows", index, null)} must be an object`
+      );
+    if (typeof original.id !== "string" || !original.id)
+      throw new Error(
+        `Measurement ${describe("rows", index, null)} requires an id that is a non-empty string`
+      );
+    const label = describe("rows", index, original);
+    if (!isPlainObject(original.values))
+      throw new Error(
+        `Measurement ${label} requires values that are an object`
+      );
     for (const value of Object.values(row.values)) {
       if (typeof value !== "string" || !/^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$/u.test(value))
-        throw new Error("Measurements must contain finite decimal values");
+        throw new Error(
+          `Measurement ${label} must contain finite decimal values`
+        );
     }
-  }
+  });
   return data.rows;
 }
 function parseConfiguration(text) {
   const data = load(text, { schema: FAILSAFE_SCHEMA });
-  if (!data?.id || !data.name || !Array.isArray(data.columns))
+  if (!isPlainObject(data)) throw new Error("Configuration must be a mapping");
+  for (const key of ["id", "name"])
+    if (typeof data[key] !== "string" || !data[key])
+      throw new Error(`Dataset ${key} must be a non-empty string`);
+  if (!Array.isArray(data.columns))
     throw new Error("Dataset id, name and columns are required");
   const directions = {
     lower: "DIRECTION_LOWER",
@@ -3125,9 +3146,25 @@ function parseConfiguration(text) {
   return {
     id: data.id,
     name: data.name,
-    columns: data.columns.map((c) => {
+    columns: data.columns.map((c, index) => {
+      if (!isPlainObject(c))
+        throw new Error(
+          `Column ${describe("columns", index, null)} must be a mapping`
+        );
+      const label = describe("columns", index, c);
+      if (typeof c.id !== "string" || !c.id)
+        throw new Error(
+          `Column ${describe("columns", index, null)} requires an id that is a non-empty string`
+        );
+      for (const key of ["name", "unit"])
+        if (c[key] !== void 0 && typeof c[key] !== "string")
+          throw new Error(`Column ${label} ${key} must be a string`);
+      if (typeof c.direction !== "string")
+        throw new Error(`Column ${label} direction must be a string`);
       if (!directions[c.direction])
-        throw new Error("Column direction must be lower, higher or neutral");
+        throw new Error(
+          `Column ${label} direction must be lower, higher or neutral`
+        );
       return {
         id: c.id,
         name: c.name,

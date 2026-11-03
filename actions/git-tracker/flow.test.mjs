@@ -115,3 +115,100 @@ test("Action upload gating, cumulative rows, summary and explicit completion", a
     "permission failures must not be downgraded to warnings",
   );
 });
+
+test("malformed configuration and measurements fail before any request", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "git-tracker-action-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "event.json"), "{}");
+  const validConfiguration =
+    "id: size\nname: Size\ncolumns:\n  - id: bytes\n    name: Bytes\n    unit: B\n    direction: lower\n";
+  const validRows =
+    '{"rows":[{"id":"file","values":{"bytes":9007199254740993.0000000000000001}}]}';
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let raw = "";
+    for await (const chunk of request) raw += chunk;
+    requests.push(JSON.parse(raw));
+    response.setHeader("Content-Type", "application/json");
+    response.end("{}");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const run = async (configuration, rows) => {
+    await writeFile(join(directory, "dataset.yaml"), configuration);
+    await writeFile(join(directory, "rows.json"), rows);
+    return new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [fileURLToPath(new URL("./main.mjs", import.meta.url))],
+        {
+          env: {
+            PATH: process.env.PATH,
+            GITHUB_ACTIONS: "true",
+            GITHUB_EVENT_PATH: join(directory, "event.json"),
+            GITHUB_SHA: "a".repeat(40),
+            GITHUB_REF_NAME: "main",
+            GITHUB_REPOSITORY_ID: "42",
+            GITHUB_RUN_ID: "123",
+            GITHUB_RUN_ATTEMPT: "1",
+            "INPUT_API-URL": `http://127.0.0.1:${server.address().port}`,
+            "INPUT_REPOSITORY-ID": "42",
+            INPUT_TOKEN: "fixture-token",
+            INPUT_CONFIGURATION: join(directory, "dataset.yaml"),
+            INPUT_MEASUREMENTS: join(directory, "rows.json"),
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let log = "";
+      child.stdout.on("data", (chunk) => (log += chunk));
+      child.stderr.on("data", (chunk) => (log += chunk));
+      child.on("error", reject);
+      child.on("exit", (code) => resolve({ code, log }));
+    });
+  };
+  const malformed = [
+    [
+      validConfiguration,
+      '{"rows":[{"id":"file","values":123}]}',
+      /rows\[0\] \(id "file"\)/u,
+    ],
+    [
+      validConfiguration,
+      '{"rows":[{"id":7,"values":{"bytes":1}}]}',
+      /rows\[0\].*id/u,
+    ],
+    [
+      validConfiguration.replace(
+        "direction: lower",
+        "direction:\n      - lower",
+      ),
+      validRows,
+      /columns\[0\] \(id "bytes"\).*direction/u,
+    ],
+    [
+      validConfiguration.replace("unit: B", "unit:\n      - B"),
+      validRows,
+      /columns\[0\] \(id "bytes"\).*unit/u,
+    ],
+  ];
+  for (const [configuration, rows, message] of malformed) {
+    const result = await run(configuration, rows);
+    assert.equal(result.code, 1, result.log);
+    assert.match(result.log, message);
+  }
+  assert.equal(requests.length, 0, "no request may be sent for invalid input");
+  const result = await run(validConfiguration, validRows);
+  assert.equal(result.code, 0, result.log);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].dataset, {
+    id: "size",
+    name: "Size",
+    columns: [
+      { id: "bytes", name: "Bytes", unit: "B", direction: "DIRECTION_LOWER" },
+    ],
+  });
+  assert.deepEqual(requests[0].rows, [
+    { id: "file", values: { bytes: "9007199254740993.0000000000000001" } },
+  ]);
+});
