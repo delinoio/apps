@@ -46,6 +46,9 @@ import (
 const (
 	// RequestLifetime bounds the browser login between authorize and callback.
 	RequestLifetime = 10 * time.Minute
+	// defaultDependencyTimeout bounds the group snapshot refresh when the
+	// configuration sets no dependency timeout.
+	defaultDependencyTimeout = 5 * time.Second
 	// CodeLifetime bounds an authorization code.
 	CodeLifetime = time.Minute
 	// GrantIdleLifetime expires a grant that issues no token for this long.
@@ -119,7 +122,10 @@ type Config struct {
 	MFAClaim        string
 	ReauthURL       string
 	InsecureCookies bool
-	Log             *slog.Logger
+	// DependencyTimeout bounds the whole post-login group snapshot refresh.
+	// Zero means defaultDependencyTimeout.
+	DependencyTimeout time.Duration
+	Log               *slog.Logger
 }
 
 // Broker serves the OAuth endpoints and resolves MCP tokens to grants.
@@ -133,6 +139,9 @@ var _ auth.GrantResolver = (*Broker)(nil)
 // New builds the broker.
 func New(cfg Config) *Broker {
 	cfg.PublicURL = strings.TrimSuffix(cfg.PublicURL, "/")
+	if cfg.DependencyTimeout <= 0 {
+		cfg.DependencyTimeout = defaultDependencyTimeout
+	}
 	return &Broker{cfg: cfg, now: time.Now}
 }
 

@@ -82,9 +82,14 @@ type fakeGroups struct {
 	mu      sync.Mutex
 	tenants []string
 	tokens  []string
+	// hook, when set, runs at the start of every refresh like a slow Delcore.
+	hook func(ctx context.Context)
 }
 
 func (g *fakeGroups) RefreshGroups(ctx context.Context, p *auth.Principal, tenantID string) {
+	if g.hook != nil {
+		g.hook(ctx)
+	}
 	token, _ := p.DelcoreToken(ctx)
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -200,6 +205,13 @@ func (e *env) advance(d time.Duration) {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWith(t, nil)
+}
+
+// newEnvWith builds the environment after letting tune adjust the broker
+// configuration.
+func newEnvWith(t *testing.T, tune func(*oauth.Config)) *env {
+	t.Helper()
 	e := &env{t: t, clock: time.Now(), dc: &fakeDelcore{}, groups: &fakeGroups{}}
 	e.logto = authtest.New(t)
 	e.up = &upstream{t: t, p: e.logto, mfa: true, subject: subject}
@@ -222,7 +234,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.broker = oauth.New(oauth.Config{
+	cfg := oauth.Config{
 		Store:   e.store,
 		Keys:    keys,
 		Logto:   auth.NewLogto(e.logto.Issuer(), logtoClientID, "logto-secret", nil),
@@ -235,7 +247,11 @@ func newEnv(t *testing.T) *env {
 		PublicURL: publicURL, WebOrigin: webOrigin, MCPResource: mcpResource, DelcoreResource: delcoreResource,
 		MFAClaim: config.DefaultMFAClaim, ReauthURL: reauthURL,
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
+	}
+	if tune != nil {
+		tune(&cfg)
+	}
+	e.broker = oauth.New(cfg)
 	e.broker.SetClock(e.now)
 	mux := http.NewServeMux()
 	for _, m := range e.broker.Mounts() {
@@ -597,6 +613,59 @@ func TestAuthorizeStorageFailureStillRedirectsTemporarilyUnavailable(t *testing.
 	}
 	if n := e.store.authInsertCalls(); n != 1 {
 		t.Fatalf("InsertAuthRequest calls = %d, want 1", n)
+	}
+}
+
+func TestSlowGroupRefreshDoesNotSpendCodeLifetime(t *testing.T) {
+	e := newEnv(t)
+	// Every refresh takes longer than the whole code lifetime on the fake
+	// clock, like a Delcore that answers late.
+	e.groups.hook = func(context.Context) { e.advance(oauth.CodeLifetime + 10*time.Second) }
+	code := e.code()
+	if len(e.groups.tenants) == 0 {
+		t.Fatal("group snapshots were not refreshed")
+	}
+	// The code exchanges at once, within its full lifetime.
+	if status, tok := e.exchange(code, nil); status != http.StatusOK || tok.RefreshToken == "" {
+		t.Fatalf("immediate exchange after a slow refresh: %d %+v", status, tok)
+	}
+}
+
+func TestStoredCodeExpiryCoversFullLifetimeAfterRefresh(t *testing.T) {
+	e := newEnv(t)
+	slow := oauth.CodeLifetime + 10*time.Second
+	e.groups.hook = func(context.Context) { e.advance(slow) }
+	code := e.code()
+	done := e.now()
+	e.store.mu.Lock()
+	var expire time.Time
+	for _, c := range e.store.codes {
+		expire = c.code.ExpireTime
+	}
+	e.store.mu.Unlock()
+	if expire.Sub(done) < oauth.CodeLifetime {
+		t.Fatalf("stored code expires %v after the redirect, want at least %v", expire.Sub(done), oauth.CodeLifetime)
+	}
+	// The code is still valid until its full lifetime has passed.
+	e.advance(oauth.CodeLifetime - time.Second)
+	if status, _ := e.exchange(code, nil); status != http.StatusOK {
+		t.Fatalf("exchange within the lifetime: %d", status)
+	}
+}
+
+func TestHangingGroupRefreshIsBoundedAndNeverFailsLogin(t *testing.T) {
+	const bound = 150 * time.Millisecond
+	e := newEnvWith(t, func(c *oauth.Config) { c.DependencyTimeout = bound })
+	e.groups.hook = func(ctx context.Context) { <-ctx.Done() }
+	start := time.Now()
+	code := e.code()
+	elapsed := time.Since(start)
+	// Two tenants each wait for the shared deadline, not one bound each.
+	if elapsed < bound || elapsed > 5*bound {
+		t.Fatalf("login with hanging refresh took %v, want about %v", elapsed, bound)
+	}
+	if status, tok := e.exchange(code, nil); status != http.StatusOK || tok.RefreshToken == "" {
+		t.Fatalf("exchange: %d %+v", status, tok)
 	}
 }
 

@@ -175,20 +175,21 @@ func serve(ctx context.Context, lookup config.Lookup, log *slog.Logger) error {
 func installMCP(a *app.App) error {
 	cfg := a.Config
 	broker := oauth.New(oauth.Config{
-		Store:           store.NewMCPOAuth(a.Store),
-		Keys:            a.Keys,
-		Logto:           a.Logto,
-		Delcore:         a.Delcore,
-		Groups:          a.Authorizer,
-		Clients:         cfg.OAuthClients,
-		PublicURL:       cfg.PublicURL,
-		WebOrigin:       cfg.WebOrigin,
-		MCPResource:     cfg.MCPResource,
-		DelcoreResource: cfg.DelcoreResource,
-		MFAClaim:        cfg.MFAClaim,
-		ReauthURL:       cfg.MFAReauthURL,
-		InsecureCookies: cfg.InsecureCookies(),
-		Log:             a.Log,
+		Store:             store.NewMCPOAuth(a.Store),
+		Keys:              a.Keys,
+		Logto:             a.Logto,
+		Delcore:           a.Delcore,
+		Groups:            a.Authorizer,
+		Clients:           cfg.OAuthClients,
+		PublicURL:         cfg.PublicURL,
+		WebOrigin:         cfg.WebOrigin,
+		MCPResource:       cfg.MCPResource,
+		DelcoreResource:   cfg.DelcoreResource,
+		MFAClaim:          cfg.MFAClaim,
+		ReauthURL:         cfg.MFAReauthURL,
+		InsecureCookies:   cfg.InsecureCookies(),
+		Log:               a.Log,
+		DependencyTimeout: cfg.DependencyTimeout,
 	})
 	a.Authenticator.SetGrantResolver(broker)
 	mcpMount, err := mcp.Mount(mcp.Config{

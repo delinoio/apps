@@ -388,6 +388,10 @@ func (b *Broker) callback(w http.ResponseWriter, r *http.Request) {
 		b.redirectError(w, r, req.RedirectURI, req.ClientState, newOAuthError(errServerError, ""))
 		return
 	}
+	// Refresh the group snapshots before the code exists so that a slow
+	// Delcore cannot spend the code's lifetime before the client receives it.
+	// The refresh is bounded as a whole and never fails the login.
+	b.refreshSnapshots(ctx, grant)
 	if err := b.cfg.Store.InsertGrant(ctx, grant.grant, store.MCPCode{
 		CodeHash: auth.Digest(code), ClientID: req.ClientID, RedirectURI: req.RedirectURI,
 		CodeChallenge: req.CodeChallenge, ExpireTime: b.now().Add(CodeLifetime),
@@ -397,7 +401,6 @@ func (b *Broker) callback(w http.ResponseWriter, r *http.Request) {
 		b.redirectError(w, r, req.RedirectURI, req.ClientState, newOAuthError(errTemporarilyUnavailable, "retry later"))
 		return
 	}
-	b.refreshSnapshots(ctx, grant)
 	b.cfg.Log.InfoContext(ctx, "mcp grant created", "grant_id", grant.grant.ID, "client_id", req.ClientID)
 	b.redirectToClient(w, r, req.RedirectURI, url.Values{"code": {code}, "state": {req.ClientState}})
 }
@@ -487,15 +490,23 @@ func (b *Broker) completeLogin(ctx context.Context, code string, req store.MCPAu
 // refreshSnapshots refreshes the group-membership snapshots of the user's
 // tenants, as console sessions do when they operate in a tenant. Snapshots
 // newer than the refresh TTL are kept; failures keep the previous snapshot.
+// The refresh as a whole is bounded by the dependency timeout, and tenants
+// not reached in time are skipped.
 func (b *Broker) refreshSnapshots(ctx context.Context, l *completedLogin) {
 	if b.cfg.Groups == nil {
 		return
 	}
+	ctx, cancel := context.WithTimeout(ctx, b.cfg.DependencyTimeout)
+	defer cancel()
 	token := l.delcoreToken
 	p := auth.NewUserPrincipal(mcpav1.ActorKind_ACTOR_KIND_MCP, l.grant.UserID, l.grant.Subject,
 		func(context.Context) (string, error) { return token, nil })
 	for i, tenantID := range l.tenantIDs {
 		if i >= maxSnapshotTenants {
+			break
+		}
+		if ctx.Err() != nil {
+			b.cfg.Log.WarnContext(ctx, "mcp group snapshot refresh skipped the remaining tenants", "refreshed", i, "tenants", len(l.tenantIDs))
 			break
 		}
 		b.cfg.Groups.RefreshGroups(ctx, p, tenantID)
