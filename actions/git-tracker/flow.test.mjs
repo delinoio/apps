@@ -225,3 +225,113 @@ test("malformed configuration and measurements fail before any request", async (
   assert.equal(requests.length, 2);
   assert.equal(requests[1].dataset.columns[0].absoluteThreshold, "0");
 });
+
+test("custom execution IDs require a repository token before any request", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "git-tracker-action-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "event.json"), "{}");
+  await writeFile(
+    join(directory, "dataset.yaml"),
+    "id: size\nname: Size\ncolumns:\n  - id: bytes\n    direction: lower\n",
+  );
+  await writeFile(
+    join(directory, "rows.json"),
+    '{"rows":[{"id":"file","values":{"bytes":1}}]}',
+  );
+  const apiRequests = [];
+  const identityRequests = [];
+  const server = createServer(async (request, response) => {
+    let raw = "";
+    for await (const chunk of request) raw += chunk;
+    response.setHeader("Content-Type", "application/json");
+    if (request.url.startsWith("/identity")) {
+      identityRequests.push(request.url);
+      response.end('{"value":"oidc-fixture"}');
+      return;
+    }
+    apiRequests.push({
+      authorization: request.headers.authorization,
+      body: JSON.parse(raw),
+    });
+    response.end("{}");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const run = (extra) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [fileURLToPath(new URL("./main.mjs", import.meta.url))],
+        {
+          env: {
+            PATH: process.env.PATH,
+            GITHUB_ACTIONS: "true",
+            GITHUB_EVENT_PATH: join(directory, "event.json"),
+            GITHUB_SHA: "a".repeat(40),
+            GITHUB_REF_NAME: "main",
+            GITHUB_REPOSITORY_ID: "42",
+            GITHUB_RUN_ID: "123",
+            GITHUB_RUN_ATTEMPT: "1",
+            ACTIONS_ID_TOKEN_REQUEST_URL: `${origin}/identity?fixture=1`,
+            ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-fixture",
+            "INPUT_API-URL": origin,
+            "INPUT_REPOSITORY-ID": "42",
+            INPUT_CONFIGURATION: join(directory, "dataset.yaml"),
+            INPUT_MEASUREMENTS: join(directory, "rows.json"),
+            ...extra,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let log = "";
+      child.stdout.on("data", (chunk) => (log += chunk));
+      child.stderr.on("data", (chunk) => (log += chunk));
+      child.on("error", reject);
+      child.on("exit", (code) => resolve({ code, log }));
+    });
+
+  // A custom ID without a token can never authenticate with OIDC.
+  for (const operation of ["upload", "complete"]) {
+    const result = await run({
+      "INPUT_EXECUTION-ID": "custom/run-1",
+      INPUT_OPERATION: operation,
+      "INPUT_WARN-ON-API-ERROR": "true",
+    });
+    assert.equal(result.code, 1, result.log);
+    assert.match(
+      result.log,
+      /custom execution-id requires a repository token/u,
+    );
+    assert.doesNotMatch(
+      result.log,
+      /custom\/run-1|request-fixture|oidc-fixture/u,
+    );
+  }
+  assert.equal(identityRequests.length, 0, "no identity request may be made");
+  assert.equal(apiRequests.length, 0, "no API request may be made");
+
+  // The default ID spelled explicitly is the same identity and still works.
+  let result = await run({ "INPUT_EXECUTION-ID": "42/123/1" });
+  assert.equal(result.code, 0, result.log);
+  assert.equal(identityRequests.length, 1);
+  assert.equal(apiRequests.length, 1);
+  assert.equal(apiRequests[0].authorization, "Actions oidc-fixture");
+  assert.equal(apiRequests[0].body.context.executionId, "42/123/1");
+
+  // An omitted ID uses the default identity.
+  result = await run({});
+  assert.equal(result.code, 0, result.log);
+  assert.equal(apiRequests.at(-1).body.context.executionId, "42/123/1");
+  assert.equal(identityRequests.length, 2);
+
+  // A custom ID with a repository token skips OIDC and is sent unchanged.
+  result = await run({
+    "INPUT_EXECUTION-ID": "custom/run-1",
+    INPUT_TOKEN: "repo-token-fixture",
+  });
+  assert.equal(result.code, 0, result.log);
+  assert.equal(identityRequests.length, 2, "tokens must not request OIDC");
+  assert.equal(apiRequests.at(-1).authorization, "Bearer repo-token-fixture");
+  assert.equal(apiRequests.at(-1).body.context.executionId, "custom/run-1");
+});

@@ -3247,7 +3247,8 @@ async function main() {
     await (0, import_promises.readFile)(process.env.GITHUB_EVENT_PATH, "utf8")
   );
   const pr = event.pull_request;
-  const executionId = input("execution-id") || `${process.env.GITHUB_REPOSITORY_ID}/${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}`;
+  const defaultExecutionId = `${process.env.GITHUB_REPOSITORY_ID}/${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}`;
+  const executionId = input("execution-id") || defaultExecutionId;
   if (!/^[A-Za-z0-9_./-]{1,200}$/u.test(executionId))
     throw new Error("Invalid execution ID");
   const context = {
@@ -3273,6 +3274,10 @@ details-url=${details}
       console.log(`::add-mask::${escapeCommand(token)}`);
       authorization = `Bearer ${token}`;
     } else {
+      if (executionId !== defaultExecutionId)
+        throw new Error(
+          "A custom execution-id requires a repository token; provide the token input or omit execution-id to use the default Actions identity"
+        );
       if (!process.env.ACTIONS_ID_TOKEN_REQUEST_URL || !process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN)
         throw new Error("Grant id-token: write or provide a repository token");
       const endpoint = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
