@@ -694,7 +694,7 @@ jobs:
           sudo apt-get install -y "${packages[@]}"
       - name: Install CLI protocol compiler
         id: protoc
-        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane')
+        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane') || contains(fromJSON(env.RUST_PACKAGES), 'anydash')
         run: |-
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -767,7 +767,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Install CLI protocol compiler
         id: protoc
-        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane')
+        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane') || contains(fromJSON(env.RUST_PACKAGES), 'anydash')
         run: |-
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libprotobuf-dev

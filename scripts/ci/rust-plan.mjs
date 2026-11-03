@@ -45,14 +45,19 @@ export function selectRust(
       path,
     ),
   );
+  // The AnyDash CLI generates Rust from the shared schema in its build script.
+  const anydashConsumer = paths.some((path) =>
+    /^protos\/anydash\//u.test(path),
+  );
   const consumers =
-    !global && (perfineConsumer || laneConsumer)
+    !global && (perfineConsumer || laneConsumer || anydashConsumer)
       ? run("list")
           .packages.map((pkg) => pkg.name)
           .filter(
             (name) =>
               (perfineConsumer && ["perfine-core", "perfine"].includes(name)) ||
-              (laneConsumer && name === "lane"),
+              (laneConsumer && name === "lane") ||
+              (anydashConsumer && name === "anydash"),
           )
       : [];
   return {
