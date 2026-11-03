@@ -258,7 +258,7 @@ A request under `/r/{resource_id}/` runs these steps in order. No step before st
 6. Select a credential by round-robin. When none can serve the model, return 400 `no_credential`.
 7. Execute through the embedded SDK and stream or return the provider's response in the requested format.
 
-Rejections use the client format's error shape (OpenAI, Claude or Gemini) with the typed code in `error.type` or the equivalent code field, plus `X-Mcpa-Request-Id`. After a valid key, every call creates a call record, including rejections. A 401 `invalid_call_key` raised after the call state exists, which is a permission denial at step 3 or a resource that is deleted or missing when the allowlist is read at step 4, leaves no call record, outbox row, aggregate change or `mcpa_calls_total` sample. The response still carries `X-Mcpa-Request-Id`, and the request is counted in the HTTP request metric and logged without billing fields.
+Rejections use the client format's error shape (OpenAI, Claude or Gemini) with the typed code in `error.type` or the equivalent code field, plus `X-Mcpa-Request-Id`. After a valid key, every call creates a call record, including rejections. A 401 `invalid_call_key` raised after the call state exists, which is a permission denial at step 3 or a resource that is deleted or missing when the allowlist is read at step 4, leaves no call record, outbox row, aggregate change or `mcpa_calls_total` sample. The response still carries `X-Mcpa-Request-Id`, and the request is counted in the HTTP request metric and logged without billing fields. Periodic metering checkpoints skip such a call once the rejection is set, so the 401 response bytes are never billed, even when a checkpoint tick lands while the response is written.
 
 ### Byte metering
 

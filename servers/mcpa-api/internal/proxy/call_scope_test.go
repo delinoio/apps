@@ -283,3 +283,50 @@ func TestTruncateModelNameKeepsUTF8Boundary(t *testing.T) {
 		}
 	}
 }
+
+// TestPeriodicCheckpointSkipsInvalidCallKeyRejection covers the interleaving
+// where a checkpoint tick lands after the 401 response bytes are counted but
+// before the handler skips the final checkpoint: the tick must not persist a
+// non-final record or billable bytes for the invalid key.
+func TestPeriodicCheckpointSkipsInvalidCallKeyRejection(t *testing.T) {
+	cases := []struct {
+		name      string
+		rejection *Rejection
+		wantSent  int
+	}{
+		{"invalid call key", Reject(RejectionInvalidCallKey, "the call key is not valid"), 0},
+		{"other rejection after a valid key", Reject(RejectionTenantInactive, "tenant is blocked"), 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := newRecordingSink()
+			metrics, err := NewMetrics(prometheus.NewRegistry(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cp := &checkpointer{
+				sink:          sink,
+				metrics:       metrics,
+				logger:        slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil)),
+				interval:      time.Hour,
+				timeout:       time.Second,
+				finalAttempts: 1,
+			}
+			call := &callState{id: "c-invalid-key"}
+			record := func(bool) CallRecordUpdate { return CallRecordUpdate{CallID: call.id} }
+			call.reject(tc.rejection)
+			// The rejection is set before the response is written.
+			call.addResponseBytes(120)
+
+			if !cp.commit(context.Background(), call, record, false) {
+				t.Fatal("periodic commit reported failure")
+			}
+			if got := sink.count(); got != tc.wantSent {
+				t.Fatalf("periodic checkpoints %d, want %d: %+v", got, tc.wantSent, sink.entries)
+			}
+			if tc.wantSent == 0 && (call.checkpoint.billedResp != 0 || call.checkpoint.seq != 0 || call.checkpoint.pending != nil) {
+				t.Fatalf("skipped tick changed checkpoint state: seq %d, billed %d, pending %v", call.checkpoint.seq, call.checkpoint.billedResp, call.checkpoint.pending)
+			}
+		})
+	}
+}

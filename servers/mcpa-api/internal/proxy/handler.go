@@ -228,10 +228,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// means the key is no longer valid, so the request is not attributable to
 	// a valid key. Like the rejections before the call state exists, it is
 	// not recorded, metered or billed. The 401 response is already written.
-	call.mu.Lock()
-	rejection := call.rejection
-	call.mu.Unlock()
-	if rejection != nil && rejection.Code == RejectionInvalidCallKey {
+	if call.invalidCallKeyRejected() {
 		e.opts.Metrics.httpRequest(cw.statusCode())
 		e.logger.Info("model call rejected",
 			slog.String("call_id", call.id),

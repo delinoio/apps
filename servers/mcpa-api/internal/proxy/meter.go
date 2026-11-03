@@ -138,6 +138,15 @@ func (c *callState) reject(rejection *Rejection) {
 	c.mu.Unlock()
 }
 
+// invalidCallKeyRejected reports whether the call was rejected because its
+// call key is no longer valid. Such a call is not attributable to a valid key,
+// so it is neither recorded nor billed.
+func (c *callState) invalidCallKeyRejected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.rejection != nil && c.rejection.Code == RejectionInvalidCallKey
+}
+
 // outcomeInput snapshots the evidence for classification.
 func (c *callState) outcomeInput(clientCancelled bool, customerStatus int) outcomeInput {
 	c.mu.Lock()

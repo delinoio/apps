@@ -86,6 +86,15 @@ func (cp *checkpointer) commit(ctx context.Context, call *callState, record func
 	if !final && deltaReq == 0 && deltaResp == 0 {
 		return true
 	}
+	// An invalid_call_key rejection is never recorded or billed, and the 401
+	// body counts toward responseBytes as soon as it is written. The
+	// rejection is set before the body is written and the byte counters are
+	// read above, so a periodic checkpoint that observes those bytes also
+	// observes the rejection. The handler skips the final checkpoint for the
+	// same rejection.
+	if !final && call.invalidCallKeyRejected() {
+		return true
+	}
 	state.seq++
 	update := record(final)
 	update.CheckpointSeq = state.seq
