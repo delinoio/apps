@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -312,7 +314,7 @@ func (l *flakyListener) acceptTimes() []time.Time {
 
 func newTestRelay(t *testing.T, ln net.Listener, dial DialFunc) *upstreamRelay {
 	t.Helper()
-	return newUpstreamRelay(ln, []byte("0123456789abcdef0123456789abcdef"), dial, discardLogger())
+	return newUpstreamRelay(ln, []byte("0123456789abcdef0123456789abcdef"), dial, discardLogger(), relayIdleTimeout)
 }
 
 // A transient accept error such as EMFILE must not stop the relay: the loop
@@ -403,4 +405,266 @@ func TestUpstreamRelayBackoffDelayIsCappedAndResets(t *testing.T) {
 	if got := nextAcceptBackoff(0); got != relayAcceptBackoffMin {
 		t.Fatalf("backoff after reset %v", got)
 	}
+}
+
+// echoServer accepts connections and echoes until they close. It returns its
+// address.
+func echoServer(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				_, _ = io.Copy(conn, conn)
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func dialRelayURL(t *testing.T, rawURL, address string) net.Conn {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dialer, err := proxy.FromURL(u, proxy.Direct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := dialer.Dial("tcp", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+func waitFor(t *testing.T, timeout time.Duration, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !ok() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func expectEcho(t *testing.T, conn net.Conn) {
+	t.Helper()
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "ping" {
+		t.Fatalf("echo %q %v", buf, err)
+	}
+}
+
+// CloseCall closes the tunnels of one call and no others.
+func TestUpstreamRelayCloseCallClosesOnlyThatCall(t *testing.T) {
+	target := echoServer(t)
+	d := &recordingDial{target: target, allow: true}
+	relay, err := startUpstreamRelay(d.dial, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+
+	a1 := dialRelayURL(t, relay.URLFor("call-a"), "provider.example.test:443")
+	a2 := dialRelayURL(t, relay.URLFor("call-a"), "provider.example.test:443")
+	b := dialRelayURL(t, relay.URLFor("call-b"), "provider.example.test:443")
+	shared := dialRelayURL(t, relay.URL(), "provider.example.test:443")
+	for _, conn := range []net.Conn{a1, a2, b, shared} {
+		expectEcho(t, conn)
+	}
+	if got := relay.openTunnels(); got != 4 {
+		t.Fatalf("open tunnels %d, want 4", got)
+	}
+
+	relay.CloseCall("call-a")
+	waitFor(t, 2*time.Second, "call-a tunnels to close", func() bool { return relay.openTunnels() == 2 })
+	for name, conn := range map[string]net.Conn{"a1": a1, "a2": a2} {
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if _, err := conn.Read(make([]byte, 1)); err == nil {
+			t.Fatalf("tunnel %s is still open", name)
+		}
+	}
+	expectEcho(t, b)
+	expectEcho(t, shared)
+
+	relay.CloseCall("call-b")
+	relay.CloseCall("call-unknown")
+	waitFor(t, 2*time.Second, "call-b tunnel to close", func() bool { return relay.openTunnels() == 1 })
+	expectEcho(t, shared)
+}
+
+// The call username is an identifier: a wrong password is refused whatever
+// the username is.
+func TestUpstreamRelayRefusesCallIdentityWithWrongSecret(t *testing.T) {
+	d := &recordingDial{allow: true}
+	relay, err := startUpstreamRelay(d.dial, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+	u, err := url.Parse(relay.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := &url.URL{Scheme: "socks5", User: url.UserPassword("call-a", "not-the-secret"), Host: u.Host}
+	dialer, err := proxy.FromURL(forged, proxy.Direct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn, err := dialer.Dial("tcp", "provider.example.test:443"); err == nil {
+		conn.Close()
+		t.Fatal("forged call identity tunneled through the relay")
+	}
+	if got := d.addresses(); len(got) != 0 {
+		t.Fatalf("forged client dialed %v", got)
+	}
+}
+
+// A tunnel without traffic in either direction is closed after the idle
+// timeout; traffic restarts the countdown.
+func TestUpstreamRelayClosesIdleTunnels(t *testing.T) {
+	target := echoServer(t)
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const idle = 300 * time.Millisecond
+	d := &recordingDial{target: target, allow: true}
+	relay := newUpstreamRelay(inner, []byte("0123456789abcdef0123456789abcdef"), d.dial, discardLogger(), idle)
+	defer relay.Close()
+
+	conn := dialRelayURL(t, relay.URLFor("call-idle"), "provider.example.test:443")
+	// Traffic every 100 ms keeps the tunnel open for longer than the idle
+	// timeout.
+	for range 6 {
+		expectEcho(t, conn)
+		time.Sleep(100 * time.Millisecond)
+	}
+	if got := relay.openTunnels(); got != 1 {
+		t.Fatalf("active tunnel was closed: open %d", got)
+	}
+	waitFor(t, 3*time.Second, "idle tunnel to close", func() bool { return relay.openTunnels() == 0 })
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("idle tunnel is still open")
+	}
+}
+
+func openDescriptors(t *testing.T) int {
+	t.Helper()
+	for _, dir := range []string{"/proc/self/fd", "/dev/fd"} {
+		if entries, err := os.ReadDir(dir); err == nil {
+			return len(entries)
+		}
+	}
+	t.Skip("descriptor listing is unavailable on this platform")
+	return 0
+}
+
+// The SDK Claude client leaves its provider connection open after every
+// call. Ending the call must close the tunnel, so sequential calls do not
+// accumulate goroutines or descriptors.
+func TestClaudeCallsDoNotLeakRelayTunnels(t *testing.T) {
+	const calls = 50
+	up := claudeUpstream(t, "hello")
+	d := &recordingDial{target: strings.TrimPrefix(up.URL(), "http://"), allow: true}
+	h := newHarness(t, func(o *Options) { o.DialUpstream = d.dial })
+	resourceID := newResourceID()
+	key := h.addKey(resourceID)
+	h.addCredential(apiKeyCredential(resourceID, mcpav1.Provider_PROVIDER_CLAUDE, "http://claude-upstream.example.test:80", "sk-ant-test", "claude-test"))
+	body := `{"model":"claude-test","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`
+	header := map[string]string{"Anthropic-Version": "2023-06-01"}
+
+	run := func() {
+		res := h.call(http.MethodPost, "/r/"+resourceID+"/v1/messages", key, body, header)
+		if res.resp.StatusCode != http.StatusOK {
+			t.Fatalf("status %d body %s", res.resp.StatusCode, res.body)
+		}
+	}
+	// Warm up lazily created goroutines and descriptors before the baseline.
+	run()
+	waitFor(t, 2*time.Second, "warm-up tunnel to close", func() bool { return h.engine.relay.openTunnels() == 0 })
+	h.client.CloseIdleConnections()
+	time.Sleep(100 * time.Millisecond)
+	goroutines := runtime.NumGoroutine()
+	descriptors := openDescriptors(t)
+
+	for range calls {
+		run()
+	}
+	h.client.CloseIdleConnections()
+	waitFor(t, 2*time.Second, "relay tunnels to close", func() bool { return h.engine.relay.openTunnels() == 0 })
+	waitFor(t, 2*time.Second, "goroutines and descriptors to return to baseline", func() bool {
+		return runtime.NumGoroutine() <= goroutines+5 && openDescriptors(t) <= descriptors+5
+	})
+	if got := len(d.addresses()); got < calls {
+		t.Fatalf("only %d dials for %d calls: the relay was not used", got, calls)
+	}
+}
+
+// A call cancelled mid-stream closes its tunnel when the call ends, and an
+// in-flight stream is not interrupted before that.
+func TestClaudeStreamingCallClosesTunnelWhenCancelled(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: ping\ndata: {\"type\":\"ping\"}\n\n")
+		w.(http.Flusher).Flush()
+		started <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	})
+	defer close(release)
+	d := &recordingDial{target: strings.TrimPrefix(up.URL(), "http://"), allow: true}
+	h := newHarness(t, func(o *Options) { o.DialUpstream = d.dial })
+	resourceID := newResourceID()
+	key := h.addKey(resourceID)
+	h.addCredential(apiKeyCredential(resourceID, mcpav1.Provider_PROVIDER_CLAUDE, "http://claude-upstream.example.test:80", "sk-ant-test", "claude-test"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	body := `{"model":"claude-test","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"hi"}]}`
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.srv.URL+"/r/"+resourceID+"/v1/messages", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Anthropic-Version", "2023-06-01")
+	resp, err := h.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("upstream stream did not start")
+	}
+	// The stream is in flight: its tunnel stays open.
+	time.Sleep(200 * time.Millisecond)
+	if got := h.engine.relay.openTunnels(); got != 1 {
+		t.Fatalf("open tunnels during the stream: %d, want 1", got)
+	}
+	cancel()
+	waitFor(t, 5*time.Second, "tunnel to close after the call ended", func() bool { return h.engine.relay.openTunnels() == 0 })
 }

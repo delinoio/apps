@@ -340,7 +340,7 @@ func (e *Engine) build(ctx context.Context, rt *resourceRuntime) {
 	manager.SetRetryConfig(0, 0, 1)
 	manager.SetRoundTripperProvider(roundTripperProvider{rt: e.transport})
 	for key, executor := range e.executors {
-		manager.RegisterExecutor(&resourceExecutor{inner: executor, resourceID: rt.id, sdkProvider: key, relayURL: e.relay.URL(), logger: rt.logger})
+		manager.RegisterExecutor(&resourceExecutor{inner: executor, resourceID: rt.id, sdkProvider: key, relay: e.relay, logger: rt.logger})
 	}
 	rt.manager = manager
 	base := handlers.NewBaseAPIHandlers(&e.cfg.SDKConfig, manager)

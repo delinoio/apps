@@ -166,6 +166,10 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		streaming:  rt.streaming,
 		start:      e.opts.Now(),
 	}
+	// The SDK Claude client never closes its idle provider connections;
+	// close the call's relay tunnels when the call ends, after the final
+	// checkpoint and also when ServeHTTP panics.
+	defer e.relay.CloseCall(call.id)
 	cw := newCountingResponseWriter(w, call)
 	var result outcome
 	record := func(final bool) CallRecordUpdate {
