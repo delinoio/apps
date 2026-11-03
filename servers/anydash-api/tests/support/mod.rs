@@ -348,7 +348,7 @@ impl Fixture {
     pub async fn with_pool_size(&self, connections: u32) -> Self {
         let db =
             sqlx::postgres::PgPoolOptions::new().acquire_timeout(std::time::Duration::from_secs(2));
-        let db = schema_pool_with(db, &self.database_url, &self.schema, connections).await;
+        let db = schema_pool_with(db, &self.database_url, &self.schema, connections, None).await;
         let server = Server::new(db.clone(), (*self.server.config).clone()).unwrap();
         let base = serve(&server).await;
         Self {
@@ -361,6 +361,47 @@ impl Fixture {
             schema: self.schema.clone(),
             database_url: self.database_url.clone(),
         }
+    }
+
+    /// A second API instance on the same schema and mocks whose connections give up waiting for a
+    /// row lock after `lock_timeout_ms`, so a lock held by `lock_row` turns into a database error
+    /// instead of a wait. Close its pool with `db.close()`; only the original fixture drops the
+    /// schema.
+    pub async fn with_lock_timeout(&self, lock_timeout_ms: u32) -> Self {
+        let db = schema_pool_with(
+            sqlx::postgres::PgPoolOptions::new(),
+            &self.database_url,
+            &self.schema,
+            4,
+            Some(lock_timeout_ms),
+        )
+        .await;
+        let server = Server::new(db.clone(), (*self.server.config).clone()).unwrap();
+        let base = serve(&server).await;
+        Self {
+            db,
+            server,
+            base,
+            http: reqwest::Client::new(),
+            mock: self.mock.clone(),
+            issuer: self.issuer.clone(),
+            schema: self.schema.clone(),
+            database_url: self.database_url.clone(),
+        }
+    }
+
+    /// Holds a row lock taken by `select_for_update` (a `SELECT ... FOR UPDATE` statement) until
+    /// the returned transaction is dropped or rolled back.
+    pub async fn lock_row(
+        &self,
+        select_for_update: &str,
+    ) -> sqlx::Transaction<'static, sqlx::Postgres> {
+        let mut tx = self.db.begin().await.unwrap();
+        sqlx::query(select_for_update)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx
     }
 
     pub async fn cleanup(self) {
@@ -460,14 +501,59 @@ impl Fixture {
         method: &str,
         body: Value,
     ) -> Result<Value, Box<Failure>> {
+        self.send(
+            caller,
+            method,
+            "application/json",
+            body.to_string().into_bytes(),
+        )
+        .await
+    }
+
+    /// Calls a method with a binary protobuf request and expects a failure with the given
+    /// `ErrorReason` value name. ProtoJSON cannot carry timestamps outside years 1 to 9999, so
+    /// the binary encoding is the only way to send them. Error responses stay Connect JSON.
+    pub async fn fail_proto(
+        &self,
+        caller: &Caller,
+        method: &str,
+        request: &impl Message,
+        reason: &str,
+    ) -> Box<Failure> {
+        match self
+            .send(caller, method, "application/proto", request.encode_to_vec())
+            .await
+        {
+            Ok(v) => panic!("{method} unexpectedly succeeded: {v}"),
+            Err(e) => {
+                use buffa::Enumeration;
+                let name = e
+                    .detail
+                    .reason
+                    .as_known()
+                    .map(|r| r.proto_name())
+                    .unwrap_or_default();
+                assert_eq!(name, reason, "{method}: {e:?}");
+                e
+            }
+        }
+    }
+
+    async fn send(
+        &self,
+        caller: &Caller,
+        method: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> Result<Value, Box<Failure>> {
         let mut request = self
             .http
             .post(format!("{}/anydash.v1.{method}", self.base))
-            .header("content-type", "application/json")
+            .header("content-type", content_type)
             .header("connect-protocol-version", "1")
             .header("x-anydash-client-kind", caller.kind)
             .header("x-anydash-client-version", caller.version)
-            .body(body.to_string());
+            .body(body);
         if let Some(a) = &caller.authorization {
             request = request.header("authorization", a);
         }
@@ -621,6 +707,7 @@ async fn schema_pool(database_url: &str, schema: &str, connections: u32) -> PgPo
         database_url,
         schema,
         connections,
+        None,
     )
     .await
 }
@@ -630,6 +717,7 @@ async fn schema_pool_with(
     database_url: &str,
     schema: &str,
     connections: u32,
+    lock_timeout_ms: Option<u32>,
 ) -> PgPool {
     let search = schema.to_owned();
     options
@@ -638,8 +726,13 @@ async fn schema_pool_with(
             let search = search.clone();
             Box::pin(async move {
                 sqlx::query(&format!("SET search_path TO {search}"))
-                    .execute(conn)
+                    .execute(&mut *conn)
                     .await?;
+                if let Some(ms) = lock_timeout_ms {
+                    sqlx::query(&format!("SET lock_timeout = {ms}"))
+                        .execute(&mut *conn)
+                        .await?;
+                }
                 Ok(())
             })
         })

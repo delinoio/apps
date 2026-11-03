@@ -19,9 +19,18 @@ pub fn timestamp(t: DateTime<Utc>) -> Timestamp {
         ..Default::default()
     }
 }
-/// Reads a timestamp field; absent or out-of-range values are `None`.
+/// First second of year 1 UTC, the lower bound of the protobuf `Timestamp` range.
+pub const MIN_TIMESTAMP_SECONDS: i64 = -62_135_596_800;
+/// Last second of year 9999 UTC, the upper bound of the protobuf `Timestamp` range.
+pub const MAX_TIMESTAMP_SECONDS: i64 = 253_402_300_799;
+
+/// Reads a timestamp field; values outside the protobuf `Timestamp` range (years 1 to 9999 UTC)
+/// and invalid nanoseconds are `None`. The bound keeps every accepted value storable in a
+/// PostgreSQL `timestamptz`, so a client value can never become a database error.
 pub fn from_timestamp(t: &Timestamp) -> Option<DateTime<Utc>> {
-    if !(0..1_000_000_000).contains(&t.nanos) {
+    if !(0..1_000_000_000).contains(&t.nanos)
+        || !(MIN_TIMESTAMP_SECONDS..=MAX_TIMESTAMP_SECONDS).contains(&t.seconds)
+    {
         return None;
     }
     let value = Utc.timestamp_opt(t.seconds, t.nanos as u32).single()?;
@@ -102,5 +111,31 @@ mod tests {
             }),
             None
         );
+    }
+    #[test]
+    fn timestamps_are_limited_to_years_one_to_9999() {
+        let at = |seconds, nanos| {
+            from_timestamp(&Timestamp {
+                seconds,
+                nanos,
+                ..Default::default()
+            })
+        };
+        assert!(at(0, 0).is_some());
+        assert!(at(timestamp(Utc::now()).seconds, 0).is_some());
+        assert_eq!(
+            at(MIN_TIMESTAMP_SECONDS, 0),
+            Some(Utc.with_ymd_and_hms(1, 1, 1, 0, 0, 0).unwrap())
+        );
+        assert_eq!(
+            at(MAX_TIMESTAMP_SECONDS, 999_999_999),
+            DateTime::from_timestamp_micros(MAX_TIMESTAMP_SECONDS * 1_000_000 + 999_999)
+        );
+        assert!(at(MAX_TIMESTAMP_SECONDS, 999_999_999).is_some());
+        assert_eq!(at(MIN_TIMESTAMP_SECONDS - 1, 0), None);
+        assert_eq!(at(MAX_TIMESTAMP_SECONDS + 1, 0), None);
+        assert_eq!(at(-999_999_999_900, 0), None);
+        assert_eq!(at(i64::MAX, 0), None);
+        assert_eq!(at(i64::MIN, 0), None);
     }
 }
