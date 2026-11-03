@@ -9,6 +9,7 @@ import { ResourceRole, type CallKey } from "@repo/protos/mcpa/v1/mcpa_pb";
 import { useSession } from "../app";
 import { rpc, useInvalidate, useSecretMutation } from "../lib/hooks";
 import { useCursorPager } from "../lib/pager";
+import { nameError } from "../lib/validate";
 import { formatDateTime, toDate } from "../lib/format";
 import { uuidv7 } from "../lib/uuid";
 import { canManage } from "../lib/roles";
@@ -241,7 +242,7 @@ function IssueKeyDialog({
         : expiryDate(expiry, custom);
     const next = {
       name: name.trim()
-        ? undefined
+        ? nameError(name)
         : "Enter a name so you can recognize this key.",
       expiry: expireAt === null ? "Choose a date in the future." : undefined,
     };
