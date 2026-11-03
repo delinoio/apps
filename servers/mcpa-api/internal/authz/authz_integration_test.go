@@ -18,6 +18,7 @@ import (
 
 	delcorev1 "github.com/delinoio/apps/protos/delcore/v1"
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/apperr"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/auth"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/delcore"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
@@ -258,6 +259,53 @@ func TestSnapshotGroupsPersonalKeyReadsSnapshotOnly(t *testing.T) {
 	}
 	if got := e.dc.calls.Load(); got != 1 {
 		t.Fatalf("a personal key triggered ListGroups: %d calls", got)
+	}
+}
+
+// TestRequireGroupsReportsLostMFAEvidence covers the console request paths:
+// an MFA-required error from the user token function is returned, a stale
+// snapshot is not served for it, the best-effort RefreshGroups keeps
+// swallowing it, other refresh failures stay logged, and a personal key
+// (no user token) is exempt.
+func TestRequireGroupsReportsLostMFAEvidence(t *testing.T) {
+	ctx := context.Background()
+	e := newGroupEnv(t)
+	a := e.replica(time.Minute, 2*time.Second)
+	lost := auth.NewUserPrincipal(mcpav1.ActorKind_ACTOR_KIND_CONSOLE, "u1", "s1", func(context.Context) (string, error) {
+		return "", apperr.MFARequired("https://login.example.test/mfa")
+	})
+
+	err := a.RequireGroups(ctx, lost, "t1")
+	if got := apperr.As(err); err == nil || got.Reason != mcpav1.ErrorReason_ERROR_REASON_MFA_REQUIRED || got.ReauthURL != "https://login.example.test/mfa" {
+		t.Fatalf("RequireGroups with lost MFA evidence returned %v, want MFA_REQUIRED with the reauthentication URL", err)
+	}
+	if got := e.dc.calls.Load(); got != 0 {
+		t.Fatalf("lost MFA evidence still called Delcore ListGroups %d times", got)
+	}
+
+	// With a stored snapshot, SnapshotGroups must not serve it for a principal
+	// that lost MFA evidence, unlike other refresh failures.
+	if _, err := a.SnapshotGroups(ctx, e.user, "t1"); err != nil {
+		t.Fatal(err)
+	}
+	e.clock.advance(time.Hour)
+	if _, err := a.SnapshotGroups(ctx, lost, "t1"); apperr.As(err).Reason != mcpav1.ErrorReason_ERROR_REASON_MFA_REQUIRED {
+		t.Fatalf("SnapshotGroups with lost MFA evidence returned %v, want MFA_REQUIRED", err)
+	}
+
+	// The best-effort form used for MCP grants keeps the old behavior.
+	a.RefreshGroups(ctx, lost, "t1")
+
+	// Other refresh failures are logged and do not fail the request.
+	e.dc.set(0, errors.New("delcore down"))
+	if err := a.RequireGroups(ctx, e.user, "t1"); err != nil {
+		t.Fatalf("RequireGroups with a Delcore outage returned %v, want nil", err)
+	}
+
+	// Personal keys carry no user token and stay MFA-exempt.
+	key := auth.NewPersonalKeyPrincipal("u1", "t1", "dlk_x")
+	if err := a.RequireGroups(ctx, key, "t1"); err != nil {
+		t.Fatalf("RequireGroups for a personal key returned %v, want nil", err)
 	}
 }
 

@@ -35,7 +35,9 @@ func (s *Service) readableResources(ctx context.Context, p *auth.Principal, tena
 	if err := s.authz.Capability(ctx, p, tenantID, delcore.CapabilityAccessResources); err != nil {
 		return nil, err
 	}
-	s.authz.RefreshGroups(ctx, p, tenantID)
+	if err := s.authz.RequireGroups(ctx, p, tenantID); err != nil {
+		return nil, err
+	}
 	groups, err := s.authz.UserGroups(ctx, tenantID, p.UserID)
 	if err != nil {
 		return nil, dbErr(err)
