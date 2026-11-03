@@ -327,7 +327,7 @@ A retention worker prunes expired records in bounded batches.
 
 ### Error mapping
 
-Every Connect error carries `mcpa.v1.ErrorDetail` with its reason and trace ID.
+Every Connect error carries `mcpa.v1.ErrorDetail` with its reason and trace ID. This includes a request body that fails to decode as JSON or binary protobuf, such as malformed JSON or a wrongly typed field: the management route answers `invalid_argument` with `ERROR_REASON_INVALID_INPUT`, the fixed message `request body is not a valid message` and no request content, and logs one `management call rejected` line. A body that fails to decode is rejected before authentication.
 
 | Reason                                     | Connect code          |
 | ------------------------------------------ | --------------------- |
