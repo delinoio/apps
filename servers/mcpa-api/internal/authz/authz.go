@@ -104,8 +104,34 @@ func New(db *store.Store, dc Delcore, refreshTTL time.Duration, log *slog.Logger
 	return &Authorizer{db: db, dc: dc, refreshTTL: refreshTTL, log: log, now: time.Now}
 }
 
+// keyAllowedForManagement reports whether a personal-key decision admits a
+// management action, which Delcore evaluates with paid=false. Delcore
+// authorizes keys with a strict tenant lifecycle, so a tenant that is being
+// deleted denies even an unpaid check with the single reason
+// BLOCK_REASON_DELETING. Management must stay available in that state so
+// customers can still remove credentials and keys (see the management tenant
+// state rule in the Managed CPA API contract). Any other reason, including
+// BLOCK_REASON_PERMISSION next to DELETING, or an empty reason list on a
+// denial, keeps the denial.
+func keyAllowedForManagement(d delcore.KeyDecision) bool {
+	if d.Allowed {
+		return true
+	}
+	if len(d.Reasons) == 0 {
+		return false
+	}
+	for _, r := range d.Reasons {
+		if r != delcorev1.BlockReason_BLOCK_REASON_DELETING {
+			return false
+		}
+	}
+	return true
+}
+
 // Capability requires a Delcore capability of the principal in tenantID
-// with paid=false. Personal keys act only in their own tenant.
+// with paid=false. Personal keys act only in their own tenant. A personal key
+// of a tenant that Delcore is deleting still passes when its only denial
+// reason is BLOCK_REASON_DELETING.
 func (a *Authorizer) Capability(ctx context.Context, p *auth.Principal, tenantID string, capability delcore.Capability) error {
 	if tenantID == "" {
 		return apperr.InvalidInput("tenant_id is required")
@@ -121,7 +147,7 @@ func (a *Authorizer) Capability(ctx context.Context, p *auth.Principal, tenantID
 			}
 			return apperr.DependencyUnavailable(err)
 		}
-		if !d.Allowed || d.TenantID != tenantID || d.UserID != p.UserID {
+		if !keyAllowedForManagement(d) || d.TenantID != tenantID || d.UserID != p.UserID {
 			return apperr.PermissionDenied("missing Delcore capability " + string(capability))
 		}
 		return nil

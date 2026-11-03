@@ -800,6 +800,61 @@ func TestIntegrationKeyInvalidation(t *testing.T) {
 	}
 }
 
+// TestIntegrationPersonalKeyManagementInDeletingTenant covers the management
+// tenant state rule: a personal key of a DELETING tenant keeps managing
+// records and credentials, but model calls are denied. Delcore authorizes
+// keys with a strict lifecycle, so it denies the unpaid management check with
+// the single reason BLOCK_REASON_DELETING; a PERMISSION reason stays denied.
+func TestIntegrationPersonalKeyManagementInDeletingTenant(t *testing.T) {
+	e := newEnv(t, func(v map[string]string) { v["MCPA_AUTHORIZE_CACHE_TTL"] = "200ms" })
+	id := e.resource("deleting")
+	key, _ := e.callKey("owner", id)
+	if got := e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil).status; got != http.StatusOK {
+		t.Fatalf("model call before deletion: %d", got)
+	}
+
+	deny := func(reasons ...delcorev1.BlockReason) {
+		e.dc.set(func(f *fakeDelcore) {
+			f.denied[e.tenant+"/"+e.users["owner"]+"/access_resources"] = reasons
+			f.denied[e.tenant+"/"+e.users["owner"]+"/create_resources"] = reasons
+		})
+	}
+	deleting := delcorev1.BlockReason_BLOCK_REASON_DELETING
+	permission := delcorev1.BlockReason_BLOCK_REASON_PERMISSION
+
+	deny(deleting)
+	e.dc.set(func(f *fakeDelcore) { f.states[e.tenant] = delcorev1.TenantState_TENANT_STATE_DELETING })
+	time.Sleep(250 * time.Millisecond)
+
+	if got := mustDo(e, "owner", e.rpc.GetResource, &mcpav1.GetResourceRequest{ResourceId: id}).GetResource().GetId(); got != id {
+		t.Fatalf("GetResource id %q", got)
+	}
+	if got := mustDo(e, "owner", e.rpc.ListResources, &mcpav1.ListResourcesRequest{TenantId: e.tenant}).GetResources(); len(got) != 1 {
+		t.Fatalf("ListResources: %d resources", len(got))
+	}
+	creds := mustDo(e, "owner", e.rpc.ListCredentials, &mcpav1.ListCredentialsRequest{ResourceId: id}).GetCredentials()
+	if len(creds) != 1 {
+		t.Fatalf("ListCredentials: %d credentials", len(creds))
+	}
+	mustDo(e, "owner", e.rpc.RemoveCredential, &mcpav1.RemoveCredentialRequest{ResourceId: id, CredentialId: creds[0].GetId()})
+
+	// Model calls stay denied for the deleting tenant.
+	res := e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if res.status != http.StatusForbidden || gjson.GetBytes(res.body, "error.type").String() != "tenant_inactive" {
+		t.Fatalf("model call in a deleting tenant: %d %s", res.status, res.body)
+	}
+
+	// A PERMISSION reason, alone or next to DELETING, keeps the denial.
+	for _, reasons := range [][]delcorev1.BlockReason{{permission}, {deleting, permission}} {
+		deny(reasons...)
+		time.Sleep(250 * time.Millisecond)
+		_, err := do(e, "owner", e.rpc.GetResource, &mcpav1.GetResourceRequest{ResourceId: id})
+		if connect.CodeOf(err) != connect.CodePermissionDenied {
+			t.Fatalf("reasons %v: %v", reasons, err)
+		}
+	}
+}
+
 func TestIntegrationTenantCleanupOnlyAfterDeleted(t *testing.T) {
 	e := newEnv(t)
 	id := e.resource("doomed")
