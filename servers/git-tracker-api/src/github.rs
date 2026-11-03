@@ -6,10 +6,22 @@ use delino_protocol::gittracker::v1::{
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde_json::{Value, json};
 use server_common::{Fault, Result, authority::bounded_json, integer, string};
-use std::{collections::HashSet, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 /// Default wall-clock budget for one pull request membership check, covering the REST fast path
 /// and the GraphQL traversal. Expiry fails closed as unavailable; it never proves non-membership.
 pub const MEMBERSHIP_DEADLINE: Duration = Duration::from_secs(120);
+/// Most first-parent ancestors stored for a push execution. Older history is not needed to find a
+/// recent baseline; rows without a measured ancestor inside this window are comparison-unavailable.
+pub const MAX_ANCESTORS: usize = 1000;
+/// Default wall-clock budget for collecting the ancestors of one push commit. Expiry fails closed
+/// as unavailable and persists nothing.
+pub const ANCESTRY_DEADLINE: Duration = Duration::from_secs(20);
+/// Most commit-list pages read for one ancestry collection; `MAX_ANCESTORS` linear commits need
+/// ten. Parents still missing after these pages are fetched one commit at a time.
+const MAX_ANCESTRY_PAGES: usize = 12;
 /// Page size for the GraphQL pull request commit connection (the GitHub maximum).
 const COMMIT_PAGE: usize = 100;
 const COMMITS_QUERY: &str = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){databaseId pullRequest(number:$number){id number state baseRefName headRefOid commits(first:100,after:$after){totalCount nodes{commit{oid}} pageInfo{hasNextPage endCursor}}}}}";
@@ -18,6 +30,7 @@ pub struct GitHub {
     pub base: String,
     pub app_id: String,
     pub membership_deadline: Duration,
+    pub ancestry_deadline: Duration,
     key: EncodingKey,
 }
 pub fn escape(s: &str) -> String {
@@ -34,6 +47,7 @@ impl GitHub {
             base,
             app_id,
             membership_deadline: MEMBERSHIP_DEADLINE,
+            ancestry_deadline: ANCESTRY_DEADLINE,
             key,
         }
     }
@@ -48,6 +62,7 @@ impl GitHub {
             base: "https://api.github.com".into(),
             app_id: required("GITHUB_APP_ID")?,
             membership_deadline: MEMBERSHIP_DEADLINE,
+            ancestry_deadline: ANCESTRY_DEADLINE,
             key: EncodingKey::from_rsa_pem(&std::fs::read(required("GITHUB_KEY_FILE")?)?)?,
         })
     }
@@ -384,7 +399,7 @@ impl GitHub {
     }
     async fn resolve_inner(&self, r: &Repository, c: &Context) -> Result<(Vec<String>, String)> {
         let token = self.installation(&r.installation_id).await?;
-        let mut commit = self.commit(r, &c.commit, &token).await?;
+        let commit = self.commit(r, &c.commit, &token).await?;
         if string(&commit, "sha") != c.commit {
             return Err(Fault::unavailable());
         }
@@ -452,12 +467,114 @@ impl GitHub {
                 "commit is not on the branch first-parent path",
             ));
         }
-        let mut parents = Vec::new();
-        while let Some(sha) = commit["parents"][0]["sha"].as_str().map(str::to_owned) {
-            parents.push(sha.clone());
-            commit = self.commit(r, &sha, &token).await?;
-        }
+        let parents =
+            match tokio::time::timeout(self.ancestry_deadline, self.ancestors(r, &commit, &token))
+                .await
+            {
+                Ok(parents) => parents?,
+                Err(_) => {
+                    tracing::warn!(
+                        category = "ancestry_deadline",
+                        "first-parent ancestry collection exceeded its deadline"
+                    );
+                    return Err(Fault::unavailable());
+                }
+            };
         Ok((parents, c.baseline_commit.clone()))
+    }
+    /// Collects at most `MAX_ANCESTORS` first-parent ancestors of `tip`, nearest first.
+    ///
+    /// The commit list (100 per page) fills a map from each commit to its first parent, which
+    /// replaces one request per ancestor. GitHub orders that list by date rather than by
+    /// first-parent path, so a first parent that the pages read so far do not cover (typical in
+    /// merge-heavy history) is fetched individually after the page budget is spent.
+    async fn ancestors(&self, r: &Repository, tip: &Value, token: &str) -> Result<Vec<String>> {
+        let tip_sha = string(tip, "sha").to_owned();
+        let mut current = first_parent(tip)?;
+        let mut parents: HashMap<String, Option<String>> = HashMap::new();
+        let mut pages = 0;
+        let mut exhausted = false;
+        let mut seen = HashSet::from([tip_sha.clone()]);
+        let mut ancestors = Vec::new();
+        while let Some(sha) = current {
+            if !seen.insert(sha.clone()) {
+                tracing::warn!(
+                    category = "ancestry_cycle",
+                    "first-parent path repeats a commit"
+                );
+                return Err(Fault::unavailable());
+            }
+            ancestors.push(sha.clone());
+            if ancestors.len() >= MAX_ANCESTORS {
+                // The cap is checked before the parent lookup so the last stored ancestor never
+                // costs a request. Its parent may be unknown, so any end that is not a known
+                // root is reported as truncated.
+                if parents.get(&sha) != Some(&None) {
+                    tracing::warn!(
+                        category = "ancestry_truncated",
+                        max_ancestors = MAX_ANCESTORS,
+                        "first-parent ancestry was cut at the depth limit"
+                    );
+                }
+                break;
+            }
+            let known = loop {
+                if let Some(parent) = parents.get(&sha) {
+                    break parent.clone();
+                }
+                if !exhausted && pages < MAX_ANCESTRY_PAGES {
+                    pages += 1;
+                    exhausted = self
+                        .collect_page(r, &tip_sha, pages, token, &mut parents)
+                        .await?;
+                    continue;
+                }
+                let commit = self.commit(r, &sha, token).await?;
+                if string(&commit, "sha") != sha {
+                    return Err(Fault::unavailable());
+                }
+                let parent = first_parent(&commit)?;
+                parents.insert(sha.clone(), parent.clone());
+                break parent;
+            };
+            current = known;
+        }
+        Ok(ancestors)
+    }
+    /// Reads one page of `GET /commits?sha={tip}` into `parents` and reports whether it was the
+    /// last page.
+    async fn collect_page(
+        &self,
+        r: &Repository,
+        tip: &str,
+        page: usize,
+        token: &str,
+        parents: &mut HashMap<String, Option<String>>,
+    ) -> Result<bool> {
+        let rows = self
+            .call(
+                "GET",
+                &format!(
+                    "{}/commits?sha={}&per_page={COMMIT_PAGE}&page={page}",
+                    path(r),
+                    escape(tip)
+                ),
+                token,
+                None,
+            )
+            .await?;
+        let rows = rows
+            .as_array()
+            .filter(|v| v.len() <= COMMIT_PAGE)
+            .ok_or_else(Fault::unavailable)?;
+        for row in rows {
+            let sha = string(row, "sha");
+            if !crate::valid_sha(sha) {
+                return Err(Fault::unavailable());
+            }
+            parents.insert(sha.to_owned(), first_parent(row)?);
+        }
+        Ok(rows.len() < COMMIT_PAGE)
     }
     pub async fn verify_merge(&self, r: &Repository, merge: &str, head: &str) -> Result<()> {
         if !crate::valid_sha(merge) || !crate::valid_sha(head) {
@@ -576,6 +693,22 @@ impl GitHub {
     }
 }
 
+/// Returns the first parent of a commit object, `None` for a root commit, and fails closed on a
+/// malformed parent list.
+fn first_parent(commit: &Value) -> Result<Option<String>> {
+    match commit["parents"].as_array() {
+        Some(parents) => match parents.first() {
+            None => Ok(None),
+            Some(parent) => parent["sha"]
+                .as_str()
+                .filter(|v| crate::valid_sha(v))
+                .map(|v| Some(v.to_owned()))
+                .ok_or_else(Fault::unavailable),
+        },
+        None if commit["parents"].is_null() => Ok(None),
+        None => Err(Fault::unavailable()),
+    }
+}
 /// Attributes a failure to GitHub so it counts in `git_tracker_events_total{kind="github"}`.
 /// Failed-precondition faults are definitive verdicts about the request (for example, the commit
 /// is provably outside the pull request) and keep the application source: they are neither

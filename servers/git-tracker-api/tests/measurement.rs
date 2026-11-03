@@ -214,6 +214,93 @@ fn frozen_row_baselines_exclude_forks_and_survive_deletion() {
     );
     assert!(s.complete(&target, at).is_err());
 }
+/// First-parent path of `n` commits below `tip`, nearest first: `c1` is the tip's parent.
+fn path_of(n: usize) -> Vec<String> {
+    (1..=n).map(|i| format!("c{i}")).collect()
+}
+#[test]
+fn baselines_use_the_capped_ancestor_window() {
+    let at = Utc::now();
+    let d = dataset();
+    let measured = |s: &mut State, commit: &str| {
+        let c = context(&format!("run-{commit}"), commit);
+        s.upload(&c, &d, &[row("one", "10")], at, vec![], String::new())
+            .unwrap();
+        s.complete(&c, at).unwrap();
+    };
+    let status = |s: &State, id: &str| s.comparisons(&s.records[id], None)[0].clone();
+
+    // A measured ancestor at depth 40 is the baseline.
+    let mut s = State::default();
+    measured(&mut s, "c40");
+    let target = context("target", "tip");
+    s.upload(
+        &target,
+        &d,
+        &[row("one", "11")],
+        at,
+        path_of(1000),
+        String::new(),
+    )
+    .unwrap();
+    assert_eq!(status(&s, "target").baseline_execution_id, "run-c40");
+
+    // The nearest measured ancestor wins over a deeper one inside the window.
+    let mut s = State::default();
+    measured(&mut s, "c900");
+    measured(&mut s, "c40");
+    s.upload(
+        &target,
+        &d,
+        &[row("one", "11")],
+        at,
+        path_of(1000),
+        String::new(),
+    )
+    .unwrap();
+    assert_eq!(status(&s, "target").baseline_execution_id, "run-c40");
+
+    // A measured ancestor only at depth 1500 is outside the stored window: no baseline.
+    let mut s = State::default();
+    measured(&mut s, "c1500");
+    s.upload(
+        &target,
+        &d,
+        &[row("one", "11")],
+        at,
+        path_of(1000),
+        String::new(),
+    )
+    .unwrap();
+    let outside = status(&s, "target");
+    assert_eq!(outside.baseline_execution_id, "");
+    assert_eq!(outside.status, COMPARISON_STATUS_UNAVAILABLE);
+
+    // A longer list that extends the stored prefix is still accepted; a different one is not.
+    s.upload(
+        &target,
+        &d,
+        &[row("two", "1")],
+        at,
+        path_of(1200),
+        String::new(),
+    )
+    .unwrap();
+    assert_eq!(s.records["target"].ancestors.len(), 1200);
+    let mut changed = path_of(1300);
+    changed[0] = "other".into();
+    assert!(
+        s.upload(
+            &target,
+            &d,
+            &[row("three", "1")],
+            at,
+            changed,
+            String::new()
+        )
+        .is_err()
+    );
+}
 #[test]
 fn current_storage_rows_round_trip() {
     let raw = serde_json::json!({"next":1,"records":{"run":{"execution":{"context":{"repositoryId":"r","executionId":"run","commit":"a","branch":"main","pullRequest":"3"},"state":"EXECUTION_STATE_MEASURING","registeredAt":"2026-01-01T00:00:00Z","registrationOrder":"00000000000000000001","measurements":[{"dataset":{"id":"d","name":"D","columns":[{"id":"size","unit":"B","direction":"DIRECTION_LOWER"}]},"rows":[{"id":"r","values":{"CamelKey":"1"}}]}]},"last_data":"2026-01-01T00:00:00Z","cutoff":"2026-01-01T00:00:00Z","ancestors":[],"removed":{},"base":{"execution":"","commit":""},"push":false,"baselines":{}}}});

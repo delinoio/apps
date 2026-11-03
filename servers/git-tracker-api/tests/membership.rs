@@ -8,7 +8,7 @@ use axum::{
     http::StatusCode,
 };
 use delino_protocol::gittracker::v1::{Context, Repository};
-use git_tracker_api::github::GitHub;
+use git_tracker_api::github::{GitHub, MAX_ANCESTORS};
 use jsonwebtoken::EncodingKey;
 use serde_json::{Value, json};
 use server_common::{Fault, error::FaultSource};
@@ -40,6 +40,13 @@ struct Provider {
     pages: Option<Vec<(Vec<String>, bool)>>,
     total: Option<usize>,
     delay: Duration,
+    /// First-parent history of a push branch, newest first. When set, `commits/{sha}` reports
+    /// the next entry as the parent and `GET commits?sha=` lists the history in pages.
+    history: Option<Vec<String>>,
+    /// History commits that the commit list omits, so only `commits/{sha}` can supply them.
+    list_hidden: Vec<String>,
+    /// Delay applied to the commit list only.
+    list_delay: Duration,
     /// Recorded `(path, authorization, body)` for every request.
     calls: Vec<(String, String, Value)>,
 }
@@ -57,6 +64,9 @@ fn provider(commits: Vec<String>, head: &str) -> Shared {
         pages: None,
         total: None,
         delay: Duration::ZERO,
+        history: None,
+        list_hidden: vec![],
+        list_delay: Duration::ZERO,
         calls: vec![],
     }))
 }
@@ -108,6 +118,12 @@ async fn handle(State(shared): State<Shared>, request: Request) -> (StatusCode, 
     if path == "/graphql" && !delay.is_zero() {
         tokio::time::sleep(delay).await;
     }
+    if path == "/repos/owner/repo/commits" {
+        let delay = shared.lock().unwrap().list_delay;
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
+    }
     let p = shared.lock().unwrap();
     let auth = p.calls.last().unwrap().1.clone();
     let (status, out) = if path == "/app/installations/1/access_tokens" {
@@ -115,7 +131,9 @@ async fn handle(State(shared): State<Shared>, request: Request) -> (StatusCode, 
     } else if let Some(out) = lifecycle_route(&path, &auth) {
         (StatusCode::OK, out)
     } else if let Some(sha) = path.strip_prefix("/repos/owner/repo/commits/") {
-        (StatusCode::OK, json!({"sha":sha,"parents":[]}))
+        (StatusCode::OK, history_commit(&p, sha))
+    } else if path == "/repos/owner/repo/commits" {
+        (StatusCode::OK, history_page(&p, &query))
     } else if path == "/repos/owner/repo/git/ref/heads/main" {
         // Push contexts: the branch tip is the provider head.
         (
@@ -160,6 +178,44 @@ async fn handle(State(shared): State<Shared>, request: Request) -> (StatusCode, 
         (StatusCode::NOT_FOUND, json!({}))
     };
     (status, Json(out))
+}
+
+/// A commit object whose first parent follows the configured push history, or no parents.
+fn history_commit(p: &Provider, sha: &str) -> Value {
+    let parents: Vec<Value> = p
+        .history
+        .as_ref()
+        .and_then(|h| h.iter().position(|c| c == sha).and_then(|i| h.get(i + 1)))
+        .map(|parent| json!({"sha":parent}))
+        .into_iter()
+        .collect();
+    json!({"sha":sha,"parents":parents})
+}
+
+/// One `GET commits?sha=&per_page=&page=` page of the configured push history.
+fn history_page(p: &Provider, query: &str) -> Value {
+    let param = |name: &str| {
+        query
+            .split('&')
+            .find_map(|v| v.strip_prefix(&format!("{name}=")))
+            .unwrap()
+            .to_owned()
+    };
+    let history = p.history.as_ref().expect("history is configured");
+    let start = history.iter().position(|c| *c == param("sha")).unwrap();
+    let per_page: usize = param("per_page").parse().unwrap();
+    let page: usize = param("page").parse().unwrap();
+    let rows: Vec<Value> = history[start..]
+        .iter()
+        .filter(|c| !p.list_hidden.contains(c))
+        .collect::<Vec<_>>()
+        .chunks(per_page)
+        .nth(page - 1)
+        .unwrap_or_default()
+        .iter()
+        .map(|c| history_commit(p, c))
+        .collect();
+    Value::Array(rows)
 }
 
 struct Fixture {
@@ -377,6 +433,114 @@ async fn push_commit_off_the_branch_path_is_a_precondition() {
     c.branch = "missing".into();
     let fault = f.github.resolve(&f.repository, &c).await.unwrap_err();
     assert_provider_failure(fault, "unresolvable branch");
+}
+
+/// Push history of `n` commits, newest first: `sha(n)` is the branch head and `sha(1)` the root.
+fn history(n: usize) -> Vec<String> {
+    (1..=n).rev().map(sha).collect()
+}
+
+fn push_context(commit: &str) -> Context {
+    Context {
+        pull_request: 0,
+        ..context(commit)
+    }
+}
+
+impl Fixture {
+    /// Serves `history` as the first-parent path of `main`, tip first.
+    async fn push(history: Vec<String>) -> Self {
+        let shared = provider(vec![], &history[0]);
+        shared.lock().unwrap().history = Some(history);
+        fixture(shared).await
+    }
+    fn requests(&self, path: &str) -> Vec<String> {
+        self.shared
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            // A trailing slash selects every path below it; otherwise the path must match.
+            .filter(|c| c.0 == path || (path.ends_with('/') && c.0.starts_with(path)))
+            .map(|c| c.0.clone())
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn deep_push_history_is_capped_with_few_requests() {
+    let history = history(5000);
+    let f = Fixture::push(history.clone()).await;
+    let (parents, _) = f
+        .github
+        .resolve(&f.repository, &push_context(&history[0]))
+        .await
+        .unwrap();
+    // Exactly the nearest 1000 first-parent ancestors, nearest first.
+    assert_eq!(parents, history[1..=MAX_ANCESTORS].to_vec());
+    // Ten list pages replace a thousand single fetches; only the tip lookups remain.
+    assert_eq!(f.requests("/repos/owner/repo/commits").len(), 10);
+    let singles = f.requests("/repos/owner/repo/commits/");
+    assert!(singles.len() <= 3, "{singles:?}");
+}
+
+#[tokio::test]
+async fn short_push_history_is_collected_completely() {
+    let history = history(150);
+    let f = Fixture::push(history.clone()).await;
+    let (parents, _) = f
+        .github
+        .resolve(&f.repository, &push_context(&history[0]))
+        .await
+        .unwrap();
+    assert_eq!(parents, history[1..].to_vec());
+    assert_eq!(f.requests("/repos/owner/repo/commits").len(), 2);
+
+    // A root commit has no ancestors and needs no list request.
+    let f = Fixture::push(history[149..].to_vec()).await;
+    let (parents, _) = f
+        .github
+        .resolve(&f.repository, &push_context(&sha(1)))
+        .await
+        .unwrap();
+    assert!(parents.is_empty());
+    assert!(f.requests("/repos/owner/repo/commits").is_empty());
+}
+
+#[tokio::test]
+async fn first_parent_missing_from_list_pages_is_fetched_individually() {
+    // Merge-heavy history: the date-ordered list omits a first-parent commit.
+    let history = history(5000);
+    let hidden = history[50].clone();
+    let f = Fixture::push(history.clone()).await;
+    f.shared.lock().unwrap().list_hidden = vec![hidden.clone()];
+    let (parents, _) = f
+        .github
+        .resolve(&f.repository, &push_context(&history[0]))
+        .await
+        .unwrap();
+    assert_eq!(parents, history[1..=MAX_ANCESTORS].to_vec());
+    assert!(f.requests("/repos/owner/repo/commits").len() <= 12);
+    let singles = f.requests("/repos/owner/repo/commits/");
+    assert!(
+        singles.contains(&format!("/repos/owner/repo/commits/{hidden}")),
+        "{singles:?}"
+    );
+    assert!(singles.len() <= 4, "{singles:?}");
+}
+
+#[tokio::test]
+async fn ancestry_deadline_is_unavailable() {
+    let history = history(300);
+    let mut f = Fixture::push(history.clone()).await;
+    f.github.ancestry_deadline = Duration::from_millis(100);
+    f.shared.lock().unwrap().list_delay = Duration::from_millis(1500);
+    let fault = f
+        .github
+        .resolve(&f.repository, &push_context(&history[0]))
+        .await
+        .unwrap_err();
+    assert_provider_failure(fault, "ancestry deadline");
 }
 
 #[tokio::test]
@@ -699,6 +863,14 @@ async fn postgres_commit_beyond_rest_cap_uploads_appends_and_completes_after_hea
         .build()
         .unwrap();
     let jwks = serde_json::from_value(json!({"keys":[]})).unwrap();
+    // A short ancestry deadline lets the delayed-list scenario below finish quickly.
+    let mut github = GitHub::new(
+        http.clone(),
+        base.clone(),
+        "1".into(),
+        EncodingKey::from_rsa_pem(KEY).unwrap(),
+    );
+    github.ancestry_deadline = Duration::from_millis(500);
     let server = Arc::new(Server {
         db: db.clone(),
         authority: Authority::new(
@@ -709,12 +881,7 @@ async fn postgres_commit_beyond_rest_cap_uploads_appends_and_completes_after_hea
             "client".into(),
             "fixture".into(),
         ),
-        github: GitHub::new(
-            http.clone(),
-            base.clone(),
-            "1".into(),
-            EncodingKey::from_rsa_pem(KEY).unwrap(),
-        ),
+        github,
         actions: Actions::new(http.clone(), format!("{base}/jwks"), jwks),
         audit_retention: chrono::Duration::days(90),
         webhook_secret: "fixture-only".into(),
@@ -869,6 +1036,84 @@ async fn postgres_commit_beyond_rest_cap_uploads_appends_and_completes_after_hea
         "GetExecution",
         "",
         json!({"repositoryId":rid,"executionId":"run-u"}),
+    )
+    .await;
+    assert!(missing.get("execution").is_none(), "{missing}");
+
+    // Push execution on a 5,000-commit first-parent history: the stored ancestry is capped at
+    // 1,000 commits in order and collected with a handful of provider requests.
+    let chain = history(5000);
+    {
+        let mut p = shared.lock().unwrap();
+        p.head = chain[0].clone();
+        p.history = Some(chain.clone());
+        p.calls.clear();
+    }
+    let push =
+        json!({"repositoryId":rid,"executionId":"run-push","commit":chain[0],"branch":"main"});
+    let (status, pushed) = call(
+        &http,
+        &api,
+        "Upload",
+        &auth,
+        json!({"context":push,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{pushed}");
+    let stored: Value = sqlx::query_scalar(
+        "SELECT state->'records'->'run-push'->'ancestors' FROM git_tracker_repositories WHERE id = $1",
+    )
+    .bind(uuid::Uuid::parse_str(&rid).unwrap())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(stored.as_array().unwrap().len(), MAX_ANCESTORS);
+    assert_eq!(stored, json!(chain[1..=MAX_ANCESTORS]));
+    let lists = f.requests("/repos/owner/repo/commits").len();
+    let singles = f.requests("/repos/owner/repo/commits/").len();
+    assert_eq!(lists, 10);
+    assert!(singles <= 3, "{singles} single commit requests");
+    println!(
+        "push ancestry: {lists} list requests, {singles} single commit requests, {MAX_ANCESTORS} ancestors stored"
+    );
+    // Exact retransmission is answered from stored state without provider calls.
+    let calls = shared.lock().unwrap().calls.len();
+    let (status, _) = call(
+        &http,
+        &api,
+        "Upload",
+        &auth,
+        json!({"context":push,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(shared.lock().unwrap().calls.len(), calls);
+
+    // A slow commit list exceeds the ancestry deadline: unavailable, counted, nothing stored.
+    shared.lock().unwrap().list_delay = Duration::from_millis(2000);
+    let before = github_failures();
+    let slow =
+        json!({"repositoryId":rid,"executionId":"run-slow","commit":chain[0],"branch":"main"});
+    let r = http
+        .post(format!("{api}/Upload"))
+        .header("Authorization", &auth)
+        .header("Connect-Protocol-Version", "1")
+        .json(
+            &json!({"context":slow,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let timed_out: Value = r.json().await.unwrap();
+    assert_eq!(timed_out["code"], "unavailable", "{timed_out}");
+    assert_eq!(github_failures(), before + 1);
+    let (_, missing) = call(
+        &http,
+        &api,
+        "GetExecution",
+        "",
+        json!({"repositoryId":rid,"executionId":"run-slow"}),
     )
     .await;
     assert!(missing.get("execution").is_none(), "{missing}");
