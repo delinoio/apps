@@ -5,8 +5,9 @@
 mod support;
 use anydash::{
     collector,
-    core::{Core, Owner},
+    core::{Core, Options, Owner},
     ipc,
+    keys::{MemoryStore, SERVICE, SecureStore as _},
     pb::{
         self, AcquireLeaseRequest, AcquireLeaseResponse, AddConnectionCredentialRequest,
         BucketOutcome, BucketResult, CollectionStatus, CollectorRunState, Connection,
@@ -20,6 +21,7 @@ use anydash::{
         StartEnrollmentResponse, UnregisterConnectionDeviceResponse, UploadUsageRequest,
         UploadUsageResponse,
     },
+    providers::Endpoints,
     store::Tokens,
     time,
 };
@@ -438,6 +440,66 @@ async fn logout_revokes_the_refresh_token_current_after_lease_release() {
         "the refresh token rotated by the lease release is revoked"
     );
     assert!(!core.logged_in().unwrap());
+}
+/// Logout on a device that never logged in reports `NOT_LOGGED_IN` without touching the data
+/// key: no key is generated in the OS store or the key file, and the key source stays
+/// unspecified.
+#[tokio::test(flavor = "multi_thread")]
+async fn logout_without_credentials_does_not_create_a_key() {
+    for source in ["os", "file"] {
+        let home = tempfile::tempdir().unwrap();
+        let state = Arc::new(Mutex::new(Api::default()));
+        let mock = Mock::start(api(state)).await;
+        let memory = Arc::new(MemoryStore::default());
+        let settings = support::settings(
+            home.path(),
+            &[
+                ("ANYDASH_API_URL", mock.base.as_str()),
+                ("ANYDASH_KEY_SOURCE", source),
+            ],
+        );
+        let core = Core::open(Options {
+            settings: settings.clone(),
+            endpoints: Endpoints::mock(&mock.base, "grok-not-installed-for-tests"),
+            os: memory.clone(),
+            owner: Owner::Direct,
+        })
+        .unwrap();
+        assert_eq!(
+            core.logout().await.unwrap_err().reason,
+            ErrorReason::NotLoggedIn,
+            "key source {source}"
+        );
+        assert!(!settings.dirs().config.join("encryption.key").exists());
+        assert!(memory.get(SERVICE, "data-key").unwrap().is_none());
+        assert_eq!(core.key_source(false).unwrap(), pb::KeySource::Unspecified);
+        assert_eq!(
+            core.status(false).unwrap().key_source,
+            pb::KeySource::Unspecified as i32
+        );
+        assert!(
+            mock.recorded().is_empty(),
+            "logout without credentials contacts no server"
+        );
+    }
+}
+/// With the environment key source forced and no key supplied, logout still reports
+/// `NOT_LOGGED_IN` instead of `KEY_UNAVAILABLE`.
+#[tokio::test(flavor = "multi_thread")]
+async fn logout_without_credentials_needs_no_environment_key() {
+    let home = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(Api::default()));
+    let mock = Mock::start(api(state)).await;
+    let core = support::core(
+        home.path(),
+        &mock,
+        Owner::Direct,
+        &[("ANYDASH_KEY_SOURCE", "env")],
+    );
+    assert_eq!(
+        core.logout().await.unwrap_err().reason,
+        ErrorReason::NotLoggedIn
+    );
 }
 #[tokio::test(flavor = "multi_thread")]
 async fn refresh_token_reuse_requires_a_new_login() {

@@ -140,7 +140,7 @@ Paths, metrics and general parsing rules come from the [provider adapters contra
 - Official tokens are read from stdin or a named environment variable, never from command arguments.
 - Uploads contain only aggregates; see the [server contract](servers-anydash-api-contract.md#local-usage-upload-and-aggregation).
 - Local IPC is restricted to the current OS user.
-- Logout releases held leases, then revokes the refresh token that is current after that release (releasing can rotate the device credentials; no rotation runs between revocation and deletion) and deletes the device credentials; `disconnect` deletes a provider token.
+- Logout releases held leases, then revokes the refresh token that is current after that release (releasing can rotate the device credentials; no rotation runs between revocation and deletion) and deletes the device credentials; `disconnect` deletes a provider token. Logout on a device without stored device credentials returns `NOT_LOGGED_IN` before any key access: it never generates or stores a data key and never returns `KEY_UNAVAILABLE`, whatever the key source is.
 
 ## Logging
 
@@ -160,6 +160,7 @@ Run root `cargo test`, `cargo clippy` for the package and builds for every suppo
 - Collector: one shared process for the app and the CLI; collection continues after the window closes and stops on explicit quit; opt-in autostart and CLI service install and uninstall; key supply from the OS store, a 0600 file and an environment variable, atomic key rotation and rollback on failure; offline buffering for up to 90 days; log rotation at 7 days or 50 MiB.
 - Backoff timing (1 to 30 minutes, jitter, 30-second timeout), `Retry-After`, authentication expiry and resume, lease acquisition, renewal and loss, `UPDATE_REQUIRED` buffering, and that no refresh-token request is ever sent to a provider.
 - Enrollment from the CLI, logout keeping the registration and re-login reattaching the device.
+- Logout without stored credentials returns `NOT_LOGGED_IN` and creates no key file or OS store item, including with the environment key source and no key supplied.
 - Human and JSON output, exit codes and color opt-out.
 
 Cross-compilation does not establish installation or behavior on that OS; record native checks separately.
