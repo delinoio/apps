@@ -391,7 +391,11 @@ impl GitHub {
         if c.pull_request > 0 {
             let p = self.pull(r, c.pull_request).await?;
             if p["base"]["ref"] != c.branch {
-                return Err(Fault::unavailable());
+                // The pull request was read successfully, so the mismatch is a verdict on the
+                // caller's context rather than a provider failure.
+                return Err(Fault::precondition(
+                    "pull request base does not match branch",
+                ));
             }
             if p["head"]["sha"] != c.commit {
                 match tokio::time::timeout(
@@ -401,7 +405,12 @@ impl GitHub {
                 .await
                 {
                     Ok(Ok(true)) => {}
-                    Ok(Ok(false)) => return Err(Fault::unavailable()),
+                    // `pull_contains` reports false only after a complete, consistent traversal.
+                    Ok(Ok(false)) => {
+                        return Err(Fault::precondition(
+                            "commit is not part of the pull request",
+                        ));
+                    }
                     Ok(Err(fault)) => return Err(fault),
                     Err(_) => {
                         tracing::warn!(
@@ -436,8 +445,12 @@ impl GitHub {
         let branch = self
             .branch(r, &c.branch, HashSet::from([c.commit.clone()]))
             .await?;
+        // `branch` walks the first-parent path until it finds the commit or reaches the root, so
+        // a different tail proves the commit is not on the path.
         if branch.last() != Some(&c.commit) {
-            return Err(Fault::unavailable());
+            return Err(Fault::precondition(
+                "commit is not on the branch first-parent path",
+            ));
         }
         let mut parents = Vec::new();
         while let Some(sha) = commit["parents"][0]["sha"].as_str().map(str::to_owned) {
@@ -563,7 +576,13 @@ impl GitHub {
     }
 }
 
+/// Attributes a failure to GitHub so it counts in `git_tracker_events_total{kind="github"}`.
+/// Failed-precondition faults are definitive verdicts about the request (for example, the commit
+/// is provably outside the pull request) and keep the application source: they are neither
+/// provider failures nor retryable.
 fn github_failure(mut fault: Fault) -> Fault {
-    fault.source = server_common::error::FaultSource::GitHub;
+    if fault.code != connectrpc::ErrorCode::FailedPrecondition {
+        fault.source = server_common::error::FaultSource::GitHub;
+    }
     fault
 }

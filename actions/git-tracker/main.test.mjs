@@ -48,6 +48,27 @@ test("transient failures retry three times, permanent failures do not", async ()
   assert.equal(calls, 1);
 });
 
+test("a failed-precondition response (HTTP 400) is permanent and never retried", async () => {
+  let calls = 0;
+  await assert.rejects(
+    rpc("https://example.test", "Upload", {}, "secret", {
+      request: async () => {
+        calls++;
+        return new Response(
+          JSON.stringify({
+            code: "failed_precondition",
+            message: "commit is not part of the pull request",
+          }),
+          { status: 400 },
+        );
+      },
+      sleep: async () => {},
+    }),
+    (failure) => failure.transient === false,
+  );
+  assert.equal(calls, 1);
+});
+
 test("RPC origin trailing slashes preserve POST endpoint and body", async () => {
   for (const origin of ["https://api.example", "https://api.example/"]) {
     await rpc(

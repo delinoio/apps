@@ -11,6 +11,7 @@ use delino_protocol::gittracker::v1::{Context, Repository};
 use git_tracker_api::github::GitHub;
 use jsonwebtoken::EncodingKey;
 use serde_json::{Value, json};
+use server_common::{Fault, error::FaultSource};
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -115,6 +116,12 @@ async fn handle(State(shared): State<Shared>, request: Request) -> (StatusCode, 
         (StatusCode::OK, out)
     } else if let Some(sha) = path.strip_prefix("/repos/owner/repo/commits/") {
         (StatusCode::OK, json!({"sha":sha,"parents":[]}))
+    } else if path == "/repos/owner/repo/git/ref/heads/main" {
+        // Push contexts: the branch tip is the provider head.
+        (
+            StatusCode::OK,
+            json!({"ref":"refs/heads/main","object":{"type":"commit","sha":p.head}}),
+        )
     } else if path == "/repos/owner/repo/pulls/1" {
         (
             StatusCode::OK,
@@ -209,6 +216,12 @@ fn context(commit: &str) -> Context {
 }
 
 impl Fixture {
+    async fn resolve_fault(&self, commit: &str) -> Fault {
+        self.github
+            .resolve(&self.repository, &context(commit))
+            .await
+            .unwrap_err()
+    }
     async fn resolve(&self, commit: &str) -> Result<(Vec<String>, String), String> {
         self.github
             .resolve(&self.repository, &context(commit))
@@ -237,6 +250,28 @@ impl Fixture {
 }
 
 const UNAVAILABLE: &str = "a dependency is unavailable";
+const NOT_IN_PULL_REQUEST: &str = "commit is not part of the pull request";
+const BASE_MISMATCH: &str = "pull request base does not match branch";
+const NOT_ON_BRANCH: &str = "commit is not on the branch first-parent path";
+
+/// Asserts a definitive verdict: failed precondition with the application source, which the
+/// server does not count as a GitHub failure and the Action does not retry.
+fn assert_precondition(fault: Fault, message: &str, name: &str) {
+    assert_eq!(
+        fault.code,
+        connectrpc::ErrorCode::FailedPrecondition,
+        "{name}"
+    );
+    assert_eq!(fault.source, FaultSource::Application, "{name}");
+    assert_eq!(fault.message, message, "{name}");
+}
+
+/// Asserts a provider failure: unavailable with the GitHub source, counted and retried.
+fn assert_provider_failure(fault: Fault, name: &str) {
+    assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable, "{name}");
+    assert_eq!(fault.source, FaultSource::GitHub, "{name}");
+    assert_eq!(fault.message, UNAVAILABLE, "{name}");
+}
 
 fn chain(n: usize) -> Vec<String> {
     (1..=n).map(sha).collect()
@@ -307,9 +342,41 @@ async fn non_members_are_rejected_after_complete_traversal() {
     let f = fixture(provider(chain(300), &sha(300))).await;
     // Retrievable repository commits (base ancestor, side parent, unrelated, force-pushed-away).
     for excluded in [sha(0), sha(1000), sha(2000), sha(3000)] {
-        assert_eq!(f.resolve(&excluded).await.unwrap_err(), UNAVAILABLE);
+        assert_precondition(
+            f.resolve_fault(&excluded).await,
+            NOT_IN_PULL_REQUEST,
+            &excluded,
+        );
     }
     assert_eq!(f.graphql_calls().len(), 12);
+}
+
+#[tokio::test]
+async fn pull_request_base_mismatch_is_a_precondition() {
+    let f = fixture(provider(chain(300), &sha(300))).await;
+    let mut c = context(&sha(300));
+    c.branch = "release".into();
+    let fault = f.github.resolve(&f.repository, &c).await.unwrap_err();
+    assert_precondition(fault, BASE_MISMATCH, "base mismatch");
+    // The verdict needs neither a membership check nor a commit listing.
+    assert!(f.graphql_calls().is_empty());
+    assert_eq!(f.rest_pages(), 0);
+}
+
+#[tokio::test]
+async fn push_commit_off_the_branch_path_is_a_precondition() {
+    // The mock commits have no parents, so the first-parent path of `main` is only its tip.
+    let f = fixture(provider(chain(3), &sha(3))).await;
+    let mut c = context(&sha(2));
+    c.pull_request = 0;
+    let fault = f.github.resolve(&f.repository, &c).await.unwrap_err();
+    assert_precondition(fault, NOT_ON_BRANCH, "commit behind the tip");
+    c.commit = sha(3);
+    assert!(f.github.resolve(&f.repository, &c).await.is_ok());
+    // A branch the provider cannot resolve is a provider failure, not a verdict.
+    c.branch = "missing".into();
+    let fault = f.github.resolve(&f.repository, &c).await.unwrap_err();
+    assert_provider_failure(fault, "unresolvable branch");
 }
 
 #[tokio::test]
@@ -361,7 +428,11 @@ async fn short_nonterminal_and_empty_terminal_pages_are_consistent() {
         (commits[100..].to_vec(), true),
         (vec![], false),
     ]);
-    assert_eq!(f.resolve(&sha(5000)).await.unwrap_err(), UNAVAILABLE);
+    assert_precondition(
+        f.resolve_fault(&sha(5000)).await,
+        NOT_IN_PULL_REQUEST,
+        "empty terminal page",
+    );
     assert_eq!(f.graphql_calls().len(), 3);
 }
 
@@ -493,11 +564,7 @@ async fn provider_uncertainty_fails_closed() {
     for (name, edit) in cases {
         let f = fixture(mutate(chain(300), edit)).await;
         // sha(5000) is never listed, so success could only come from a skipped consistency check.
-        assert_eq!(
-            f.resolve(&sha(5000)).await.unwrap_err(),
-            UNAVAILABLE,
-            "{name}"
-        );
+        assert_provider_failure(f.resolve_fault(&sha(5000)).await, name);
         // A listed member after the broken page also never succeeds on an inconsistent snapshot.
         let listed = f.resolve(&sha(250)).await;
         if [
@@ -526,11 +593,7 @@ async fn provider_failures_and_deadline_fail_closed() {
                 json!({"message":"no"}),
             )
         }));
-        assert_eq!(
-            f.resolve(&sha(251)).await.unwrap_err(),
-            UNAVAILABLE,
-            "{status}"
-        );
+        assert_provider_failure(f.resolve_fault(&sha(251)).await, &status.to_string());
     }
     // Failing on the second page never yields partial success for a target on a later page.
     let f = fixture(provider(chain(300), &sha(300))).await;
@@ -541,13 +604,13 @@ async fn provider_failures_and_deadline_fail_closed() {
             (StatusCode::BAD_GATEWAY, json!({}))
         }
     }));
-    assert_eq!(f.resolve(&sha(251)).await.unwrap_err(), UNAVAILABLE);
+    assert_provider_failure(f.resolve_fault(&sha(251)).await, "second page failure");
 
     // Deadline expiry is unavailable, not a membership verdict.
     let mut f = fixture(provider(chain(300), &sha(300))).await;
     f.github.membership_deadline = Duration::from_millis(100);
     f.shared.lock().unwrap().delay = Duration::from_millis(1500);
-    assert_eq!(f.resolve(&sha(251)).await.unwrap_err(), UNAVAILABLE);
+    assert_provider_failure(f.resolve_fault(&sha(251)).await, "deadline");
 }
 
 fn graphql_empty_first() -> (StatusCode, Value) {
@@ -563,7 +626,11 @@ async fn closed_membership_does_not_come_from_repository_existence() {
     // The mock serves every `commits/{sha}` lookup, i.e. the object exists in the repository,
     // but a SHA absent from the PR connection must still be rejected.
     let f = fixture(provider(chain(10), &sha(10))).await;
-    assert_eq!(f.resolve(&sha(77)).await.unwrap_err(), UNAVAILABLE);
+    assert_precondition(
+        f.resolve_fault(&sha(77)).await,
+        NOT_IN_PULL_REQUEST,
+        "repository object outside the pull request",
+    );
     assert!(f.resolve(&sha(5)).await.is_ok());
 }
 
@@ -744,6 +811,43 @@ async fn postgres_commit_beyond_rest_cap_uploads_appends_and_completes_after_hea
     let (_, closed) = call(&http, &api, "Upload", &auth, upload("three", "3")).await;
     assert_eq!(closed["code"], "failed_precondition");
 
+    // A commit that a complete provider traversal proves is outside the pull request is a
+    // definitive client error: HTTP 400 failed_precondition, nothing persisted, and no GitHub
+    // failure counted (so the Action does not retry it).
+    let github_failures = || {
+        server
+            .metrics
+            .events
+            .with_label_values(&["github", "failure"])
+            .get()
+    };
+    let before = github_failures();
+    let mut outsider = context.clone();
+    outsider["executionId"] = "run-w".into();
+    outsider["commit"] = sha(5000).into();
+    let r = http
+        .post(format!("{api}/Upload"))
+        .header("Authorization", &auth)
+        .header("Connect-Protocol-Version", "1")
+        .json(&json!({"context":outsider,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+    let rejected: Value = r.json().await.unwrap();
+    assert_eq!(rejected["code"], "failed_precondition", "{rejected}");
+    assert_eq!(rejected["message"], NOT_IN_PULL_REQUEST, "{rejected}");
+    assert_eq!(github_failures(), before);
+    let (_, missing) = call(
+        &http,
+        &api,
+        "GetExecution",
+        "",
+        json!({"repositoryId":rid,"executionId":"run-w"}),
+    )
+    .await;
+    assert!(missing.get("execution").is_none(), "{missing}");
+
     // A provider outage leaves a new execution unregistered instead of persisting partial data.
     shared.lock().unwrap().graphql = Some(Box::new(|_| (StatusCode::BAD_GATEWAY, json!({}))));
     let mut other = context.clone();
@@ -757,6 +861,8 @@ async fn postgres_commit_beyond_rest_cap_uploads_appends_and_completes_after_hea
     )
     .await;
     assert_eq!(failed["code"], "unavailable");
+    // Unlike the verdict above, an outage is a counted GitHub failure.
+    assert_eq!(github_failures(), before + 1);
     let (_, missing) = call(
         &http,
         &api,
