@@ -166,6 +166,58 @@ func TestEndlessProviderBodyIsCutOff(t *testing.T) {
 	}
 }
 
+// The response Content-Type is chosen by the provider, so an endless body that
+// claims to be an event stream must still be cut off when the call did not ask
+// for a stream: the executor buffers it with io.ReadAll whatever the header
+// says.
+func TestEndlessEventStreamBodyOfNonStreamingCallIsCutOff(t *testing.T) {
+	for _, tc := range limitCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			up := endlessUpstream(t, "text/event-stream")
+			h := newHarness(t, func(o *Options) { o.MaxProviderResponseBytes = testResponseLimit })
+			resourceID := newResourceID()
+			key := h.addKey(resourceID)
+			h.addCredential(apiKeyCredential(resourceID, tc.provider, tc.baseURL(up), "sk-test", "m"))
+
+			stop := peakHeap()
+			res := h.call(http.MethodPost, "/r/"+resourceID+tc.path, key, tc.body, tc.header)
+			growth := stop()
+
+			if res.resp.StatusCode != http.StatusBadGateway || tc.errorType(res.body) != "provider_error" {
+				t.Fatalf("status %d body %s", res.resp.StatusCode, res.body)
+			}
+			if growth > 20<<20 {
+				t.Fatalf("heap grew by %d bytes with a %d byte limit", growth, testResponseLimit)
+			}
+			if record := h.sink.waitFinal(t, res.callID); record.ErrorClass != ErrorClassProviderResponseTooLarge {
+				t.Fatalf("record status %v class %q", record.Status, record.ErrorClass)
+			}
+		})
+	}
+}
+
+func TestExemptFromLimitRequiresAStreamingCall(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		streaming   bool
+		contentType string
+		want        bool
+	}{
+		{"streaming call, event stream", true, "text/event-stream", true},
+		{"streaming call, media type parameter", true, "Text/Event-Stream; charset=utf-8", true},
+		{"streaming call, buffered JSON", true, "application/json", false},
+		{"non-streaming call, event stream", false, "text/event-stream", false},
+		{"non-streaming call, buffered JSON", false, "application/json", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := &callState{streaming: tc.streaming}
+			if got := exemptFromLimit(call, tc.contentType); got != tc.want {
+				t.Fatalf("exemptFromLimit = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // Event streams are exempt: a stream larger than the limit still completes.
 func TestLargeEventStreamIsNotCutOff(t *testing.T) {
 	const events = 96 // about 3 MiB of content

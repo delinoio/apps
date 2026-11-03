@@ -359,11 +359,21 @@ func (b *limitedBody) Read(p []byte) (int, error) {
 }
 
 // isEventStream reports whether a Content-Type header names a server-sent
-// event stream. Streams are exempt from the response size limit: they are
-// forwarded to the caller as they arrive and never buffered.
+// event stream. The header is chosen by the provider, so it alone never
+// exempts a response from the size limit: a non-streaming call is executed by
+// buffering the whole body whatever the header says (see exemptFromLimit).
 func isEventStream(contentType string) bool {
 	mediaType, _, _ := strings.Cut(contentType, ";")
 	return strings.EqualFold(strings.TrimSpace(mediaType), "text/event-stream")
+}
+
+// exemptFromLimit reports whether a provider response is exempt from the size
+// limit. Only a response that is consumed incrementally is: the caller asked
+// for a stream (the same call property that exempts the Claude relay tunnels)
+// and the provider answered with an event stream. A streaming call's other
+// responses, and every response of a non-streaming call, stay bounded.
+func exemptFromLimit(call *callState, contentType string) bool {
+	return call.isStreaming() && isEventStream(contentType)
 }
 
 func (t *meteringTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -407,7 +417,7 @@ func (t *meteringTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	resp, err := t.base.RoundTrip(out)
 	if err == nil && resp != nil {
 		call.observeHTTPStatus(resp.StatusCode)
-		if t.maxResponseBytes > 0 && resp.Body != nil && !isEventStream(resp.Header.Get("Content-Type")) {
+		if t.maxResponseBytes > 0 && resp.Body != nil && !exemptFromLimit(call, resp.Header.Get("Content-Type")) {
 			resp.Body = &limitedBody{ReadCloser: resp.Body, call: call, limit: t.maxResponseBytes, declared: resp.ContentLength}
 		}
 	}
