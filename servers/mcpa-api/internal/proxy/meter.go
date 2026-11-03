@@ -201,6 +201,25 @@ func callFromContext(ctx context.Context) *callState {
 	return nil
 }
 
+// relayCallIDKey carries the call ID of a relay tunnel into the dial
+// function, which has no other way to learn the call.
+type relayCallIDKey struct{}
+
+// CallIDFromContext returns the ID of the call a provider dial or request
+// context belongs to, or the empty string. It is meant for logging in the
+// dial path (see DialFunc).
+func CallIDFromContext(ctx context.Context) string {
+	if call := callFromContext(ctx); call != nil {
+		return call.id
+	}
+	if ctx != nil {
+		if id, ok := ctx.Value(relayCallIDKey{}).(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
 // headerFieldBytes returns the HTTP/1.1 size of header lines for one field.
 func headerFieldBytes(name string, values []string) int64 {
 	var n int64

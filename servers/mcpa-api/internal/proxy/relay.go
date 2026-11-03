@@ -20,7 +20,10 @@ import (
 )
 
 // DialFunc dials a provider connection. address is "host:port" with the
-// host as the provider URL names it; the function resolves it.
+// host as the provider URL names it; the function resolves it. The error
+// text may reach customers (the SDK copies it into its response), so it must
+// not disclose resolved addresses or resolver details; the context carries
+// the call (see CallIDFromContext) for internal logging.
 type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)
 
 // upstreamRelay applies Options.DialUpstream to the SDK Claude client.
@@ -258,6 +261,9 @@ func (r *upstreamRelay) handle(client net.Conn) {
 		r.logger.Warn("upstream relay rejected a request", slog.String("error", err.Error()))
 		_ = client.Close()
 		return
+	}
+	if callID != "" {
+		ctx = context.WithValue(ctx, relayCallIDKey{}, callID)
 	}
 	upstream, err := r.dial(ctx, "tcp", address)
 	if err != nil {

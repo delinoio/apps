@@ -668,3 +668,40 @@ func TestClaudeStreamingCallClosesTunnelWhenCancelled(t *testing.T) {
 	cancel()
 	waitFor(t, 5*time.Second, "tunnel to close after the call ended", func() bool { return h.engine.relay.openTunnels() == 0 })
 }
+
+// The dial function learns the call of a tunnel from its context, so the
+// guarded dialer can log the call ID of a refused destination.
+func TestUpstreamRelayDialContextCarriesCallID(t *testing.T) {
+	var mu sync.Mutex
+	var ids []string
+	dial := func(ctx context.Context, _, _ string) (net.Conn, error) {
+		mu.Lock()
+		ids = append(ids, CallIDFromContext(ctx))
+		mu.Unlock()
+		return nil, errDialRefused
+	}
+	relay, err := startUpstreamRelay(dial, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+	for _, rawURL := range []string{relay.URLFor("call-xyz"), relay.URL()} {
+		u, err := url.Parse(rawURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dialer, err := proxy.FromURL(u, proxy.Direct)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if conn, err := dialer.Dial("tcp", "10.0.0.1:443"); err == nil {
+			conn.Close()
+			t.Fatal("refused destination was connected")
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(ids) != 2 || ids[0] != "call-xyz" || ids[1] != "" {
+		t.Fatalf("call IDs seen by the dial function: %q", ids)
+	}
+}
