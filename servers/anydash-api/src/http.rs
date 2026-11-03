@@ -73,8 +73,12 @@ async fn metrics(State(s): State<Arc<Server>>, headers: HeaderMap) -> Response {
     if !constant_time_eq(supplied.as_bytes(), expected.as_bytes()) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    if crate::worker::refresh_gauges(&s).await.is_err() {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    // A database outage must not hide the metrics that explain it: the request counters and the
+    // timeout counter live in memory. Serve the registry with the last gauge values and count the
+    // failure instead of failing the scrape.
+    if let Err(e) = crate::worker::refresh_gauges(&s).await {
+        s.metrics.gauge_refresh_failures.inc();
+        tracing::warn!(error = %e, "database-backed gauges could not be refreshed for a scrape");
     }
     (
         [("content-type", "text/plain; version=0.0.4")],
@@ -147,6 +151,8 @@ async fn policy(State(s): State<Arc<Server>>, req: Request, next: Next) -> Respo
                 match tokio::time::timeout_at(deadline, next.run(req)).await {
                     Ok(response) => response,
                     Err(_) => {
+                        // The dropped handler future cannot record this request, so count it here.
+                        s.metrics.timeouts.inc();
                         tracing::warn!(correlation_id = %correlation, "request timed out");
                         StatusCode::GATEWAY_TIMEOUT.into_response()
                     }
@@ -224,6 +230,105 @@ mod tests {
                 Poll::Pending => Poll::Pending,
             }
         }
+    }
+
+    /// A server whose database pool never connects; policy tests do not touch it.
+    fn lazy_server() -> Arc<Server> {
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://anydash@127.0.0.1:1/anydash")
+            .expect("lazy pool");
+        let config = crate::config::Config::fixture(
+            "https://issuer.example.test",
+            "https://delcore.example.test",
+            "https://prices.example.test/prices.json",
+        );
+        Arc::new(Server::new(db, config).expect("test server"))
+    }
+
+    #[tokio::test]
+    async fn metrics_scrape_survives_a_gauge_refresh_failure() {
+        use tower::ServiceExt;
+        // Nothing listens on 127.0.0.1:1, so every gauge query fails fast.
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_secs(1))
+            .connect_lazy("postgres://anydash@127.0.0.1:1/anydash")
+            .expect("lazy pool");
+        let config = crate::config::Config::fixture(
+            "https://issuer.example.test",
+            "https://delcore.example.test",
+            "https://prices.example.test/prices.json",
+        );
+        let token = config.metrics_token.clone();
+        let server = Arc::new(Server::new(db, config).expect("test server"));
+        server
+            .metrics
+            .requests
+            .with_label_values(&["AccountService", "GetAccount", "server_error"])
+            .inc();
+        let app = router(server.clone());
+        let scrape = |authorization: Option<String>| {
+            let mut req = Request::builder().uri("/metrics");
+            if let Some(a) = authorization {
+                req = req.header("authorization", a);
+            }
+            app.clone().oneshot(req.body(Body::empty()).unwrap())
+        };
+        // Without the token the response is still 401 and the refresh is not attempted.
+        assert_eq!(
+            scrape(None).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(server.metrics.gauge_refresh_failures.get(), 0);
+        for expected in 1..=2 {
+            let response = scrape(Some(format!("Bearer {token}"))).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let text = String::from_utf8(body.to_vec()).unwrap();
+            assert!(text.contains(
+                "anydash_api_requests_total{method=\"GetAccount\",outcome=\"server_error\",service=\"AccountService\"} 1"
+            ));
+            // The counter is incremented before the registry is encoded.
+            assert!(
+                text.contains(&format!("anydash_gauge_refresh_failures_total {expected}")),
+                "{text}"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn handler_exceeding_the_deadline_returns_504_and_counts_a_timeout() {
+        use tower::ServiceExt;
+        let server = lazy_server();
+        let app = Router::new()
+            .route(
+                "/slow",
+                get(|| async {
+                    tokio::time::sleep(REQUEST_TIMEOUT + Duration::from_secs(1)).await;
+                    StatusCode::OK
+                }),
+            )
+            .route("/fast", get(|| async { StatusCode::OK }))
+            .layer(middleware::from_fn_with_state(server.clone(), policy));
+        let send = |path: &'static str| {
+            app.clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+        };
+        let fast = send("/fast").await.unwrap();
+        assert_eq!(fast.status(), StatusCode::OK);
+        assert_eq!(server.metrics.timeouts.get(), 0);
+        let slow = send("/slow").await.unwrap();
+        assert_eq!(slow.status(), StatusCode::GATEWAY_TIMEOUT);
+        assert!(slow.headers().contains_key(CORRELATION_HEADER));
+        assert_eq!(server.metrics.timeouts.get(), 1);
+        assert!(
+            server
+                .metrics
+                .encode()
+                .contains("anydash_api_timeouts_total 1")
+        );
+        // A later normal request is unaffected.
+        assert_eq!(send("/fast").await.unwrap().status(), StatusCode::OK);
+        assert_eq!(server.metrics.timeouts.get(), 1);
     }
 
     #[tokio::test(start_paused = true)]

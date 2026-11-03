@@ -188,7 +188,10 @@ async fn run_locked(
     .await?;
     s.metrics
         .job_runs
-        .with_label_values(&[job.name(), if ok { "success" } else { "failure" }])
+        .with_label_values(&[
+            job.name(),
+            crate::metrics::JOB_OUTCOMES[if ok { 0 } else { 1 }],
+        ])
         .inc();
     if ok {
         s.metrics

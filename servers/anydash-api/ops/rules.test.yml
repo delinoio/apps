@@ -29,6 +29,46 @@ tests:
       - eval_time: 15m
         alertname: AnyDashApiServerErrors
         exp_alerts: []
+  - name: timeouts count as server errors; 10% fires and 1% does not
+    interval: 30s
+    input_series:
+      # Job a: 90 completed requests and 10 timeouts (10%) per 30 s. The handlers of timed-out
+      # requests never record a request sample, so timeouts only appear in the timeout counter.
+      - series: anydash_api_requests_total{job="a",instance="a",service="DeviceService",method="Heartbeat",outcome="success"}
+        values: "0+90x40"
+      - series: anydash_api_timeouts_total{job="a",instance="a"}
+        values: "0+10x40"
+      # Job b: 99 completed requests and 1 timeout (1%) per 30 s.
+      - series: anydash_api_requests_total{job="b",instance="a",service="DeviceService",method="Heartbeat",outcome="success"}
+        values: "0+99x40"
+      - series: anydash_api_timeouts_total{job="b",instance="a"}
+        values: "0+1x40"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: [{ exp_labels: { job: a, severity: critical } }]
+  - name: timeouts fire when no request sample exists at all
+    interval: 30s
+    input_series:
+      # Every request times out: the request counter has no series, only the timeout counter does.
+      - series: anydash_api_timeouts_total{job="anydash-api",instance="a"}
+        values: "0+30x40"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: [{ exp_labels: { job: anydash-api, severity: critical } }]
+  - name: a few timeouts cannot fire
+    interval: 30s
+    input_series:
+      - series: anydash_api_timeouts_total{job="anydash-api",instance="a"}
+        values: "0+0.1x40"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: []
   - name: few requests cannot fire
     interval: 30s
     input_series:
@@ -50,6 +90,27 @@ tests:
         alertname: AnyDashWorkerJobFailed
         exp_alerts: []
       - eval_time: 1m30s
+        alertname: AnyDashWorkerJobFailed
+        exp_alerts:
+          [
+            {
+              exp_labels:
+                { job: anydash-api, worker_job: deletion, severity: critical },
+            },
+          ]
+  - name: a counter that first appears at 1 hides the first failure, so the server creates it at 0
+    interval: 30s
+    input_series:
+      # Uninitialized shape: the server's first exposed sample is already 1, so increase() is 0
+      # and the alert cannot fire. The server avoids this by exposing every worker_job and
+      # outcome series at 0 from startup (see the initialized case above).
+      - series: anydash_worker_job_runs_total{job="anydash-api",worker_job="retention",outcome="failure"}
+        values: "1+0x10"
+      # Initialized shape: 0 until the first failure, then 1.
+      - series: anydash_worker_job_runs_total{job="anydash-api",worker_job="deletion",outcome="failure"}
+        values: "0 0 1+0x10"
+    alert_rule_test:
+      - eval_time: 5m
         alertname: AnyDashWorkerJobFailed
         exp_alerts:
           [
