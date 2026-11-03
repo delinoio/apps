@@ -35,7 +35,9 @@ type Logto struct {
 	clientSecret string
 	httpClient   *http.Client
 
-	mu       sync.Mutex
+	mu sync.Mutex
+	// inflight is the running discovery attempt, nil when none runs.
+	inflight *discoverCall
 	provider *oidc.Provider
 	meta     providerMetadata
 	// accessVerifier and idVerifier share one cached JWKS key set. They are
@@ -86,27 +88,90 @@ func NewLogto(issuer, clientID, clientSecret string, httpClient *http.Client) *L
 // ClientID returns the Logto application client ID.
 func (l *Logto) ClientID() string { return l.clientID }
 
+// defaultDiscoveryTimeout bounds one discovery attempt when the HTTP client
+// has no timeout of its own.
+const defaultDiscoveryTimeout = 10 * time.Second
+
+// discoverCall is one in-flight discovery attempt shared by every caller that
+// arrives while it runs.
+type discoverCall struct {
+	done chan struct{}
+	// err is written before done is closed and read only after it.
+	err error
+}
+
+// discover returns the discovered provider, running at most one discovery
+// attempt at a time. Concurrent callers during an outage share the single
+// attempt and fail together after at most one discovery timeout instead of
+// queueing one full attempt each. The attempt is detached from the caller that
+// started it, so a cancelled caller neither aborts it for the others nor
+// leaves the mutex held. Only success is cached; a failed attempt is dropped
+// when it completes and the next call starts a new one.
 func (l *Logto) discover(ctx context.Context) (*oidc.Provider, providerMetadata, error) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	if l.provider != nil {
-		return l.provider, l.meta, nil
+		p, meta := l.provider, l.meta
+		l.mu.Unlock()
+		return p, meta, nil
 	}
+	call := l.inflight
+	if call == nil {
+		call = &discoverCall{done: make(chan struct{})}
+		l.inflight = call
+		go l.runDiscovery(context.WithoutCancel(ctx), call)
+	}
+	l.mu.Unlock()
+
+	select {
+	case <-call.done:
+	case <-ctx.Done():
+		return nil, providerMetadata{}, fmt.Errorf("logto: discovery: %w", ctx.Err())
+	}
+	if call.err != nil {
+		return nil, providerMetadata{}, call.err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.provider, l.meta, nil
+}
+
+// runDiscovery performs the shared discovery attempt and publishes its
+// outcome. ctx must not be cancelled by the starting caller.
+func (l *Logto) runDiscovery(ctx context.Context, call *discoverCall) {
+	timeout := l.httpClient.Timeout
+	if timeout <= 0 {
+		timeout = defaultDiscoveryTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	err := l.fetchDiscovery(ctx)
+	call.err = err
+	l.mu.Lock()
+	l.inflight = nil
+	l.mu.Unlock()
+	close(call.done)
+}
+
+// fetchDiscovery fetches the provider metadata and, on success, stores the
+// provider and verifiers.
+func (l *Logto) fetchDiscovery(ctx context.Context) error {
 	p, err := oidc.NewProvider(oidc.ClientContext(ctx, l.httpClient), l.issuer)
 	if err != nil {
-		return nil, providerMetadata{}, fmt.Errorf("%w: discovery: %v", ErrLogtoUnavailable, err)
+		return fmt.Errorf("%w: discovery: %v", ErrLogtoUnavailable, err)
 	}
 	var meta providerMetadata
 	if err := p.Claims(&meta); err != nil || meta.AuthorizationEndpoint == "" || meta.TokenEndpoint == "" {
-		return nil, providerMetadata{}, fmt.Errorf("%w: discovery metadata is incomplete", ErrLogtoUnavailable)
+		return fmt.Errorf("%w: discovery metadata is incomplete", ErrLogtoUnavailable)
 	}
 	if meta.JWKSURI == "" {
-		return nil, providerMetadata{}, fmt.Errorf("%w: discovery metadata has no jwks_uri", ErrLogtoUnavailable)
+		return fmt.Errorf("%w: discovery metadata has no jwks_uri", ErrLogtoUnavailable)
 	}
 	// One key set serves every verification: keys are cached and refetched
 	// only for an unknown key ID.
 	keys := newJWKSKeySet(meta.JWKSURI, l.httpClient)
 	algs := meta.signingAlgs()
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	// Access tokens are not ID tokens: the audience is the API resource, not
 	// the client ID, so the client check is replaced by an explicit audience
 	// check in VerifyAccessToken.
@@ -114,7 +179,7 @@ func (l *Logto) discover(ctx context.Context) (*oidc.Provider, providerMetadata,
 	l.idVerifier = oidc.NewVerifier(l.issuer, keys, &oidc.Config{ClientID: l.clientID, SupportedSigningAlgs: algs})
 	l.provider = p
 	l.meta = meta
-	return p, meta, nil
+	return nil
 }
 
 // Endpoints returns the discovered authorization, token and end-session

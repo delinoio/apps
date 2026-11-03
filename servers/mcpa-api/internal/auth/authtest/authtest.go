@@ -28,6 +28,11 @@ type Provider struct {
 	// published holds the keys served by the JWKS endpoint; the last
 	// signing key is the one Sign uses.
 	published []signingKey
+	// discoveryRequests counts discovery document requests.
+	discoveryRequests int
+	// discoveryHang, when non-nil, holds discovery requests until it is
+	// closed.
+	discoveryHang chan struct{}
 	// jwksRequests counts JWKS endpoint requests.
 	jwksRequests int
 	// jwksStatus, when set, fails JWKS requests with this status.
@@ -60,6 +65,17 @@ func New(t testing.TB) *Provider {
 	p := &Provider{published: []signingKey{{kid: "k1", key: key}}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		p.discoveryRequests++
+		hang := p.discoveryHang
+		p.mu.Unlock()
+		if hang != nil {
+			select {
+			case <-hang:
+			case <-r.Context().Done():
+				return
+			}
+		}
 		base := p.Server.URL
 		writeJSON(w, http.StatusOK, map[string]any{
 			"issuer":                                base,
@@ -177,6 +193,29 @@ func (p *Provider) JWKSRequests() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.jwksRequests
+}
+
+// DiscoveryRequests returns how many requests the discovery endpoint has
+// received.
+func (p *Provider) DiscoveryRequests() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.discoveryRequests
+}
+
+// SetDiscoveryHang makes discovery requests wait until it is called again
+// with false, which releases them. Tests that enable it must release before
+// cleanup.
+func (p *Provider) SetDiscoveryHang(hang bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch {
+	case hang && p.discoveryHang == nil:
+		p.discoveryHang = make(chan struct{})
+	case !hang && p.discoveryHang != nil:
+		close(p.discoveryHang)
+		p.discoveryHang = nil
+	}
 }
 
 // SetJWKSStatus makes the JWKS endpoint fail with status; zero restores
