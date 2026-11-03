@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,6 +35,7 @@ import (
 
 	delcorev1 "github.com/delinoio/apps/protos/delcore/v1"
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/delcore"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/pricing"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
@@ -110,6 +112,13 @@ func TestIntegrationHappyPath(t *testing.T) {
 	if s.GetCallCount() != int64(len(calls)) || s.GetTotalBytes() != total || s.GetRequestBytes() != reqBytes ||
 		s.GetTotalGib() != pricing.GiB(total) || s.GetEstimatedUsd() != pricing.EstimateUSD(total) {
 		t.Fatalf("summary %+v, want %d bytes", s, total)
+	}
+	// The summary strings are exact decimals, not rounded to six places.
+	if gib, ok := new(big.Rat).SetString(s.GetTotalGib()); !ok || gib.Cmp(new(big.Rat).SetFrac64(total, 1<<30)) != 0 {
+		t.Fatalf("total_gib %q is not exactly %d / 2^30", s.GetTotalGib(), total)
+	}
+	if usd, ok := new(big.Rat).SetString(s.GetEstimatedUsd()); !ok || usd.Cmp(pricing.SpendUSD(total)) != 0 {
+		t.Fatalf("estimated_usd %q is not exactly the spend of %d bytes", s.GetEstimatedUsd(), total)
 	}
 	var rowBytes, rowCalls int64
 	for _, r := range usage.GetRows() {
@@ -665,6 +674,98 @@ func TestIntegrationBudgets(t *testing.T) {
 	}
 	if got := metricValue(t, e, "mcpa_budget_rejections_total", "scope", "tenant"); got != 1 {
 		t.Fatalf("tenant budget rejections %v", got)
+	}
+}
+
+// Budget limits keep their full precision end to end: they are stored and
+// returned unrounded and the exhaustion check compares exactly.
+func TestIntegrationBudgetLimitPrecision(t *testing.T) {
+	e := newEnv(t, func(v map[string]string) { v["MCPA_AUTHORIZE_CACHE_TTL"] = "200ms" })
+	id := e.resource("precision")
+	key, keyID := e.callKey("owner", id)
+	setResource := func(limit string) (*mcpav1.Budget, error) {
+		resp, err := do(e, "owner", e.rpc.SetResourceBudget, &mcpav1.SetResourceBudgetRequest{ResourceId: id, LimitUsd: limit})
+		if err != nil {
+			return nil, err
+		}
+		return resp.GetBudget(), nil
+	}
+
+	// Limits below a millionth of a dollar and above 12 integer digits are
+	// accepted and returned exactly, with trailing fraction zeros removed.
+	for in, want := range map[string]string{
+		"0.0000001":     "0.0000001",
+		"0.10":          "0.1",
+		"1000000000000": "1000000000000",
+		"1234567890123": "1234567890123",
+	} {
+		b, err := setResource(in)
+		if err != nil || b.GetLimitUsd() != want {
+			t.Fatalf("SetResourceBudget(%q) => %+v, %v; want %q", in, b, err, want)
+		}
+		got := mustDo(e, "owner", e.rpc.GetResourceBudget, &mcpav1.GetResourceBudgetRequest{ResourceId: id}).GetBudget()
+		if got.GetLimitUsd() != want {
+			t.Fatalf("GetResourceBudget after %q => %q, want %q", in, got.GetLimitUsd(), want)
+		}
+	}
+	tenantLimit := "1000000000000"
+	if b := mustDo(e, "owner", e.rpc.SetTenantBudget, &mcpav1.SetTenantBudgetRequest{TenantId: e.tenant, LimitUsd: tenantLimit}).GetBudget(); b.GetLimitUsd() != tenantLimit {
+		t.Fatalf("tenant budget %+v, want limit %s", b, tenantLimit)
+	}
+	if b := mustDo(e, "owner", e.rpc.GetTenantBudget, &mcpav1.GetTenantBudgetRequest{TenantId: e.tenant}).GetBudget(); b.GetLimitUsd() != tenantLimit || b.GetExhausted() {
+		t.Fatalf("tenant budget read %+v", b)
+	}
+	mustDo(e, "owner", e.rpc.SetTenantBudget, &mcpav1.SetTenantBudgetRequest{TenantId: e.tenant, LimitUsd: ""})
+
+	// A 64-character canonical decimal is accepted; 65 characters and
+	// non-canonical forms are rejected as invalid input.
+	long64 := "0." + strings.Repeat("0", 61) + "1"
+	if b, err := setResource(long64); err != nil || b.GetLimitUsd() != long64 {
+		t.Fatalf("64-character limit => %+v, %v", b, err)
+	}
+	for _, in := range []string{long64 + "0", "01", "1.", ".5", "-1", "1e3", " 1", "NaN"} {
+		if _, err := setResource(in); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatalf("SetResourceBudget(%q) error %v, want invalid_argument", in, err)
+		}
+	}
+	if _, err := do(e, "owner", e.rpc.SetTenantBudget, &mcpav1.SetTenantBudgetRequest{TenantId: e.tenant, LimitUsd: long64 + "0"}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("65-character tenant limit error %v, want invalid_argument", err)
+	}
+
+	// Spend exactly 2 GiB (USD 0.14) in the current billing period.
+	var period delcore.Period
+	e.dc.set(func(f *fakeDelcore) { period = f.period })
+	rid := uuid.MustParse(id)
+	if _, err := e.db.ApplyCheckpoint(e.ctx, store.Checkpoint{
+		CallID: store.NewID(), TenantID: e.tenant, ResourceID: rid, CallKeyID: uuid.MustParse(keyID),
+		Provider: mcpav1.Provider_PROVIDER_OPENAI_COMPATIBLE, Model: "compat-model", Format: mcpav1.EndpointFormat_ENDPOINT_FORMAT_OPENAI,
+		StartTime: period.Start.Add(time.Hour), Seq: 1, Final: true, Status: mcpav1.CallStatus_CALL_STATUS_SUCCEEDED,
+		DeltaRequestBytes: 2 << 30, RequestBytes: 2 << 30, OutboxID: store.NewID(), RequestKey: store.NewID(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	attempt := func(limit string) callResult {
+		t.Helper()
+		if _, err := setResource(limit); err != nil {
+			t.Fatalf("SetResourceBudget(%q): %v", limit, err)
+		}
+		time.Sleep(300 * time.Millisecond) // authorization and spend caches
+		return e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	}
+	// A limit one quintillionth of a dollar above the spend still lets a call
+	// through: the comparison is exact and the limit is not rounded to
+	// six places. This runs first because every call adds billed bytes.
+	if ok := attempt("0.1400000000000000001"); ok.status != http.StatusOK {
+		t.Fatalf("limit just above the spend: %d %s", ok.status, ok.body)
+	}
+	// The call above adds its own bytes, so the spend now exceeds 0.14. A
+	// limit of 0.1 is far below it and rejects.
+	if rej := attempt("0.1"); rej.status != http.StatusTooManyRequests || gjson.GetBytes(rej.body, "error.type").String() != "budget_exhausted" {
+		t.Fatalf("limit 0.1 with 2 GiB spend: %d %s", rej.status, rej.body)
+	}
+	b := mustDo(e, "owner", e.rpc.GetResourceBudget, &mcpav1.GetResourceBudgetRequest{ResourceId: id}).GetBudget()
+	if b.GetLimitUsd() != "0.1" || !b.GetExhausted() {
+		t.Fatalf("budget %+v", b)
 	}
 }
 

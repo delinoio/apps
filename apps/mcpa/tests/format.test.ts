@@ -29,6 +29,17 @@ describe("usage USD estimates", () => {
     expect(formatUsd("")).toBe("$0.00");
   });
 
+  it("rounds the exact full-precision API strings for display only", () => {
+    // The API returns exact decimals (up to 30 GiB and 32 USD fraction digits).
+    expect(formatUsd("0.00000006519258022308349609375")).toBe("$0.00");
+    expect(formatUsd("0.07000000000000000000000000000001")).toBe("$0.07");
+    expect(formatUsd("0.0000005000000000000000000000001")).toBe("$0.000001");
+    expect(formatGib("0.000000931322574615478515625")).toBe("< 0.001 GiB");
+    expect(formatGib("8589934591.999999999068677425384521484375")).toBe(
+      "8,589,934,592.000 GiB",
+    );
+  });
+
   it("keeps unparseable server values visible", () => {
     expect(formatUsd("n/a")).toBe("n/a");
   });
