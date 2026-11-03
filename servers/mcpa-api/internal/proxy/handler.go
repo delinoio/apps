@@ -359,7 +359,7 @@ func (e *Engine) serveCall(w *countingResponseWriter, r *http.Request, call *cal
 		return
 	}
 
-	runtime, err := e.runtime(ctx, call.resourceID)
+	runtime, releaseRuntime, err := e.runtime(ctx, call.resourceID)
 	if err != nil {
 		e.logger.Warn("loading resource runtime failed",
 			slog.String("resource_id", call.resourceID),
@@ -367,6 +367,9 @@ func (e *Engine) serveCall(w *countingResponseWriter, r *http.Request, call *cal
 		reject(Reject(RejectionDependencyUnavailable, "the resource could not be loaded right now"))
 		return
 	}
+	// The lease keeps the idle-runtime janitor from shutting the runtime down
+	// while this call uses it.
+	defer releaseRuntime()
 
 	switch rt.kind {
 	case routeOpenAIModels, routeClaudeModels, routeGeminiModels, routeGeminiModel:
