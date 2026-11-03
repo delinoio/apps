@@ -288,6 +288,14 @@ func (e *Engine) serveCall(w *countingResponseWriter, r *http.Request, call *cal
 		}
 	}
 
+	// Budgets come after the allowlist so that a disallowed model is reported
+	// as model_not_allowed and never counts as a budget rejection. Listings
+	// keep the budget gate they always had.
+	if err := e.opts.Authorizer.CheckBudgets(ctx, call.principal); err != nil {
+		reject(asRejection(err, RejectionDependencyUnavailable))
+		return
+	}
+
 	runtime, err := e.runtime(ctx, call.resourceID)
 	if err != nil {
 		e.logger.Warn("loading resource runtime failed",

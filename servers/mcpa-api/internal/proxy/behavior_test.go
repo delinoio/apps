@@ -440,6 +440,101 @@ func TestSingleAndNestedModelKeysBehaveAsBefore(t *testing.T) {
 	}
 }
 
+func TestBudgetGateRunsAfterModelAllowlist(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	metrics, err := NewMetrics(reg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, func(o *Options) { o.Metrics = metrics })
+	up, seen := modelRecordingUpstream(t)
+	resourceID := newResourceID()
+	key := h.addKey(resourceID)
+	h.addCredential(compatCredential(resourceID, up.URL(), "sk", "a", "b"))
+	h.routing.set(resourceID, "a")
+	chat := "/r/" + resourceID + "/v1/chat/completions"
+	exhausted := &Rejection{Code: RejectionBudgetExhausted, Message: "the resource budget is exhausted", BudgetScope: BudgetScopeResource}
+	budgetRejections := func() float64 {
+		return testutil.ToFloat64(metrics.budgetRejections.WithLabelValues("resource")) +
+			testutil.ToFloat64(metrics.budgetRejections.WithLabelValues("tenant"))
+	}
+	type result struct {
+		status int
+		code   string
+		call   mcpav1.CallStatus
+		gates  []string
+	}
+	send := func(path, body string) result {
+		t.Helper()
+		h.authz.reset()
+		res := h.call(http.MethodPost, path, key, body, nil)
+		record := h.sink.waitFinal(t, res.callID)
+		return result{res.resp.StatusCode, gjson.GetBytes(res.body, "error.type").String(), record.Status, h.authz.gates()}
+	}
+	assertResult := func(name string, got, want result) {
+		t.Helper()
+		if got.status != want.status || got.code != want.code || got.call != want.call || strings.Join(got.gates, ",") != strings.Join(want.gates, ",") {
+			t.Fatalf("%s: got %+v, want %+v", name, got, want)
+		}
+	}
+	disallowed := result{http.StatusForbidden, "model_not_allowed", mcpav1.CallStatus_CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED, []string{"authorize"}}
+
+	// An exhausted budget never masks a disallowed model, and a disallowed
+	// model never counts as a budget rejection.
+	h.authz.setBudget(exhausted)
+	assertResult("disallowed model, exhausted budget", send(chat, `{"model":"b","messages":[]}`), disallowed)
+	assertResult("missing model, exhausted budget", send(chat, `{"messages":[]}`), disallowed)
+	assertResult("duplicate model key, exhausted budget", send(chat, `{"model":"a","model":"b"}`), disallowed)
+	if got := budgetRejections(); got != 0 {
+		t.Fatalf("budget rejections after disallowed models: %v", got)
+	}
+
+	// An allowed model on the same resource still meets the budget gate.
+	assertResult("allowed model, exhausted budget",
+		send(chat, `{"model":"a","messages":[]}`),
+		result{http.StatusTooManyRequests, "budget_exhausted", mcpav1.CallStatus_CALL_STATUS_REJECTED_BUDGET, []string{"authorize", "budgets"}})
+	if got := testutil.ToFloat64(metrics.budgetRejections.WithLabelValues("resource")); got != 1 {
+		t.Fatalf("resource budget rejections %v", got)
+	}
+
+	// Model listings keep the budget gate.
+	h.authz.reset()
+	if res := h.call(http.MethodGet, "/r/"+resourceID+"/v1/models", key, "", nil); res.resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("listing with exhausted budget: %d %s", res.resp.StatusCode, res.body)
+	}
+
+	// An unreadable billing period fails closed only for models that reach the
+	// budget gate.
+	h.authz.setBudget(Reject(RejectionDependencyUnavailable, "a required service is unavailable; retry later"))
+	assertResult("disallowed model, unreadable period", send(chat, `{"model":"b","messages":[]}`), disallowed)
+	assertResult("allowed model, unreadable period",
+		send(chat, `{"model":"a","messages":[]}`),
+		result{http.StatusServiceUnavailable, "dependency_unavailable", mcpav1.CallStatus_CALL_STATUS_REJECTED_DEPENDENCY, []string{"authorize", "budgets"}})
+	if up.hits.Load() != 0 {
+		t.Fatalf("rejected calls reached the provider: %d hits", up.hits.Load())
+	}
+
+	// The authorization gate still runs first, before the body is considered.
+	h.authz.setBudget(nil)
+	h.authz.set(Reject(RejectionTenantInactive, "tenant is blocked"))
+	assertResult("blocked tenant, disallowed model",
+		send(chat, `{"model":"b","messages":[]}`),
+		result{http.StatusForbidden, "tenant_inactive", mcpav1.CallStatus_CALL_STATUS_REJECTED_TENANT, []string{"authorize"}})
+	h.authz.set(nil)
+
+	// Without a budget the call proceeds as before.
+	assertResult("allowed model, no budget",
+		send(chat, `{"model":"a","messages":[]}`),
+		result{http.StatusOK, "", mcpav1.CallStatus_CALL_STATUS_SUCCEEDED, []string{"authorize", "budgets"}})
+	if got := seen(); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("provider models %v", got)
+	}
+	// One rejected call and one rejected listing, nothing else.
+	if got := budgetRejections(); got != 2 {
+		t.Fatalf("budget rejections %v", got)
+	}
+}
+
 func TestRemoveCredentialTakesEffectImmediately(t *testing.T) {
 	h := newHarness(t)
 	up := openAIUpstream(t, "ok")
@@ -567,7 +662,15 @@ func TestRejectionsUseClientFormatShapes(t *testing.T) {
 		{errors.New("delcore timeout"), 503, "dependency_unavailable", mcpav1.CallStatus_CALL_STATUS_REJECTED_DEPENDENCY},
 	}
 	for _, c := range checks {
-		h.authz.set(c.err)
+		// Budget rejections come from the budget gate, which runs after the
+		// allowlist; the other rejections come from the authorization gate.
+		if c.call == mcpav1.CallStatus_CALL_STATUS_REJECTED_BUDGET {
+			h.authz.set(nil)
+			h.authz.setBudget(c.err)
+		} else {
+			h.authz.set(c.err)
+			h.authz.setBudget(nil)
+		}
 		res := h.call(http.MethodPost, openai, key, chatBody, nil)
 		if res.resp.StatusCode != c.status || gjson.GetBytes(res.body, "error.type").String() != c.code {
 			t.Fatalf("%s: %d %s", c.code, res.resp.StatusCode, res.body)

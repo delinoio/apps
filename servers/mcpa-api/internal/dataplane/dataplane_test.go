@@ -119,6 +119,14 @@ func TestCallAuthorizerTenantAndBillingGates(t *testing.T) {
 	if got := code(a.AuthorizeCall(context.Background(), p)); got != proxy.RejectionDependencyUnavailable {
 		t.Fatalf("delcore down: %v", got)
 	}
+	// An allowed tenant passes without a store: budgets are a separate gate
+	// (CheckBudgets), applied by the engine after the model allowlist. A fresh
+	// client avoids the allowed-only cache of the cases above.
+	fresh := NewCallAuthorizer(nil, fake.client(t, 30*time.Second, clock), quietLog(), clock, time.Second)
+	fake.set(func(f *fakeDelcore) { f.down = false })
+	if err := fresh.AuthorizeCall(context.Background(), p); err != nil {
+		t.Fatalf("allowed tenant: %v", err)
+	}
 	if proxy.RejectionDependencyUnavailable.HTTPStatus() != http.StatusServiceUnavailable ||
 		proxy.RejectionBudgetExhausted.HTTPStatus() != http.StatusTooManyRequests ||
 		proxy.RejectionNoCredential.HTTPStatus() != http.StatusBadRequest ||

@@ -250,7 +250,7 @@ A request under `/r/{resource_id}/` runs these steps in order. No step before st
 2. Check the issuer's effective role. A missing role returns 401 `invalid_call_key`.
 3. Check the tenant state (`ACTIVE`) and `Authorize(invoke_models, paid=true)` through the cache. A `BLOCK_REASON_PERMISSION` denial returns 401 `invalid_call_key`. A non-`ACTIVE` state or a billing denial returns 403 `tenant_inactive` (`CALL_STATUS_REJECTED_TENANT`). A Delcore error after cache expiry returns 503 `dependency_unavailable` (`CALL_STATUS_REJECTED_DEPENDENCY`).
 4. Check the model against the allowlist. A rejection returns 403 `model_not_allowed` (`CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED`).
-5. Check the resource and tenant budgets. A rejection returns 429 `budget_exhausted` (`CALL_STATUS_REJECTED_BUDGET`).
+5. Check the resource and tenant budgets. A rejection returns 429 `budget_exhausted` (`CALL_STATUS_REJECTED_BUDGET`). A request that step 4 rejects never reaches this step, so it neither returns `budget_exhausted` nor increments `mcpa_budget_rejections_total`, whatever the budget state. Calls on resources and tenants without a budget skip the billing period read. Model listings under `/r/{resource_id}/` run the same budget check after the allowlist read.
 6. Select a credential by round-robin. When none can serve the model, return 400 `no_credential`.
 7. Execute through the embedded SDK and stream or return the provider's response in the requested format.
 

@@ -29,6 +29,9 @@ type fakeDelcore struct {
 	mu sync.Mutex
 	// down makes every RPC fail with UNAVAILABLE.
 	down bool
+	// periodDown makes only ListMeterAggregates (the billing period read)
+	// fail with UNAVAILABLE.
+	periodDown bool
 	// states maps tenant IDs to states; missing tenants are ACTIVE.
 	states map[string]delcorev1.TenantState
 	// denied maps "tenant/user/capability" to block reasons.
@@ -180,6 +183,9 @@ func (f *fakeDelcore) ListMeterAggregates(_ context.Context, req *connect.Reques
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.periodDown {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("billing period is unavailable"))
+	}
 	return connect.NewResponse(&delcorev1.ListMeterAggregatesResponse{
 		PeriodStart: timestamppb.New(f.period.Start), PeriodEnd: timestamppb.New(f.period.End),
 	}), nil
