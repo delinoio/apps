@@ -27,16 +27,17 @@ import (
 const ServiceName = "mcpa-api"
 
 // NewLogger builds the process logger. Text logs use ANSI color unless
-// NO_COLOR is set; JSON logs never use color.
+// NO_COLOR is set; JSON logs never use color. Lines written with a *Context
+// method and a request context carry trace_id and surface.
 func NewLogger(w io.Writer, l config.Logging) *slog.Logger {
 	if l.Format == config.LogFormatJSON {
-		return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		return slog.New(newContextHandler(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	}
-	return slog.New(tint.NewTextHandler(w, &tint.Options{
+	return slog.New(newContextHandler(tint.NewTextHandler(w, &tint.Options{
 		Level:      slog.LevelInfo,
 		TimeFormat: time.RFC3339,
 		NoColor:    l.NoColor,
-	}))
+	})))
 }
 
 // Surface labels HTTP request metrics.

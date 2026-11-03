@@ -86,7 +86,20 @@ func New(cfg Config) http.Handler {
 	for _, m := range cfg.Mounts {
 		mux.Handle(m.Pattern, s.wrapMount(m))
 	}
-	return mux
+	return withRequestID(mux)
+}
+
+// withRequestID assigns the trace ID before routing, so that responses the
+// ServeMux generates itself (404, 405 and redirects) carry X-Mcpa-Request-Id
+// too. Per-route instrumentation reuses this ID. The call surface still
+// replaces the header value with the call record ID. The header is set with
+// Header.Set, so the last writer wins.
+func withRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceID := apperr.NewTraceID()
+		w.Header().Set(RequestIDHeader, traceID)
+		next.ServeHTTP(w, r.WithContext(apperr.WithTraceID(r.Context(), traceID)))
+	})
 }
 
 type server struct {
@@ -146,14 +159,23 @@ func (s *server) wrapMount(m Mount) http.Handler {
 
 func (s *server) instrument(surface obs.Surface, count bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		traceID := apperr.NewTraceID()
-		ctx := apperr.WithTraceID(r.Context(), traceID)
+		// withRequestID normally assigned the ID before routing; generate one
+		// only when a route is invoked without it.
+		ctx := r.Context()
+		traceID := apperr.TraceID(ctx)
+		if traceID == "" {
+			traceID = apperr.NewTraceID()
+			ctx = apperr.WithTraceID(ctx, traceID)
+		}
+		ctx = obs.WithSurface(ctx, surface)
 		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
 		ctx, span := obs.Tracer().Start(ctx, string(surface)+" "+r.Method,
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(attribute.String("http.request.method", r.Method), attribute.String("mcpa.surface", string(surface)), attribute.String("mcpa.trace_id", traceID)))
 		defer span.End()
-		w.Header().Set(RequestIDHeader, traceID)
+		if w.Header().Get(RequestIDHeader) == "" {
+			w.Header().Set(RequestIDHeader, traceID)
+		}
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r.WithContext(ctx))
 		status := sw.status
@@ -232,7 +254,7 @@ func (s *server) interceptor() connect.UnaryInterceptorFunc {
 				}
 			}
 			e := apperr.As(err)
-			attrs := []any{"procedure", procedure, "code", e.Code.String(), "reason", e.Reason.String(), "trace_id", apperr.TraceID(ctx), "duration_ms", time.Since(start).Milliseconds()}
+			attrs := []any{"procedure", procedure, "code", e.Code.String(), "reason", e.Reason.String(), "duration_ms", time.Since(start).Milliseconds()}
 			if p != nil {
 				attrs = append(attrs, "actor_kind", p.Kind.String())
 			}
