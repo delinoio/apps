@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -271,6 +272,77 @@ func TestAllowlistRejectsBeforeProviderContact(t *testing.T) {
 	listing := h.call(http.MethodGet, "/r/"+resourceID+"/v1/models", key, "", nil)
 	if strings.Contains(string(listing.body), "blocked") || !strings.Contains(string(listing.body), "allowed") {
 		t.Fatalf("listing %s", listing.body)
+	}
+}
+
+// modelRecordingUpstream answers chat completions and records the model name
+// of every request body it receives.
+func modelRecordingUpstream(t *testing.T) (*upstream, func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var models []string
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		model := gjson.GetBytes(body, "model").String()
+		mu.Lock()
+		models = append(models, model)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, openAIChatResponse(model, "ok"))
+	})
+	return up, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), models...)
+	}
+}
+
+func TestAllowlistMatchesExactModelStringOnly(t *testing.T) {
+	h := newHarness(t)
+	up, seen := modelRecordingUpstream(t)
+	resourceID := newResourceID()
+	key := h.addKey(resourceID)
+	h.addCredential(compatCredential(resourceID, up.URL(), "sk", "gpt-4o"))
+	h.routing.set(resourceID, "gpt-4o")
+
+	for _, model := range []string{"gpt-4o(extra)", "gpt-4o(high)", "gpt-4o(8192)"} {
+		res := h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"`+model+`","messages":[]}`, nil)
+		if res.resp.StatusCode != http.StatusForbidden || gjson.GetBytes(res.body, "error.type").String() != "model_not_allowed" {
+			t.Fatalf("%s: %d %s", model, res.resp.StatusCode, res.body)
+		}
+		record := h.sink.waitFinal(t, res.callID)
+		if record.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED {
+			t.Fatalf("%s: record %+v", model, record)
+		}
+	}
+	if up.hits.Load() != 0 {
+		t.Fatalf("suffixed names reached the provider: %d hits", up.hits.Load())
+	}
+
+	res := h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"gpt-4o","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusOK {
+		t.Fatalf("exact model: %d %s", res.resp.StatusCode, res.body)
+	}
+	if got := seen(); len(got) != 1 || got[0] != "gpt-4o" {
+		t.Fatalf("provider models %v", got)
+	}
+
+	// An allowlist entry that itself carries a suffix still matches exactly.
+	h.routing.set(resourceID, "gpt-4o(high)")
+	res = h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"gpt-4o(high)","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusOK {
+		t.Fatalf("suffixed entry: %d %s", res.resp.StatusCode, res.body)
+	}
+	res = h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"gpt-4o","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("base name against suffixed entry: %d %s", res.resp.StatusCode, res.body)
+	}
+
+	// An empty allowlist stays unrestricted, suffixed names included.
+	h.routing.set(resourceID)
+	res = h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"gpt-4o(extra)","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusOK {
+		t.Fatalf("empty allowlist: %d %s", res.resp.StatusCode, res.body)
 	}
 }
 

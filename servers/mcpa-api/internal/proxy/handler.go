@@ -117,13 +117,15 @@ func callKeyFrom(r *http.Request) string {
 }
 
 // modelAllowed applies the resource allowlist. An empty list allows every
-// model; otherwise the requested name, or its base name without an SDK
-// thinking suffix, must be listed exactly.
+// model; otherwise the requested model string must be listed exactly. A
+// suffixed name such as "model(high)" is a different name than "model": the
+// SDK rewrites it to the base name before the provider call, so matching on
+// the base name would let an unlisted name reach a listed model.
 func modelAllowed(model string, allowlist []string) bool {
 	if len(allowlist) == 0 {
 		return true
 	}
-	return slices.Contains(allowlist, model) || slices.Contains(allowlist, baseModelName(model))
+	return slices.Contains(allowlist, model)
 }
 
 type runtimeContextKey struct{}
