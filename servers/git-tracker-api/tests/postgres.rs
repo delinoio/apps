@@ -443,6 +443,85 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
         .await;
         assert_eq!(status, StatusCode::OK, "history branch {branch}: {v}");
     }
+    // Token revocation: a token ID that matches no token of this repository fails with
+    // not-found or invalid-argument, writes no audit row and leaves other tokens valid.
+    let other_rid = uuid::Uuid::now_v7().to_string();
+    sqlx::query("INSERT INTO git_tracker_repositories(id,github_id,space_id,full_name,installation_id,public) VALUES($1::uuid,43,$2::uuid,'owner/other','1',false)")
+        .bind(&other_rid)
+        .bind(&space)
+        .execute(&db)
+        .await
+        .unwrap();
+    let (status, other_issued) = call(
+        &http,
+        &base,
+        "IssueToken",
+        "Bearer manager",
+        json!({"repositoryId":other_rid,"expiresAt":(chrono::Utc::now()+chrono::Duration::days(1)).to_rfc3339()}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{other_issued}");
+    let audit_rows = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM git_tracker_audit WHERE action='token_revoked'",
+        )
+        .fetch_one(&db)
+        .await
+        .unwrap()
+    };
+    let revoked_before = audit_rows().await;
+    for (label, token_id, expected_status, expected_code) in [
+        (
+            "another repository's token",
+            other_issued["tokenId"].clone(),
+            StatusCode::NOT_FOUND,
+            "not_found",
+        ),
+        (
+            "an unknown token",
+            json!(uuid::Uuid::now_v7().to_string()),
+            StatusCode::NOT_FOUND,
+            "not_found",
+        ),
+        (
+            "malformed token text",
+            json!("not-a-uuid"),
+            StatusCode::BAD_REQUEST,
+            "invalid_argument",
+        ),
+        (
+            "an empty token ID",
+            json!(""),
+            StatusCode::BAD_REQUEST,
+            "invalid_argument",
+        ),
+    ] {
+        let (status, failed) = call(
+            &http,
+            &base,
+            "RevokeToken",
+            "Bearer manager",
+            json!({"repositoryId":rid,"tokenId":token_id}),
+        )
+        .await;
+        assert_eq!(status, expected_status, "revoke {label}: {failed}");
+        assert_eq!(failed["code"], expected_code, "revoke {label}: {failed}");
+    }
+    assert_eq!(
+        audit_rows().await,
+        revoked_before,
+        "a failed revocation wrote an audit row"
+    );
+    let foreign_revoked: bool =
+        sqlx::query_scalar("SELECT revoked FROM git_tracker_tokens WHERE id::text=$1")
+            .bind(other_issued["tokenId"].as_str().unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(
+        !foreign_revoked,
+        "another repository's token was revoked through this repository"
+    );
     let (_, revoked) = call(
         &http,
         &base,
@@ -452,6 +531,19 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
     )
     .await;
     assert!(revoked.get("code").is_none());
+    assert_eq!(audit_rows().await, revoked_before + 1);
+    // Revoking an already revoked token is idempotent and audited on every call.
+    let (status, again) = call(
+        &http,
+        &base,
+        "RevokeToken",
+        "Bearer manager",
+        json!({"repositoryId":rid,"tokenId":issued["tokenId"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert!(again.get("code").is_none());
+    assert_eq!(audit_rows().await, revoked_before + 2);
     let (_, denied) = call(&http, &base, "Complete", &auth, json!({"context":context})).await;
     assert_eq!(denied["code"], "unauthenticated");
     let event = serde_json::to_vec(&json!({"action":"deleted","installation":{"id":1}})).unwrap();

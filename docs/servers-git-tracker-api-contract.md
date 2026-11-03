@@ -28,6 +28,7 @@ External individuals and organizations, CI jobs and service operators.
 - If GitHub availability or permissions prevent checking the current visibility, retain the last confirmed visibility. This intentionally means that an unobserved public-to-private change can leave anonymous reads available until synchronization succeeds.
 - Repository disconnection or App removal stops uploads and makes retained data private. Authorized space members can still read or delete it.
 - Support GitHub Actions OIDC and repository-scoped API tokens for uploads and completion. Managers issue and revoke tokens; an expiration date is mandatory at issuance.
+- `RevokeToken` takes a canonical token UUID: malformed text fails with invalid-argument. It revokes a token only inside the requested repository. A token ID that does not exist, or that belongs to another repository, fails with not-found, writes no audit row and leaves every token unchanged. Revoking an already revoked token is idempotent: it succeeds and writes one `token_revoked` audit row per call.
 - Support measurements from fork PRs for the connected upstream repository, without granting authority to change baseline-branch data or configuration. Validate execution identity and repository/PR scope; do not treat a fork's configuration as authority over the upstream baseline.
 - Enforce current service permissions and tenant boundaries on protected operations. Feature availability never substitutes for authorization.
 

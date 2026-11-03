@@ -307,7 +307,22 @@ impl Server {
                 out = json!({"tokenId":id,"token":token});
             }
             Op::RevokeToken => {
-                sqlx::query("UPDATE git_tracker_tokens SET revoked=true WHERE id::text=$1 AND repository_id=$2").bind(string(&q,"tokenId")).bind(uuid(rid)?).execute(&mut *tx).await?;
+                // Parse the token ID so malformed text is an invalid argument, and match only
+                // this repository's tokens. A token ID that does not exist, or that belongs to
+                // another repository, is not found: the request fails before the audit insert,
+                // which rolls back the transaction, so no audit row records a revocation that
+                // did not happen. Revoking an already revoked token matches its row and stays
+                // idempotent, so it succeeds and is audited on every call.
+                let revoked = sqlx::query(
+                    "UPDATE git_tracker_tokens SET revoked=true WHERE id=$1 AND repository_id=$2",
+                )
+                .bind(uuid(string(&q, "tokenId"))?)
+                .bind(uuid(rid)?)
+                .execute(&mut *tx)
+                .await?;
+                if revoked.rows_affected() == 0 {
+                    return Err(Fault::missing());
+                }
                 audit(&mut tx, &repo.space_id, "token_revoked", trace).await?;
             }
             Op::Disconnect => {
