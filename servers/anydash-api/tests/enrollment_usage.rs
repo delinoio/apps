@@ -1131,3 +1131,72 @@ async fn refresh_token_requests_need_one_pooled_connection() {
     narrow.db.close().await;
     f.cleanup().await;
 }
+
+/// Polling maps only a missing enrollment to UNAUTHENTICATED. The collector treats that reason as
+/// a permanent invalidation, so a database failure must stay a retryable server error.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn poll_enrollment_database_failure_is_not_unauthenticated() {
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let start = f
+        .ok(
+            &f.anonymous(),
+            "DeviceService/StartEnrollment",
+            json!({"deviceName":"laptop","platform":"DEVICE_PLATFORM_LINUX","architecture":"CPU_ARCHITECTURE_X64","collectorKind":"COLLECTOR_KIND_CLI","collectorVersion":"1.0.0","osVersion":"24.04"}),
+        )
+        .await;
+    let enrollment = start["enrollmentId"].as_str().unwrap().to_owned();
+    let poll = json!({"enrollmentId":enrollment,"deviceCode":start["deviceCode"]});
+
+    // A lock held by another transaction makes the row read fail after the lock timeout.
+    let impatient = f.with_lock_timeout(200).await;
+    let lock = f
+        .lock_row(&format!(
+            "SELECT id FROM enrollments WHERE id='{enrollment}' FOR UPDATE"
+        ))
+        .await;
+    let failed = impatient
+        .fail(
+            &impatient.anonymous(),
+            "DeviceService/PollEnrollment",
+            poll.clone(),
+            "ERROR_REASON_INTERNAL",
+        )
+        .await;
+    assert_eq!(failed.status, 500);
+    lock.rollback().await.unwrap();
+
+    // Once the lock is released the same request succeeds: nothing was invalidated.
+    let pending = impatient
+        .ok(&impatient.anonymous(), "DeviceService/PollEnrollment", poll)
+        .await;
+    assert_eq!(pending["state"], "ENROLLMENT_STATE_PENDING");
+    let state = f
+        .count(&format!(
+            "SELECT count(*) FROM enrollments WHERE id='{enrollment}' AND state=1"
+        ))
+        .await;
+    assert_eq!(state, 1, "the enrollment is still pending");
+
+    // A missing enrollment and a wrong device code are still authentication failures.
+    impatient
+        .fail(
+            &impatient.anonymous(),
+            "DeviceService/PollEnrollment",
+            json!({"enrollmentId":id(),"deviceCode":start["deviceCode"]}),
+            "ERROR_REASON_UNAUTHENTICATED",
+        )
+        .await;
+    impatient
+        .fail(
+            &impatient.anonymous(),
+            "DeviceService/PollEnrollment",
+            json!({"enrollmentId":enrollment,"deviceCode":"x".repeat(43)}),
+            "ERROR_REASON_UNAUTHENTICATED",
+        )
+        .await;
+    impatient.db.close().await;
+    f.cleanup().await;
+}

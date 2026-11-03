@@ -512,9 +512,15 @@ pub async fn poll_enrollment(
 ) -> Result<PollEnrollmentResponse> {
     let id = validate::id("enrollment_id", &q.enrollment_id)?;
     let mut tx = s.db.begin().await?;
-    let e = load_enrollment(&mut tx, id, true)
-        .await
-        .map_err(|_| ApiError::unauthenticated())?;
+    // Only a missing enrollment is an authentication failure. A database error must stay a
+    // retryable server error: the collector treats UNAUTHENTICATED as a permanent invalidation.
+    let e = load_enrollment(&mut tx, id, true).await.map_err(|e| {
+        if e.reason == ErrorReason::NotFound {
+            ApiError::unauthenticated()
+        } else {
+            e
+        }
+    })?;
     if crate::sha256(q.device_code.as_bytes()) != e.device_code_sha256 {
         return Err(ApiError::unauthenticated());
     }
