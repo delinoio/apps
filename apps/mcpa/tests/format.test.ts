@@ -53,12 +53,35 @@ describe("usage USD estimates", () => {
     expect(formatBytes(GIB * 3n)).toBe("3.0 GiB");
   });
 
+  it("promotes the byte unit when rounding reaches 1024", () => {
+    expect(formatBytes(1023n)).toBe("1023 B");
+    expect(formatBytes(1048575n)).toBe("1.0 MiB");
+    expect(formatBytes(1073741823n)).toBe("1.0 GiB");
+    expect(formatBytes(102399n)).toBe("100 KiB");
+    expect(formatBytes(1047552n)).toBe("1023 KiB");
+    expect(formatBytes(1n << 40n)).toBe("1.0 TiB");
+    expect(formatBytes((1n << 50n) - 1n)).toBe("1.0 PiB");
+  });
+
+  it("caps the byte unit at PiB", () => {
+    expect(formatBytes(1n << 50n)).toBe("1.0 PiB");
+    expect(formatBytes(1n << 60n)).toBe("1024 PiB");
+    expect(formatBytes((1n << 60n) - 1n)).toBe("1024 PiB");
+  });
+
   it("normalizes typed budget amounts to canonical decimals", () => {
     expect(normalizeUsdInput("25")).toBe("25");
     expect(normalizeUsdInput("$25.50")).toBe("25.5");
     expect(normalizeUsdInput("010.00")).toBe("10");
     expect(normalizeUsdInput("0")).toBe("0");
-    expect(normalizeUsdInput("1.234")).toBeUndefined();
+    expect(normalizeUsdInput("1.234")).toBe("1.234");
+    expect(normalizeUsdInput("0.075")).toBe("0.075");
+    expect(normalizeUsdInput("0.000001")).toBe("0.000001");
+    expect(normalizeUsdInput("0.1234560")).toBeUndefined();
+    expect(normalizeUsdInput("1.1234567")).toBeUndefined();
+    expect(normalizeUsdInput("999999999999")).toBe("999999999999");
+    expect(normalizeUsdInput("1000000000000")).toBeUndefined();
+    expect(normalizeUsdInput("0.000000")).toBe("0");
     expect(normalizeUsdInput("-1")).toBeUndefined();
     expect(normalizeUsdInput("ten")).toBeUndefined();
   });
