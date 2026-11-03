@@ -49,6 +49,7 @@ The server exports these families with bounded labels only. No metric carries te
 - `mcpa_delcore_failures_total{rpc,kind}` with the Delcore RPC method name and `unavailable`, `denied` or `error`.
 - `mcpa_outbox_pending`, `mcpa_outbox_poisoned` and `mcpa_outbox_oldest_pending_age_seconds` (zero when empty). These are global PostgreSQL projections repeated by each replica; use `max`, never `sum`.
 - `mcpa_outbox_delivery_failures_total{category}`, `mcpa_metering_checkpoint_failures_total`, `mcpa_budget_rejections_total{scope}`, `mcpa_billable_bytes_total{segment}` and `mcpa_http_requests_total{surface,code_class}`.
+- `mcpa_runtimes_loaded` is the number of resource runtimes this replica holds in memory. It rises with the first call of each resource and falls when the janitor evicts runtimes idle for 30 minutes or above 5000 loaded runtimes. Each replica reports its own value; use `max` or `sum` by intent. A value that stays at 5000 means more resources are in active use than the cap and calls rebuild runtimes often.
 
 ## Responses
 

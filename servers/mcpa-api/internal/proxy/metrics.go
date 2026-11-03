@@ -19,6 +19,7 @@ type Metrics struct {
 	budgetRejections   *prometheus.CounterVec
 	billableBytes      *prometheus.CounterVec
 	httpRequests       *prometheus.CounterVec
+	runtimesLoaded     prometheus.Gauge
 }
 
 // NewMetrics registers the data-plane collectors on reg. httpRequests is the
@@ -51,11 +52,15 @@ func NewMetrics(reg prometheus.Registerer, httpRequests *prometheus.CounterVec) 
 			Name: "mcpa_billable_bytes_total",
 			Help: "Committed billable bytes by segment.",
 		}, []string{"segment"}),
+		runtimesLoaded: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "mcpa_runtimes_loaded",
+			Help: "Resource runtimes currently loaded in this process, including runtimes that are still loading.",
+		}),
 		httpRequests: httpRequests,
 	}
 	if reg != nil {
 		for _, collector := range []prometheus.Collector{
-			m.calls, m.callDuration, m.providerFailures, m.checkpointFailures, m.budgetRejections, m.billableBytes,
+			m.calls, m.callDuration, m.providerFailures, m.checkpointFailures, m.budgetRejections, m.billableBytes, m.runtimesLoaded,
 		} {
 			if err := reg.Register(collector); err != nil {
 				var already prometheus.AlreadyRegisteredError
@@ -96,6 +101,14 @@ func (m *Metrics) budgetRejection(scope BudgetScope) {
 		return
 	}
 	m.budgetRejections.WithLabelValues(scope.String()).Inc()
+}
+
+// setRuntimesLoaded records the number of loaded resource runtimes.
+func (m *Metrics) setRuntimesLoaded(count int) {
+	if m == nil {
+		return
+	}
+	m.runtimesLoaded.Set(float64(count))
 }
 
 func (m *Metrics) billed(requestBytes, responseBytes int64) {

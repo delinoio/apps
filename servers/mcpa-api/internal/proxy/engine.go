@@ -89,7 +89,26 @@ type Options struct {
 	NewCallID func() string
 	// Now returns the current time. Default: time.Now.
 	Now func() time.Time
+	// RuntimeIdleTTL is how long a resource runtime with no in-flight use may
+	// stay loaded after its last use before the janitor evicts it. Default
+	// 30 minutes.
+	RuntimeIdleTTL time.Duration
+	// MaxRuntimes is the number of loaded resource runtimes above which the
+	// janitor evicts the least recently used idle runtimes. Default 5000.
+	MaxRuntimes int
+	// JanitorInterval is how often the janitor evicts runtimes. Default one
+	// minute. A negative value disables the janitor.
+	JanitorInterval time.Duration
 }
+
+const (
+	// defaultRuntimeIdleTTL is the default Options.RuntimeIdleTTL.
+	defaultRuntimeIdleTTL = 30 * time.Minute
+	// defaultMaxRuntimes is the default Options.MaxRuntimes.
+	defaultMaxRuntimes = 5000
+	// defaultJanitorInterval is the default Options.JanitorInterval.
+	defaultJanitorInterval = time.Minute
+)
 
 // defaultMaxProviderResponseBytes is the default Options.MaxProviderResponseBytes.
 const defaultMaxProviderResponseBytes = 128 << 20
@@ -108,7 +127,12 @@ type Engine struct {
 	cp        *checkpointer
 	ctx       context.Context
 	cancel    context.CancelFunc
+	// janitorDone is closed when the janitor goroutine has exited. It is nil
+	// when the janitor is disabled.
+	janitorDone chan struct{}
 
+	// mu guards runtimes, closed and the lastUsed and inflight fields of every
+	// resourceRuntime.
 	mu       sync.Mutex
 	runtimes map[string]*resourceRuntime
 	closed   bool
@@ -163,6 +187,15 @@ func New(opts Options) (*Engine, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	if opts.RuntimeIdleTTL <= 0 {
+		opts.RuntimeIdleTTL = defaultRuntimeIdleTTL
+	}
+	if opts.MaxRuntimes <= 0 {
+		opts.MaxRuntimes = defaultMaxRuntimes
+	}
+	if opts.JanitorInterval == 0 {
+		opts.JanitorInterval = defaultJanitorInterval
+	}
 	executors, cfg, err := harvestExecutors()
 	if err != nil {
 		return nil, fmt.Errorf("proxy: %w", err)
@@ -195,11 +228,16 @@ func New(opts Options) (*Engine, error) {
 		runtimes: map[string]*resourceRuntime{},
 	}
 	e.router = e.newRouter()
+	if opts.JanitorInterval > 0 {
+		e.janitorDone = make(chan struct{})
+		go e.runJanitor(opts.JanitorInterval)
+	}
 	return e, nil
 }
 
-// Close stops background refresh, flushes queued token writes and stops
-// accepting upstream relay connections. In-flight calls are not interrupted.
+// Close stops the runtime janitor and background refresh, flushes queued token
+// writes and stops accepting upstream relay connections. In-flight calls are
+// not interrupted.
 func (e *Engine) Close() error {
 	e.mu.Lock()
 	if e.closed {
@@ -212,11 +250,17 @@ func (e *Engine) Close() error {
 		runtimes = append(runtimes, rt)
 	}
 	e.runtimes = map[string]*resourceRuntime{}
+	e.opts.Metrics.setRuntimesLoaded(0)
 	e.mu.Unlock()
 	for _, rt := range runtimes {
 		rt.shutdown()
 	}
 	e.cancel()
+	// The janitor exits on the cancelled context. It takes e.mu only briefly
+	// and observes closed, so waiting here cannot deadlock.
+	if e.janitorDone != nil {
+		<-e.janitorDone
+	}
 	e.persister.close()
 	if err := e.relay.Close(); err != nil {
 		e.logger.Warn("closing the upstream relay failed", slog.String("error", err.Error()))
@@ -238,20 +282,22 @@ func (e *Engine) UpsertCredential(ctx context.Context, cred Credential) error {
 	if err := ValidateCredential(cred); err != nil {
 		return err
 	}
-	rt, err := e.loadedRuntime(ctx, cred.ResourceID)
+	rt, release, err := e.loadedRuntime(ctx, cred.ResourceID)
 	if err != nil || rt == nil {
 		return err
 	}
+	defer release()
 	return rt.upsert(cred, e.opts.Now())
 }
 
 // RemoveCredential removes a credential from new calls immediately. Calls
 // that already selected it finish.
 func (e *Engine) RemoveCredential(ctx context.Context, resourceID, credentialID string) error {
-	rt, err := e.loadedRuntime(ctx, resourceID)
+	rt, release, err := e.loadedRuntime(ctx, resourceID)
 	if err != nil || rt == nil {
 		return err
 	}
+	defer release()
 	rt.remove(credentialID)
 	e.persister.drop(resourceID, credentialID)
 	return nil
@@ -269,8 +315,7 @@ func (e *Engine) InvalidateResource(resourceID string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if rt := e.runtimes[resourceID]; rt != nil {
-		delete(e.runtimes, resourceID)
-		rt.shutdown()
+		e.evictLocked(resourceID, rt)
 	}
 }
 
@@ -282,64 +327,180 @@ func (e *Engine) InvalidateAll() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for id, rt := range e.runtimes {
-		delete(e.runtimes, id)
-		rt.shutdown()
+		e.evictLocked(id, rt)
+	}
+}
+
+// evictLocked removes the resource's runtime from the map and shuts it down.
+// The caller holds e.mu, so a replacement runtime, which registers the same
+// credential IDs in the SDK's global model registry, cannot be built before
+// the old one unregisters them. It is the single removal path shared by
+// invalidation and idle eviction.
+func (e *Engine) evictLocked(resourceID string, rt *resourceRuntime) {
+	delete(e.runtimes, resourceID)
+	e.opts.Metrics.setRuntimesLoaded(len(e.runtimes))
+	rt.shutdown()
+}
+
+// runJanitor evicts idle runtimes every interval until the engine closes.
+func (e *Engine) runJanitor(interval time.Duration) {
+	defer close(e.janitorDone)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-ticker.C:
+			if evicted := e.evictIdle(); evicted > 0 {
+				e.logger.Info("evicted idle resource runtimes", slog.Int("evicted", evicted))
+			}
+		}
+	}
+}
+
+// evictIdle evicts runtimes that have been idle for RuntimeIdleTTL and, while
+// more than MaxRuntimes are loaded, the least recently used idle runtimes. A
+// runtime with a lease (a call, credential change or in-progress load that
+// uses it) is never evicted. It returns the number of evicted runtimes.
+//
+// Eviction holds e.mu while it shuts the runtime down, exactly like
+// InvalidateResource, so a call that arrives during eviction waits for e.mu,
+// finds no runtime and rebuilds it from CredentialSource.
+func (e *Engine) evictIdle() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.closed {
+		return 0
+	}
+	now := e.opts.Now()
+	var idle []*resourceRuntime
+	evicted := 0
+	for id, rt := range e.runtimes {
+		if rt.inflight > 0 {
+			continue
+		}
+		if now.Sub(rt.lastUsed) >= e.opts.RuntimeIdleTTL {
+			e.evictLocked(id, rt)
+			evicted++
+			continue
+		}
+		idle = append(idle, rt)
+	}
+	if over := len(e.runtimes) - e.opts.MaxRuntimes; over > 0 {
+		sort.Slice(idle, func(i, j int) bool {
+			if !idle[i].lastUsed.Equal(idle[j].lastUsed) {
+				return idle[i].lastUsed.Before(idle[j].lastUsed)
+			}
+			return idle[i].id < idle[j].id
+		})
+		if over > len(idle) {
+			over = len(idle)
+		}
+		for _, rt := range idle[:over] {
+			e.evictLocked(rt.id, rt)
+			evicted++
+		}
+	}
+	return evicted
+}
+
+// acquireLocked takes a lease on rt. A leased runtime is never evicted.
+// The caller holds e.mu.
+func (e *Engine) acquireLocked(rt *resourceRuntime) {
+	rt.inflight++
+	rt.lastUsed = e.opts.Now()
+}
+
+// releaseFunc returns the function that ends one lease on rt. It stamps the
+// last use so that a long call does not leave its runtime looking idle. The
+// function is safe to call more than once; only the first call counts.
+func (e *Engine) releaseFunc(rt *resourceRuntime) func() {
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			e.mu.Lock()
+			rt.inflight--
+			rt.lastUsed = e.opts.Now()
+			e.mu.Unlock()
+		})
 	}
 }
 
 // loadedRuntime returns the runtime when it exists, waiting for an
-// in-progress load.
-func (e *Engine) loadedRuntime(ctx context.Context, resourceID string) (*resourceRuntime, error) {
+// in-progress load. A non-nil runtime comes with a lease that the caller must
+// release so the janitor cannot evict and shut down the runtime while the
+// caller changes it (a shut-down runtime would otherwise re-register models
+// in the SDK's global model registry).
+func (e *Engine) loadedRuntime(ctx context.Context, resourceID string) (*resourceRuntime, func(), error) {
 	e.mu.Lock()
 	rt := e.runtimes[resourceID]
-	e.mu.Unlock()
 	if rt == nil {
-		return nil, nil
+		e.mu.Unlock()
+		return nil, nil, nil
 	}
+	e.acquireLocked(rt)
+	e.mu.Unlock()
+	release := e.releaseFunc(rt)
 	select {
 	case <-rt.ready:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		release()
+		return nil, nil, ctx.Err()
 	}
 	if rt.err != nil {
-		return nil, nil
+		release()
+		return nil, nil, nil
 	}
-	return rt, nil
+	return rt, release, nil
 }
 
-// runtime returns the resource's runtime, building it on first use.
-func (e *Engine) runtime(ctx context.Context, resourceID string) (*resourceRuntime, error) {
+// runtime returns the resource's runtime, building it on first use, together
+// with a lease the caller must release when it no longer uses the runtime.
+// The lease keeps the janitor from evicting the runtime, including while it
+// is loading.
+func (e *Engine) runtime(ctx context.Context, resourceID string) (*resourceRuntime, func(), error) {
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
-		return nil, errors.New("engine closed")
+		return nil, nil, errors.New("engine closed")
 	}
 	rt := e.runtimes[resourceID]
 	if rt == nil {
 		rt = &resourceRuntime{id: resourceID, ready: make(chan struct{})}
 		e.runtimes[resourceID] = rt
+		e.opts.Metrics.setRuntimesLoaded(len(e.runtimes))
+		e.acquireLocked(rt)
 		e.mu.Unlock()
+		release := e.releaseFunc(rt)
 		e.build(ctx, rt)
 		close(rt.ready)
 		if rt.err != nil {
 			e.mu.Lock()
 			if e.runtimes[resourceID] == rt {
 				delete(e.runtimes, resourceID)
+				e.opts.Metrics.setRuntimesLoaded(len(e.runtimes))
 			}
 			e.mu.Unlock()
+			release()
+			return nil, nil, rt.err
 		}
-	} else {
-		e.mu.Unlock()
+		return rt, release, nil
 	}
+	e.acquireLocked(rt)
+	e.mu.Unlock()
+	release := e.releaseFunc(rt)
 	select {
 	case <-rt.ready:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		release()
+		return nil, nil, ctx.Err()
 	}
 	if rt.err != nil {
-		return nil, rt.err
+		release()
+		return nil, nil, rt.err
 	}
-	return rt, nil
+	return rt, release, nil
 }
 
 func (e *Engine) build(ctx context.Context, rt *resourceRuntime) {
@@ -415,6 +576,11 @@ type resourceRuntime struct {
 
 	mu    sync.RWMutex
 	creds map[string]runtimeCredential
+
+	// lastUsed and inflight are guarded by Engine.mu, not by mu. inflight
+	// counts leases; lastUsed is the time of the latest lease start or end.
+	lastUsed time.Time
+	inflight int
 }
 
 func (rt *resourceRuntime) upsert(cred Credential, now time.Time) error {

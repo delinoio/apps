@@ -21,6 +21,7 @@ const metrics = new Set([
   "mcpa_budget_rejections_total",
   "mcpa_billable_bytes_total",
   "mcpa_http_requests_total",
+  "mcpa_runtimes_loaded",
 ]);
 const dashboard = JSON.parse(text("dashboard.json"));
 const queries = [
