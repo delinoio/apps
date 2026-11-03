@@ -481,6 +481,8 @@ func TestUpstreamRelayCloseCallClosesOnlyThatCall(t *testing.T) {
 	}
 	defer relay.Close()
 
+	relay.watchCall("call-a", callWatch{})
+	relay.watchCall("call-b", callWatch{})
 	a1 := dialRelayURL(t, relay.URLFor("call-a"), "provider.example.test:443")
 	a2 := dialRelayURL(t, relay.URLFor("call-a"), "provider.example.test:443")
 	b := dialRelayURL(t, relay.URLFor("call-b"), "provider.example.test:443")
@@ -549,6 +551,7 @@ func TestUpstreamRelayClosesIdleTunnels(t *testing.T) {
 	relay := newUpstreamRelay(inner, []byte("0123456789abcdef0123456789abcdef"), d.dial, discardLogger(), withRelayIdleTimeout(idle))
 	defer relay.Close()
 
+	relay.watchCall("call-idle", callWatch{})
 	conn := dialRelayURL(t, relay.URLFor("call-idle"), "provider.example.test:443")
 	// Traffic every 100 ms keeps the tunnel open for longer than the idle
 	// timeout.
@@ -735,10 +738,14 @@ func TestUpstreamRelayOpenTunnelIsSafeAgainstConcurrentCloseCall(t *testing.T) {
 		}()
 		const tunnels = 500
 		for i := 0; i < tunnels; i++ {
+			// The concurrent CloseCall ends the call, so keep re-activating it;
+			// openTunnel may still find it closed and return nil.
+			relay.watchCall("call-race", callWatch{})
 			clientSide, clientPeer := net.Pipe()
 			upstreamSide, upstreamPeer := net.Pipe()
-			tn := relay.openTunnel("call-race", clientSide, upstreamSide)
-			tn.close()
+			if tn := relay.openTunnel("call-race", clientSide, upstreamSide); tn != nil {
+				tn.close()
+			}
 			_ = clientPeer.Close()
 			_ = upstreamPeer.Close()
 		}
@@ -748,4 +755,93 @@ func TestUpstreamRelayOpenTunnelIsSafeAgainstConcurrentCloseCall(t *testing.T) {
 		waitFor(t, 2*time.Second, "all tunnels to close", func() bool { return relay.openTunnels() == 0 })
 		_ = relay.Close()
 	}
+}
+
+// A tunnel whose call ended while its connection was being established must
+// be closed, not registered: CloseCall already ran, so nothing would close it
+// before the five minute idle backstop.
+func TestUpstreamRelayLateTunnelOfEndedCallIsRefused(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	relay := newUpstreamRelay(ln, []byte("0123456789abcdef0123456789abcdef"), nil, discardLogger())
+	defer relay.Close()
+
+	relay.watchCall("call-late", callWatch{})
+	relay.CloseCall("call-late")
+	clientSide, clientPeer := net.Pipe()
+	upstreamSide, upstreamPeer := net.Pipe()
+	defer clientPeer.Close()
+	defer upstreamPeer.Close()
+	if tn := relay.openTunnel("call-late", clientSide, upstreamSide); tn != nil {
+		t.Fatal("a tunnel of an ended call was registered")
+	}
+	relay.mu.Lock()
+	entries, open := len(relay.calls), relay.open
+	relay.mu.Unlock()
+	if entries != 0 || open != 0 {
+		t.Fatalf("late registration left %d call entries and %d open tunnels", entries, open)
+	}
+	// A call that was never watched is not active either; the shared identity
+	// carries no call and is unaffected.
+	if tn := relay.openTunnel("call-unknown", clientSide, upstreamSide); tn != nil {
+		t.Fatal("a tunnel of an unknown call was registered")
+	}
+	shared := relay.openTunnel("", clientSide, upstreamSide)
+	if shared == nil {
+		t.Fatal("a tunnel without call identity was refused")
+	}
+	shared.close()
+}
+
+// End to end: the call ends while the relay is still dialing the provider. The
+// dial then succeeds and the SOCKS reply goes out, but the late tunnel is
+// closed immediately.
+func TestUpstreamRelayClosesTunnelWhoseCallEndedDuringDial(t *testing.T) {
+	target := echoServer(t)
+	dialing := make(chan struct{})
+	release := make(chan struct{})
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		close(dialing)
+		<-release
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, network, target)
+	}
+	relay, err := startUpstreamRelay(dial, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+	relay.watchCall("call-dial", callWatch{})
+
+	type result struct {
+		conn net.Conn
+		err  error
+	}
+	connected := make(chan result, 1)
+	go func() {
+		u, _ := url.Parse(relay.URLFor("call-dial"))
+		dialer, err := proxy.FromURL(u, proxy.Direct)
+		if err != nil {
+			connected <- result{nil, err}
+			return
+		}
+		conn, err := dialer.Dial("tcp", "provider.example.test:443")
+		connected <- result{conn, err}
+	}()
+	<-dialing
+	relay.CloseCall("call-dial")
+	close(release)
+
+	res := <-connected
+	if res.err != nil {
+		t.Fatalf("SOCKS connect: %v", res.err)
+	}
+	defer res.conn.Close()
+	_ = res.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := res.conn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("the late tunnel stayed open")
+	}
+	waitFor(t, 2*time.Second, "no open tunnels", func() bool { return relay.openTunnels() == 0 })
 }

@@ -76,7 +76,8 @@ type upstreamRelay struct {
 	calls map[string]map[*tunnel]struct{}
 	open  int
 	// watches holds the response-limit hooks of calls in flight (see
-	// watchCall).
+	// watchCall). A call is active exactly while it has an entry: only an
+	// active call can register tunnels.
 	watches map[string]callWatch
 	// maxResponseBytes bounds the provider-to-client bytes of one tunnel.
 	maxResponseBytes int64
@@ -217,8 +218,10 @@ func (r *upstreamRelay) urlFor(callID string) string {
 	return u.String()
 }
 
-// watchCall registers the response-limit hooks of a call. CloseCall removes
-// them.
+// watchCall registers the response-limit hooks of a call and marks the call
+// active: a tunnel that carries a call identity is registered only while the
+// call is active, so CloseCall always has the last word (see openTunnel).
+// CloseCall removes the registration.
 func (r *upstreamRelay) watchCall(callID string, w callWatch) {
 	r.mu.Lock()
 	r.watches[callID] = w
@@ -325,6 +328,14 @@ func (r *upstreamRelay) handle(client net.Conn) {
 	}
 	_ = client.SetDeadline(time.Time{})
 	t := r.openTunnel(callID, client, upstream)
+	if t == nil {
+		// The call ended while the connection was being established, after
+		// CloseCall had already run. Nothing would close this tunnel later.
+		r.logger.Debug("upstream relay closed a tunnel of an ended call", slog.String("call_id", callID))
+		_ = client.Close()
+		_ = upstream.Close()
+		return
+	}
 	t.run()
 }
 
@@ -465,11 +476,20 @@ type tunnel struct {
 }
 
 // openTunnel registers a tunnel for callID (empty for none) and starts its
-// idle timer.
+// idle timer. It returns nil, registering nothing, when callID names a call
+// that is no longer active: CloseCall can finish before a tunnel whose SOCKS
+// reply was already sent reaches this point, and registering it then would
+// recreate the deleted call entry so that no later cleanup closes the tunnel.
+// The caller closes both connections in that case.
 func (r *upstreamRelay) openTunnel(callID string, client, upstream net.Conn) *tunnel {
 	t := &tunnel{relay: r, callID: callID, client: client, upstream: upstream, idle: r.idleTimeout, limit: r.maxResponseBytes}
 	r.mu.Lock()
-	if w, ok := r.watches[callID]; ok && callID != "" {
+	if callID != "" {
+		w, active := r.watches[callID]
+		if !active {
+			r.mu.Unlock()
+			return nil
+		}
 		t.onLimit = w.onLimit
 		if w.exempt != nil && w.exempt() {
 			t.limit = 0
