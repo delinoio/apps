@@ -407,3 +407,84 @@ func TestMasterKeyRotationCoversMCPGrants(t *testing.T) {
 		t.Fatalf("open = %q, %v", plain, err)
 	}
 }
+
+// Database failures of UpdateGrant wrap ErrStorage so the broker answers
+// temporarily_unavailable; results that come from the caller or from the
+// stored state never do.
+func TestMCPOAuthUpdateGrantClassifiesStorageFailures(t *testing.T) {
+	s := openTestStore(t)
+	m := store.NewMCPOAuth(s)
+	ctx := context.Background()
+	kr := testKeys(t, "k1")
+	g := newGrant(t, kr, time.Now().Add(time.Hour))
+	code := store.MCPCode{CodeHash: digest("code"), ClientID: "client", RedirectURI: "r", CodeChallenge: "c", ExpireTime: time.Now().Add(time.Minute)}
+	if err := m.InsertGrant(ctx, g, code); err != nil {
+		t.Fatal(err)
+	}
+	codeUse := store.MCPGrantUse{Code: code.CodeHash}
+	noop := func(store.MCPGrant) (store.MCPGrantChange, error) { return store.MCPGrantChange{}, nil }
+
+	// A cancelled context fails when the transaction begins.
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	called := false
+	err := m.UpdateGrant(cancelled, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+		called = true
+		return store.MCPGrantChange{}, nil
+	})
+	if !errors.Is(err, store.ErrStorage) || !errors.Is(err, context.Canceled) || called {
+		t.Fatalf("cancelled context = %v, fn called %v", err, called)
+	}
+
+	// An unreachable database (closed pool) fails the same way.
+	closed, err := store.Open(ctx, os.Getenv("TEST_DATABASE_URL"), 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed.Close()
+	if err := store.NewMCPOAuth(closed).UpdateGrant(ctx, g.ID, codeUse, noop); !errors.Is(err, store.ErrStorage) {
+		t.Fatalf("closed pool = %v", err)
+	}
+
+	// A failing statement inside the transaction: the change inserts a handle
+	// that already exists. Nothing is consumed, so the code still works.
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+		return store.MCPGrantChange{NewHandle: digest("dup")}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = m.UpdateGrant(ctx, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+		return store.MCPGrantChange{NewHandle: digest("dup")}, nil
+	})
+	if !errors.Is(err, store.ErrStorage) {
+		t.Fatalf("duplicate handle = %v", err)
+	}
+	if _, err := m.LookupCode(ctx, code.CodeHash); err != nil {
+		t.Fatalf("code consumed by a failed statement: %v", err)
+	}
+
+	// Errors of fn and sentinel results are not storage failures.
+	boom := errors.New("boom")
+	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+		return store.MCPGrantChange{}, boom
+	}); !errors.Is(err, boom) || errors.Is(err, store.ErrStorage) {
+		t.Fatalf("fn error = %v", err)
+	}
+	if err := m.UpdateGrant(ctx, store.NewID(), codeUse, noop); !errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrStorage) {
+		t.Fatalf("unknown grant = %v", err)
+	}
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("missing")}, noop); !errors.Is(err, store.ErrHandleRetired) || errors.Is(err, store.ErrStorage) {
+		t.Fatalf("missing handle = %v", err)
+	}
+	// A kept change that fails to apply is a storage failure, not fn's error.
+	kept, err := kr.Seal([]byte(`{"refresh_token":"rt-2"}`), crypto.MCPGrantAAD(g.ID.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+		return store.MCPGrantChange{Tokens: &kept}, boom
+	})
+	if !errors.Is(err, boom) || errors.Is(err, store.ErrStorage) {
+		t.Fatalf("kept change = %v", err)
+	}
+}
