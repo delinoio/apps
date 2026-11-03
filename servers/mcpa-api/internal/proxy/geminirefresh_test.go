@@ -18,6 +18,7 @@ import (
 
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 	"github.com/google/uuid"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	"github.com/tidwall/gjson"
 )
 
@@ -526,5 +527,99 @@ func TestMapGeminiRefreshError(t *testing.T) {
 	}
 	if !json.Valid([]byte(fmt.Sprint(err.Error()))) {
 		t.Fatalf("error text is not JSON: %s", err.Error())
+	}
+}
+
+// cachedGeminiPayloads returns the number of refreshed payloads the engine
+// retains.
+func cachedGeminiPayloads(e *Engine) int {
+	e.gemini.mu.Lock()
+	defer e.gemini.mu.Unlock()
+	return len(e.gemini.latest)
+}
+
+// Refreshed payloads hold plaintext tokens, so they must not outlive the
+// runtime of their resource: invalidation and eviction release them.
+func TestGeminiCLIRefreshedPayloadsLeaveWithTheResourceRuntime(t *testing.T) {
+	token := newTokenServer(t, 0, grantToken)
+	f := newGeminiFixture(t, token, time.Now().Add(-time.Hour), nil, nil)
+	other := newResourceID()
+	otherKey := f.h.addKey(other)
+	f.h.addCredential(geminiCLICredential(other, time.Now().Add(-time.Hour), nil))
+	if res := f.call(); res.resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d body %s", res.resp.StatusCode, res.body)
+	}
+	if res := f.h.call(http.MethodPost, "/r/"+other+"/v1/chat/completions", otherKey, geminiChatBody, nil); res.resp.StatusCode != http.StatusOK {
+		t.Fatalf("other resource: status %d body %s", res.resp.StatusCode, res.body)
+	}
+	if got := cachedGeminiPayloads(f.h.engine); got != 2 {
+		t.Fatalf("%d cached payloads, want 2", got)
+	}
+
+	// Invalidating one resource releases only its payloads.
+	f.h.engine.InvalidateResource(f.resource)
+	if got := cachedGeminiPayloads(f.h.engine); got != 1 {
+		t.Fatalf("%d cached payloads after InvalidateResource, want 1", got)
+	}
+	// Idle eviction releases the other resource's payloads.
+	f.h.engine.opts.RuntimeIdleTTL = time.Nanosecond
+	time.Sleep(5 * time.Millisecond)
+	if evicted := f.h.engine.evictIdle(); evicted == 0 {
+		t.Fatal("no runtime was evicted")
+	}
+	if got := cachedGeminiPayloads(f.h.engine); got != 0 {
+		t.Fatalf("%d cached payloads after eviction, want 0", got)
+	}
+
+	// The evicted resource keeps working: its next call rebuilds the runtime
+	// and refreshes again, because the test persister never feeds the
+	// refreshed payload back to the credential source.
+	if res := f.call(); res.resp.StatusCode != http.StatusOK {
+		t.Fatalf("after eviction: status %d body %s", res.resp.StatusCode, res.body)
+	}
+	f.h.engine.InvalidateAll()
+	if got := cachedGeminiPayloads(f.h.engine); got != 0 {
+		t.Fatalf("%d cached payloads after InvalidateAll, want 0", got)
+	}
+}
+
+// A refresh that is still running when its resource is evicted answers the
+// calls waiting for it but must not repopulate the cache afterwards.
+func TestGeminiCLIOutstandingRefreshDoesNotRepopulateEvictedResource(t *testing.T) {
+	token := newTokenServer(t, 300*time.Millisecond, grantToken)
+	f := newGeminiFixture(t, token, time.Now().Add(-time.Hour), nil, nil)
+	var metadata map[string]any
+	if err := json.Unmarshal(f.cred.Secret, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	auth := &coreauth.Auth{Attributes: map[string]string{attrCredentialID: f.cred.ID}, Metadata: metadata}
+
+	type result struct {
+		auth *coreauth.Auth
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		fresh, err := f.h.engine.gemini.ensureFresh(context.Background(), f.resource, auth)
+		done <- result{fresh, err}
+	}()
+	waitFor(t, 5*time.Second, "the token request to arrive", func() bool { return token.requests.Load() == 1 })
+
+	f.h.engine.gemini.forgetResource(f.resource)
+	res := <-done
+	if res.err != nil {
+		t.Fatal(res.err)
+	}
+	if got := geminiTokenOf(res.auth.Metadata).AccessToken; got != "refreshed-access" {
+		t.Fatalf("the waiting call got access token %q", got)
+	}
+	if got := cachedGeminiPayloads(f.h.engine); got != 0 {
+		t.Fatalf("%d cached payloads after the outstanding refresh, want 0", got)
+	}
+	f.h.engine.gemini.mu.Lock()
+	flights := len(f.h.engine.gemini.flights)
+	f.h.engine.gemini.mu.Unlock()
+	if flights != 0 {
+		t.Fatalf("%d flights remain", flights)
 	}
 }

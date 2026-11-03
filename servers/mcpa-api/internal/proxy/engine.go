@@ -348,6 +348,9 @@ func (e *Engine) evictLocked(resourceID string, rt *resourceRuntime) {
 	delete(e.runtimes, resourceID)
 	e.opts.Metrics.setRuntimesLoaded(len(e.runtimes))
 	rt.shutdown()
+	// Refreshed Gemini CLI payloads are cached per resource outside the
+	// runtime; they leave with it. The gemini lock is a leaf below e.mu.
+	e.gemini.forgetResource(resourceID)
 }
 
 // runJanitor evicts idle runtimes every interval until the engine closes.

@@ -183,14 +183,43 @@ func newGeminiRefresher(transport http.RoundTripper, clientID, clientSecret stri
 	}
 }
 
-// forget drops the state of a removed credential.
+// forget drops the state of a removed credential. An outstanding refresh of
+// it still answers its waiting calls but no longer repopulates the cache.
 func (r *geminiRefresher) forget(resourceID, credentialID string) {
 	if r == nil {
 		return
 	}
+	key := geminiKey{resourceID, credentialID}
 	r.mu.Lock()
-	delete(r.latest, geminiKey{resourceID, credentialID})
+	delete(r.latest, key)
+	delete(r.flights, key)
 	r.mu.Unlock()
+}
+
+// forgetResource drops the state of every credential of a resource. The
+// engine calls it when the resource's runtime is evicted or invalidated, so
+// refreshed payloads, which hold plaintext tokens, live no longer than the
+// runtime that uses them and a deleted resource keeps none. An outstanding
+// refresh still answers its waiting calls but no longer repopulates the cache.
+// A rebuilt runtime loads the persisted payload; when the asynchronous
+// persistence of the last refresh has not finished yet, the next call
+// refreshes again.
+func (r *geminiRefresher) forgetResource(resourceID string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for key := range r.latest {
+		if key.resourceID == resourceID {
+			delete(r.latest, key)
+		}
+	}
+	for key := range r.flights {
+		if key.resourceID == resourceID {
+			delete(r.flights, key)
+		}
+	}
 }
 
 // ensureFresh returns an auth whose token is valid for the next minute. The
@@ -274,10 +303,14 @@ func (r *geminiRefresher) join(key geminiKey) (*geminiFlight, bool) {
 func (r *geminiRefresher) run(key geminiKey, flight *geminiFlight, registered map[string]any, source [sha256.Size]byte) {
 	state, err := r.refresh(key, registered, source)
 	r.mu.Lock()
-	if err == nil {
-		r.latest[key] = state
+	// forget and forgetResource detach a flight from r.flights; a detached
+	// flight must not repopulate the cache or remove its successor.
+	if r.flights[key] == flight {
+		if err == nil {
+			r.latest[key] = state
+		}
+		delete(r.flights, key)
 	}
-	delete(r.flights, key)
 	r.mu.Unlock()
 	flight.state, flight.err = state, err
 	close(flight.done)
