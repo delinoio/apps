@@ -11,7 +11,8 @@
     "./gittracker/v1/gittracker_pb": "./gittracker/v1/gittracker_pb.ts",
     "./perfine/v1/perfine_pb": "./perfine/v1/perfine_pb.ts",
     "./lane/v1/lane_pb": "./lane/v1/lane_pb.ts",
-    "./mcpa/v1/mcpa_pb": "./mcpa/v1/mcpa_pb.ts"
+    "./mcpa/v1/mcpa_pb": "./mcpa/v1/mcpa_pb.ts",
+    "./anydash/v1/anydash_pb": "./anydash/v1/anydash_pb.ts"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.16.0"

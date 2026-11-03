@@ -1,0 +1,1562 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package anydash.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/apps/protos/anydash/v1;anydashv1";
+// AnyDash v1 schema. docs/protos-anydash-v1-contract.md owns the field
+// semantics, validation rules, authentication and error mapping.
+// Identifiers are lowercase UUID v7 strings unless a field states otherwise.
+// Every enum zero value is UNSPECIFIED and is invalid in requests.
+
+// ---------------------------------------------------------------------------
+// Shared enums
+// ---------------------------------------------------------------------------
+
+enum ClientKind {
+  CLIENT_KIND_UNSPECIFIED = 0;
+  CLIENT_KIND_CLI = 1;
+  CLIENT_KIND_DESKTOP = 2;
+  CLIENT_KIND_WEB = 3;
+  CLIENT_KIND_IOS = 4;
+  CLIENT_KIND_ANDROID = 5;
+  CLIENT_KIND_NATIVE_WIDGET = 6;
+}
+
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_CODEX = 1;
+  PROVIDER_CLAUDE_CODE = 2;
+  PROVIDER_GROK = 3;
+  PROVIDER_VERCEL = 4;
+  PROVIDER_SUPABASE = 5;
+  PROVIDER_CLOUDFLARE = 6;
+}
+
+enum LocalTool {
+  LOCAL_TOOL_UNSPECIFIED = 0;
+  LOCAL_TOOL_CODEX = 1;
+  LOCAL_TOOL_CLAUDE_CODE = 2;
+}
+
+enum DevicePlatform {
+  DEVICE_PLATFORM_UNSPECIFIED = 0;
+  DEVICE_PLATFORM_MACOS = 1;
+  DEVICE_PLATFORM_WINDOWS = 2;
+  DEVICE_PLATFORM_LINUX = 3;
+}
+
+enum CpuArchitecture {
+  CPU_ARCHITECTURE_UNSPECIFIED = 0;
+  CPU_ARCHITECTURE_X64 = 1;
+  CPU_ARCHITECTURE_ARM64 = 2;
+}
+
+enum CollectorKind {
+  COLLECTOR_KIND_UNSPECIFIED = 0;
+  COLLECTOR_KIND_DESKTOP_APP = 1;
+  COLLECTOR_KIND_CLI = 2;
+}
+
+enum EnrollmentState {
+  ENROLLMENT_STATE_UNSPECIFIED = 0;
+  ENROLLMENT_STATE_PENDING = 1;
+  ENROLLMENT_STATE_APPROVED = 2;
+  ENROLLMENT_STATE_CONSUMED = 3;
+  ENROLLMENT_STATE_REJECTED = 4;
+  ENROLLMENT_STATE_EXPIRED = 5;
+  ENROLLMENT_STATE_INVALIDATED = 6;
+}
+
+enum DeviceCredentialState {
+  DEVICE_CREDENTIAL_STATE_UNSPECIFIED = 0;
+  DEVICE_CREDENTIAL_STATE_ACTIVE = 1;
+  DEVICE_CREDENTIAL_STATE_LOGGED_OUT = 2;
+  DEVICE_CREDENTIAL_STATE_EXPIRED = 3;
+  DEVICE_CREDENTIAL_STATE_REUSE_REVOKED = 4;
+}
+
+enum ParserState {
+  PARSER_STATE_UNSPECIFIED = 0;
+  PARSER_STATE_OK = 1;
+  PARSER_STATE_PARTIAL = 2;
+  PARSER_STATE_NO_SOURCES = 3;
+  PARSER_STATE_DISABLED = 4;
+}
+
+enum SpaceKind {
+  SPACE_KIND_UNSPECIFIED = 0;
+  SPACE_KIND_PERSONAL = 1;
+  SPACE_KIND_TEAM = 2;
+}
+
+enum SpacePermission {
+  SPACE_PERMISSION_UNSPECIFIED = 0;
+  SPACE_PERMISSION_VIEW_DASHBOARDS = 1;
+  SPACE_PERMISSION_EDIT_DASHBOARDS = 2;
+  SPACE_PERMISSION_CREATE_DASHBOARDS = 3;
+  SPACE_PERMISSION_DELETE_DASHBOARDS = 4;
+  SPACE_PERMISSION_VIEW_SPACE_ACTIVITY = 5;
+}
+
+enum OnboardingState {
+  ONBOARDING_STATE_UNSPECIFIED = 0;
+  ONBOARDING_STATE_DEVICE_REQUIRED = 1;
+  ONBOARDING_STATE_READY = 2;
+}
+
+enum WidgetType {
+  WIDGET_TYPE_UNSPECIFIED = 0;
+  WIDGET_TYPE_SUBSCRIPTION_LIMITS = 1;
+  WIDGET_TYPE_SUBSCRIPTION_HISTORY = 2;
+  WIDGET_TYPE_LOCAL_USAGE_SUMMARY = 3;
+  WIDGET_TYPE_LOCAL_USAGE_SERIES = 4;
+  WIDGET_TYPE_LOCAL_USAGE_BREAKDOWN = 5;
+  WIDGET_TYPE_DEPLOYMENT_RESOURCES = 6;
+  WIDGET_TYPE_DEPLOYMENT_USAGE = 7;
+  WIDGET_TYPE_DEPLOYMENT_COST = 8;
+  WIDGET_TYPE_METRIC_HISTORY = 9;
+}
+
+enum WidgetPresentation {
+  WIDGET_PRESENTATION_UNSPECIFIED = 0;
+  WIDGET_PRESENTATION_NUMBER = 1;
+  WIDGET_PRESENTATION_GAUGE = 2;
+  WIDGET_PRESENTATION_LINE_CHART = 3;
+  WIDGET_PRESENTATION_BAR_CHART = 4;
+  WIDGET_PRESENTATION_TABLE = 5;
+  WIDGET_PRESENTATION_LIST = 6;
+}
+
+enum QueryPeriod {
+  QUERY_PERIOD_UNSPECIFIED = 0;
+  QUERY_PERIOD_LAST_24_HOURS = 1;
+  QUERY_PERIOD_LAST_7_DAYS = 2;
+  QUERY_PERIOD_LAST_30_DAYS = 3;
+  QUERY_PERIOD_LAST_90_DAYS = 4;
+  QUERY_PERIOD_TODAY = 5;
+  QUERY_PERIOD_THIS_WEEK = 6;
+  QUERY_PERIOD_THIS_MONTH = 7;
+}
+
+enum TimeGranularity {
+  TIME_GRANULARITY_UNSPECIFIED = 0;
+  TIME_GRANULARITY_HOUR = 1;
+  TIME_GRANULARITY_DAY = 2;
+}
+
+enum UsageBreakdownDimension {
+  USAGE_BREAKDOWN_DIMENSION_UNSPECIFIED = 0;
+  USAGE_BREAKDOWN_DIMENSION_DEVICE = 1;
+  USAGE_BREAKDOWN_DIMENSION_TOOL = 2;
+  USAGE_BREAKDOWN_DIMENSION_MODEL = 3;
+}
+
+enum SharingState {
+  SHARING_STATE_UNSPECIFIED = 0;
+  SHARING_STATE_PRIVATE = 1;
+  SHARING_STATE_SHARED = 2;
+  SHARING_STATE_ENDED = 3;
+}
+
+enum SharingEndReason {
+  SHARING_END_REASON_UNSPECIFIED = 0;
+  SHARING_END_REASON_OWNER_REVOKED = 1;
+  SHARING_END_REASON_OWNER_LEFT_SPACE = 2;
+  SHARING_END_REASON_SOURCE_DELETED = 3;
+  SHARING_END_REASON_OWNER_DATA_DELETED = 4;
+}
+
+enum DataNotice {
+  DATA_NOTICE_UNSPECIFIED = 0;
+  DATA_NOTICE_POSSIBLE_CROSS_DEVICE_DUPLICATION = 1;
+  DATA_NOTICE_PARTIAL_AGGREGATION = 2;
+  DATA_NOTICE_NO_RUNNING_COLLECTOR = 3;
+  DATA_NOTICE_ESTIMATED_COST = 4;
+  DATA_NOTICE_BACKFILL_LIMITED = 5;
+}
+
+enum MetricKind {
+  METRIC_KIND_UNSPECIFIED = 0;
+  METRIC_KIND_SUBSCRIPTION_USED_PERCENT = 1;
+  METRIC_KIND_SUBSCRIPTION_WINDOW_DURATION = 2;
+  METRIC_KIND_SUBSCRIPTION_WINDOW_START = 3;
+  METRIC_KIND_SUBSCRIPTION_RESET_AT = 4;
+  METRIC_KIND_SUBSCRIPTION_PLAN = 5;
+  METRIC_KIND_SUBSCRIPTION_CREDITS_BALANCE = 6;
+  METRIC_KIND_SUBSCRIPTION_CREDITS_UNLIMITED = 7;
+  METRIC_KIND_SUBSCRIPTION_REMAINING_AMOUNT = 8;
+  METRIC_KIND_SUBSCRIPTION_EXTRA_USAGE_ENABLED = 9;
+  METRIC_KIND_SUBSCRIPTION_EXTRA_USAGE_USED_PERCENT = 10;
+  METRIC_KIND_SUBSCRIPTION_EXTRA_USAGE_USED_AMOUNT = 11;
+  METRIC_KIND_SUBSCRIPTION_EXTRA_USAGE_LIMIT_AMOUNT = 12;
+  METRIC_KIND_SUBSCRIPTION_ON_DEMAND_CAP_AMOUNT = 13;
+  METRIC_KIND_SUBSCRIPTION_ON_DEMAND_USED_AMOUNT = 14;
+  METRIC_KIND_PLAN_DOCUMENTED_QUOTA = 15;
+  METRIC_KIND_DEPLOYMENT_PLAN = 16;
+  METRIC_KIND_DEPLOYMENT_ON_DEMAND_BUDGET = 17;
+  METRIC_KIND_DEPLOYMENT_USAGE_QUANTITY = 18;
+  METRIC_KIND_DEPLOYMENT_BILLED_COST = 19;
+  METRIC_KIND_DEPLOYMENT_EFFECTIVE_COST = 20;
+  METRIC_KIND_DEPLOYMENT_DISK_UTILIZATION = 21;
+  METRIC_KIND_DEPLOYMENT_ENTITLEMENT = 22;
+  // Text value "weekly" or "monthly".
+  METRIC_KIND_SUBSCRIPTION_PERIOD_KIND = 23;
+  // Derived by the server as 100 minus SUBSCRIPTION_USED_PERCENT for the same
+  // dimension. Collectors never report it.
+  METRIC_KIND_SUBSCRIPTION_REMAINING_PERCENT = 24;
+}
+
+enum MetricState {
+  METRIC_STATE_UNSPECIFIED = 0;
+  METRIC_STATE_VALUE = 1;
+  METRIC_STATE_NOT_PROVIDED = 2;
+  METRIC_STATE_FAILED = 3;
+  METRIC_STATE_AUTH_EXPIRED = 4;
+  METRIC_STATE_PARTIAL = 5;
+  METRIC_STATE_CANNOT_BE_CALCULATED = 6;
+}
+
+enum MetricTemporality {
+  METRIC_TEMPORALITY_UNSPECIFIED = 0;
+  METRIC_TEMPORALITY_INSTANTANEOUS = 1;
+  METRIC_TEMPORALITY_CUMULATIVE = 2;
+}
+
+enum CollectionStatus {
+  COLLECTION_STATUS_UNSPECIFIED = 0;
+  COLLECTION_STATUS_SUCCEEDED = 1;
+  COLLECTION_STATUS_PARTIALLY_SUCCEEDED = 2;
+  COLLECTION_STATUS_FAILED = 3;
+  COLLECTION_STATUS_AUTH_EXPIRED = 4;
+  COLLECTION_STATUS_RATE_LIMITED = 5;
+  COLLECTION_STATUS_NOT_PROVIDED = 6;
+}
+
+enum FailureClass {
+  FAILURE_CLASS_UNSPECIFIED = 0;
+  FAILURE_CLASS_TIMEOUT = 1;
+  FAILURE_CLASS_NETWORK = 2;
+  FAILURE_CLASS_PROVIDER_ERROR = 3;
+  FAILURE_CLASS_RATE_LIMITED = 4;
+  FAILURE_CLASS_AUTH_EXPIRED = 5;
+  FAILURE_CLASS_PERMISSION_DENIED = 6;
+  FAILURE_CLASS_RESPONSE_UNREADABLE = 7;
+  FAILURE_CLASS_CLI_UNAVAILABLE = 8;
+  FAILURE_CLASS_CREDENTIAL_MISSING = 9;
+}
+
+enum ObservationSource {
+  OBSERVATION_SOURCE_UNSPECIFIED = 0;
+  OBSERVATION_SOURCE_ACTIVE_POLL = 1;
+  OBSERVATION_SOURCE_PASSIVE_SESSION = 2;
+}
+
+enum ConnectionState {
+  CONNECTION_STATE_UNSPECIFIED = 0;
+  CONNECTION_STATE_WAITING_FOR_FIRST_RESULT = 1;
+  CONNECTION_STATE_OK = 2;
+  CONNECTION_STATE_ERROR = 3;
+  CONNECTION_STATE_AUTH_EXPIRED = 4;
+  CONNECTION_STATE_NO_RUNNING_COLLECTOR = 5;
+  CONNECTION_STATE_NO_REGISTERED_DEVICE = 6;
+}
+
+enum ResourceKind {
+  RESOURCE_KIND_UNSPECIFIED = 0;
+  RESOURCE_KIND_VERCEL_PROJECT = 1;
+  RESOURCE_KIND_SUPABASE_PROJECT = 2;
+  RESOURCE_KIND_CLOUDFLARE_WORKER_SCRIPT = 3;
+  RESOURCE_KIND_CLOUDFLARE_PAGES_PROJECT = 4;
+}
+
+enum ResourceHealth {
+  RESOURCE_HEALTH_UNSPECIFIED = 0;
+  RESOURCE_HEALTH_HEALTHY = 1;
+  RESOURCE_HEALTH_IN_PROGRESS = 2;
+  RESOURCE_HEALTH_DEGRADED = 3;
+  RESOURCE_HEALTH_FAILED = 4;
+  RESOURCE_HEALTH_PAUSED = 5;
+  RESOURCE_HEALTH_INACTIVE = 6;
+  RESOURCE_HEALTH_UNKNOWN = 7;
+}
+
+enum SnapshotOutcome {
+  SNAPSHOT_OUTCOME_UNSPECIFIED = 0;
+  SNAPSHOT_OUTCOME_LATEST_UPDATED = 1;
+  SNAPSHOT_OUTCOME_HISTORY_ONLY = 2;
+  SNAPSHOT_OUTCOME_DUPLICATE = 3;
+}
+
+enum BucketOutcome {
+  BUCKET_OUTCOME_UNSPECIFIED = 0;
+  BUCKET_OUTCOME_APPLIED = 1;
+  BUCKET_OUTCOME_SAME_VERSION_IGNORED = 2;
+  BUCKET_OUTCOME_OLDER_VERSION_IGNORED = 3;
+  BUCKET_OUTCOME_OUTSIDE_RETENTION = 4;
+  BUCKET_OUTCOME_INVALID = 5;
+}
+
+enum ActivityKind {
+  ACTIVITY_KIND_UNSPECIFIED = 0;
+  ACTIVITY_KIND_DEVICE_ENROLLED = 1;
+  ACTIVITY_KIND_DEVICE_REATTACHED = 2;
+  ACTIVITY_KIND_DEVICE_LOGGED_OUT = 3;
+  ACTIVITY_KIND_DEVICE_DELETED = 4;
+  ACTIVITY_KIND_DEVICE_CREDENTIALS_REVOKED = 5;
+  ACTIVITY_KIND_ENROLLMENT_INVALIDATED = 6;
+  ACTIVITY_KIND_CONNECTION_CREATED = 7;
+  ACTIVITY_KIND_CONNECTION_DELETED = 8;
+  ACTIVITY_KIND_CONNECTION_DEVICE_REGISTERED = 9;
+  ACTIVITY_KIND_CONNECTION_DEVICE_UNREGISTERED = 10;
+  ACTIVITY_KIND_COLLECTION_DEVICE_CHANGED = 11;
+  ACTIVITY_KIND_DASHBOARD_CREATED = 12;
+  ACTIVITY_KIND_DASHBOARD_DELETED = 13;
+  ACTIVITY_KIND_WIDGET_SHARED = 14;
+  ACTIVITY_KIND_WIDGET_SHARING_ENDED = 15;
+  ACTIVITY_KIND_PERMISSION_DENIED = 16;
+  ACTIVITY_KIND_ACCOUNT_DATA_DELETION_REQUESTED = 17;
+}
+
+enum QuotaKind {
+  QUOTA_KIND_UNSPECIFIED = 0;
+  QUOTA_KIND_COLLECTOR_DEVICES_PER_USER = 1;
+  QUOTA_KIND_EXTERNAL_CONNECTIONS_PER_USER = 2;
+  QUOTA_KIND_DASHBOARDS_PER_SPACE = 3;
+  QUOTA_KIND_WIDGETS_PER_DASHBOARD = 4;
+}
+
+enum RateLimitScope {
+  RATE_LIMIT_SCOPE_UNSPECIFIED = 0;
+  RATE_LIMIT_SCOPE_USER_TOKEN = 1;
+  RATE_LIMIT_SCOPE_DEVICE_TOKEN = 2;
+  RATE_LIMIT_SCOPE_MANUAL_REFRESH = 3;
+  RATE_LIMIT_SCOPE_ENROLLMENT = 4;
+}
+
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_UNAUTHENTICATED = 1;
+  ERROR_REASON_PERMISSION_DENIED = 2;
+  ERROR_REASON_NOT_FOUND = 3;
+  ERROR_REASON_INVALID_ARGUMENT = 4;
+  ERROR_REASON_VERSION_CONFLICT = 5;
+  ERROR_REASON_RATE_LIMITED = 6;
+  ERROR_REASON_QUOTA_EXCEEDED = 7;
+  ERROR_REASON_UPDATE_REQUIRED = 8;
+  ERROR_REASON_LEASE_EXPIRED = 9;
+  ERROR_REASON_ENROLLMENT_EXPIRED = 10;
+  ERROR_REASON_ENROLLMENT_INVALIDATED = 11;
+  ERROR_REASON_ENROLLMENT_CODE_MISMATCH = 12;
+  ERROR_REASON_ENROLLMENT_ALREADY_USED = 13;
+  ERROR_REASON_REFRESH_TOKEN_REUSED = 14;
+  ERROR_REASON_DEVICE_CREDENTIALS_INACTIVE = 15;
+  ERROR_REASON_ACCOUNT_NOT_CONNECTED = 16;
+  ERROR_REASON_SPACE_INACTIVE = 17;
+  ERROR_REASON_ONBOARDING_REQUIRED = 18;
+  ERROR_REASON_PAYLOAD_TOO_LARGE = 19;
+  ERROR_REASON_DATA_OWNER_REQUIRED = 20;
+  ERROR_REASON_CONNECTION_ACCOUNT_MISMATCH = 21;
+  ERROR_REASON_DEPENDENCY_UNAVAILABLE = 22;
+  ERROR_REASON_INTERNAL = 23;
+  ERROR_REASON_REQUEST_ID_REUSED = 24;
+  // Local collector reasons.
+  ERROR_REASON_ALREADY_LOGGED_IN = 25;
+  ERROR_REASON_NOT_LOGGED_IN = 26;
+  ERROR_REASON_KEY_UNAVAILABLE = 27;
+  ERROR_REASON_KEY_ROTATION_FAILED = 28;
+  ERROR_REASON_PROVIDER_CREDENTIAL_REJECTED = 29;
+  ERROR_REASON_SERVICE_MANAGED = 30;
+}
+
+enum KeySource {
+  KEY_SOURCE_UNSPECIFIED = 0;
+  KEY_SOURCE_OS_SECURE_STORE = 1;
+  KEY_SOURCE_KEY_FILE = 2;
+  KEY_SOURCE_ENVIRONMENT = 3;
+}
+
+enum CollectorRunState {
+  COLLECTOR_RUN_STATE_UNSPECIFIED = 0;
+  COLLECTOR_RUN_STATE_RUNNING = 1;
+  COLLECTOR_RUN_STATE_NOT_LOGGED_IN = 2;
+  COLLECTOR_RUN_STATE_OFFLINE = 3;
+  COLLECTOR_RUN_STATE_UPDATE_REQUIRED = 4;
+  COLLECTOR_RUN_STATE_CREDENTIALS_INACTIVE = 5;
+}
+
+enum LocalNotice {
+  LOCAL_NOTICE_UNSPECIFIED = 0;
+  LOCAL_NOTICE_UPDATE_AVAILABLE = 1;
+  LOCAL_NOTICE_UPDATE_REQUIRED = 2;
+  LOCAL_NOTICE_UNSUPPORTED_RECORDS = 3;
+}
+
+enum SourcePathOrigin {
+  SOURCE_PATH_ORIGIN_UNSPECIFIED = 0;
+  SOURCE_PATH_ORIGIN_DEFAULT = 1;
+  SOURCE_PATH_ORIGIN_ENVIRONMENT = 2;
+  SOURCE_PATH_ORIGIN_USER_ADDED = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Shared messages
+// ---------------------------------------------------------------------------
+
+// ErrorDetail is attached to every Connect error returned by AnyDash
+// services, including the local collector service.
+message ErrorDetail {
+  ErrorReason reason = 1;
+  string correlation_id = 2;
+  // Set for RATE_LIMITED; the earliest time to retry, relative to the response.
+  google.protobuf.Duration retry_after = 3;
+  RateLimitScope rate_limit_scope = 4;
+  // Set for QUOTA_EXCEEDED.
+  QuotaInfo quota = 5;
+  // Set for UPDATE_REQUIRED, with the client kind that was evaluated.
+  string minimum_client_version = 6;
+  ClientKind client_kind = 7;
+  // Request field path for INVALID_ARGUMENT, for example "layout.width".
+  string field = 8;
+  // Current dashboard version for VERSION_CONFLICT.
+  uint64 current_version = 9;
+  // Current lease epoch for LEASE_EXPIRED, or zero when no lease exists.
+  uint64 current_lease_epoch = 10;
+}
+
+message QuotaInfo {
+  QuotaKind kind = 1;
+  uint32 limit = 2;
+  uint32 used = 3;
+}
+
+message Page {
+  // Default 50, maximum 200.
+  uint32 size = 1;
+  // Opaque cursor from a previous response; empty for the first page.
+  string cursor = 2;
+}
+
+// Money keeps the provider's original currency. amount is a decimal string
+// in major units, for example "12.34". currency_code is an ISO 4217 code, or
+// empty when the provider reports an amount without a currency.
+message Money {
+  string currency_code = 1;
+  string amount = 2;
+}
+
+// TokenCounts distinguishes an absent breakdown from zero.
+message TokenCounts {
+  // Uncached input tokens, excluding cache reads and cache writes.
+  optional uint64 input_tokens = 1;
+  // Output tokens, including reasoning output tokens.
+  optional uint64 output_tokens = 2;
+  optional uint64 cache_read_tokens = 3;
+  optional uint64 cache_write_tokens = 4;
+}
+
+message ClientVersionStatus {
+  string minimum_version = 1;
+  string latest_version = 2;
+  bool update_available = 3;
+  bool update_required = 4;
+}
+
+message MetricValue {
+  MetricState state = 1;
+  oneof value {
+    double percent = 2;
+    string decimal = 3;
+    int64 integer = 4;
+    Money money = 5;
+    google.protobuf.Timestamp time = 6;
+    google.protobuf.Duration duration = 7;
+    string text = 8;
+    bool flag = 9;
+  }
+}
+
+message MetricObservation {
+  MetricKind kind = 1;
+  // Adapter-defined stable key, for example a window key or service name.
+  string dimension = 2;
+  MetricValue value = 3;
+  // Provider unit for quantities, for example "requests"; empty otherwise.
+  string unit = 4;
+  MetricTemporality temporality = 5;
+  // Accumulation period for CUMULATIVE values.
+  google.protobuf.Timestamp period_start = 6;
+  google.protobuf.Timestamp period_end = 7;
+}
+
+message ResourceObservation {
+  // Provider identifier of the project, script or Pages project.
+  string resource_id = 1;
+  ResourceKind kind = 2;
+  string display_name = 3;
+  // Provider team, organization or account identifier.
+  string parent_id = 4;
+  ResourceHealth health = 5;
+  // Provider status value as reported, for example "READY".
+  string provider_status = 6;
+  // VALUE when status is available; NOT_PROVIDED or FAILED otherwise.
+  MetricState status_state = 7;
+  repeated MetricObservation metrics = 8;
+}
+
+message Snapshot {
+  google.protobuf.Timestamp observed_at = 1;
+  CollectionStatus status = 2;
+  FailureClass failure_class = 3;
+  google.protobuf.Timestamp next_attempt_at = 4;
+  repeated MetricObservation metrics = 5;
+  repeated ResourceObservation resources = 6;
+  // HTTP status of the failed provider response, or zero.
+  uint32 provider_http_status = 7;
+  ObservationSource source = 8;
+}
+
+message Lease {
+  string connection_id = 1;
+  string holder_device_id = 2;
+  uint64 epoch = 3;
+  google.protobuf.Timestamp acquired_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+message ParserStatus {
+  LocalTool tool = 1;
+  ParserState state = 2;
+  // Unreadable records in the retained source files at the latest full scan.
+  uint64 skipped_record_count = 3;
+  google.protobuf.Timestamp observed_at = 4;
+  string parser_version = 5;
+  uint32 source_path_count = 6;
+}
+
+message Device {
+  string id = 1;
+  string name = 2;
+  DevicePlatform platform = 3;
+  CpuArchitecture architecture = 4;
+  CollectorKind collector_kind = 5;
+  string collector_version = 6;
+  string os_version = 7;
+  google.protobuf.Timestamp enrolled_at = 8;
+  google.protobuf.Timestamp last_heartbeat_at = 9;
+  google.protobuf.Timestamp last_upload_at = 10;
+  DeviceCredentialState credential_state = 11;
+  bool preferred = 12;
+  // Heartbeat received within the last 5 minutes.
+  bool online = 13;
+  repeated ParserStatus parser_statuses = 14;
+}
+
+message DeviceCredentials {
+  string access_token = 1;
+  google.protobuf.Timestamp access_token_expires_at = 2;
+  string refresh_token = 3;
+  // Informational; every accepted upload extends the inactivity expiry.
+  google.protobuf.Timestamp refresh_token_expires_at = 4;
+}
+
+message ConnectionDevice {
+  string device_id = 1;
+  string device_name = 2;
+  google.protobuf.Timestamp registered_at = 3;
+  // The device reported a usable local credential in its latest heartbeat.
+  bool ready = 4;
+  bool online = 5;
+  // The device holds the current valid lease.
+  bool collecting = 6;
+}
+
+message Connection {
+  string id = 1;
+  Provider provider = 2;
+  string display_name = 3;
+  string account_label = 4;
+  string account_fingerprint = 5;
+  google.protobuf.Timestamp created_at = 6;
+  ConnectionState state = 7;
+  google.protobuf.Timestamp last_success_at = 8;
+  FailureClass last_failure_class = 9;
+  string last_error_correlation_id = 10;
+  repeated ConnectionDevice devices = 11;
+  Lease lease = 12;
+  google.protobuf.Timestamp next_manual_refresh_at = 13;
+}
+
+// ---------------------------------------------------------------------------
+// DeviceService: enrollment, device credentials and device management
+// ---------------------------------------------------------------------------
+
+service DeviceService {
+  // No bearer token. Started by a collector.
+  rpc StartEnrollment(StartEnrollmentRequest) returns (StartEnrollmentResponse);
+  // User token. Reads the enrollment shown on the approval page.
+  rpc GetEnrollment(GetEnrollmentRequest) returns (GetEnrollmentResponse);
+  // User token. Confirms the code shown by the collector.
+  rpc ApproveEnrollment(ApproveEnrollmentRequest) returns (ApproveEnrollmentResponse);
+  // User token.
+  rpc RejectEnrollment(RejectEnrollmentRequest) returns (RejectEnrollmentResponse);
+  // No bearer token. Authenticated by the enrollment device code.
+  rpc PollEnrollment(PollEnrollmentRequest) returns (PollEnrollmentResponse);
+  // No bearer token. Authenticated by the refresh token.
+  rpc RefreshDeviceToken(RefreshDeviceTokenRequest) returns (RefreshDeviceTokenResponse);
+  // Refresh token (collector logout) or user token (any device of the user).
+  rpc RevokeDeviceCredentials(RevokeDeviceCredentialsRequest) returns (RevokeDeviceCredentialsResponse);
+  // User token.
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+  // User token.
+  rpc DeleteDevice(DeleteDeviceRequest) returns (DeleteDeviceResponse);
+  // User token.
+  rpc SetPreferredDevice(SetPreferredDeviceRequest) returns (SetPreferredDeviceResponse);
+  // User token. Manual local usage refresh, once per minute per device.
+  rpc RequestDeviceSync(RequestDeviceSyncRequest) returns (RequestDeviceSyncResponse);
+}
+
+message StartEnrollmentRequest {
+  string device_name = 1;
+  DevicePlatform platform = 2;
+  CpuArchitecture architecture = 3;
+  CollectorKind collector_kind = 4;
+  string collector_version = 5;
+  string os_version = 6;
+  // Device ID kept locally after logout; empty for a new installation.
+  string previous_device_id = 7;
+}
+message StartEnrollmentResponse {
+  string enrollment_id = 1;
+  // Secret polling credential; never shown to the user.
+  string device_code = 2;
+  // Short code shown to the user and confirmed on the approval page.
+  string user_code = 3;
+  // Approval page URL that carries the enrollment ID.
+  string verification_url = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  google.protobuf.Duration poll_interval = 6;
+}
+
+message EnrollmentSummary {
+  string enrollment_id = 1;
+  EnrollmentState state = 2;
+  string device_name = 3;
+  DevicePlatform platform = 4;
+  CpuArchitecture architecture = 5;
+  CollectorKind collector_kind = 6;
+  string collector_version = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  uint32 remaining_attempts = 9;
+  // Approval reattaches an existing device of the caller.
+  bool reattach = 10;
+}
+
+message GetEnrollmentRequest {
+  string enrollment_id = 1;
+}
+message GetEnrollmentResponse {
+  EnrollmentSummary enrollment = 1;
+}
+
+message ApproveEnrollmentRequest {
+  string enrollment_id = 1;
+  string user_code = 2;
+}
+message ApproveEnrollmentResponse {
+  Device device = 1;
+}
+
+message RejectEnrollmentRequest {
+  string enrollment_id = 1;
+}
+message RejectEnrollmentResponse {}
+
+message PollEnrollmentRequest {
+  string enrollment_id = 1;
+  string device_code = 2;
+}
+message PollEnrollmentResponse {
+  EnrollmentState state = 1;
+  // Set only in the single response that delivers credentials.
+  Device device = 2;
+  DeviceCredentials credentials = 3;
+}
+
+message RefreshDeviceTokenRequest {
+  string device_id = 1;
+  string refresh_token = 2;
+}
+message RefreshDeviceTokenResponse {
+  DeviceCredentials credentials = 1;
+}
+
+message RevokeDeviceCredentialsRequest {
+  string device_id = 1;
+  // Required without a user token; empty with a user token.
+  string refresh_token = 2;
+}
+message RevokeDeviceCredentialsResponse {}
+
+message ListDevicesRequest {
+  Page page = 1;
+}
+message ListDevicesResponse {
+  repeated Device devices = 1;
+  string next_cursor = 2;
+}
+
+message DeleteDeviceRequest {
+  string device_id = 1;
+}
+message DeleteDeviceResponse {
+  google.protobuf.Timestamp purge_deadline = 1;
+}
+
+message SetPreferredDeviceRequest {
+  // Empty clears the preference.
+  string device_id = 1;
+}
+message SetPreferredDeviceResponse {
+  string preferred_device_id = 1;
+}
+
+message RequestDeviceSyncRequest {
+  string device_id = 1;
+}
+message RequestDeviceSyncResponse {
+  google.protobuf.Timestamp next_allowed_at = 1;
+}
+
+// ---------------------------------------------------------------------------
+// CollectorService: device-token operations of a running collector
+// ---------------------------------------------------------------------------
+
+// Every CollectorService method requires a device access token.
+service CollectorService {
+  // Sent every minute. Extends every valid lease that the device holds.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  // Versioned cumulative 15-minute buckets, at most 1 MiB per request.
+  rpc UploadUsage(UploadUsageRequest) returns (UploadUsageResponse);
+  rpc ReportParserStatus(ReportParserStatusRequest) returns (ReportParserStatusResponse);
+  rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
+  rpc RenewLease(RenewLeaseRequest) returns (RenewLeaseResponse);
+  rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
+  // Accepted only under the current valid lease epoch.
+  rpc ReportSnapshot(ReportSnapshotRequest) returns (ReportSnapshotResponse);
+}
+
+message HeartbeatRequest {
+  string collector_version = 1;
+  string os_version = 2;
+  // Registered connections for which this device can read a usable local
+  // credential now.
+  repeated string ready_connection_ids = 3;
+}
+message ConnectionAssignment {
+  string connection_id = 1;
+  Provider provider = 2;
+  // Current lease, or absent when no valid lease exists.
+  Lease lease = 3;
+  // No valid lease exists and this device is the selected candidate.
+  bool acquire_recommended = 4;
+  bool refresh_requested = 5;
+}
+message HeartbeatResponse {
+  google.protobuf.Timestamp server_time = 1;
+  ClientVersionStatus version_status = 2;
+  repeated ConnectionAssignment assignments = 3;
+  bool local_sync_requested = 4;
+  google.protobuf.Duration heartbeat_interval = 5;
+}
+
+message UsageBucket {
+  LocalTool tool = 1;
+  // Model identifier as reported by the tool; "unknown" when absent.
+  string model = 2;
+  // UTC start of the 15-minute bucket.
+  google.protobuf.Timestamp bucket_start = 3;
+  // Positive version that increases whenever the cumulative values change.
+  uint64 version = 4;
+  // Sessions that start in this bucket.
+  uint64 session_count = 5;
+  TokenCounts tokens = 6;
+}
+message BucketKey {
+  LocalTool tool = 1;
+  string model = 2;
+  google.protobuf.Timestamp bucket_start = 3;
+}
+message BucketResult {
+  BucketKey key = 1;
+  BucketOutcome outcome = 2;
+  // Version stored after this request; zero for rejected buckets.
+  uint64 stored_version = 3;
+}
+message UploadUsageRequest {
+  repeated UsageBucket buckets = 1;
+}
+message UploadUsageResponse {
+  // One result per bucket, in request order.
+  repeated BucketResult results = 1;
+  // Oldest bucket start the server accepts at this time.
+  google.protobuf.Timestamp retention_start = 2;
+}
+
+message ReportParserStatusRequest {
+  repeated ParserStatus statuses = 1;
+}
+message ReportParserStatusResponse {}
+
+message AcquireLeaseRequest {
+  string connection_id = 1;
+}
+message AcquireLeaseResponse {
+  bool granted = 1;
+  // The caller's new lease when granted; otherwise the current valid lease,
+  // or absent.
+  Lease lease = 2;
+}
+
+message RenewLeaseRequest {
+  string connection_id = 1;
+  uint64 epoch = 2;
+}
+message RenewLeaseResponse {
+  Lease lease = 1;
+  bool refresh_requested = 2;
+}
+
+message ReleaseLeaseRequest {
+  string connection_id = 1;
+  uint64 epoch = 2;
+}
+message ReleaseLeaseResponse {}
+
+message ReportSnapshotRequest {
+  string connection_id = 1;
+  uint64 lease_epoch = 2;
+  Snapshot snapshot = 3;
+}
+message ReportSnapshotResponse {
+  SnapshotOutcome outcome = 1;
+}
+
+// ---------------------------------------------------------------------------
+// ConnectionService: external connections
+// ---------------------------------------------------------------------------
+
+service ConnectionService {
+  // Device token. Registers the calling device for the new connection.
+  rpc CreateConnection(CreateConnectionRequest) returns (CreateConnectionResponse);
+  // User or device token.
+  rpc ListConnections(ListConnectionsRequest) returns (ListConnectionsResponse);
+  // User or device token.
+  rpc GetConnection(GetConnectionRequest) returns (GetConnectionResponse);
+  // User token.
+  rpc DeleteConnection(DeleteConnectionRequest) returns (DeleteConnectionResponse);
+  // Device token. Registers the calling device.
+  rpc RegisterConnectionDevice(RegisterConnectionDeviceRequest) returns (RegisterConnectionDeviceResponse);
+  // User or device token. A device token can unregister only itself.
+  rpc UnregisterConnectionDevice(UnregisterConnectionDeviceRequest) returns (UnregisterConnectionDeviceResponse);
+  // User or device token. Manual refresh, once per minute per connection.
+  rpc RequestConnectionRefresh(RequestConnectionRefreshRequest) returns (RequestConnectionRefreshResponse);
+}
+
+message CreateConnectionRequest {
+  string request_id = 1;
+  Provider provider = 2;
+  string display_name = 3;
+  // Non-secret provider account name for display, for example a team name.
+  string account_label = 4;
+  // Lowercase hex SHA-256 of "<provider enum name>:<provider account ID>",
+  // or empty when the provider exposes no account identifier.
+  string account_fingerprint = 5;
+}
+message CreateConnectionResponse {
+  Connection connection = 1;
+}
+
+message ListConnectionsRequest {
+  Page page = 1;
+}
+message ListConnectionsResponse {
+  repeated Connection connections = 1;
+  string next_cursor = 2;
+}
+
+message GetConnectionRequest {
+  string connection_id = 1;
+}
+message GetConnectionResponse {
+  Connection connection = 1;
+}
+
+message DeleteConnectionRequest {
+  string connection_id = 1;
+}
+message DeleteConnectionResponse {
+  google.protobuf.Timestamp purge_deadline = 1;
+}
+
+message RegisterConnectionDeviceRequest {
+  string connection_id = 1;
+  string account_fingerprint = 2;
+}
+message RegisterConnectionDeviceResponse {
+  Connection connection = 1;
+}
+
+message UnregisterConnectionDeviceRequest {
+  string connection_id = 1;
+  string device_id = 2;
+}
+message UnregisterConnectionDeviceResponse {
+  Connection connection = 1;
+}
+
+message RequestConnectionRefreshRequest {
+  string connection_id = 1;
+}
+message RequestConnectionRefreshResponse {
+  google.protobuf.Timestamp next_allowed_at = 1;
+}
+
+// ---------------------------------------------------------------------------
+// DashboardService: spaces, dashboards, widgets and sharing
+// ---------------------------------------------------------------------------
+
+// Every DashboardService method requires a user token.
+service DashboardService {
+  rpc ListSpaces(ListSpacesRequest) returns (ListSpacesResponse);
+  rpc ListDashboards(ListDashboardsRequest) returns (ListDashboardsResponse);
+  rpc GetDashboard(GetDashboardRequest) returns (GetDashboardResponse);
+  rpc CreateDashboard(CreateDashboardRequest) returns (CreateDashboardResponse);
+  rpc RenameDashboard(RenameDashboardRequest) returns (RenameDashboardResponse);
+  rpc DeleteDashboard(DeleteDashboardRequest) returns (DeleteDashboardResponse);
+  rpc AddWidget(AddWidgetRequest) returns (AddWidgetResponse);
+  rpc RemoveWidget(RemoveWidgetRequest) returns (RemoveWidgetResponse);
+  rpc UpdateWidgetLayout(UpdateWidgetLayoutRequest) returns (UpdateWidgetLayoutResponse);
+  rpc UpdateWidgetQuery(UpdateWidgetQueryRequest) returns (UpdateWidgetQueryResponse);
+  rpc SetWidgetSharingScope(SetWidgetSharingScopeRequest) returns (SetWidgetSharingScopeResponse);
+  rpc RevokeWidgetSharing(RevokeWidgetSharingRequest) returns (RevokeWidgetSharingResponse);
+}
+
+message Space {
+  // Delcore tenant ID.
+  string id = 1;
+  SpaceKind kind = 2;
+  string name = 3;
+  repeated SpacePermission permissions = 4;
+  // DEVICE_REQUIRED or READY for the personal space; READY for team spaces.
+  OnboardingState onboarding_state = 5;
+}
+
+message WidgetLayout {
+  // Grid position and size on a 12-column grid.
+  uint32 x = 1;
+  uint32 y = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  string title = 5;
+  WidgetPresentation presentation = 6;
+}
+
+// WidgetQuery is editable only by the widget's data owner.
+message WidgetQuery {
+  QueryPeriod period = 1;
+  TimeGranularity granularity = 2;
+  repeated LocalTool tools = 3;
+  repeated string models = 4;
+  repeated MetricKind metric_kinds = 5;
+  repeated string resource_ids = 6;
+  repeated string dimensions = 7;
+  UsageBreakdownDimension breakdown = 8;
+}
+
+// WidgetSource is the data owner's sharing scope: the owner's connections
+// and devices whose display data the widget can show.
+message WidgetSource {
+  repeated string connection_ids = 1;
+  repeated string device_ids = 2;
+  // Include all current and future devices of the data owner.
+  bool all_devices = 3;
+}
+
+message Widget {
+  string id = 1;
+  WidgetType type = 2;
+  WidgetLayout layout = 3;
+  WidgetQuery query = 4;
+  // Present only when the caller is the data owner.
+  WidgetSource source = 5;
+  string data_owner_user_id = 6;
+  SharingState sharing_state = 7;
+  SharingEndReason sharing_end_reason = 8;
+  // The caller can change query, source and sharing.
+  bool caller_is_data_owner = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message Dashboard {
+  string id = 1;
+  string space_id = 2;
+  string name = 3;
+  uint64 version = 4;
+  repeated Widget widgets = 5;
+  string created_by_user_id = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message DashboardSummary {
+  string id = 1;
+  string space_id = 2;
+  string name = 3;
+  uint64 version = 4;
+  uint32 widget_count = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message ListSpacesRequest {
+  // Logto access token for the Delcore API resource. The server uses it to
+  // read the caller's current tenant memberships and never stores it.
+  string delcore_access_token = 1;
+}
+message ListSpacesResponse {
+  repeated Space spaces = 1;
+}
+
+message ListDashboardsRequest {
+  string space_id = 1;
+  Page page = 2;
+}
+message ListDashboardsResponse {
+  repeated DashboardSummary dashboards = 1;
+  string next_cursor = 2;
+}
+
+message GetDashboardRequest {
+  string dashboard_id = 1;
+}
+message GetDashboardResponse {
+  Dashboard dashboard = 1;
+}
+
+message CreateDashboardRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string name = 3;
+}
+message CreateDashboardResponse {
+  Dashboard dashboard = 1;
+}
+
+message RenameDashboardRequest {
+  string dashboard_id = 1;
+  uint64 expected_version = 2;
+  string name = 3;
+}
+message RenameDashboardResponse {
+  Dashboard dashboard = 1;
+}
+
+message DeleteDashboardRequest {
+  string dashboard_id = 1;
+}
+message DeleteDashboardResponse {
+  google.protobuf.Timestamp purge_deadline = 1;
+}
+
+message AddWidgetRequest {
+  string dashboard_id = 1;
+  uint64 expected_version = 2;
+  string request_id = 3;
+  WidgetType type = 4;
+  WidgetLayout layout = 5;
+  WidgetQuery query = 6;
+  WidgetSource source = 7;
+}
+message AddWidgetResponse {
+  Dashboard dashboard = 1;
+  string widget_id = 2;
+}
+
+message RemoveWidgetRequest {
+  string dashboard_id = 1;
+  uint64 expected_version = 2;
+  string widget_id = 3;
+}
+message RemoveWidgetResponse {
+  Dashboard dashboard = 1;
+}
+
+message WidgetLayoutUpdate {
+  string widget_id = 1;
+  WidgetLayout layout = 2;
+}
+message UpdateWidgetLayoutRequest {
+  string dashboard_id = 1;
+  uint64 expected_version = 2;
+  repeated WidgetLayoutUpdate updates = 3;
+}
+message UpdateWidgetLayoutResponse {
+  Dashboard dashboard = 1;
+}
+
+message UpdateWidgetQueryRequest {
+  string dashboard_id = 1;
+  uint64 expected_version = 2;
+  string widget_id = 3;
+  WidgetQuery query = 4;
+}
+message UpdateWidgetQueryResponse {
+  Dashboard dashboard = 1;
+}
+
+message SetWidgetSharingScopeRequest {
+  string dashboard_id = 1;
+  uint64 expected_version = 2;
+  string widget_id = 3;
+  WidgetSource source = 4;
+}
+message SetWidgetSharingScopeResponse {
+  Dashboard dashboard = 1;
+}
+
+message RevokeWidgetSharingRequest {
+  string dashboard_id = 1;
+  string widget_id = 2;
+}
+message RevokeWidgetSharingResponse {
+  Dashboard dashboard = 1;
+}
+
+// ---------------------------------------------------------------------------
+// WidgetDataService: widget data queries
+// ---------------------------------------------------------------------------
+
+// Every WidgetDataService method requires a user token.
+service WidgetDataService {
+  rpc QueryWidgetData(QueryWidgetDataRequest) returns (QueryWidgetDataResponse);
+  rpc QueryDashboardData(QueryDashboardDataRequest) returns (QueryDashboardDataResponse);
+}
+
+message CostEstimate {
+  // VALUE, CANNOT_BE_CALCULATED or PARTIAL.
+  MetricState state = 1;
+  // Decimal USD string; empty unless state is VALUE or PARTIAL.
+  string amount_usd = 2;
+  repeated string price_version_ids = 3;
+}
+
+message UsageTotals {
+  uint64 session_count = 1;
+  TokenCounts tokens = 2;
+  CostEstimate estimated_cost = 3;
+}
+
+message UsageSummary {
+  UsageTotals totals = 1;
+}
+
+message UsagePoint {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+  // UTC offset of the start in the requested time zone, in minutes.
+  int32 utc_offset_minutes = 3;
+  UsageTotals totals = 4;
+}
+message UsageSeries {
+  TimeGranularity granularity = 1;
+  repeated UsagePoint points = 2;
+}
+
+message UsageBreakdownRow {
+  string device_id = 1;
+  string device_name = 2;
+  LocalTool tool = 3;
+  string model = 4;
+  UsageTotals totals = 5;
+  ParserState parser_state = 6;
+  uint64 skipped_record_count = 7;
+}
+message UsageBreakdown {
+  UsageBreakdownDimension dimension = 1;
+  repeated UsageBreakdownRow rows = 2;
+  UsageTotals total = 3;
+}
+
+message MetricReading {
+  string connection_id = 1;
+  Provider provider = 2;
+  // Empty for account-level metrics.
+  string resource_id = 3;
+  MetricKind kind = 4;
+  string dimension = 5;
+  string unit = 6;
+  MetricTemporality temporality = 7;
+  MetricValue current = 8;
+  google.protobuf.Timestamp observed_at = 9;
+  MetricValue last_success = 10;
+  google.protobuf.Timestamp last_success_at = 11;
+  FailureClass failure_class = 12;
+  google.protobuf.Timestamp period_start = 13;
+  google.protobuf.Timestamp period_end = 14;
+}
+message MetricPanel {
+  repeated MetricReading readings = 1;
+}
+
+message MetricHistoryPoint {
+  // UTC hour that the stored hourly snapshot belongs to.
+  google.protobuf.Timestamp hour_start = 1;
+  google.protobuf.Timestamp observed_at = 2;
+  MetricValue value = 3;
+}
+message MetricHistorySeries {
+  string connection_id = 1;
+  string resource_id = 2;
+  MetricKind kind = 3;
+  string dimension = 4;
+  string unit = 5;
+  MetricTemporality temporality = 6;
+  repeated MetricHistoryPoint points = 7;
+}
+message MetricHistory {
+  repeated MetricHistorySeries series = 1;
+}
+
+message ResourceReading {
+  string connection_id = 1;
+  Provider provider = 2;
+  string resource_id = 3;
+  ResourceKind kind = 4;
+  string display_name = 5;
+  string parent_id = 6;
+  ResourceHealth health = 7;
+  string provider_status = 8;
+  MetricState status_state = 9;
+  google.protobuf.Timestamp observed_at = 10;
+  repeated MetricReading metrics = 11;
+}
+message ResourceList {
+  repeated ResourceReading resources = 1;
+}
+
+// WidgetSummary is the compact form used by native widgets.
+message WidgetSummary {
+  string title = 1;
+  string primary_label = 2;
+  MetricValue primary_value = 3;
+  string secondary_label = 4;
+  MetricValue secondary_value = 5;
+  google.protobuf.Timestamp data_updated_at = 6;
+}
+
+message WidgetData {
+  string widget_id = 1;
+  WidgetType type = 2;
+  SharingState sharing_state = 3;
+  SharingEndReason sharing_end_reason = 4;
+  google.protobuf.Timestamp generated_at = 5;
+  string time_zone = 6;
+  google.protobuf.Timestamp range_start = 7;
+  google.protobuf.Timestamp range_end = 8;
+  WidgetSummary summary = 9;
+  repeated DataNotice notices = 10;
+  // Absent when sharing_state is ENDED.
+  oneof content {
+    UsageSummary usage_summary = 11;
+    UsageSeries usage_series = 12;
+    UsageBreakdown usage_breakdown = 13;
+    MetricPanel metric_panel = 14;
+    MetricHistory metric_history = 15;
+    ResourceList resource_list = 16;
+  }
+}
+
+message QueryWidgetDataRequest {
+  string dashboard_id = 1;
+  string widget_id = 2;
+  // IANA time zone name; empty uses the account setting.
+  string time_zone = 3;
+}
+message QueryWidgetDataResponse {
+  WidgetData data = 1;
+}
+
+message QueryDashboardDataRequest {
+  string dashboard_id = 1;
+  string time_zone = 2;
+}
+message QueryDashboardDataResponse {
+  uint64 dashboard_version = 1;
+  repeated WidgetData widgets = 2;
+}
+
+// ---------------------------------------------------------------------------
+// AccountService: account connection, settings, activity and deletion
+// ---------------------------------------------------------------------------
+
+// Every AccountService method requires a user token.
+service AccountService {
+  rpc ConnectAccount(ConnectAccountRequest) returns (ConnectAccountResponse);
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
+  rpc UpdateAccountSettings(UpdateAccountSettingsRequest) returns (UpdateAccountSettingsResponse);
+  rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
+  rpc DeleteAccountData(DeleteAccountDataRequest) returns (DeleteAccountDataResponse);
+}
+
+message Account {
+  // Delcore internal user ID.
+  string user_id = 1;
+  string personal_space_id = 2;
+  // IANA time zone name.
+  string time_zone = 3;
+  OnboardingState onboarding_state = 4;
+  string preferred_device_id = 5;
+  repeated QuotaInfo quotas = 6;
+}
+
+message ConnectAccountRequest {
+  // Logto access token for the Delcore API resource. The server uses it once
+  // to resolve the Delcore user and tenants and never stores it.
+  string delcore_access_token = 1;
+}
+message ConnectAccountResponse {
+  Account account = 1;
+}
+
+message GetAccountRequest {}
+message GetAccountResponse {
+  Account account = 1;
+}
+
+message UpdateAccountSettingsRequest {
+  string time_zone = 1;
+}
+message UpdateAccountSettingsResponse {
+  Account account = 1;
+}
+
+message ActivityEvent {
+  string id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+  ActivityKind kind = 3;
+  string actor_user_id = 4;
+  string space_id = 5;
+  string device_id = 6;
+  string connection_id = 7;
+  string dashboard_id = 8;
+  string widget_id = 9;
+  string correlation_id = 10;
+  ClientKind client_kind = 11;
+}
+message ListActivityRequest {
+  // Empty lists the caller's own device and connection events. A team space
+  // ID lists that space's dashboard and sharing events (Owner or Admin).
+  string space_id = 1;
+  Page page = 2;
+  repeated ActivityKind kinds = 3;
+}
+message ListActivityResponse {
+  repeated ActivityEvent events = 1;
+  string next_cursor = 2;
+}
+
+message DeleteAccountDataRequest {
+  // Must be true.
+  bool confirm = 1;
+}
+message DeleteAccountDataResponse {
+  google.protobuf.Timestamp purge_deadline = 1;
+}
+
+// ---------------------------------------------------------------------------
+// LocalCollectorService: local IPC of the shared collector process
+// ---------------------------------------------------------------------------
+
+// Served only by the local collector process over a Unix domain socket or a
+// Windows named pipe restricted to the current OS user. Never exposed by the
+// AnyDash API.
+service LocalCollectorService {
+  rpc GetCollectorStatus(GetCollectorStatusRequest) returns (GetCollectorStatusResponse);
+  rpc StartLogin(StartLoginRequest) returns (StartLoginResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc AddConnectionCredential(AddConnectionCredentialRequest) returns (AddConnectionCredentialResponse);
+  rpc RemoveConnectionCredential(RemoveConnectionCredentialRequest) returns (RemoveConnectionCredentialResponse);
+  rpc ListSourcePaths(ListSourcePathsRequest) returns (ListSourcePathsResponse);
+  rpc AddSourcePath(AddSourcePathRequest) returns (AddSourcePathResponse);
+  rpc DisableSourcePath(DisableSourcePathRequest) returns (DisableSourcePathResponse);
+  rpc EnableSourcePath(EnableSourcePathRequest) returns (EnableSourcePathResponse);
+  rpc RotateKey(RotateKeyRequest) returns (RotateKeyResponse);
+  rpc RequestLocalSync(RequestLocalSyncRequest) returns (RequestLocalSyncResponse);
+  // Makes the collector call ConnectionService.RequestConnectionRefresh with
+  // its own device token, so local clients never use the device credentials.
+  rpc RequestLocalConnectionRefresh(RequestLocalConnectionRefreshRequest) returns (RequestLocalConnectionRefreshResponse);
+  rpc PutNativeWidgetSnapshots(PutNativeWidgetSnapshotsRequest) returns (PutNativeWidgetSnapshotsResponse);
+  rpc ListNativeWidgetSnapshots(ListNativeWidgetSnapshotsRequest) returns (ListNativeWidgetSnapshotsResponse);
+  rpc Quit(QuitRequest) returns (QuitResponse);
+}
+
+message LoginProgress {
+  EnrollmentState state = 1;
+  string user_code = 2;
+  string verification_url = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message LocalConnectionStatus {
+  string connection_id = 1;
+  Provider provider = 2;
+  string display_name = 3;
+  bool credential_present = 4;
+  bool lease_held = 5;
+  uint64 lease_epoch = 6;
+  CollectionStatus last_status = 7;
+  FailureClass failure_class = 8;
+  google.protobuf.Timestamp last_success_at = 9;
+  google.protobuf.Timestamp next_attempt_at = 10;
+  string last_error_correlation_id = 11;
+}
+
+message CollectorStatus {
+  CollectorRunState run_state = 1;
+  string device_id = 2;
+  string collector_version = 3;
+  CollectorKind owner_kind = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp last_local_sync_at = 6;
+  google.protobuf.Timestamp last_upload_at = 7;
+  uint64 pending_bucket_count = 8;
+  google.protobuf.Timestamp oldest_pending_bucket_start = 9;
+  repeated LocalConnectionStatus connections = 10;
+  repeated ParserStatus parsers = 11;
+  string last_error_correlation_id = 12;
+  ErrorReason last_error_reason = 13;
+  google.protobuf.Timestamp last_error_at = 14;
+  ClientVersionStatus version_status = 15;
+  repeated LocalNotice notices = 16;
+  KeySource key_source = 17;
+  bool autostart_enabled = 18;
+  LoginProgress login = 19;
+}
+
+message GetCollectorStatusRequest {}
+message GetCollectorStatusResponse {
+  CollectorStatus status = 1;
+}
+
+message StartLoginRequest {
+  string device_name = 1;
+}
+message StartLoginResponse {
+  LoginProgress login = 1;
+}
+
+message LogoutRequest {}
+message LogoutResponse {}
+
+message AddConnectionCredentialRequest {
+  Provider provider = 1;
+  // Existing connection to register this device for; empty creates one.
+  string connection_id = 2;
+  string display_name = 3;
+  // Official API token for Vercel, Supabase and Cloudflare. Empty for
+  // Codex, Claude Code and Grok, which use the local CLI login.
+  string secret = 4;
+  // Vercel team ID; empty for other providers.
+  string scope_id = 5;
+}
+message AddConnectionCredentialResponse {
+  Connection connection = 1;
+}
+
+message RemoveConnectionCredentialRequest {
+  string connection_id = 1;
+}
+message RemoveConnectionCredentialResponse {}
+
+message SourcePath {
+  LocalTool tool = 1;
+  string path = 2;
+  SourcePathOrigin origin = 3;
+  bool enabled = 4;
+  bool exists = 5;
+}
+
+message ListSourcePathsRequest {}
+message ListSourcePathsResponse {
+  repeated SourcePath paths = 1;
+}
+
+message AddSourcePathRequest {
+  LocalTool tool = 1;
+  string path = 2;
+}
+message AddSourcePathResponse {
+  SourcePath path = 1;
+}
+
+message DisableSourcePathRequest {
+  LocalTool tool = 1;
+  string path = 2;
+}
+message DisableSourcePathResponse {
+  SourcePath path = 1;
+}
+
+message EnableSourcePathRequest {
+  LocalTool tool = 1;
+  string path = 2;
+}
+message EnableSourcePathResponse {
+  SourcePath path = 1;
+}
+
+message RotateKeyRequest {}
+message RotateKeyResponse {
+  google.protobuf.Timestamp rotated_at = 1;
+  uint32 secret_count = 2;
+}
+
+message RequestLocalSyncRequest {}
+message RequestLocalSyncResponse {
+  google.protobuf.Timestamp next_allowed_at = 1;
+}
+
+message RequestLocalConnectionRefreshRequest {
+  string connection_id = 1;
+}
+message RequestLocalConnectionRefreshResponse {
+  google.protobuf.Timestamp next_allowed_at = 1;
+}
+
+message NativeWidgetSnapshot {
+  string dashboard_id = 1;
+  string widget_id = 2;
+  string space_id = 3;
+  SharingState sharing_state = 4;
+  // Absent when sharing_state is ENDED; hosts then remove displayed data.
+  WidgetSummary summary = 5;
+  google.protobuf.Timestamp refreshed_at = 6;
+  repeated DataNotice notices = 7;
+}
+
+message PutNativeWidgetSnapshotsRequest {
+  repeated NativeWidgetSnapshot snapshots = 1;
+  // Replace the complete stored set instead of merging by widget.
+  bool replace_all = 2;
+}
+message PutNativeWidgetSnapshotsResponse {}
+
+message ListNativeWidgetSnapshotsRequest {}
+message ListNativeWidgetSnapshotsResponse {
+  repeated NativeWidgetSnapshot snapshots = 1;
+}
+
+message QuitRequest {}
+message QuitResponse {}
