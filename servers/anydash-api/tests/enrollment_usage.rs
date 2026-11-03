@@ -1361,3 +1361,197 @@ async fn out_of_range_timestamps_are_invalid_arguments() {
     assert_eq!(e.detail.field, "snapshot.metrics[0].value");
     f.cleanup().await;
 }
+
+/// Reports parser statuses as a device.
+async fn report_parsers(f: &Fixture, caller: &support::Caller, statuses: Value) {
+    f.ok(
+        caller,
+        "CollectorService/ReportParserStatus",
+        json!({"statuses":statuses}),
+    )
+    .await;
+}
+
+/// Returns (parser state, skipped count) of the breakdown row whose `field` equals `key`. The
+/// row is read 25 times through QueryWidgetData and once through QueryDashboardData; all reads
+/// must agree.
+async fn breakdown_row(
+    f: &Fixture,
+    user: &support::Caller,
+    dash: &str,
+    widget: &str,
+    field: &str,
+    key: &str,
+) -> (Value, Value) {
+    let mut seen = Vec::new();
+    for _ in 0..25 {
+        let data = f
+            .ok(
+                user,
+                "WidgetDataService/QueryWidgetData",
+                json!({"dashboardId":dash,"widgetId":widget}),
+            )
+            .await;
+        let rows = data["data"]["usageBreakdown"]["rows"].as_array().unwrap();
+        let r = rows.iter().find(|r| r[field] == key).unwrap();
+        seen.push((r["parserState"].clone(), r["skippedRecordCount"].clone()));
+    }
+    let whole = f
+        .ok(
+            user,
+            "WidgetDataService/QueryDashboardData",
+            json!({"dashboardId":dash}),
+        )
+        .await;
+    let data = whole["widgets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["widgetId"] == widget)
+        .unwrap();
+    let rows = data["usageBreakdown"]["rows"].as_array().unwrap();
+    let r = rows.iter().find(|r| r[field] == key).unwrap();
+    seen.push((r["parserState"].clone(), r["skippedRecordCount"].clone()));
+    assert!(
+        seen.windows(2).all(|w| w[0] == w[1]),
+        "unstable row {key}: {seen:?}"
+    );
+    seen.remove(0)
+}
+
+/// A breakdown row covering several parser statuses reports the same state on every query:
+/// PARTIAL > OK > NO_SOURCES > DISABLED, with the skipped record counts summed.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn breakdown_parser_state_follows_a_fixed_precedence() {
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let user = f.user(&a);
+    let (laptop, laptop_access, _) = f.enroll(&a, "laptop", "").await;
+    let (desk, desk_access, _) = f.enroll(&a, "desk", "").await;
+    let (laptop_caller, desk_caller) = (f.device(&laptop_access), f.device(&desk_access));
+    let start = bucket_start(Duration::hours(2));
+    let tokens = json!({"inputTokens":"10","outputTokens":"1","cacheReadTokens":"0"});
+    for (caller, tool) in [
+        (&laptop_caller, "LOCAL_TOOL_CODEX"),
+        (&laptop_caller, "LOCAL_TOOL_CLAUDE_CODE"),
+        (&desk_caller, "LOCAL_TOOL_CODEX"),
+        (&desk_caller, "LOCAL_TOOL_CLAUDE_CODE"),
+    ] {
+        f.ok(
+            caller,
+            "CollectorService/UploadUsage",
+            json!({"buckets":[bucket(tool, "gpt-5", start, 1, 1, tokens.clone())]}),
+        )
+        .await;
+    }
+    let status = |tool: &str, state: &str, skipped: u32| json!({"tool":tool,"state":state,"skippedRecordCount":skipped.to_string(),"parserVersion":"1"});
+
+    let dash = f
+        .ok(
+            &user,
+            "DashboardService/CreateDashboard",
+            json!({"requestId":id(),"spaceId":a.personal,"name":"Parsers"}),
+        )
+        .await["dashboard"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut widgets = Vec::new();
+    for (version, dimension, y) in [
+        ("1", "USAGE_BREAKDOWN_DIMENSION_DEVICE", 0),
+        ("2", "USAGE_BREAKDOWN_DIMENSION_TOOL", 3),
+    ] {
+        let added = f
+            .ok(
+                &user,
+                "DashboardService/AddWidget",
+                json!({"dashboardId":dash,"expectedVersion":version,"requestId":id(),"type":"WIDGET_TYPE_LOCAL_USAGE_BREAKDOWN",
+                    "layout":{"x":0,"y":y,"width":6,"height":3,"presentation":"WIDGET_PRESENTATION_TABLE"},
+                    "query":{"period":"QUERY_PERIOD_LAST_24_HOURS","breakdown":dimension},"source":{"allDevices":true}}),
+            )
+            .await;
+        widgets.push(added["widgetId"].as_str().unwrap().to_owned());
+    }
+    let (by_device, by_tool) = (&widgets[0], &widgets[1]);
+
+    // Laptop: Codex OK, Claude Code NO_SOURCES. Desk: Codex DISABLED, Claude Code NO_SOURCES.
+    report_parsers(
+        &f,
+        &laptop_caller,
+        json!([
+            status("LOCAL_TOOL_CODEX", "PARSER_STATE_OK", 0),
+            status("LOCAL_TOOL_CLAUDE_CODE", "PARSER_STATE_NO_SOURCES", 0)
+        ]),
+    )
+    .await;
+    report_parsers(
+        &f,
+        &desk_caller,
+        json!([
+            status("LOCAL_TOOL_CODEX", "PARSER_STATE_DISABLED", 0),
+            status("LOCAL_TOOL_CLAUDE_CODE", "PARSER_STATE_NO_SOURCES", 0)
+        ]),
+    )
+    .await;
+    // DEVICE rows combine the tools of one device; TOOL rows combine the devices of one tool.
+    macro_rules! row {
+        ($widget:expr, $field:expr, $key:expr) => {
+            breakdown_row(&f, &user, &dash, $widget, $field, $key).await
+        };
+    }
+    assert_eq!(row!(by_device, "deviceId", &laptop).0, "PARSER_STATE_OK");
+    assert_eq!(
+        row!(by_device, "deviceId", &desk).0,
+        "PARSER_STATE_NO_SOURCES"
+    );
+    assert_eq!(
+        row!(by_tool, "tool", "LOCAL_TOOL_CODEX").0,
+        "PARSER_STATE_OK"
+    );
+    assert_eq!(
+        row!(by_tool, "tool", "LOCAL_TOOL_CLAUDE_CODE").0,
+        "PARSER_STATE_NO_SOURCES"
+    );
+
+    // NO_SOURCES outranks DISABLED.
+    report_parsers(
+        &f,
+        &laptop_caller,
+        json!([status("LOCAL_TOOL_CODEX", "PARSER_STATE_DISABLED", 0)]),
+    )
+    .await;
+    assert_eq!(
+        row!(by_device, "deviceId", &laptop).0,
+        "PARSER_STATE_NO_SOURCES"
+    );
+    assert_eq!(
+        row!(by_tool, "tool", "LOCAL_TOOL_CODEX").0,
+        "PARSER_STATE_DISABLED"
+    );
+
+    // PARTIAL outranks everything and the skipped counts add up.
+    report_parsers(
+        &f,
+        &laptop_caller,
+        json!([status("LOCAL_TOOL_CODEX", "PARSER_STATE_PARTIAL", 3)]),
+    )
+    .await;
+    report_parsers(
+        &f,
+        &desk_caller,
+        json!([status("LOCAL_TOOL_CODEX", "PARSER_STATE_OK", 4)]),
+    )
+    .await;
+    assert_eq!(
+        row!(by_device, "deviceId", &laptop),
+        (json!("PARSER_STATE_PARTIAL"), json!("3"))
+    );
+    assert_eq!(
+        row!(by_tool, "tool", "LOCAL_TOOL_CODEX"),
+        (json!("PARSER_STATE_PARTIAL"), json!("7"))
+    );
+    assert_eq!(row!(by_device, "deviceId", &desk).0, "PARSER_STATE_OK");
+    f.cleanup().await;
+}

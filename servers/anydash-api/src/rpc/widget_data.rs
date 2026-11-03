@@ -265,6 +265,30 @@ async fn widget_data(s: &Server, call: &Call, w: &WidgetRow, tz: Tz) -> Result<W
     Ok(data)
 }
 
+/// Precedence of parser states when one breakdown row covers several device and tool statuses:
+/// `PARTIAL` > `OK` > `NO_SOURCES` > `DISABLED`. A lower rank wins; unknown states rank last.
+fn parser_state_rank(state: ParserState) -> u8 {
+    match state {
+        ParserState::Partial => 0,
+        ParserState::Ok => 1,
+        ParserState::NoSources => 2,
+        ParserState::Disabled => 3,
+        _ => 4,
+    }
+}
+
+/// Combines the parser statuses behind one breakdown row into the highest-precedence state and
+/// the sum of their skipped record counts. The result does not depend on the input order, so the
+/// same stored data always yields the same row.
+fn combine_parser_states(relevant: Vec<&(ParserState, u64)>) -> (ParserState, u64) {
+    let state = relevant
+        .iter()
+        .map(|(state, _)| *state)
+        .min_by_key(|state| parser_state_rank(*state))
+        .unwrap_or(ParserState::Unspecified);
+    (state, relevant.iter().map(|(_, n)| *n).sum())
+}
+
 fn notice(notices: &mut BTreeMap<i32, DataNotice>, n: DataNotice) {
     notices.insert(n.to_i32(), n);
 }
@@ -589,10 +613,8 @@ async fn local_usage(
                     let (parser_state, skipped) =
                         if dimension == UsageBreakdownDimension::Model || relevant.is_empty() {
                             (ParserState::Unspecified, 0)
-                        } else if relevant.iter().any(|(s, _)| *s == ParserState::Partial) {
-                            (ParserState::Partial, relevant.iter().map(|(_, n)| *n).sum())
                         } else {
-                            (relevant[0].0, relevant.iter().map(|(_, n)| *n).sum())
+                            combine_parser_states(relevant)
                         };
                     UsageBreakdownRow {
                         device_id: device.map(|d| d.to_string()).unwrap_or_default(),
@@ -1079,6 +1101,42 @@ async fn resource_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn parser_state_precedence_ignores_input_order() {
+        use ParserState as P;
+        let states = [P::Partial, P::Ok, P::NoSources, P::Disabled];
+        for (i, a) in states.iter().enumerate() {
+            for (j, b) in states.iter().enumerate() {
+                let (first, second) = ((*a, 2), (*b, 3));
+                let expected = states[i.min(j)];
+                for pair in [vec![&first, &second], vec![&second, &first]] {
+                    assert_eq!(
+                        combine_parser_states(pair),
+                        (expected, 5),
+                        "{a:?} with {b:?}"
+                    );
+                }
+            }
+        }
+        let all = [
+            (P::Disabled, 1),
+            (P::NoSources, 2),
+            (P::Ok, 4),
+            (P::Partial, 8),
+        ];
+        assert_eq!(
+            combine_parser_states(all.iter().rev().collect()),
+            (P::Partial, 15)
+        );
+        assert_eq!(
+            combine_parser_states(all.iter().take(3).collect()),
+            (P::Ok, 7)
+        );
+        assert_eq!(
+            combine_parser_states(all.iter().take(2).collect()),
+            (P::NoSources, 3)
+        );
+    }
     #[test]
     fn remaining_percent_is_derived_only_from_used_percent() {
         let used = MetricValue {
