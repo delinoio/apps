@@ -79,6 +79,11 @@ type Options struct {
 	// destination policy as BaseTransport. Default: a net.Dialer without
 	// destination restrictions.
 	DialUpstream DialFunc
+	// GeminiCLIClientID and GeminiCLIClientSecret are the operator-configured
+	// Google OAuth client used to refresh Gemini CLI tokens whose payload
+	// carries no client of its own.
+	GeminiCLIClientID     string
+	GeminiCLIClientSecret string
 	// AutoRefreshInterval is the SDK auth refresh check interval. Default
 	// 15 minutes, matching cliproxy.Service. A negative value disables
 	// background refresh.
@@ -123,6 +128,7 @@ type Engine struct {
 	transport *meteringTransport
 	relay     *upstreamRelay
 	persister *asyncPersister
+	gemini    *geminiRefresher
 	router    *gin.Engine
 	cp        *checkpointer
 	ctx       context.Context
@@ -227,6 +233,7 @@ func New(opts Options) (*Engine, error) {
 		cancel:   cancel,
 		runtimes: map[string]*resourceRuntime{},
 	}
+	e.gemini = newGeminiRefresher(opts.BaseTransport, opts.GeminiCLIClientID, opts.GeminiCLIClientSecret, e.persister, logger, opts.Now)
 	e.router = e.newRouter()
 	if opts.JanitorInterval > 0 {
 		e.janitorDone = make(chan struct{})
@@ -300,6 +307,7 @@ func (e *Engine) RemoveCredential(ctx context.Context, resourceID, credentialID 
 	defer release()
 	rt.remove(credentialID)
 	e.persister.drop(resourceID, credentialID)
+	e.gemini.forget(resourceID, credentialID)
 	return nil
 }
 
@@ -513,7 +521,7 @@ func (e *Engine) build(ctx context.Context, rt *resourceRuntime) {
 	manager.SetRetryConfig(0, 0, 1)
 	manager.SetRoundTripperProvider(roundTripperProvider{rt: e.transport})
 	for key, executor := range e.executors {
-		manager.RegisterExecutor(&resourceExecutor{inner: executor, resourceID: rt.id, sdkProvider: key, relay: e.relay, logger: rt.logger})
+		manager.RegisterExecutor(&resourceExecutor{inner: executor, resourceID: rt.id, sdkProvider: key, relay: e.relay, gemini: e.gemini, logger: rt.logger})
 	}
 	rt.manager = manager
 	base := handlers.NewBaseAPIHandlers(&e.cfg.SDKConfig, manager)

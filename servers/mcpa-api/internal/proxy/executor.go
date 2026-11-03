@@ -67,7 +67,10 @@ type resourceExecutor struct {
 	sdkProvider string
 	// relay performs the dials of the SDK Claude client (see
 	// upstreamRelay).
-	relay  *upstreamRelay
+	relay *upstreamRelay
+	// gemini refreshes Gemini CLI tokens before the SDK executor runs (see
+	// geminiRefresher). It is nil for tests that bypass the engine.
+	gemini *geminiRefresher
 	logger *slog.Logger
 }
 
@@ -170,8 +173,26 @@ func (e *resourceExecutor) traceMeteringBase(auth *coreauth.Auth, opts cliproxye
 	return "", false
 }
 
+// freshAuth returns the auth to pass on after the provider-specific token
+// preparation. Only Gemini CLI credentials need it; the refresh error is the
+// executor result of the call.
+func (e *resourceExecutor) freshAuth(ctx context.Context, auth *coreauth.Auth, call *callState) (*coreauth.Auth, error) {
+	if e.sdkProvider != sdkProviderGeminiCLI {
+		return auth, nil
+	}
+	fresh, err := e.gemini.ensureFresh(ctx, e.resourceID, auth)
+	if err != nil && call != nil {
+		call.observeExecutorResult(err)
+	}
+	return fresh, err
+}
+
 func (e *resourceExecutor) Execute(ctx context.Context, auth *coreauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 	ctx, call, err := e.begin(ctx, auth, opts, claudeMessagesURI)
+	if err != nil {
+		return cliproxyexecutor.Response{}, err
+	}
+	auth, err = e.freshAuth(ctx, auth, call)
 	if err != nil {
 		return cliproxyexecutor.Response{}, err
 	}
@@ -187,6 +208,10 @@ func (e *resourceExecutor) CountTokens(ctx context.Context, auth *coreauth.Auth,
 	if err != nil {
 		return cliproxyexecutor.Response{}, err
 	}
+	auth, err = e.freshAuth(ctx, auth, call)
+	if err != nil {
+		return cliproxyexecutor.Response{}, err
+	}
 	resp, err := e.inner.CountTokens(ctx, e.guardedAuth(ctx, auth), req, opts)
 	if call != nil {
 		call.observeExecutorResult(err)
@@ -196,6 +221,10 @@ func (e *resourceExecutor) CountTokens(ctx context.Context, auth *coreauth.Auth,
 
 func (e *resourceExecutor) ExecuteStream(ctx context.Context, auth *coreauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
 	ctx, call, err := e.begin(ctx, auth, opts, claudeMessagesURI)
+	if err != nil {
+		return nil, err
+	}
+	auth, err = e.freshAuth(ctx, auth, call)
 	if err != nil {
 		return nil, err
 	}
@@ -236,6 +265,10 @@ func (e *resourceExecutor) HttpRequest(ctx context.Context, auth *coreauth.Auth,
 	}
 	if call := callFromContext(ctx); call != nil && call.resourceID != e.resourceID {
 		return nil, isolationError{}
+	}
+	auth, err := e.freshAuth(ctx, auth, callFromContext(ctx))
+	if err != nil {
+		return nil, err
 	}
 	return e.inner.HttpRequest(ctx, e.guardedAuth(ctx, auth), req)
 }

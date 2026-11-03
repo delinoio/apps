@@ -141,6 +141,12 @@ func (c *callState) observeExecutorResult(err error) {
 		return
 	}
 	c.executorFailed = true
+	// An error that reports a transport failure keeps its customer status but
+	// stays a network failure in the call record.
+	var transport interface{ networkFailure() bool }
+	if errors.As(err, &transport) && transport.networkFailure() {
+		return
+	}
 	var statusErr interface{ StatusCode() int }
 	if errors.As(err, &statusErr) && statusErr.StatusCode() > 0 {
 		c.executorStatus = statusErr.StatusCode()
