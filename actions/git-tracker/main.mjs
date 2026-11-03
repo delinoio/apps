@@ -120,6 +120,48 @@ export class ApiFailure extends Error {
     this.transient = transient;
   }
 }
+const ERROR_BODY_LIMIT = 8192;
+const ERROR_MESSAGE_LIMIT = 500;
+// Read the Connect error code and message of a failed response for the
+// failure text. The body is capped, parsed defensively and reduced to one
+// bounded line. Any problem yields an empty string, so the status-only text
+// stays the fallback. Only the server's error body is read: request bodies,
+// measurement values and credentials never reach this text.
+async function errorDetail(response) {
+  try {
+    const reader = response.body?.getReader();
+    if (!reader) return "";
+    const decoder = new TextDecoder();
+    let text = "";
+    let size = 0;
+    while (size < ERROR_BODY_LIMIT) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      text += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel().catch(() => {});
+    // A body beyond the cap is not a normal Connect error; ignore it.
+    if (size > ERROR_BODY_LIMIT) return "";
+    const body = JSON.parse(text);
+    const clean = (value) =>
+      String(value)
+        .replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ")
+        .replace(/\s+/gu, " ")
+        .trim();
+    const code =
+      typeof body?.code === "string" && /^[a-z_]{1,40}$/u.test(body.code)
+        ? body.code
+        : "";
+    let message = typeof body?.message === "string" ? clean(body.message) : "";
+    if (message.length > ERROR_MESSAGE_LIMIT)
+      message = `${message.slice(0, ERROR_MESSAGE_LIMIT)}...`;
+    if (!message) return "";
+    return code ? `${code}: ${message}` : message;
+  } catch {
+    return "";
+  }
+}
 export async function rpc(
   origin,
   method,
@@ -163,8 +205,9 @@ export async function rpc(
         await sleep(500 * 2 ** attempt);
         continue;
       }
+      const detail = await errorDetail(response);
       throw new ApiFailure(
-        `API failed (${response.status}); correlation ID: ${response.headers.get("X-Correlation-Id") ?? "unavailable"}`,
+        `API failed (${response.status}); correlation ID: ${response.headers.get("X-Correlation-Id") ?? "unavailable"}${detail ? `; ${detail}` : ""}`,
         response.status >= 500 ||
           response.status === 408 ||
           response.status === 429,

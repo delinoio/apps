@@ -296,3 +296,113 @@ test("HTTP 408 retries and remains a transient failure", async () => {
   );
   assert.equal(calls, 4);
 });
+
+const failing = (status, body, headers = {}) => ({
+  request: async () => new Response(body, { status, headers }),
+  sleep: async () => {},
+});
+const failureOf = (status, body, headers) =>
+  rpc(
+    "https://example.test",
+    "Upload",
+    { secret: "body-secret" },
+    "Bearer secret-token",
+    failing(status, body, headers),
+  ).then(
+    () => assert.fail("expected a failure"),
+    (error) => error,
+  );
+
+test("API failures include the Connect error code and message", async () => {
+  const error = await failureOf(
+    400,
+    JSON.stringify({
+      code: "failed_precondition",
+      message: "row file: values conflict with the stored measurement",
+    }),
+    { "X-Correlation-Id": "corr-1" },
+  );
+  assert.equal(
+    error.message,
+    "API failed (400); correlation ID: corr-1; failed_precondition: row file: values conflict with the stored measurement",
+  );
+  assert.equal(error.transient, false);
+  assert.doesNotMatch(error.message, /secret/u);
+});
+
+test("API failure messages are single-line, bounded and free of control characters", async () => {
+  const error = await failureOf(
+    409,
+    JSON.stringify({
+      code: "already_exists",
+      message: `first\n\t line\r\n::error::second\u0000\u001b[31m ${"x".repeat(900)}`,
+    }),
+  );
+  assert.doesNotMatch(error.message, /[\u0000-\u001f]/u);
+  assert.match(
+    error.message,
+    /already_exists: first line ::error::second \[31m x+\.\.\.$/u,
+  );
+  const message = error.message.split("; ").slice(2).join("; ");
+  assert.ok(message.length <= "already_exists: ".length + 500 + 3);
+});
+
+test("API failures fall back to status-only text without a usable body", async () => {
+  const statusOnly = "API failed (403); correlation ID: unavailable";
+  for (const body of [
+    "",
+    "not json",
+    "{",
+    "[]",
+    "null",
+    '{"code":"permission_denied"}',
+    '{"message":""}',
+    '{"message":42}',
+    '{"message":"   "}',
+  ])
+    assert.equal((await failureOf(403, body)).message, statusOnly, body);
+  // A message without a usable code still appears.
+  assert.equal(
+    (await failureOf(403, '{"code":"Bad Code!","message":"denied"}')).message,
+    `${statusOnly}; denied`,
+  );
+});
+
+test("oversized error bodies are capped and fall back", async () => {
+  const huge = `{"code":"internal","message":"${"y".repeat(100000)}"}`;
+  assert.equal(
+    (await failureOf(400, huge)).message,
+    "API failed (400); correlation ID: unavailable",
+  );
+});
+
+test("final transient failures carry the message and retries are unchanged", async () => {
+  let calls = 0;
+  const error = await rpc("https://example.test", "Upload", {}, "secret", {
+    request: async () => {
+      calls++;
+      return new Response('{"code":"unavailable","message":"database busy"}', {
+        status: 503,
+      });
+    },
+    sleep: async () => {},
+  }).then(
+    () => assert.fail("expected a failure"),
+    (e) => e,
+  );
+  assert.equal(calls, 4);
+  assert.equal(error.transient, true);
+  assert.match(error.message, /\(503\).*unavailable: database busy$/u);
+  // A failed precondition is not retried.
+  calls = 0;
+  await rpc("https://example.test", "Upload", {}, "secret", {
+    request: async () => {
+      calls++;
+      return new Response('{"code":"failed_precondition","message":"m"}', {
+        status: 400,
+      });
+    },
+    sleep: async () => {},
+  }).catch(() => {});
+  assert.equal(calls, 1);
+});
