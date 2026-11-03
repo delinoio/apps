@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,6 +39,12 @@ type fakeDelcore struct {
 	onAuthorize func()
 	// denied lists users that hold no Delcore capability.
 	denied map[string]bool
+	// listGroupsCalls counts ListGroups calls; listGroupsDelay stretches each
+	// call so that concurrent callers overlap.
+	listGroupsCalls atomic.Int64
+	listGroupsDelay time.Duration
+	// keyDecision, when set, answers AuthorizeAPIKey.
+	keyDecision *delcore.KeyDecision
 }
 
 func (f *fakeDelcore) Authorize(_ context.Context, _ string, userID string, _ delcore.Capability, _ bool) (delcore.Decision, error) {
@@ -53,11 +60,16 @@ func (f *fakeDelcore) Authorize(_ context.Context, _ string, userID string, _ de
 }
 
 func (f *fakeDelcore) AuthorizeAPIKey(context.Context, string, delcore.Capability, bool) (delcore.KeyDecision, error) {
+	if f.keyDecision != nil {
+		return *f.keyDecision, nil
+	}
 	return delcore.KeyDecision{}, nil
 }
 
 func (f *fakeDelcore) ListGroups(context.Context, string, string) ([]*delcorev1.Group, error) {
-	return nil, nil
+	f.listGroupsCalls.Add(1)
+	time.Sleep(f.listGroupsDelay)
+	return []*delcorev1.Group{{Id: "group-1", Name: "Engineering", UserIds: []string{"member"}}}, nil
 }
 
 func (f *fakeDelcore) setHook(h func()) {
@@ -359,5 +371,74 @@ func TestIssueCallKeyReplayAfterExpiry(t *testing.T) {
 	}
 	if _, err := issue(fresh, start.Add(3*time.Hour)); err != nil {
 		t.Fatalf("issue after a rejected request with the same key: %v", err)
+	}
+}
+
+// TestListTenantGroupsRefreshesOncePerTTL fires concurrent ListTenantGroups
+// calls through two services that share a database, like two replicas, and
+// checks that Delcore ListGroups runs once for the tenant within the TTL.
+func TestListTenantGroupsRefreshesOncePerTTL(t *testing.T) {
+	db := storetest.Open(t)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	dc := &fakeDelcore{listGroupsDelay: 150 * time.Millisecond}
+	newService := func() *service.Service {
+		return service.New(service.Config{
+			Store: db, PublicURL: "https://mcpa.example.test", Log: log,
+			Authorizer: authz.New(db, dc, time.Minute, log).WithRefreshTimeout(5 * time.Second),
+		})
+	}
+	replicas := []*service.Service{newService(), newService()}
+	user := auth.NewUserPrincipal(mcpav1.ActorKind_ACTOR_KIND_CONSOLE, newUser(), "sub", func(context.Context) (string, error) {
+		return "user-token", nil
+	})
+	ctx := auth.WithPrincipal(context.Background(), user)
+	list := func(svc *service.Service) (int, error) {
+		resp, err := svc.ListTenantGroups(ctx, connect.NewRequest(&mcpav1.ListTenantGroupsRequest{TenantId: testTenant}))
+		if err != nil {
+			return 0, err
+		}
+		if got := resp.Msg.GetGroups(); len(got) != 1 || got[0].GetId() != "group-1" || got[0].GetName() != "Engineering" {
+			t.Errorf("groups %v", got)
+		}
+		return len(resp.Msg.GetGroups()), nil
+	}
+
+	const callers = 20
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(svc *service.Service) {
+			defer wg.Done()
+			if _, err := list(svc); err != nil {
+				t.Errorf("ListTenantGroups: %v", err)
+			}
+		}(replicas[i%len(replicas)])
+	}
+	wg.Wait()
+	if got := dc.listGroupsCalls.Load(); got != 1 {
+		t.Fatalf("%d concurrent calls made %d ListGroups calls, want 1", callers, got)
+	}
+
+	// A call within the TTL reuses the snapshot.
+	if _, err := list(replicas[0]); err != nil {
+		t.Fatal(err)
+	}
+	if got := dc.listGroupsCalls.Load(); got != 1 {
+		t.Fatalf("a call within the TTL made %d ListGroups calls, want 1", got)
+	}
+
+	// A personal key reads the snapshot and never calls Delcore for groups.
+	keyUser := newUser()
+	dc.keyDecision = &delcore.KeyDecision{Allowed: true, TenantID: testTenant, UserID: keyUser}
+	key := auth.WithPrincipal(context.Background(), auth.NewPersonalKeyPrincipal(keyUser, testTenant, "dlk_x"))
+	resp, err := replicas[1].ListTenantGroups(key, connect.NewRequest(&mcpav1.ListTenantGroupsRequest{TenantId: testTenant}))
+	if err != nil {
+		t.Fatalf("personal key ListTenantGroups: %v", err)
+	}
+	if got := resp.Msg.GetGroups(); len(got) != 1 || got[0].GetId() != "group-1" {
+		t.Fatalf("personal key groups %v", got)
+	}
+	if got := dc.listGroupsCalls.Load(); got != 1 {
+		t.Fatalf("a personal key made %d ListGroups calls, want 1", got)
 	}
 }

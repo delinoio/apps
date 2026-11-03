@@ -144,6 +144,9 @@ Group-membership snapshot:
 
 - Delcore offers registered services no machine-to-machine read of group membership. The server therefore stores a per-tenant snapshot of group IDs, names and member user IDs.
 - The snapshot is refreshed from `ListGroups` whenever a console or MCP user session operates in that tenant, at most once per `MCPA_AUTHORIZE_CACHE_TTL`.
+- `ListTenantGroups` uses the same refresh, so opening the ACL editor repeatedly does not call `ListGroups` again within the TTL. The group list can therefore lag a newly created Delcore group by up to one `MCPA_AUTHORIZE_CACHE_TTL`. A personal key reads the stored snapshot and never refreshes it.
+- Refreshes of one tenant are serialized across replicas with a transaction-scoped PostgreSQL advisory lock. A caller that waited for the lock reads the refresh time again and skips Delcore when another caller refreshed the snapshot. The wait, the `ListGroups` call and the snapshot write together are bounded by `DEPENDENCY_TIMEOUT`, which also bounds how long the transaction holds the lock.
+- A failed refresh keeps the previous snapshot and its refresh time. `ListTenantGroups` then serves the previous snapshot and logs the failure. It reports the failure when the tenant has no snapshot yet or when Delcore rejected the user's token.
 - Group ACL entries resolve through the latest snapshot. Delcore capability checks stay live. See [known limits](#known-limits).
 
 ### Authorization
