@@ -335,3 +335,104 @@ test("custom execution IDs require a repository token before any request", async
   assert.equal(apiRequests.at(-1).authorization, "Bearer repo-token-fixture");
   assert.equal(apiRequests.at(-1).body.context.executionId, "custom/run-1");
 });
+
+test("API error reasons reach the Action log and respect warn-on-api-error", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "git-tracker-action-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "event.json"), "{}");
+  await writeFile(
+    join(directory, "dataset.yaml"),
+    "id: size\nname: Size\ncolumns:\n  - id: bytes\n    direction: lower\n",
+  );
+  await writeFile(
+    join(directory, "rows.json"),
+    '{"rows":[{"id":"file","values":{"bytes":123456789}}]}',
+  );
+  let reply = { status: 400, body: "" };
+  let calls = 0;
+  const server = createServer(async (request, response) => {
+    for await (const chunk of request); // drain
+    calls++;
+    response.writeHead(reply.status, {
+      "Content-Type": "application/json",
+      "X-Correlation-Id": "corr-flow",
+    });
+    response.end(reply.body);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const run = (extra) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [fileURLToPath(new URL("./main.mjs", import.meta.url))],
+        {
+          env: {
+            PATH: process.env.PATH,
+            GITHUB_ACTIONS: "true",
+            GITHUB_EVENT_PATH: join(directory, "event.json"),
+            GITHUB_SHA: "a".repeat(40),
+            GITHUB_REF_NAME: "main",
+            GITHUB_REPOSITORY_ID: "42",
+            GITHUB_RUN_ID: "123",
+            GITHUB_RUN_ATTEMPT: "1",
+            "INPUT_API-URL": `http://127.0.0.1:${server.address().port}`,
+            "INPUT_REPOSITORY-ID": "42",
+            INPUT_TOKEN: "flow-secret-token",
+            INPUT_CONFIGURATION: join(directory, "dataset.yaml"),
+            INPUT_MEASUREMENTS: join(directory, "rows.json"),
+            ...extra,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let log = "";
+      child.stdout.on("data", (chunk) => (log += chunk));
+      child.stderr.on("data", (chunk) => (log += chunk));
+      child.on("error", reject);
+      child.on("exit", (code) => resolve({ code, log }));
+    });
+
+  reply = {
+    status: 400,
+    body: JSON.stringify({
+      code: "failed_precondition",
+      message: "row file: values conflict\nwith the stored measurement",
+    }),
+  };
+  let result = await run({});
+  assert.equal(result.code, 1);
+  assert.equal(calls, 1, "failed preconditions are not retried");
+  assert.match(
+    result.log,
+    /::error::API failed \(400\); correlation ID: corr-flow; failed_precondition: row file: values conflict with the stored measurement/u,
+  );
+  // The only line that names the token is the masking command.
+  assert.doesNotMatch(
+    result.log.replace(/^::add-mask::.*\n/mu, ""),
+    /flow-secret-token|123456789/u,
+  );
+
+  // A body without a message keeps the status-only text.
+  reply = { status: 403, body: '{"code":"permission_denied"}' };
+  result = await run({});
+  assert.equal(result.code, 1);
+  assert.match(
+    result.log,
+    /::error::API failed \(403\); correlation ID: corr-flow$/mu,
+  );
+
+  // A transient failure still downgrades to a warning and now names the reason.
+  reply = {
+    status: 429,
+    body: '{"code":"resource_exhausted","message":"slow down"}',
+  };
+  calls = 0;
+  result = await run({ "INPUT_WARN-ON-API-ERROR": "true" });
+  assert.equal(result.code, 0, result.log);
+  assert.equal(calls, 4, "429 is retried three times");
+  assert.match(
+    result.log,
+    /::warning::API failed \(429\); correlation ID: corr-flow; resource_exhausted: slow down/u,
+  );
+});
