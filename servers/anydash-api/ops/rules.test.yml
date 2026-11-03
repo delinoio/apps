@@ -29,6 +29,46 @@ tests:
       - eval_time: 15m
         alertname: AnyDashApiServerErrors
         exp_alerts: []
+  - name: timeouts count as server errors; 10% fires and 1% does not
+    interval: 30s
+    input_series:
+      # Job a: 90 completed requests and 10 timeouts (10%) per 30 s. The handlers of timed-out
+      # requests never record a request sample, so timeouts only appear in the timeout counter.
+      - series: anydash_api_requests_total{job="a",instance="a",service="DeviceService",method="Heartbeat",outcome="success"}
+        values: "0+90x40"
+      - series: anydash_api_timeouts_total{job="a",instance="a"}
+        values: "0+10x40"
+      # Job b: 99 completed requests and 1 timeout (1%) per 30 s.
+      - series: anydash_api_requests_total{job="b",instance="a",service="DeviceService",method="Heartbeat",outcome="success"}
+        values: "0+99x40"
+      - series: anydash_api_timeouts_total{job="b",instance="a"}
+        values: "0+1x40"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: [{ exp_labels: { job: a, severity: critical } }]
+  - name: timeouts fire when no request sample exists at all
+    interval: 30s
+    input_series:
+      # Every request times out: the request counter has no series, only the timeout counter does.
+      - series: anydash_api_timeouts_total{job="anydash-api",instance="a"}
+        values: "0+30x40"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: [{ exp_labels: { job: anydash-api, severity: critical } }]
+  - name: a few timeouts cannot fire
+    interval: 30s
+    input_series:
+      - series: anydash_api_timeouts_total{job="anydash-api",instance="a"}
+        values: "0+0.1x40"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: []
   - name: few requests cannot fire
     interval: 30s
     input_series:

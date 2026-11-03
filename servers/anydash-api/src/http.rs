@@ -147,6 +147,8 @@ async fn policy(State(s): State<Arc<Server>>, req: Request, next: Next) -> Respo
                 match tokio::time::timeout_at(deadline, next.run(req)).await {
                     Ok(response) => response,
                     Err(_) => {
+                        // The dropped handler future cannot record this request, so count it here.
+                        s.metrics.timeouts.inc();
                         tracing::warn!(correlation_id = %correlation, "request timed out");
                         StatusCode::GATEWAY_TIMEOUT.into_response()
                     }
@@ -224,6 +226,55 @@ mod tests {
                 Poll::Pending => Poll::Pending,
             }
         }
+    }
+
+    /// A server whose database pool never connects; policy tests do not touch it.
+    fn lazy_server() -> Arc<Server> {
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://anydash@127.0.0.1:1/anydash")
+            .expect("lazy pool");
+        let config = crate::config::Config::fixture(
+            "https://issuer.example.test",
+            "https://delcore.example.test",
+            "https://prices.example.test/prices.json",
+        );
+        Arc::new(Server::new(db, config).expect("test server"))
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn handler_exceeding_the_deadline_returns_504_and_counts_a_timeout() {
+        use tower::ServiceExt;
+        let server = lazy_server();
+        let app = Router::new()
+            .route(
+                "/slow",
+                get(|| async {
+                    tokio::time::sleep(REQUEST_TIMEOUT + Duration::from_secs(1)).await;
+                    StatusCode::OK
+                }),
+            )
+            .route("/fast", get(|| async { StatusCode::OK }))
+            .layer(middleware::from_fn_with_state(server.clone(), policy));
+        let send = |path: &'static str| {
+            app.clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+        };
+        let fast = send("/fast").await.unwrap();
+        assert_eq!(fast.status(), StatusCode::OK);
+        assert_eq!(server.metrics.timeouts.get(), 0);
+        let slow = send("/slow").await.unwrap();
+        assert_eq!(slow.status(), StatusCode::GATEWAY_TIMEOUT);
+        assert!(slow.headers().contains_key(CORRELATION_HEADER));
+        assert_eq!(server.metrics.timeouts.get(), 1);
+        assert!(
+            server
+                .metrics
+                .encode()
+                .contains("anydash_api_timeouts_total 1")
+        );
+        // A later normal request is unaffected.
+        assert_eq!(send("/fast").await.unwrap().status(), StatusCode::OK);
+        assert_eq!(server.metrics.timeouts.get(), 1);
     }
 
     #[tokio::test(start_paused = true)]

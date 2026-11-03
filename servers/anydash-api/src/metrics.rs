@@ -14,6 +14,7 @@ pub const JOB_OUTCOMES: [&str; 2] = ["success", "failure"];
 pub struct Metrics {
     registry: Registry,
     pub requests: IntCounterVec,
+    pub timeouts: IntCounter,
     pub duration: HistogramVec,
     pub job_runs: IntCounterVec,
     pub job_last_success: GaugeVec,
@@ -42,6 +43,15 @@ impl Metrics {
                 "API requests by bounded outcome.",
             ),
             &["service", "method", "outcome"],
+        )
+        .unwrap();
+        // Requests that hit the deadline never reach `requests`, because the handler future that
+        // records them is dropped. This counter is the only sample of such requests and has no
+        // method label: the timeout happens in the HTTP layer, before the method is known to be
+        // meaningful.
+        let timeouts = IntCounter::new(
+            "anydash_api_timeouts_total",
+            "API requests that exceeded the request deadline and returned 504.",
         )
         .unwrap();
         let duration = HistogramVec::new(
@@ -120,6 +130,7 @@ impl Metrics {
         .unwrap();
         for c in [
             Box::new(requests.clone()) as Box<dyn prometheus::core::Collector>,
+            Box::new(timeouts.clone()),
             Box::new(duration.clone()),
             Box::new(job_runs.clone()),
             Box::new(job_last_success.clone()),
@@ -137,6 +148,7 @@ impl Metrics {
         let metrics = Self {
             registry,
             requests,
+            timeouts,
             duration,
             job_runs,
             job_last_success,
@@ -236,6 +248,14 @@ mod tests {
         assert!(text.contains(
             "anydash_collection_snapshots_total{provider=\"claude_code\",status=\"rate_limited\"} 0"
         ));
+    }
+
+    #[test]
+    fn timeout_counter_is_exposed_at_zero() {
+        let m = Metrics::new();
+        assert!(m.encode().contains("anydash_api_timeouts_total 0"));
+        m.timeouts.inc();
+        assert!(m.encode().contains("anydash_api_timeouts_total 1"));
     }
 
     #[test]
