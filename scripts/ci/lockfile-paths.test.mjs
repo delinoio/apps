@@ -118,7 +118,7 @@ test("shared importer edits preserve shared consumers", () => {
   );
 });
 
-test("Lynx UI importer edits select shared checks and the Lane consumer", () => {
+test("Lynx UI importer edits select shared checks and the Lynx consumers", () => {
   const lockfiles = {
     baseLockfile: lockfile("packages/lynx-ui"),
     headLockfile: lockfile("packages/lynx-ui", "19.2.9"),
@@ -127,7 +127,7 @@ test("Lynx UI importer edits select shared checks and the Lane consumer", () => 
     Object.entries(select(["pnpm-lock.yaml"], lockfiles))
       .filter(([, selected]) => selected)
       .map(([owner]) => owner),
-    ["lane"],
+    ["lane", "anydash"],
   );
   assert.deepEqual(selectChecks(["pnpm-lock.yaml"], lockfiles), {
     tooling: false,

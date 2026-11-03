@@ -226,6 +226,11 @@ export function select(paths, lockfiles) {
       paths.some((path) =>
         /^(apps\/mcpa\/|protos\/(?:mcpa\/|[^/]+$))/u.test(path),
       ),
+    anydash:
+      repositoryShared ||
+      shared.lynxUi ||
+      shared.protocol ||
+      paths.some((path) => /^(apps\/anydash\/|protos\/anydash\/)/u.test(path)),
     perfine_fixtures:
       repositoryShared ||
       shared.rust ||

@@ -12,10 +12,12 @@ import {
   Button,
   Checkbox,
   Dialog,
+  FocusContainment,
   Input,
   Switch,
   Tabs,
   UIProvider,
+  useFocusContainment,
   type FocusHandle,
 } from "../src";
 import * as theme from "../src/theme";
@@ -788,4 +790,57 @@ it("uses the current native order for inserted, removed and moved dialog control
   expect(await press("Tab", true)).toContain("lui-dialog-close");
   unmount();
   expect(restore.current.focus).toHaveBeenCalledTimes(1);
+});
+
+it("contains Tab focus in rendered order for app-owned dialog layouts", async () => {
+  const first = createRef<FocusHandle>();
+  function Custom() {
+    const { scope, move } = useFocusContainment();
+    return (
+      <FocusContainment scope={scope}>
+        <view
+          className="custom-backdrop"
+          bindkeydown={(event: { key: string; shiftKey?: boolean }) =>
+            event.key === "Tab" && move(!!event.shiftKey)
+          }
+        >
+          <Button id="custom-first" onPress={() => {}} focusRef={first}>
+            First
+          </Button>
+          <Button id="custom-second" onPress={() => {}}>
+            Second
+          </Button>
+          <Button id="custom-disabled" onPress={() => {}} disabled>
+            Disabled
+          </Button>
+        </view>
+      </FocusContainment>
+    );
+  }
+  const { container } = render(<Custom />);
+  const focused = () =>
+    rstest
+      .mocked(theme.invoke)
+      .mock.calls.filter(([, method]) => method === "setFocus")
+      .map(
+        ([ref]) =>
+          container.querySelector(
+            (ref as unknown as { selector: string }).selector,
+          )?.id,
+      );
+  await waitFor(() => expect(first.current).not.toBeNull());
+  act(() => first.current!.focus());
+  const press = async (shiftKey = false) => {
+    const before = focused().length;
+    fireEvent.keydown(container.querySelector(".custom-backdrop")!, {
+      key: "Tab",
+      shiftKey,
+    });
+    await waitFor(() => expect(focused()).toHaveLength(before + 1));
+    return focused().at(-1);
+  };
+  expect(focused()).toEqual(["custom-first"]);
+  expect(await press()).toBe("custom-second");
+  expect(await press()).toBe("custom-first");
+  expect(await press(true)).toBe("custom-second");
 });

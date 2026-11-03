@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- packages/lynx-ui dark tokens. -->
+<resources>
+    <color name="anydash_bg">#1B1D20</color>
+    <color name="anydash_fg">#F5F6F7</color>
+    <color name="anydash_muted">#B9BEC8</color>
+    <color name="anydash_surface">#2B2E33</color>
+    <color name="anydash_tile">#98B8FF</color>
+</resources>

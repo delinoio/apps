@@ -240,6 +240,82 @@ importers:
         specifier: 0.28.2
         version: 0.28.2
 
+  apps/anydash:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.16.0
+        version: 2.16.0
+      '@connectrpc/connect':
+        specifier: 2.2.0
+        version: 2.2.0(@bufbuild/protobuf@2.16.0)
+      '@connectrpc/connect-query':
+        specifier: 2.3.1
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@logto/browser':
+        specifier: 3.1.1
+        version: 3.1.1
+      '@lynx-js/react':
+        specifier: 0.129.0
+        version: 0.129.0(@lynx-js/types@4.3.0)(@types/react@19.2.14)
+      '@lynx-js/web-core':
+        specifier: 0.26.5
+        version: 0.26.5(tslib@2.8.1)
+      '@packages/lynx-ui':
+        specifier: workspace:*
+        version: link:../../packages/lynx-ui
+      '@repo/protos':
+        specifier: workspace:*
+        version: link:../../protos
+      '@tanstack/react-query':
+        specifier: 5.101.4
+        version: 5.101.4(react@19.2.8)
+      text-encoding-utf-8:
+        specifier: 1.0.2
+        version: 1.0.2
+    devDependencies:
+      '@lynx-js/lynxtron':
+        specifier: 0.0.30
+        version: 0.0.30(supports-color@8.1.1)
+      '@lynx-js/react-rsbuild-plugin':
+        specifier: 0.22.0
+        version: 0.22.0(@lynx-js/react@0.129.0(@lynx-js/types@4.3.0)(@types/react@19.2.14))(@lynx-js/rspeedy@0.18.3(@rspack/core@2.2.9(@swc/helpers@0.5.23))(@types/node@24.19.2)(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(tslib@2.8.1)(typescript@5.9.3)(webpack@5.112.2(cssnano@7.1.9(postcss@8.5.30))(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(postcss@8.5.30)(svgo@4.1.0)))(@rsbuild/core@2.2.9)(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(tslib@2.8.1)(webpack@5.112.2(cssnano@7.1.9(postcss@8.5.30))(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(postcss@8.5.30)(svgo@4.1.0))
+      '@lynx-js/rspeedy':
+        specifier: 0.18.3
+        version: 0.18.3(@rspack/core@2.2.9(@swc/helpers@0.5.23))(@types/node@24.19.2)(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(tslib@2.8.1)(typescript@5.9.3)(webpack@5.112.2(cssnano@7.1.9(postcss@8.5.30))(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(postcss@8.5.30)(svgo@4.1.0))
+      '@lynx-js/testing-environment':
+        specifier: 0.4.0
+        version: 0.4.0
+      '@lynx-js/types':
+        specifier: 4.3.0
+        version: 4.3.0
+      '@lynx-js/web-elements':
+        specifier: 0.12.15
+        version: 0.12.15(tslib@2.8.1)
+      '@rstest/core':
+        specifier: 0.12.4
+        version: 0.12.4(jsdom@20.0.3(supports-color@8.1.1))
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      '@types/react':
+        specifier: 19.2.14
+        version: 19.2.14
+      axe-core:
+        specifier: 4.11.0
+        version: 4.11.0
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      jsdom:
+        specifier: 20.0.3
+        version: 20.0.3(supports-color@8.1.1)
+      playwright:
+        specifier: 1.62.0
+        version: 1.62.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   apps/delidev:
     dependencies:
       '@packages/ui':
@@ -1138,9 +1214,19 @@ packages:
       preact-render-to-string:
         optional: true
 
+  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.30':
+    resolution: {integrity: sha512-98LpK5t1uaranZN/h9IdGbZ41asLyiitJAFLiopV/WgV0ClB/NAgv6VMz+Iw3W5moYSYh74i4VQ9ruQ1At/ETg==}
+    cpu: [arm64]
+    os: [darwin]
+
   '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.31':
     resolution: {integrity: sha512-zFJOEZsWZkeSSNEgjOFsKUFkt4qA68S2Bs3Lg3fnv5rmDQcuefaCzwufs5t2MVK26I/mLKAWQDq5aPnfSVs7aw==}
     cpu: [arm64]
+    os: [darwin]
+
+  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.30':
+    resolution: {integrity: sha512-JZGjTw6xrQvmWEbSjv0Fpxut2UsQ8YZpAknhBsyreoKZL3g+akMMmGNwXcMvf3gOZS07hSpL6PfglZH3lxGLtA==}
+    cpu: [x64]
     os: [darwin]
 
   '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.31':
@@ -1148,15 +1234,30 @@ packages:
     cpu: [x64]
     os: [darwin]
 
+  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.30':
+    resolution: {integrity: sha512-4gqcTxHgS25Plp8sCy34/uvrukB7ZMzx9cNHPa3qJJcjBhc8iPHcYk8R/EwKU4IljA/ntIDuAK+aPW5P4RT3OA==}
+    cpu: [x64]
+    os: [linux]
+
   '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.31':
     resolution: {integrity: sha512-HLwK9qa5kRcyHqEcXJ/OYEmjOx5sOewMzVoyTBvoxf6/SDQOGlaCClfXM7PyF232pOdDdAyLlEMNF8YfaZNY0Q==}
     cpu: [x64]
     os: [linux]
 
+  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.30':
+    resolution: {integrity: sha512-j7Vs/MR2V95yvEsionYKzsV6hQ2Fq2+9LzEfjlZXArToTPoYLZMn+hF3xNt3AH4GM5wkJ1HblFxgG42Vz8xgHA==}
+    cpu: [x64]
+    os: [win32]
+
   '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.31':
     resolution: {integrity: sha512-xMzfFRWbQu8XdUZtuidWlAdUzM0bjNpYfyxm+n+Nd2TfAuvmPXy+1UJE54CPXEWjv3o2bk6OvGPgcvYfUVBc5Q==}
     cpu: [x64]
     os: [win32]
+
+  '@lynx-js/lynxtron@0.0.30':
+    resolution: {integrity: sha512-homMpV75s2tp7fsWyCl5xR1KxfCoGtA5ms1kqubQFb/7ybTXhBSBOJJd/8J53TNpBhZ5OZ1tGKivh/x7mfi/2Q==}
+    engines: {node: ^22.18.0 || ^24.0.0 || ^26.0.0}
+    hasBin: true
 
   '@lynx-js/lynxtron@0.0.31':
     resolution: {integrity: sha512-LvJYGzlopIlUhAsOHrkFD4kYjBJbaWRniNORewF5bK1DFqjZcbaknyxK/aV0s9qshEaiVAVvlnCzQD+DYqXFZQ==}
@@ -3069,6 +3170,10 @@ packages:
     resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
     engines: {node: '>= 0.4'}
 
+  axe-core@4.11.0:
+    resolution: {integrity: sha512-ilYanEU8vxxBexpJd8cWM4ElSQq4QctCLKih0TSfjIfCQTeyH/6zVrmIJfLPrKTKJRbiG+cfnZbQIjAlJmF1jQ==}
+    engines: {node: '>=4'}
+
   background-only@0.0.1:
     resolution: {integrity: sha512-YXR2zshAf3qs3jnpApQaDUG0x4L6YWpSZfLDhdeiCFxfp/n8YwfoAQ1hAigEF3VpXOMOJeZYFWtBbiFv/v2Qfg==}
 
@@ -3444,10 +3549,6 @@ packages:
 
   es-module-lexer@2.3.2:
     resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
-
-  es-object-atoms@1.1.1:
-    resolution: {integrity: sha512-FGgH2h8zKNim9ljj7dankFPcICIK9Cp5bm+c2gQSYePhpaG5+esrLODihIorn+Pe6FGJzWhXQotPv73jTaldXA==}
-    engines: {node: '>= 0.4'}
 
   es-object-atoms@1.1.2:
     resolution: {integrity: sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==}
@@ -5852,17 +5953,44 @@ snapshots:
 
   '@lynx-js/internal-preact@11.0.0-rc.1-20260903085447-f95471a': {}
 
+  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.30':
+    optional: true
+
   '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.31':
+    optional: true
+
+  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.30':
     optional: true
 
   '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.31':
     optional: true
 
+  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.30':
+    optional: true
+
   '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.31':
+    optional: true
+
+  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.30':
     optional: true
 
   '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.31':
     optional: true
+
+  '@lynx-js/lynxtron@0.0.30(supports-color@8.1.1)':
+    dependencies:
+      '@npmcli/config': 10.14.0
+      node-fetch: 3.3.2
+      pacote: 21.5.1(supports-color@8.1.1)
+      proper-lockfile: 4.1.2
+      zip-lib: 1.4.0
+    optionalDependencies:
+      '@lynx-js/lynxtron-runtime-darwin-arm64-devtool': 0.0.30
+      '@lynx-js/lynxtron-runtime-darwin-x64-devtool': 0.0.30
+      '@lynx-js/lynxtron-runtime-linux-x64-devtool': 0.0.30
+      '@lynx-js/lynxtron-runtime-win32-x64-devtool': 0.0.30
+    transitivePeerDependencies:
+      - supports-color
 
   '@lynx-js/lynxtron@0.0.31(supports-color@8.1.1)':
     dependencies:
@@ -7848,6 +7976,8 @@ snapshots:
     dependencies:
       possible-typed-array-names: 1.1.0
 
+  axe-core@4.11.0: {}
+
   background-only@0.0.1: {}
 
   bail@2.0.2: {}
@@ -8220,7 +8350,7 @@ snapshots:
       data-view-byte-offset: 1.0.1
       es-define-property: 1.0.1
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       es-set-tostringtag: 2.1.0
       es-to-primitive: 1.3.4
       function.prototype.name: 1.2.0
@@ -8270,10 +8400,6 @@ snapshots:
   es-errors@1.3.0: {}
 
   es-module-lexer@2.3.2: {}
-
-  es-object-atoms@1.1.1:
-    dependencies:
-      es-errors: 1.3.0
 
   es-object-atoms@1.1.2:
     dependencies:
@@ -8460,7 +8586,7 @@ snapshots:
       call-bind-apply-helpers: 1.0.2
       es-define-property: 1.0.1
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       function-bind: 1.1.2
       get-proto: 1.0.1
       gopd: 1.2.0
@@ -8473,7 +8599,7 @@ snapshots:
   get-proto@1.0.1:
     dependencies:
       dunder-proto: 1.0.1
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
 
   get-symbol-description@1.1.0:
     dependencies:
@@ -9734,7 +9860,7 @@ snapshots:
       call-bind: 1.0.9
       call-bound: 1.0.4
       define-properties: 1.2.1
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       has-symbols: 1.1.0
       object-keys: 1.1.1
 
@@ -10184,7 +10310,7 @@ snapshots:
       define-properties: 1.2.1
       es-abstract: 1.24.2
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       get-intrinsic: 1.3.0
       get-proto: 1.0.1
       which-builtin-type: 1.2.1
@@ -10410,7 +10536,7 @@ snapshots:
     dependencies:
       dunder-proto: 1.0.1
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
 
   shiki@4.5.0:
     dependencies:
@@ -10540,7 +10666,7 @@ snapshots:
     dependencies:
       call-bind: 1.0.9
       define-properties: 1.2.1
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
 
   stringify-entities@4.0.4:
     dependencies:

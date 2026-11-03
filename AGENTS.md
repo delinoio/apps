@@ -213,7 +213,7 @@ Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfin
 
 ## AnyDash ownership
 
-- Planned `apps/anydash` owns the shared ReactLynx client, the web host and the desktop, mobile and native widget hosts.
+- `apps/anydash` owns the shared ReactLynx client, the web host and the desktop, mobile and native widget hosts.
 - `cmds/anydash` owns the Rust `anydash` CLI and shared collector in the root Cargo workspace; `servers/anydash-api` owns the Rust API and worker in the server workspace; `protos/anydash/v1` owns the schema and generated Go and TypeScript bindings; planned `packages/anydash` owns the `@delinoio/anydash` installer and install scripts.
 - Read [AnyDash project](docs/project-anydash.md) and the domain contracts it lists before changing these paths.
 

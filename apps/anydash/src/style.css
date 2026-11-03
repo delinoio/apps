@@ -1,0 +1,559 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* App-local tokens the design record adds to packages/lynx-ui: warning (amber)
+   and info (blue) foreground/background pairs that meet WCAG AA contrast. */
+.lui-root {
+  --ad-warning: #8a5a00;
+  --ad-warning-bg: #fff6e0;
+  --ad-info: #1f4fb8;
+  --ad-info-bg: #eef3ff;
+  --ad-skeleton: #eceef1;
+  --ad-skeleton-highlight: #f6f7f8;
+  --ad-scrim: rgba(32, 33, 36, 0.4);
+}
+.lui-dark {
+  --ad-warning: #ffcf70;
+  --ad-warning-bg: #3d3018;
+  --ad-info: #a9c3ff;
+  --ad-info-bg: #1f2b45;
+  --ad-skeleton: #33363c;
+  --ad-skeleton-highlight: #3d4047;
+  --ad-scrim: rgba(0, 0, 0, 0.55);
+}
+
+/* The app fills the host view; the scroll view, not the app, takes the
+   overflow so long pages (settings, tall dashboards) stay reachable. */
+.ad-app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: var(--lui-bg);
+}
+.ad-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+.ad-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  width: 100%;
+  max-width: 1440px;
+  align-self: center;
+}
+.ad-text,
+.ad-logo,
+.ad-pill-label,
+.ad-small,
+.ad-title,
+.ad-big,
+.ad-np,
+.ad-heading,
+.ad-badge-label,
+.ad-mono {
+  font-family: sans-serif;
+  color: var(--lui-fg);
+}
+.ad-text {
+  font-size: 14px;
+  line-height: 20px;
+}
+.ad-muted {
+  color: var(--lui-muted);
+}
+.ad-strong {
+  font-weight: 700;
+}
+.ad-danger-text {
+  color: var(--lui-danger);
+}
+
+/* Header row */
+.ad-top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ad-logo {
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 24px;
+}
+.ad-spacer {
+  flex: 1;
+}
+.ad-pill {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--lui-border);
+  border-radius: 999px;
+  background-color: var(--lui-bg);
+}
+.ad-pill-label {
+  font-size: 13px;
+  line-height: 18px;
+}
+.ad-small {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--lui-muted);
+}
+.ad-small-button {
+  min-height: 32px;
+  min-width: 32px;
+  padding: 5px 10px;
+  border: 1px solid var(--lui-border);
+  border-radius: 10px;
+  background-color: var(--lui-bg);
+}
+.ad-small-button .lui-button-label {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--lui-fg);
+}
+.ad-tooltip {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background-color: var(--lui-fg);
+}
+.ad-tooltip .ad-small {
+  color: var(--lui-bg);
+}
+
+/* Notices (info, warning) */
+.ad-notice {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+.ad-notice-body {
+  flex: 1;
+  font-size: 13px;
+  line-height: 18px;
+}
+.ad-notice-info {
+  background-color: var(--ad-info-bg);
+}
+.ad-notice-info .ad-notice-body,
+.ad-notice-info .ad-notice-icon {
+  color: var(--ad-info);
+}
+.ad-notice-warning {
+  background-color: var(--ad-warning-bg);
+}
+.ad-notice-warning .ad-notice-body,
+.ad-notice-warning .ad-notice-icon {
+  color: var(--ad-warning);
+}
+.ad-notice-danger {
+  background-color: var(--lui-danger-bg);
+}
+.ad-notice-danger .ad-notice-body,
+.ad-notice-danger .ad-notice-icon {
+  color: var(--lui-danger);
+}
+.ad-notice-icon {
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* Widget grid */
+/* Cells pad their right and bottom edges; the negative margin keeps the
+   last column flush with the header. */
+.ad-grid {
+  position: relative;
+  margin-right: -10px;
+}
+.ad-cell {
+  position: absolute;
+  padding-right: 10px;
+  padding-bottom: 10px;
+}
+.ad-flow {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin-right: -10px;
+}
+.ad-flow-half {
+  width: 50%;
+  padding-right: 10px;
+  padding-bottom: 10px;
+}
+.ad-flow-full {
+  width: 100%;
+  padding-right: 10px;
+  padding-bottom: 8px;
+}
+
+/* Widget card */
+.ad-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  min-height: 118px;
+  padding: 12px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background-color: var(--lui-surface);
+  overflow: hidden;
+}
+.ad-widget-compact {
+  min-height: 0px;
+}
+.ad-widget-focused {
+  border-color: var(--lui-focus);
+}
+.ad-widget-selected {
+  border-color: var(--lui-focus);
+  border-style: dashed;
+}
+.ad-title {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--lui-muted);
+}
+.ad-big {
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 700;
+}
+.ad-np {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--lui-muted);
+}
+.ad-stale {
+  opacity: 0.55;
+}
+.ad-bar {
+  height: 6px;
+  border-radius: 3px;
+  background-color: var(--lui-border);
+  overflow: hidden;
+}
+.ad-bar-fill {
+  height: 6px;
+  background-color: var(--lui-fg);
+}
+.ad-chart {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 2px;
+  height: 40px;
+}
+.ad-chart-bar {
+  flex: 1;
+  min-height: 1px;
+  border-radius: 2px;
+  background-color: var(--lui-fg);
+}
+.ad-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ad-mono {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+/* Badges: every state badge carries a text label, never color alone. */
+.ad-badge {
+  align-self: flex-start;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+.ad-badge-label {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+}
+.ad-badge-danger {
+  background-color: var(--lui-danger-bg);
+}
+.ad-badge-danger .ad-badge-label {
+  color: var(--lui-danger);
+}
+.ad-badge-warning {
+  background-color: var(--ad-warning-bg);
+}
+.ad-badge-warning .ad-badge-label {
+  color: var(--ad-warning);
+}
+.ad-badge-info {
+  background-color: var(--ad-info-bg);
+}
+.ad-badge-info .ad-badge-label {
+  color: var(--ad-info);
+}
+.ad-badge-success {
+  background-color: var(--lui-success-bg);
+}
+.ad-badge-success .ad-badge-label {
+  color: var(--lui-success);
+}
+.ad-badge-neutral {
+  background-color: var(--lui-bg);
+  border-color: var(--lui-border);
+  border-style: dashed;
+}
+.ad-badge-neutral .ad-badge-label {
+  color: var(--lui-muted);
+}
+
+/* Skeletons */
+.ad-sk {
+  border-radius: 6px;
+  background-image: linear-gradient(
+    90deg,
+    var(--ad-skeleton),
+    var(--ad-skeleton-highlight),
+    var(--ad-skeleton)
+  );
+  background-color: var(--ad-skeleton);
+}
+
+/* Centered state panels */
+.ad-screen {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  border: 1px solid var(--lui-border);
+  border-radius: 10px;
+  background-color: var(--lui-bg);
+}
+.ad-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 10px;
+}
+.ad-center .ad-text,
+.ad-center .ad-heading,
+.ad-center .ad-small {
+  text-align: center;
+}
+.ad-heading {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 700;
+}
+.ad-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.ad-ids {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background-color: var(--lui-surface);
+}
+.ad-ids .ad-mono {
+  line-height: 18px;
+}
+
+/* Device approval code boxes */
+.ad-code {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 6px;
+}
+.ad-code-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 38px;
+  border: 1.5px solid var(--lui-border);
+  border-radius: 8px;
+}
+.ad-code-box-focus {
+  border-color: var(--lui-focus);
+}
+.ad-code-dash {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 38px;
+}
+.ad-code-char {
+  font-family: sans-serif;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--lui-fg);
+}
+.ad-code-input {
+  position: absolute;
+  top: 0px;
+  left: 0px;
+  right: 0px;
+  bottom: 0px;
+  width: 100%;
+  height: 38px;
+  opacity: 0.01;
+  color: transparent;
+}
+
+/* Dialogs: the record's scrim, 14px radius and right-aligned actions. */
+.ad-dialog-backdrop {
+  position: fixed;
+  top: 0px;
+  right: 0px;
+  bottom: 0px;
+  left: 0px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background-color: var(--ad-scrim);
+}
+.ad-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 100%;
+  padding: 16px;
+  border: 1px solid var(--lui-border);
+  border-radius: 14px;
+  background-color: var(--lui-bg);
+}
+.ad-dialog-title {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+}
+.ad-dialog-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ad-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+}
+.ad-option-selected {
+  background-color: var(--lui-surface);
+}
+.ad-option.lui-focused {
+  border-color: var(--lui-focus);
+}
+
+/* Settings */
+.ad-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--lui-border);
+  border-radius: 10px;
+  background-color: var(--lui-bg);
+}
+.ad-section-title {
+  font-family: sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+  color: var(--lui-fg);
+}
+.ad-list-item {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0px;
+  border-top: 1px solid var(--lui-border);
+}
+.ad-list-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 200px;
+  gap: 2px;
+}
+.ad-link {
+  color: var(--lui-focus);
+  text-decoration: underline;
+}
+.ad-settings {
+  max-width: 760px;
+}
+.ad-editor-bar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background-color: var(--lui-surface);
+}
+.ad-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+.ad-pill .lui-button-label {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+}
+.ad-pill.lui-focused,
+.ad-small-button.lui-focused {
+  border-color: var(--lui-focus);
+}
+.ad-widget-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ad-widget-body .ad-title,
+.ad-widget-body .ad-big,
+.ad-widget-body .ad-np,
+.ad-widget-body .ad-small,
+.ad-widget-body .ad-badge {
+  flex-shrink: 0;
+}
+.ad-widget .ad-small-button {
+  align-self: flex-start;
+}

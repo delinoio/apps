@@ -42,6 +42,65 @@ async function orderedEntries(scope: FocusScope) {
     });
 }
 
+/** Opaque focus scope that `FocusContainment` provides to library controls. */
+export type FocusContainmentScope = FocusScope;
+
+/**
+ * Native focus containment in the current rendered order of the enabled
+ * library controls registered in `scope`, which `FocusContainment` provides.
+ * `Dialog` uses it; apps with their own dialog layout render
+ * `FocusContainment` with this scope and call `move` on Tab.
+ */
+export function useFocusContainment() {
+  const scope = useRef<FocusScope>({
+    entries: new Map(),
+    active: null,
+  }).current;
+  const pending = useRef(Promise.resolve());
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, [scope]);
+  const run = (next: (count: number, index: number) => number) => {
+    pending.current = pending.current.then(async () => {
+      const entries = await orderedEntries(scope);
+      if (!mounted.current || !entries.length) return;
+      const index = entries.findIndex(({ token }) => token === scope.active);
+      entries[next(entries.length, index)]?.entry.focus();
+    });
+  };
+  return {
+    scope: scope as FocusContainmentScope,
+    /** Focuses the first enabled control in rendered order. */
+    focusFirst: () => run(() => 0),
+    /** Focuses the next control or, with `backward`, the previous one. */
+    move: (backward: boolean) =>
+      run((count, index) =>
+        index < 0
+          ? backward
+            ? count - 1
+            : 0
+          : (index + (backward ? -1 : 1) + count) % count,
+      ),
+  };
+}
+
+/** Registers the library controls rendered in `children` with `scope`. */
+export function FocusContainment({
+  scope,
+  children,
+}: {
+  scope: FocusContainmentScope;
+  children: ReactNode;
+}) {
+  return (
+    <FocusContext.Provider value={scope}>{children}</FocusContext.Provider>
+  );
+}
+
 export interface DialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -61,25 +120,13 @@ function OpenDialog({
   initialFocusRef,
   returnFocusRef,
 }: DialogProps) {
-  const scope = useRef<FocusScope>({
-    entries: new Map(),
-    active: null,
-  }).current;
+  const { scope, focusFirst, move } = useFocusContainment();
   const initial = useRef(initialFocusRef);
   const restore = useRef(returnFocusRef);
-  const pending = useRef(Promise.resolve());
-  const mounted = useRef(true);
   useEffect(() => {
-    mounted.current = true;
     if (initial.current?.current) initial.current.current.focus();
-    else {
-      pending.current = pending.current.then(async () => {
-        const entries = await orderedEntries(scope);
-        if (mounted.current) entries[0]?.entry.focus();
-      });
-    }
+    else focusFirst();
     return () => {
-      mounted.current = false;
       restore.current.current?.focus();
     };
   }, [scope]);
@@ -92,22 +139,10 @@ function OpenDialog({
     if (event.key !== "Tab") return;
     event.preventDefault?.();
     event.stopPropagation?.();
-    const shiftKey = event.shiftKey;
-    pending.current = pending.current.then(async () => {
-      const entries = await orderedEntries(scope);
-      if (!mounted.current || !entries.length) return;
-      const index = entries.findIndex(({ token }) => token === scope.active);
-      const next =
-        index < 0
-          ? shiftKey
-            ? entries.length - 1
-            : 0
-          : (index + (shiftKey ? -1 : 1) + entries.length) % entries.length;
-      entries[next].entry.focus();
-    });
+    move(!!event.shiftKey);
   };
   return (
-    <FocusContext.Provider value={scope}>
+    <FocusContainment scope={scope}>
       <view
         className="lui-dialog-backdrop"
         accessibility-exclusive-focus
@@ -131,7 +166,7 @@ function OpenDialog({
           </Button>
         </view>
       </view>
-    </FocusContext.Provider>
+    </FocusContainment>
   );
 }
 export function Dialog(props: DialogProps) {

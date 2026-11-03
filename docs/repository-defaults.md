@@ -80,6 +80,7 @@ All addresses below use the loopback host `127.0.0.1`. Frontend servers fail on 
 | Lane API             | `46326` | Owning API development launcher                                                 | [Server](servers-lane-api-contract.md)                 |
 | Managed CPA frontend | `46328` | `apps/mcpa/rsbuild.config.ts`                                                   | [Web console](apps-mcpa-web-contract.md)               |
 | Managed CPA API      | `46329` | `LISTEN` in `servers/mcpa-api/.env.example`; runtime default matches            | [Server](servers-mcpa-api-contract.md)                 |
+| AnyDash frontend     | `46330` | `apps/anydash/lynx.config.ts`                                                   | [Application foundation](apps-anydash-foundation.md)   |
 | Delcore API          | `8080`  | `LISTEN` in `servers/delcore-api/.env.example`; explicit configuration required | [Server](servers-delcore-api-contract.md)              |
 
 Git Tracker's frontend API URL and API web-origin example point to `http://127.0.0.1:46321` and `http://127.0.0.1:46320`, respectively. Delcore's consumer example defaults to `http://127.0.0.1:8080`. Database and telemetry endpoints retain their service-specific configuration.
