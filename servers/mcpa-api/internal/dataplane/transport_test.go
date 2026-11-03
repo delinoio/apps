@@ -195,6 +195,7 @@ func (e2eKeys) AuthenticateCallKey(_ context.Context, resourceID, _ string) (pro
 type e2eAuthorizer struct{}
 
 func (e2eAuthorizer) AuthorizeCall(context.Context, proxy.CallPrincipal) error { return nil }
+func (e2eAuthorizer) CheckBudgets(context.Context, proxy.CallPrincipal) error  { return nil }
 
 type e2eRouting struct{}
 

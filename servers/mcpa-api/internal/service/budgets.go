@@ -81,16 +81,14 @@ func (s *Service) tenantBudget(ctx context.Context, tenantID string, db store.DB
 	return budgetView(normalizeStoredLimit(limit), billed, period), nil
 }
 
-// normalizeStoredLimit renders a PostgreSQL numeric in canonical form.
+// normalizeStoredLimit renders a PostgreSQL numeric in canonical form. It only
+// trims trailing fraction zeros (numeric keeps the scale it was stored with)
+// and never rounds the stored limit.
 func normalizeStoredLimit(v string) string {
-	if v == "" {
-		return ""
+	if canonical, ok := pricing.CanonicalDecimal(v); ok {
+		return canonical
 	}
-	r, ok := new(big.Rat).SetString(v)
-	if !ok {
-		return v
-	}
-	return pricing.Format(r, 6)
+	return v
 }
 
 // GetResourceBudget returns the resource budget and current spend.

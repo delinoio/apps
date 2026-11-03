@@ -164,20 +164,49 @@ func (m *memKeys) AuthenticateCallKey(_ context.Context, resourceID, secret stri
 }
 
 type funcAuthorizer struct {
-	mu  sync.Mutex
-	err error
+	mu        sync.Mutex
+	err       error
+	budgetErr error
+	// calls records the order of gate invocations.
+	calls []string
 }
 
 func (a *funcAuthorizer) AuthorizeCall(context.Context, CallPrincipal) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.calls = append(a.calls, "authorize")
 	return a.err
+}
+
+func (a *funcAuthorizer) CheckBudgets(context.Context, CallPrincipal) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.calls = append(a.calls, "budgets")
+	return a.budgetErr
 }
 
 func (a *funcAuthorizer) set(err error) {
 	a.mu.Lock()
 	a.err = err
 	a.mu.Unlock()
+}
+
+func (a *funcAuthorizer) setBudget(err error) {
+	a.mu.Lock()
+	a.budgetErr = err
+	a.mu.Unlock()
+}
+
+func (a *funcAuthorizer) reset() {
+	a.mu.Lock()
+	a.calls = nil
+	a.mu.Unlock()
+}
+
+func (a *funcAuthorizer) gates() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.calls...)
 }
 
 type memRouting struct {

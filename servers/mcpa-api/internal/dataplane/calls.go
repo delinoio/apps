@@ -162,10 +162,10 @@ func dependencyUnavailable() error {
 	return proxy.Reject(proxy.RejectionDependencyUnavailable, "a required service is unavailable; retry later")
 }
 
-// AuthorizeCall requires an ACTIVE tenant, an allowed paid
-// Authorize(invoke_models) for the key's issuer and unexhausted resource
-// and tenant budgets. Delcore results come from the allowed-only cache;
-// errors fail closed.
+// AuthorizeCall requires an ACTIVE tenant and an allowed paid
+// Authorize(invoke_models) for the key's issuer. Delcore results come from
+// the allowed-only cache; errors fail closed. Budgets are checked separately
+// by CheckBudgets, after the model allowlist.
 func (a *CallAuthorizer) AuthorizeCall(ctx context.Context, p proxy.CallPrincipal) error {
 	state, err := a.dc.TenantState(ctx, p.TenantID)
 	if err != nil {
@@ -187,10 +187,13 @@ func (a *CallAuthorizer) AuthorizeCall(ctx context.Context, p proxy.CallPrincipa
 		}
 		return proxy.Reject(proxy.RejectionTenantInactive, "the tenant cannot make paid model calls")
 	}
-	return a.checkBudgets(ctx, p)
+	return nil
 }
 
-func (a *CallAuthorizer) checkBudgets(ctx context.Context, p proxy.CallPrincipal) error {
+// CheckBudgets requires unexhausted resource and tenant budgets. Calls
+// without a budget need no billing period; an unreadable budget, period or
+// spend fails closed.
+func (a *CallAuthorizer) CheckBudgets(ctx context.Context, p proxy.CallPrincipal) error {
 	rid, err := uuid.Parse(p.ResourceID)
 	if err != nil {
 		return invalidKey()

@@ -66,7 +66,7 @@ All surfaces are served from the public API origin.
 
 Only the `/r/{resource_id}/...` surface is metered. Management, console, authentication, OAuth, MCP and operational traffic is free and creates no billing event.
 
-Every response carries `X-Mcpa-Request-Id`. On the call surface its value is the UUID v7 call record ID. Connect errors also carry the `trace_id` in `mcpa.v1.ErrorDetail`.
+Every response carries `X-Mcpa-Request-Id`, including the 404 and 405 responses that the router generates before a route runs. The value is assigned before routing and stays the same for the whole request. On the call surface its value is the UUID v7 call record ID. Connect errors also carry the `trace_id` in `mcpa.v1.ErrorDetail`.
 
 ### Console session and CSRF
 
@@ -89,6 +89,7 @@ Console and interactive MCP access require Logto MFA evidence in the access toke
 - The server accepts either that claim with value `true` or a standard `amr` array that contains `mfa`, `otp` or `hwk`.
 - A console or interactive MCP token without evidence is rejected with `ERROR_REASON_MFA_REQUIRED` and `reauthentication_url` set to `MCPA_MFA_REAUTH_URL`. On HTTP surfaces the rejection is 403 `{"error":"mfa_required","reauthentication_url":"..."}`. The console or MCP client sends the user to that URL to enroll in MFA or to reauthenticate.
 - A refreshed token that lost the evidence requires reauthentication. The server never caches a positive MFA result beyond the token that carried it.
+- A console request admitted with a session that still carried evidence can refresh the Delcore token before the request finishes. When that refresh returns a token without evidence, the session is downgraded and the request fails with `ERROR_REASON_MFA_REQUIRED` and the `MCPA_MFA_REAUTH_URL` reauthentication URL, not `ERROR_REASON_UNAUTHENTICATED`. `GetViewer`, `ListTenantGroups`, `ListResources` and per-resource reads return no data on that request, and a stale group snapshot is not served in its place. Later `GET /auth/session` calls return the 403 `mfa_required` response with a CSRF token that permits logout. A refresh that Logto rejects with `invalid_grant` still deletes the session and returns `ERROR_REASON_UNAUTHENTICATED`. A fresh group snapshot needs no Delcore token, so a request that reads only it is served, and the next request is rejected. Interactive MCP requests keep their grant-scoped behavior: a grant refresh without evidence fails and revokes the grant.
 - Delcore personal keys are exempt from MFA.
 
 ### MCP and the OAuth broker
@@ -144,6 +145,9 @@ Group-membership snapshot:
 
 - Delcore offers registered services no machine-to-machine read of group membership. The server therefore stores a per-tenant snapshot of group IDs, names and member user IDs.
 - The snapshot is refreshed from `ListGroups` whenever a console or MCP user session operates in that tenant, at most once per `MCPA_AUTHORIZE_CACHE_TTL`.
+- `ListTenantGroups` uses the same refresh, so opening the ACL editor repeatedly does not call `ListGroups` again within the TTL. The group list can therefore lag a newly created Delcore group by up to one `MCPA_AUTHORIZE_CACHE_TTL`. A personal key reads the stored snapshot and never refreshes it.
+- Refreshes of one tenant are serialized across replicas with a transaction-scoped PostgreSQL advisory lock. A caller that waited for the lock reads the refresh time again and skips Delcore when another caller refreshed the snapshot. The wait, the `ListGroups` call and the snapshot write together are bounded by `DEPENDENCY_TIMEOUT`, which also bounds how long the transaction holds the lock.
+- A failed refresh keeps the previous snapshot and its refresh time. `ListTenantGroups` then serves the previous snapshot and logs the failure. It reports the failure when the tenant has no snapshot yet or when Delcore rejected the user's token.
 - Group ACL entries resolve through the latest snapshot. Delcore capability checks stay live. See [known limits](#known-limits).
 
 ### Authorization
@@ -154,7 +158,7 @@ Every request resolves to an actor kind (`ACTOR_KIND_CONSOLE`, `ACTOR_KIND_MCP` 
 - **Double check.** Every per-resource management action requires the Delcore capability `access_resources` and the required role. Resource creation requires `create_resources`. The creator receives a direct `MANAGE` entry in the same transaction that creates the resource. Tenant budget actions require `manage_tenant_budget`. A per-resource mutation rechecks the role in its transaction after it locks the resource, so an ACL change that commits first applies to a pending mutation.
 - **Last manager.** Removing or downgrading the last direct `MANAGE` user entry fails with `ERROR_REASON_FAILED_PRECONDITION`, unless a group holds `MANAGE`.
 - **Visibility.** A caller with no role on a resource receives `ERROR_REASON_NOT_FOUND` for that resource, so its existence is not disclosed. A caller with `INVOKE` who attempts a `MANAGE` action receives `ERROR_REASON_PERMISSION_DENIED`. A Delcore capability denial returns `ERROR_REASON_PERMISSION_DENIED`.
-- **Management tenant state.** Management uses `paid=false` and does not require an `ACTIVE` tenant. Customers of `BLOCKED` or `DELETING` tenants can still view records and remove credentials and keys, but their model calls are denied. This is the management exception that the Delcore consumer contract permits. Tenants that Delcore reports as `DELETED` or `UNKNOWN` are not served.
+- **Management tenant state.** Management uses `paid=false` and does not require an `ACTIVE` tenant. Customers of `BLOCKED` or `DELETING` tenants can still view records and remove credentials and keys, but their model calls are denied. This is the management exception that the Delcore consumer contract permits. Tenants that Delcore reports as `DELETED` or `UNKNOWN` are not served. Delcore authorizes personal keys with a strict tenant lifecycle, so it can deny the unpaid check of a key in a `DELETING` tenant with the single reason `BLOCK_REASON_DELETING`. The server admits that denial for management actions when the decision's tenant and user match the key's attribution. Any other reason, such as `BLOCK_REASON_PERMISSION` alone or next to `BLOCK_REASON_DELETING`, and any denial without reasons stay `ERROR_REASON_PERMISSION_DENIED`. Paid checks, which model calls use, are unchanged.
 
 | Action                                                                                                                                     | Requirement                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
@@ -223,7 +227,7 @@ Master-key rotation replaces the master key without customer-visible downtime:
 ### Model routing
 
 - **Load balancing.** `LOAD_BALANCING_ROUND_ROBIN` is the only mode. It rotates across the resource's accounts of the selected provider. Selection is strictly scoped to the request's resource and never selects another resource's credential.
-- **Allowlist.** An empty `model_allowlist` allows every model that the resource's credentials can serve. A non-empty list allows only exact listed names. The server reads the model from the parsed request (the JSON `model` field, or the Gemini path model) and rejects other models with `model_not_allowed` before it sends anything to the provider. The allowlist has at most 200 entries of 1 to 200 bytes each.
+- **Allowlist.** An empty `model_allowlist` allows every model that the resource's credentials can serve. A non-empty list allows only exact listed names: the requested model string must equal an entry, so a suffixed name such as `model(high)` is allowed only when that exact string is listed, and listing `model` does not allow it. The server reads the model from the parsed request (the JSON `model` field, or the Gemini path model) and rejects other models with `model_not_allowed` before it sends anything to the provider. A body whose top-level object holds the `model` key more than once (compared after JSON unescaping and without case; nested objects are not inspected) is rejected the same way with a message that does not echo the body, for OpenAI and Claude format routes, whether or not the allowlist is empty, because the body is forwarded unchanged and decoders disagree about which occurrence to read. The recorded status is `CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED` and only the response bytes are billed. The allowlist has at most 200 entries of 1 to 200 bytes each. A requested model name longer than 200 bytes, from the body or from the Gemini path, can never match an entry, so the server rejects it with `model_not_allowed` and the message `the model name is too long` before it reads the allowlist. The message does not echo the name, and the call record and log line carry the name truncated to 200 bytes on a UTF-8 boundary. Names of up to 200 bytes behave as before.
 - **No retries.** SDK retries are disabled: the retry count is 0 and the maximum credentials per request is 1. Provider failures, including 429, 5xx and expired or invalid authentication, go back to the caller with the provider's status and body. The server never retries another account or provider.
 - **No credential.** When no credential of the resource can serve the model, the call is rejected with `no_credential` and records `CALL_STATUS_NO_CREDENTIAL`.
 - Model aliases and fallback ordering are out of scope.
@@ -248,13 +252,13 @@ A request under `/r/{resource_id}/` runs these steps in order. No step before st
 
 1. Resolve the resource and verify the call key. A failure returns 401 `invalid_call_key`. Requests rejected at this step are not recorded, metered or billed, because they are not attributable to a valid key.
 2. Check the issuer's effective role. A missing role returns 401 `invalid_call_key`.
-3. Check the tenant state (`ACTIVE`) and `Authorize(invoke_models, paid=true)` through the cache. A `BLOCK_REASON_PERMISSION` denial returns 401 `invalid_call_key`. A non-`ACTIVE` state or a billing denial returns 403 `tenant_inactive` (`CALL_STATUS_REJECTED_TENANT`). A Delcore error after cache expiry returns 503 `dependency_unavailable` (`CALL_STATUS_REJECTED_DEPENDENCY`).
+3. Check the tenant state (`ACTIVE`) and `Authorize(invoke_models, paid=true)` through the cache. A `BLOCK_REASON_PERMISSION` denial returns 401 `invalid_call_key` and, like the rejections at steps 1 and 2, is not recorded, metered or billed. A non-`ACTIVE` state or a billing denial returns 403 `tenant_inactive` (`CALL_STATUS_REJECTED_TENANT`). A Delcore error after cache expiry returns 503 `dependency_unavailable` (`CALL_STATUS_REJECTED_DEPENDENCY`).
 4. Check the model against the allowlist. A rejection returns 403 `model_not_allowed` (`CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED`).
-5. Check the resource and tenant budgets. A rejection returns 429 `budget_exhausted` (`CALL_STATUS_REJECTED_BUDGET`).
+5. Check the resource and tenant budgets. A rejection returns 429 `budget_exhausted` (`CALL_STATUS_REJECTED_BUDGET`). A request that step 4 rejects never reaches this step, so it neither returns `budget_exhausted` nor increments `mcpa_budget_rejections_total`, whatever the budget state. Calls on resources and tenants without a budget skip the billing period read. Model listings under `/r/{resource_id}/` run the same budget check after the allowlist read.
 6. Select a credential by round-robin. When none can serve the model, return 400 `no_credential`.
 7. Execute through the embedded SDK and stream or return the provider's response in the requested format.
 
-Rejections use the client format's error shape (OpenAI, Claude or Gemini) with the typed code in `error.type` or the equivalent code field, plus `X-Mcpa-Request-Id`. After a valid key, every call creates a call record, including rejections.
+Rejections use the client format's error shape (OpenAI, Claude or Gemini) with the typed code in `error.type` or the equivalent code field, plus `X-Mcpa-Request-Id`. After a valid key, every call creates a call record, including rejections. A 401 `invalid_call_key` raised after the call state exists, which is a permission denial at step 3 or a resource that is deleted or missing when the allowlist is read at step 4, leaves no call record, outbox row, aggregate change or `mcpa_calls_total` sample. The response still carries `X-Mcpa-Request-Id`, and the request is counted in the HTTP request metric and logged without billing fields. Periodic metering checkpoints skip such a call once the rejection is set, so the 401 response bytes are never billed, even when a checkpoint tick lands while the response is written.
 
 ### Byte metering
 
@@ -282,7 +286,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 
 ### Budgets
 
-- Each resource and each tenant can have an optional USD limit, a canonical non-negative decimal of at most 64 characters. Resource managers set the resource limit. Holders of `manage_tenant_budget` set the tenant limit. An empty value removes the limit.
+- Each resource and each tenant can have an optional USD limit, a canonical non-negative decimal of at most 64 characters. Canonical means digits with an optional fraction: no sign, exponent, leading zeros, bare dot, whitespace or non-numeric value. The server removes trailing fraction zeros (`10.50` becomes `10.5`), rejects longer raw input with `invalid_input`, and stores and returns the limit without rounding. The exhaustion check compares exact decimals; `spent_usd` is the spend rounded to six places. Resource managers set the resource limit. Holders of `manage_tenant_budget` set the tenant limit. An empty value removes the limit.
 - The budget period is the tenant's current Delcore billing period, read from `ListMeterAggregates` and cached for `MCPA_AUTHORIZE_CACHE_TTL`.
 - Measured spend is the bytes committed locally by checkpoints for calls that started in the period, multiplied by the per-byte price. It uses exact decimal arithmetic.
 - Daily usage aggregates supply the UTC days that the period fully covers. Budget spend entries supply the partial first and last days. Each entry holds the committed bytes of the calls of one resource that started at one instant. Spend entries outlive every Delcore billing period, so spend from early in a 31-day period stays counted after its call records expire.
@@ -293,7 +297,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 
 ### Usage, errors and audit
 
-- **Usage.** `GetUsage` returns a `UsageSummary` and daily `UsageRow` aggregates. The summary has bytes per segment, total bytes, total GiB (`total_bytes / 2^30`) and the estimated USD (`total_gib × 0.07`), all as exact canonical decimals. Views state that Delcore issues the final bill.
+- **Usage.** `GetUsage` returns a `UsageSummary` and daily `UsageRow` aggregates. The summary has bytes per segment, total bytes, total GiB (`total_bytes / 2^30`) and the estimated USD (`total_gib × 0.07`), all as exact canonical decimals without rounding (up to 30 fraction digits for GiB and 32 for USD, trailing zeros removed). Views state that Delcore issues the final bill.
 - **Errors.** `ListCallRecords` returns request-level call records. Each record has the call outcome category (`CallStatus`), the provider status class (`StatusClass`), a bounded `error_class` and the debug `request_id`.
 - **Filters.** Usage and error views filter by resource, model, provider, call key, status and time range. Without resource filters, tenant-wide results cover the resources on which the caller has the required role.
 - **Stored data.** A call record holds only metadata: start time, resource, key, provider, model, format, streaming flag, status, provider status class, error class, request bytes, response bytes, latency and request ID. Request and response bodies (prompts and outputs) are never stored or logged. SDK request-body logging stays disabled, and there is no opt-in debug body logging.
@@ -327,7 +331,7 @@ A retention worker prunes expired records in bounded batches.
 
 ### Error mapping
 
-Every Connect error carries `mcpa.v1.ErrorDetail` with its reason and trace ID.
+Every Connect error carries `mcpa.v1.ErrorDetail` with its reason and trace ID. This includes a request body that fails to decode as JSON or binary protobuf, such as malformed JSON or a wrongly typed field: the management route answers `invalid_argument` with `ERROR_REASON_INVALID_INPUT`, the fixed message `request body is not a valid message` and no request content, and logs one `management call rejected` line. A body that fails to decode is rejected before authentication.
 
 | Reason                                     | Connect code          |
 | ------------------------------------------ | --------------------- |
@@ -387,7 +391,7 @@ The data plane uses no object storage, so the Cloudflare R2 default does not app
 
 ## Logging
 
-- **Logs.** Use `log/slog` structured logs. The default text handler uses ANSI color. Setting `NO_COLOR` to any value, or setting `LOG_FORMAT=json`, disables color; `json` emits JSON lines. Logs carry the request ID, trace ID, surface, procedure or route, tenant and resource IDs where relevant, bounded outcome categories and durations. They never contain secrets or bodies. Checkpoint failures, poisoned or expired outbox rows and master-key problems log at error level with `alert=true`.
+- **Logs.** Use `log/slog` structured logs. The default text handler uses ANSI color. Setting `NO_COLOR` to any value, or setting `LOG_FORMAT=json`, disables color; `json` emits JSON lines. Logs carry the request ID, trace ID, surface, procedure or route, tenant and resource IDs where relevant, bounded outcome categories and durations. The logger adds `trace_id` (equal to `X-Mcpa-Request-Id`) and `surface` to every line written with a request context on the Connect, `/auth`, `/oauth` and `/mcp` surfaces, so call sites must not add those keys. Lines on the call surface carry `surface` and their call record ID instead of `trace_id`, because that surface replaces the request ID with the call record ID. Startup and background lines carry neither key. They never contain secrets or bodies. Checkpoint failures, poisoned or expired outbox rows and master-key problems log at error level with `alert=true`.
 - **Metrics.** Prometheus metrics use bounded labels only. They have no tenant, resource, key, user or model labels and no secrets.
 
 | Metric                                    | Type      | Labels                                                                  |

@@ -11,6 +11,7 @@ import { Link, paths, TenantTab, useRouter } from "../lib/router";
 import { useCursorPager } from "../lib/pager";
 import { roleLabel } from "../lib/labels";
 import { formatDateTime } from "../lib/format";
+import { descriptionError, nameError } from "../lib/validate";
 import { uuidv7 } from "../lib/uuid";
 import { EmptyState, ErrorState, QueryView } from "../components/states";
 import { Modal } from "../components/modal";
@@ -143,11 +144,14 @@ function CreateResourceDialog({
   const [description, setDescription] = useState("");
   const [touched, setTouched] = useState(false);
   const create = useMutation(rpc.createResource);
-  const nameError = touched && !name.trim() ? "Enter a name." : undefined;
+  const nameProblem = touched ? nameError(name) : undefined;
+  const descriptionProblem = touched
+    ? descriptionError(description)
+    : undefined;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTouched(true);
-    if (!name.trim()) return;
+    if (nameError(name) || descriptionError(description)) return;
     const response = await create
       .mutateAsync({
         requestKey,
@@ -170,7 +174,7 @@ function CreateResourceDialog({
       dismissible={!create.isPending}
     >
       <form className="form" onSubmit={submit} noValidate>
-        <Field label="Name" error={nameError}>
+        <Field label="Name" error={nameProblem}>
           <Input
             autoFocus
             value={name}
@@ -179,7 +183,7 @@ function CreateResourceDialog({
             placeholder="For example, Support assistant"
           />
         </Field>
-        <Field label="Description (optional)">
+        <Field label="Description (optional)" error={descriptionProblem}>
           <Textarea
             value={description}
             maxLength={1000}

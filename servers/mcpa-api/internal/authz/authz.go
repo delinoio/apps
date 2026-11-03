@@ -13,6 +13,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -92,11 +93,13 @@ type Delcore interface {
 
 // Authorizer evaluates management access.
 type Authorizer struct {
-	db         *store.Store
-	dc         Delcore
-	refreshTTL time.Duration
-	log        *slog.Logger
-	now        func() time.Time
+	db             *store.Store
+	dc             Delcore
+	refreshTTL     time.Duration
+	refreshTimeout time.Duration
+	gate           tenantGate
+	log            *slog.Logger
+	now            func() time.Time
 }
 
 // New builds an Authorizer. refreshTTL bounds group snapshot refreshes.
@@ -104,8 +107,34 @@ func New(db *store.Store, dc Delcore, refreshTTL time.Duration, log *slog.Logger
 	return &Authorizer{db: db, dc: dc, refreshTTL: refreshTTL, log: log, now: time.Now}
 }
 
+// keyAllowedForManagement reports whether a personal-key decision admits a
+// management action, which Delcore evaluates with paid=false. Delcore
+// authorizes keys with a strict tenant lifecycle, so a tenant that is being
+// deleted denies even an unpaid check with the single reason
+// BLOCK_REASON_DELETING. Management must stay available in that state so
+// customers can still remove credentials and keys (see the management tenant
+// state rule in the Managed CPA API contract). Any other reason, including
+// BLOCK_REASON_PERMISSION next to DELETING, or an empty reason list on a
+// denial, keeps the denial.
+func keyAllowedForManagement(d delcore.KeyDecision) bool {
+	if d.Allowed {
+		return true
+	}
+	if len(d.Reasons) == 0 {
+		return false
+	}
+	for _, r := range d.Reasons {
+		if r != delcorev1.BlockReason_BLOCK_REASON_DELETING {
+			return false
+		}
+	}
+	return true
+}
+
 // Capability requires a Delcore capability of the principal in tenantID
-// with paid=false. Personal keys act only in their own tenant.
+// with paid=false. Personal keys act only in their own tenant. A personal key
+// of a tenant that Delcore is deleting still passes when its only denial
+// reason is BLOCK_REASON_DELETING.
 func (a *Authorizer) Capability(ctx context.Context, p *auth.Principal, tenantID string, capability delcore.Capability) error {
 	if tenantID == "" {
 		return apperr.InvalidInput("tenant_id is required")
@@ -121,7 +150,7 @@ func (a *Authorizer) Capability(ctx context.Context, p *auth.Principal, tenantID
 			}
 			return apperr.DependencyUnavailable(err)
 		}
-		if !d.Allowed || d.TenantID != tenantID || d.UserID != p.UserID {
+		if !keyAllowedForManagement(d) || d.TenantID != tenantID || d.UserID != p.UserID {
 			return apperr.PermissionDenied("missing Delcore capability " + string(capability))
 		}
 		return nil
@@ -140,29 +169,155 @@ func (a *Authorizer) Capability(ctx context.Context, p *auth.Principal, tenantID
 	return nil
 }
 
+// defaultRefreshTimeout bounds one group snapshot refresh when the operator
+// has not set one with WithRefreshTimeout.
+const defaultRefreshTimeout = 5 * time.Second
+
+// WithRefreshTimeout bounds one group snapshot refresh: the wait for other
+// refreshes of the same tenant, the Delcore ListGroups call and the snapshot
+// write, so no transaction outlives it. The server passes DEPENDENCY_TIMEOUT.
+// Values of zero or less keep the default. It returns a for chaining.
+func (a *Authorizer) WithRefreshTimeout(d time.Duration) *Authorizer {
+	if d > 0 {
+		a.refreshTimeout = d
+	}
+	return a
+}
+
 // RefreshGroups refreshes the tenant group snapshot with the principal's
 // Delcore user token when it is older than the refresh TTL. Failures keep
-// the previous snapshot and are logged; capability checks stay live.
+// the previous snapshot and are logged; capability checks stay live. It is
+// the best-effort form for callers that have no console request to fail,
+// such as the OAuth grant snapshot. Console request paths call
+// RequireGroups, which also reports a lost MFA evidence.
 func (a *Authorizer) RefreshGroups(ctx context.Context, p *auth.Principal, tenantID string) {
-	if !p.HasUserToken() {
-		return
-	}
-	last, err := store.SnapshotRefreshTime(ctx, a.db.Pool, tenantID)
-	if err != nil {
-		a.log.WarnContext(ctx, "read group snapshot time failed", "error", err)
-		return
-	}
-	if !last.IsZero() && a.now().Sub(last) < a.refreshTTL {
-		return
-	}
-	if _, err := a.ReplaceGroups(ctx, p, tenantID); err != nil {
-		a.log.WarnContext(ctx, "group snapshot refresh failed", "error", err)
+	if err := a.RequireGroups(ctx, p, tenantID); err != nil && isMFARequired(err) {
+		a.log.WarnContext(ctx, "group snapshot refresh skipped because the session lost MFA evidence", "error", err)
 	}
 }
 
-// ReplaceGroups reads all tenant groups with the principal's user token and
-// replaces the snapshot. It returns the groups.
-func (a *Authorizer) ReplaceGroups(ctx context.Context, p *auth.Principal, tenantID string) ([]store.Group, error) {
+// RequireGroups is RefreshGroups for console request paths. Other refresh
+// failures keep the previous snapshot and are logged, and it returns only an
+// ERROR_REASON_MFA_REQUIRED error: a console session whose in-request token
+// refresh finds no MFA evidence must not serve data in that request, because
+// the request was admitted with the MFA flag stored before the refresh.
+func (a *Authorizer) RequireGroups(ctx context.Context, p *auth.Principal, tenantID string) error {
+	if !p.HasUserToken() {
+		return nil
+	}
+	if _, err := a.refreshGroupsIfStale(ctx, p, tenantID); err != nil {
+		if isMFARequired(err) {
+			return err
+		}
+		a.log.WarnContext(ctx, "group snapshot refresh failed", "error", err)
+	}
+	return nil
+}
+
+// isMFARequired reports whether err is an MFA-required application error.
+func isMFARequired(err error) bool {
+	var ae *apperr.Error
+	return errors.As(err, &ae) && ae.Reason == mcpav1.ErrorReason_ERROR_REASON_MFA_REQUIRED
+}
+
+// SnapshotGroups returns the tenant's groups after the TTL-aware refresh of
+// RefreshGroups, so that an ACL editor that opens repeatedly does not call
+// Delcore ListGroups more than once per refresh TTL for the tenant, across
+// concurrent callers and replicas. A principal without a user token (a
+// personal key) reads the latest snapshot without a refresh.
+//
+// A failed refresh keeps the previous snapshot and its refresh time. The
+// error is returned when the tenant has no snapshot yet, because the caller
+// would otherwise show an empty group list as if it were current, and when
+// the user's Delcore credentials are the cause, because the user must sign
+// in again. Any other failure is logged and the previous snapshot is served.
+func (a *Authorizer) SnapshotGroups(ctx context.Context, p *auth.Principal, tenantID string) ([]store.Group, error) {
+	if p.HasUserToken() {
+		hadSnapshot, err := a.refreshGroupsIfStale(ctx, p, tenantID)
+		if err != nil {
+			if !hadSnapshot || isCredentialError(err) {
+				return nil, err
+			}
+			a.log.WarnContext(ctx, "group snapshot refresh failed; serving the previous snapshot", "error", err)
+		}
+	}
+	return store.SnapshotGroups(ctx, a.db.Pool, tenantID)
+}
+
+// isCredentialError reports whether err means that the principal's Delcore
+// user credentials are missing, expired or rejected.
+func isCredentialError(err error) bool {
+	if errors.Is(err, auth.ErrNoUserToken) || delcore.IsUnauthenticated(err) || isMFARequired(err) {
+		return true
+	}
+	var ae *apperr.Error
+	return errors.As(err, &ae) && ae.Reason == mcpav1.ErrorReason_ERROR_REASON_UNAUTHENTICATED
+}
+
+// groupRefreshLockKey namespaces the PostgreSQL advisory lock that
+// serializes refreshes of one tenant across replicas.
+const groupRefreshLockKey = "mcpa:group-snapshot-refresh:"
+
+// refreshGroupsIfStale refreshes the tenant snapshot when it is older than
+// the refresh TTL. It reports whether a snapshot existed before the call.
+//
+// Refreshes of one tenant are serialized in two steps. A per-process gate
+// admits one goroutine per tenant, so waiting callers do not each hold a
+// pooled connection. A transaction-scoped PostgreSQL advisory lock then
+// serializes replicas. The refresh time is read again under the lock, so a
+// caller that waited finds the snapshot another caller just wrote and skips
+// Delcore. The lock lives only as long as the transaction, which ends at the
+// refresh timeout at the latest; a failed refresh rolls back and leaves the
+// snapshot and its refresh time unchanged.
+func (a *Authorizer) refreshGroupsIfStale(ctx context.Context, p *auth.Principal, tenantID string) (hadSnapshot bool, err error) {
+	last, err := store.SnapshotRefreshTime(ctx, a.db.Pool, tenantID)
+	if err != nil {
+		return false, err
+	}
+	if a.fresh(last) {
+		return true, nil
+	}
+	timeout := a.refreshTimeout
+	if timeout <= 0 {
+		timeout = defaultRefreshTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	release, err := a.gate.acquire(ctx, tenantID)
+	if err != nil {
+		return !last.IsZero(), err
+	}
+	defer release()
+
+	hadSnapshot = !last.IsZero()
+	err = a.db.InTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, groupRefreshLockKey+tenantID); err != nil {
+			return err
+		}
+		locked, err := store.SnapshotRefreshTime(ctx, tx, tenantID)
+		if err != nil {
+			return err
+		}
+		hadSnapshot = !locked.IsZero()
+		if a.fresh(locked) {
+			return nil
+		}
+		groups, err := a.listGroups(ctx, p, tenantID)
+		if err != nil {
+			return err
+		}
+		return store.ReplaceGroupSnapshot(ctx, tx, tenantID, groups, a.now())
+	})
+	return hadSnapshot, err
+}
+
+// fresh reports whether a snapshot refreshed at last is within the TTL.
+func (a *Authorizer) fresh(last time.Time) bool {
+	return !last.IsZero() && a.now().Sub(last) < a.refreshTTL
+}
+
+// listGroups reads all tenant groups with the principal's user token.
+func (a *Authorizer) listGroups(ctx context.Context, p *auth.Principal, tenantID string) ([]store.Group, error) {
 	token, err := p.DelcoreToken(ctx)
 	if err != nil {
 		return nil, err
@@ -175,10 +330,50 @@ func (a *Authorizer) ReplaceGroups(ctx context.Context, p *auth.Principal, tenan
 	for _, g := range groups {
 		out = append(out, store.Group{ID: g.GetId(), Name: g.GetName(), UserIDs: g.GetUserIds()})
 	}
-	err = a.db.InTx(ctx, func(tx pgx.Tx) error {
-		return store.ReplaceGroupSnapshot(ctx, tx, tenantID, out, a.now())
-	})
-	return out, err
+	return out, nil
+}
+
+// tenantGate admits one holder per tenant key inside this process. Its zero
+// value is ready to use.
+type tenantGate struct {
+	mu      sync.Mutex
+	entries map[string]*gateEntry
+}
+
+type gateEntry struct {
+	slot chan struct{}
+	refs int
+}
+
+// acquire waits for the key's slot or for ctx to end. The returned release
+// function frees the slot.
+func (g *tenantGate) acquire(ctx context.Context, key string) (func(), error) {
+	g.mu.Lock()
+	if g.entries == nil {
+		g.entries = map[string]*gateEntry{}
+	}
+	e := g.entries[key]
+	if e == nil {
+		e = &gateEntry{slot: make(chan struct{}, 1)}
+		g.entries[key] = e
+	}
+	e.refs++
+	g.mu.Unlock()
+
+	unref := func() {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		if e.refs--; e.refs == 0 {
+			delete(g.entries, key)
+		}
+	}
+	select {
+	case e.slot <- struct{}{}:
+		return func() { <-e.slot; unref() }, nil
+	case <-ctx.Done():
+		unref()
+		return nil, ctx.Err()
+	}
 }
 
 // EffectiveRole returns the principal's role on a resource.
@@ -258,7 +453,9 @@ func (a *Authorizer) Resource(ctx context.Context, p *auth.Principal, resourceID
 	if p.IsPersonalKey() && p.KeyTenantID != r.TenantID {
 		return Access{}, apperr.NotFound("resource not found")
 	}
-	a.RefreshGroups(ctx, p, r.TenantID)
+	if err := a.RequireGroups(ctx, p, r.TenantID); err != nil {
+		return Access{}, err
+	}
 	role, err := a.EffectiveRole(ctx, a.db.Pool, r.TenantID, r.ID, p.UserID)
 	if err != nil {
 		return Access{}, apperr.DependencyUnavailable(err)

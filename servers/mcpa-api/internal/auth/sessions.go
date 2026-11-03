@@ -59,6 +59,7 @@ type Sessions struct {
 	apiResource string
 	delcoreRes  string
 	mfaClaim    string
+	reauthURL   string
 	log         *slog.Logger
 	now         func() time.Time
 }
@@ -71,14 +72,17 @@ type SessionsConfig struct {
 	APIResource     string
 	DelcoreResource string
 	MFAClaim        string
-	Log             *slog.Logger
+	// ReauthURL is the MFA enrollment or reauthentication URL reported when a
+	// refresh inside a request finds that the session lost MFA evidence.
+	ReauthURL string
+	Log       *slog.Logger
 }
 
 // NewSessions builds the console session manager.
 func NewSessions(cfg SessionsConfig) *Sessions {
 	return &Sessions{
 		db: cfg.Store, keys: cfg.Keys, logto: cfg.Logto, apiResource: cfg.APIResource,
-		delcoreRes: cfg.DelcoreResource, mfaClaim: cfg.MFAClaim, log: cfg.Log, now: time.Now,
+		delcoreRes: cfg.DelcoreResource, mfaClaim: cfg.MFAClaim, reauthURL: cfg.ReauthURL, log: cfg.Log, now: time.Now,
 	}
 }
 
@@ -375,7 +379,11 @@ func (s *Sessions) principalFromSession(st *SessionState) *Principal {
 			return "", err
 		}
 		if !fresh.Session.MFA {
-			return "", ErrNoUserToken
+			// The refresh stored the downgrade, so later requests are rejected
+			// by cookie authentication. Report the same MFA error to this
+			// request instead of an unauthenticated one, so the console shows
+			// the reauthentication prompt and no data is served.
+			return "", apperr.MFARequired(s.reauthURL)
 		}
 		return fresh.Tokens.DelcoreAccessToken, nil
 	})

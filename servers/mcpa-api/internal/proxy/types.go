@@ -72,9 +72,15 @@ type KeyAuthenticator interface {
 }
 
 // CallAuthorizer applies the tenant, billing and budget gates before any
-// provider contact. It returns nil to allow the call or a *Rejection.
+// provider contact. Each method returns nil to allow the call or a
+// *Rejection. The engine calls AuthorizeCall before it reads the request body
+// and CheckBudgets after the model allowlist, so a request for a model the
+// resource does not allow is never reported as a budget rejection.
 type CallAuthorizer interface {
+	// AuthorizeCall applies the tenant state and paid-invocation gates.
 	AuthorizeCall(ctx context.Context, principal CallPrincipal) error
+	// CheckBudgets applies the resource and tenant budget gates.
+	CheckBudgets(ctx context.Context, principal CallPrincipal) error
 }
 
 // RoutingSource returns the model allowlist of a resource. An empty list
