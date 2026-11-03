@@ -199,7 +199,13 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	wg.Go(func() { e.cp.run(ctx, call, record, stop) })
 
+	// A provider response that exceeds the size limit is cut off by the
+	// metering transport or, for the SDK Claude client, by its relay tunnel.
+	// Streaming calls are exempt from the relay limit because the relay
+	// cannot see the Content-Type inside TLS.
+	e.relay.watchCall(call.id, callWatch{exempt: call.isStreaming, onLimit: call.markResponseTooLarge})
 	e.serveCall(cw, r, call, rt, rest)
+	cw.finish()
 
 	close(stop)
 	wg.Wait()

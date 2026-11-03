@@ -26,7 +26,10 @@ const (
 	ErrorClassInvalidCallKey        ErrorClass = "invalid_call_key"
 	ErrorClassNoCredential          ErrorClass = "no_credential"
 	ErrorClassRequestTooLarge       ErrorClass = "request_too_large"
-	ErrorClassInternal              ErrorClass = "internal"
+	// ErrorClassProviderResponseTooLarge marks a provider response that
+	// exceeded Options.MaxProviderResponseBytes.
+	ErrorClassProviderResponseTooLarge ErrorClass = "provider_response_too_large"
+	ErrorClassInternal                 ErrorClass = "internal"
 )
 
 // statusLabel returns the bounded metric label for a call status.
@@ -111,6 +114,8 @@ func rejectionOutcome(code RejectionCode) (mcpav1.CallStatus, ErrorClass) {
 		return mcpav1.CallStatus_CALL_STATUS_NO_CREDENTIAL, ErrorClassNoCredential
 	case RejectionRequestTooLarge:
 		return mcpav1.CallStatus_CALL_STATUS_INTERNAL_ERROR, ErrorClassRequestTooLarge
+	case RejectionProviderError:
+		return mcpav1.CallStatus_CALL_STATUS_PROVIDER_ERROR, ErrorClassProviderResponseTooLarge
 	default:
 		return mcpav1.CallStatus_CALL_STATUS_INTERNAL_ERROR, ErrorClassInternal
 	}
@@ -126,6 +131,9 @@ type outcomeInput struct {
 	sentStreamData  bool
 	clientCancelled bool
 	customerStatus  int
+	// responseTooLarge is set when a provider response exceeded the size
+	// limit and was cut off.
+	responseTooLarge bool
 }
 
 // outcome is the classified result of a call.
@@ -162,6 +170,10 @@ func classify(in outcomeInput) outcome {
 		return out
 	}
 	switch {
+	case in.responseTooLarge:
+		// The cut-off is the provider's fault and the customer sees a 502,
+		// so it counts as a server-side failure in the bounded metric label.
+		out.failureClass = "5xx"
 	case in.networkError:
 		out.failureClass = "network"
 	case in.providerStatus == 401 || in.providerStatus == 403:
@@ -176,6 +188,8 @@ func classify(in outcomeInput) outcome {
 	switch {
 	case in.clientCancelled:
 		out.status, out.errorClass = mcpav1.CallStatus_CALL_STATUS_CLIENT_CANCELLED, ErrorClassClientCancelled
+	case in.responseTooLarge:
+		out.status, out.errorClass = mcpav1.CallStatus_CALL_STATUS_PROVIDER_ERROR, ErrorClassProviderResponseTooLarge
 	case in.streamFailed && in.sentStreamData:
 		out.status, out.errorClass = mcpav1.CallStatus_CALL_STATUS_STREAM_INTERRUPTED, ErrorClassStreamInterrupted
 		if out.failureClass == "" {

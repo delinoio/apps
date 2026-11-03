@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -74,6 +75,21 @@ type upstreamRelay struct {
 	// without identity.
 	calls map[string]map[*tunnel]struct{}
 	open  int
+	// watches holds the response-limit hooks of calls in flight (see
+	// watchCall).
+	watches map[string]callWatch
+	// maxResponseBytes bounds the provider-to-client bytes of one tunnel.
+	maxResponseBytes int64
+}
+
+// callWatch connects a call to the response limit of its tunnels.
+type callWatch struct {
+	// exempt reports whether the call's tunnels are exempt from the limit
+	// (streaming calls). It is evaluated when a tunnel opens.
+	exempt func() bool
+	// onLimit is called once when a tunnel of the call exceeds the limit,
+	// before the tunnel closes.
+	onLimit func()
 }
 
 const (
@@ -114,7 +130,21 @@ const (
 	relaySharedUsername = "mcpa"
 )
 
-func startUpstreamRelay(dial DialFunc, logger *slog.Logger) (*upstreamRelay, error) {
+// relayOption configures an upstreamRelay.
+type relayOption func(*upstreamRelay)
+
+// withRelayIdleTimeout sets the tunnel idle timeout.
+func withRelayIdleTimeout(d time.Duration) relayOption {
+	return func(r *upstreamRelay) { r.idleTimeout = d }
+}
+
+// withRelayResponseLimit bounds the bytes a tunnel carries from the provider
+// to the client; zero or less disables the bound.
+func withRelayResponseLimit(n int64) relayOption {
+	return func(r *upstreamRelay) { r.maxResponseBytes = n }
+}
+
+func startUpstreamRelay(dial DialFunc, logger *slog.Logger, options ...relayOption) (*upstreamRelay, error) {
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, fmt.Errorf("generate upstream relay secret: %w", err)
@@ -123,12 +153,12 @@ func startUpstreamRelay(dial DialFunc, logger *slog.Logger) (*upstreamRelay, err
 	if err != nil {
 		return nil, fmt.Errorf("listen upstream relay: %w", err)
 	}
-	return newUpstreamRelay(ln, secret, dial, logger, relayIdleTimeout), nil
+	return newUpstreamRelay(ln, secret, dial, logger, options...), nil
 }
 
 // newUpstreamRelay serves the relay on ln. It is separate from
 // startUpstreamRelay so tests can inject a listener that fails on demand.
-func newUpstreamRelay(ln net.Listener, secret []byte, dial DialFunc, logger *slog.Logger, idleTimeout time.Duration) *upstreamRelay {
+func newUpstreamRelay(ln net.Listener, secret []byte, dial DialFunc, logger *slog.Logger, options ...relayOption) *upstreamRelay {
 	password := hex.EncodeToString(secret)
 	r := &upstreamRelay{
 		ln:          ln,
@@ -138,8 +168,12 @@ func newUpstreamRelay(ln net.Listener, secret []byte, dial DialFunc, logger *slo
 		password:    []byte(password),
 		done:        make(chan struct{}),
 		closing:     make(chan struct{}),
-		idleTimeout: idleTimeout,
+		idleTimeout: relayIdleTimeout,
 		calls:       map[string]map[*tunnel]struct{}{},
+		watches:     map[string]callWatch{},
+	}
+	for _, option := range options {
+		option(r)
 	}
 	go r.serve()
 	return r
@@ -183,6 +217,14 @@ func (r *upstreamRelay) urlFor(callID string) string {
 	return u.String()
 }
 
+// watchCall registers the response-limit hooks of a call. CloseCall removes
+// them.
+func (r *upstreamRelay) watchCall(callID string, w callWatch) {
+	r.mu.Lock()
+	r.watches[callID] = w
+	r.mu.Unlock()
+}
+
 // CloseCall closes every open tunnel of the call. Engine.ServeHTTP calls it
 // when the call ends: the SDK Claude client builds a new client for every
 // request and never closes its idle provider connections, so without it each
@@ -192,6 +234,7 @@ func (r *upstreamRelay) CloseCall(callID string) {
 	r.mu.Lock()
 	set := r.calls[callID]
 	delete(r.calls, callID)
+	delete(r.watches, callID)
 	tunnels := make([]*tunnel, 0, len(set))
 	for t := range set {
 		tunnels = append(tunnels, t)
@@ -414,13 +457,24 @@ type tunnel struct {
 	idle      time.Duration
 	timer     *time.Timer
 	closeOnce sync.Once
+
+	// limit bounds the bytes read from the provider; zero disables it.
+	limit      int64
+	fromServer atomic.Int64
+	onLimit    func()
 }
 
 // openTunnel registers a tunnel for callID (empty for none) and starts its
 // idle timer.
 func (r *upstreamRelay) openTunnel(callID string, client, upstream net.Conn) *tunnel {
-	t := &tunnel{relay: r, callID: callID, client: client, upstream: upstream, idle: r.idleTimeout}
+	t := &tunnel{relay: r, callID: callID, client: client, upstream: upstream, idle: r.idleTimeout, limit: r.maxResponseBytes}
 	r.mu.Lock()
+	if w, ok := r.watches[callID]; ok && callID != "" {
+		t.onLimit = w.onLimit
+		if w.exempt != nil && w.exempt() {
+			t.limit = 0
+		}
+	}
 	r.open++
 	if callID != "" {
 		set := r.calls[callID]
@@ -461,16 +515,35 @@ func (t *tunnel) close() {
 	})
 }
 
-// activityConn reports traffic to its tunnel.
+// exceedLimit flags the call and closes the tunnel after the provider sent
+// more than the response limit. The count includes TLS framing, so the limit
+// is approximate for the encrypted Claude connection.
+func (t *tunnel) exceedLimit() {
+	t.relay.logger.Warn("upstream relay tunnel exceeded the provider response limit",
+		slog.String("call_id", t.callID),
+		slog.Int64("limit_bytes", t.limit))
+	if t.onLimit != nil {
+		t.onLimit()
+	}
+	t.close()
+}
+
+// activityConn reports traffic to its tunnel. fromProvider marks the
+// upstream side, whose reads are bounded by the tunnel's response limit.
 type activityConn struct {
 	net.Conn
-	t *tunnel
+	t            *tunnel
+	fromProvider bool
 }
 
 func (c activityConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
 		c.t.touch()
+		if c.fromProvider && c.t.limit > 0 && c.t.fromServer.Add(int64(n)) > c.t.limit {
+			c.t.exceedLimit()
+			return 0, errProviderResponseTooLarge
+		}
 	}
 	return n, err
 }
@@ -487,7 +560,7 @@ func (c activityConn) Write(p []byte) (int, error) {
 // closes the connections.
 func (t *tunnel) run() {
 	a := activityConn{Conn: t.client, t: t}
-	b := activityConn{Conn: t.upstream, t: t}
+	b := activityConn{Conn: t.upstream, t: t, fromProvider: true}
 	var wg sync.WaitGroup
 	wg.Add(2)
 	pipe := func(dst, src activityConn) {

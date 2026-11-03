@@ -314,7 +314,7 @@ func (l *flakyListener) acceptTimes() []time.Time {
 
 func newTestRelay(t *testing.T, ln net.Listener, dial DialFunc) *upstreamRelay {
 	t.Helper()
-	return newUpstreamRelay(ln, []byte("0123456789abcdef0123456789abcdef"), dial, discardLogger(), relayIdleTimeout)
+	return newUpstreamRelay(ln, []byte("0123456789abcdef0123456789abcdef"), dial, discardLogger())
 }
 
 // A transient accept error such as EMFILE must not stop the relay: the loop
@@ -546,7 +546,7 @@ func TestUpstreamRelayClosesIdleTunnels(t *testing.T) {
 	}
 	const idle = 300 * time.Millisecond
 	d := &recordingDial{target: target, allow: true}
-	relay := newUpstreamRelay(inner, []byte("0123456789abcdef0123456789abcdef"), d.dial, discardLogger(), idle)
+	relay := newUpstreamRelay(inner, []byte("0123456789abcdef0123456789abcdef"), d.dial, discardLogger(), withRelayIdleTimeout(idle))
 	defer relay.Close()
 
 	conn := dialRelayURL(t, relay.URLFor("call-idle"), "provider.example.test:443")

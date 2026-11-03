@@ -76,7 +76,7 @@ func googleRPCStatus(status int) string {
 		return "NOT_FOUND"
 	case http.StatusRequestEntityTooLarge:
 		return "INVALID_ARGUMENT"
-	case http.StatusServiceUnavailable:
+	case http.StatusServiceUnavailable, http.StatusBadGateway:
 		return "UNAVAILABLE"
 	default:
 		return "INTERNAL"
