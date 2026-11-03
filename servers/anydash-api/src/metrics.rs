@@ -15,6 +15,7 @@ pub struct Metrics {
     registry: Registry,
     pub requests: IntCounterVec,
     pub timeouts: IntCounter,
+    pub gauge_refresh_failures: IntCounter,
     pub duration: HistogramVec,
     pub job_runs: IntCounterVec,
     pub job_last_success: GaugeVec,
@@ -52,6 +53,13 @@ impl Metrics {
         let timeouts = IntCounter::new(
             "anydash_api_timeouts_total",
             "API requests that exceeded the request deadline and returned 504.",
+        )
+        .unwrap();
+        // A scrape still succeeds when the database-backed gauges cannot be refreshed, so this
+        // counter is how an operator sees the stale gauges.
+        let gauge_refresh_failures = IntCounter::new(
+            "anydash_gauge_refresh_failures_total",
+            "Scrapes that could not refresh the database-backed gauges.",
         )
         .unwrap();
         let duration = HistogramVec::new(
@@ -131,6 +139,7 @@ impl Metrics {
         for c in [
             Box::new(requests.clone()) as Box<dyn prometheus::core::Collector>,
             Box::new(timeouts.clone()),
+            Box::new(gauge_refresh_failures.clone()),
             Box::new(duration.clone()),
             Box::new(job_runs.clone()),
             Box::new(job_last_success.clone()),
@@ -149,6 +158,7 @@ impl Metrics {
             registry,
             requests,
             timeouts,
+            gauge_refresh_failures,
             duration,
             job_runs,
             job_last_success,
@@ -256,6 +266,15 @@ mod tests {
         assert!(m.encode().contains("anydash_api_timeouts_total 0"));
         m.timeouts.inc();
         assert!(m.encode().contains("anydash_api_timeouts_total 1"));
+    }
+
+    #[test]
+    fn gauge_refresh_failure_counter_is_exposed_at_zero() {
+        let m = Metrics::new();
+        assert!(
+            m.encode()
+                .contains("anydash_gauge_refresh_failures_total 0")
+        );
     }
 
     #[test]
