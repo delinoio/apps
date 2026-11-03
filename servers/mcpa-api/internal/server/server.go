@@ -167,6 +167,7 @@ func (s *server) instrument(surface obs.Surface, count bool, next http.Handler) 
 			traceID = apperr.NewTraceID()
 			ctx = apperr.WithTraceID(ctx, traceID)
 		}
+		ctx = obs.WithSurface(ctx, surface)
 		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
 		ctx, span := obs.Tracer().Start(ctx, string(surface)+" "+r.Method,
 			trace.WithSpanKind(trace.SpanKindServer),
@@ -253,7 +254,7 @@ func (s *server) interceptor() connect.UnaryInterceptorFunc {
 				}
 			}
 			e := apperr.As(err)
-			attrs := []any{"procedure", procedure, "code", e.Code.String(), "reason", e.Reason.String(), "trace_id", apperr.TraceID(ctx), "duration_ms", time.Since(start).Milliseconds()}
+			attrs := []any{"procedure", procedure, "code", e.Code.String(), "reason", e.Reason.String(), "duration_ms", time.Since(start).Milliseconds()}
 			if p != nil {
 				attrs = append(attrs, "actor_kind", p.Kind.String())
 			}

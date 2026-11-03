@@ -3,6 +3,7 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 	"github.com/delinoio/apps/protos/mcpa/v1/mcpav1connect"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/auth"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/config"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/obs"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/server"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/web"
@@ -233,5 +235,87 @@ func TestSelfMeteredMountIsCountedOnce(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(metrics.HTTPRequests.WithLabelValues("mcp", "2xx")); got != 1 {
 		t.Fatalf("mcp requests counted %v times", got)
+	}
+}
+
+// TestRequestLogsCarryTraceIDAndSurface captures real JSON log output and
+// checks that *Context lines written inside each surface carry the response's
+// request ID and the surface, exactly once.
+func TestRequestLogsCarryTraceIDAndSurface(t *testing.T) {
+	var buf bytes.Buffer
+	log := obs.NewLogger(&buf, config.Logging{Format: config.LogFormatJSON})
+	authn := auth.NewAuthenticator(auth.AuthenticatorConfig{WebOrigin: webOrigin})
+	logging := func(msg string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.WarnContext(r.Context(), msg)
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
+	h := server.New(server.Config{
+		Service: mcpav1connect.UnimplementedMcpaServiceHandler{}, Authenticator: authn,
+		Web: web.New(web.Config{Authenticator: authn, Log: log}), Metrics: obs.NewMetrics(), Log: log, WebOrigin: webOrigin,
+		Mounts: []server.Mount{
+			{Pattern: "/oauth/", Surface: obs.SurfaceOAuth, Handler: logging("oauth line")},
+			{Pattern: "/mcp", Surface: obs.SurfaceMCP, Handler: logging("mcp line")},
+			{Pattern: "/r/", Surface: obs.SurfaceProxy, SelfMetered: true, Handler: logging("proxy line")},
+		},
+	})
+	log.Info("startup line")
+
+	cases := []struct {
+		method, path, msg, surface string
+	}{
+		{http.MethodPost, getViewer, "management call rejected", "management"},
+		{http.MethodPost, "/oauth/token", "oauth line", "oauth"},
+		{http.MethodPost, "/mcp", "mcp line", "mcp"},
+		{http.MethodPost, "/r/x/v1/chat/completions", "proxy line", "proxy"},
+	}
+	ids := map[string]string{}
+	for _, tc := range cases {
+		rec := do(h, tc.method, tc.path, map[string]string{"Content-Type": "application/json"})
+		ids[tc.msg] = rec.Header().Get(server.RequestIDHeader)
+	}
+
+	seen := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		if n := strings.Count(line, `"trace_id"`); n > 1 {
+			t.Errorf("duplicate trace_id in %s", line)
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("not JSON: %q", line)
+		}
+		msg, _ := m["msg"].(string)
+		if msg == "startup line" {
+			if _, ok := m["trace_id"]; ok {
+				t.Errorf("startup line changed: %s", line)
+			}
+			if _, ok := m["surface"]; ok {
+				t.Errorf("startup line changed: %s", line)
+			}
+			continue
+		}
+		for _, tc := range cases {
+			if tc.msg != msg {
+				continue
+			}
+			seen[msg] = true
+			if m["surface"] != tc.surface {
+				t.Errorf("%s: surface = %v, want %s", msg, m["surface"], tc.surface)
+			}
+			if tc.surface == "proxy" {
+				// The call surface replaces the request ID with the call ID.
+				if _, ok := m["trace_id"]; ok {
+					t.Errorf("%s: unexpected trace_id", msg)
+				}
+			} else if m["trace_id"] != ids[msg] || ids[msg] == "" {
+				t.Errorf("%s: trace_id = %v, want response header %q", msg, m["trace_id"], ids[msg])
+			}
+		}
+	}
+	for _, tc := range cases {
+		if !seen[tc.msg] {
+			t.Errorf("no log line %q in %s", tc.msg, buf.String())
+		}
 	}
 }

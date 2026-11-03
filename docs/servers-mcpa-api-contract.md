@@ -66,7 +66,7 @@ All surfaces are served from the public API origin.
 
 Only the `/r/{resource_id}/...` surface is metered. Management, console, authentication, OAuth, MCP and operational traffic is free and creates no billing event.
 
-Every response carries `X-Mcpa-Request-Id`. On the call surface its value is the UUID v7 call record ID. Connect errors also carry the `trace_id` in `mcpa.v1.ErrorDetail`.
+Every response carries `X-Mcpa-Request-Id`, including the 404 and 405 responses that the router generates before a route runs. The value is assigned before routing and stays the same for the whole request. On the call surface its value is the UUID v7 call record ID. Connect errors also carry the `trace_id` in `mcpa.v1.ErrorDetail`.
 
 ### Console session and CSRF
 
@@ -387,7 +387,7 @@ The data plane uses no object storage, so the Cloudflare R2 default does not app
 
 ## Logging
 
-- **Logs.** Use `log/slog` structured logs. The default text handler uses ANSI color. Setting `NO_COLOR` to any value, or setting `LOG_FORMAT=json`, disables color; `json` emits JSON lines. Logs carry the request ID, trace ID, surface, procedure or route, tenant and resource IDs where relevant, bounded outcome categories and durations. They never contain secrets or bodies. Checkpoint failures, poisoned or expired outbox rows and master-key problems log at error level with `alert=true`.
+- **Logs.** Use `log/slog` structured logs. The default text handler uses ANSI color. Setting `NO_COLOR` to any value, or setting `LOG_FORMAT=json`, disables color; `json` emits JSON lines. Logs carry the request ID, trace ID, surface, procedure or route, tenant and resource IDs where relevant, bounded outcome categories and durations. The logger adds `trace_id` (equal to `X-Mcpa-Request-Id`) and `surface` to every line written with a request context on the Connect, `/auth`, `/oauth` and `/mcp` surfaces, so call sites must not add those keys. Lines on the call surface carry `surface` and their call record ID instead of `trace_id`, because that surface replaces the request ID with the call record ID. Startup and background lines carry neither key. They never contain secrets or bodies. Checkpoint failures, poisoned or expired outbox rows and master-key problems log at error level with `alert=true`.
 - **Metrics.** Prometheus metrics use bounded labels only. They have no tenant, resource, key, user or model labels and no secrets.
 
 | Metric                                    | Type      | Labels                                                                  |
