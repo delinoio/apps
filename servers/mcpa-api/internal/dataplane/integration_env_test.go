@@ -113,6 +113,19 @@ type fakeUpstream struct {
 	stall  chan struct{}
 	stalls chan struct{}
 	auths  []string
+	// handlers answer requests by exact URL path before the OpenAI-compatible
+	// default, for providers with their own endpoints.
+	handlers map[string]http.HandlerFunc
+}
+
+// handle registers a handler for an exact URL path.
+func (u *fakeUpstream) handle(path string, h http.HandlerFunc) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.handlers == nil {
+		u.handlers = map[string]http.HandlerFunc{}
+	}
+	u.handlers[path] = h
 }
 
 func newFakeUpstream(t testing.TB) *fakeUpstream {
@@ -141,7 +154,12 @@ func (u *fakeUpstream) serve(w http.ResponseWriter, r *http.Request) {
 	u.mu.Lock()
 	u.auths = append(u.auths, r.Header.Get("Authorization"))
 	stall := u.stall
+	custom := u.handlers[r.URL.Path]
 	u.mu.Unlock()
+	if custom != nil {
+		custom(w, r)
+		return
+	}
 	body, _ := io.ReadAll(r.Body)
 	model := gjson.GetBytes(body, "model").String()
 	text := outputCanary + strings.Repeat("x", int(u.padding.Load()))
@@ -320,6 +338,8 @@ func newEnv(t *testing.T, options ...envOption) *itEnv {
 			Endpoints: provideroauth.Endpoints{
 				ClaudeAuthURL: base + "/claude/authorize", ClaudeTokenURL: base + "/claude/token",
 				KimiDeviceAuthorizationURL: base + "/kimi/device", KimiTokenURL: base + "/kimi/token",
+				GoogleAuthURL: base + "/google/authorize", GoogleTokenURL: base + "/google/token",
+				GeminiUserInfoURL: base + "/google/userinfo", GeminiCodeAssist: base + "/codeassist",
 			},
 		},
 	})
