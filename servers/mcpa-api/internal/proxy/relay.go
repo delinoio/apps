@@ -59,6 +59,10 @@ type upstreamRelay struct {
 	username []byte
 	password []byte
 	done     chan struct{}
+	// closing is closed by Close so the accept loop stops promptly even
+	// while it sleeps in an accept-error backoff.
+	closing   chan struct{}
+	closeOnce sync.Once
 }
 
 const (
@@ -81,6 +85,13 @@ const (
 	// relayHandshakeTimeout bounds the SOCKS handshake and the upstream
 	// dial. The dialer has its own, shorter timeout in production.
 	relayHandshakeTimeout = 45 * time.Second
+
+	// The accept loop backs off after a transient accept error such as
+	// EMFILE, ENFILE or ENOMEM: it starts at relayAcceptBackoffMin, doubles
+	// per consecutive failure up to relayAcceptBackoffMax and resets after
+	// a successful accept.
+	relayAcceptBackoffMin = 5 * time.Millisecond
+	relayAcceptBackoffMax = time.Second
 )
 
 func startUpstreamRelay(dial DialFunc, logger *slog.Logger) (*upstreamRelay, error) {
@@ -92,6 +103,12 @@ func startUpstreamRelay(dial DialFunc, logger *slog.Logger) (*upstreamRelay, err
 	if err != nil {
 		return nil, fmt.Errorf("listen upstream relay: %w", err)
 	}
+	return newUpstreamRelay(ln, secret, dial, logger), nil
+}
+
+// newUpstreamRelay serves the relay on ln. It is separate from
+// startUpstreamRelay so tests can inject a listener that fails on demand.
+func newUpstreamRelay(ln net.Listener, secret []byte, dial DialFunc, logger *slog.Logger) *upstreamRelay {
 	const username = "mcpa"
 	password := hex.EncodeToString(secret)
 	u := url.URL{Scheme: "socks5", User: url.UserPassword(username, password), Host: ln.Addr().String()}
@@ -103,9 +120,28 @@ func startUpstreamRelay(dial DialFunc, logger *slog.Logger) (*upstreamRelay, err
 		username: []byte(username),
 		password: []byte(password),
 		done:     make(chan struct{}),
+		closing:  make(chan struct{}),
 	}
 	go r.serve()
-	return r, nil
+	return r
+}
+
+// nextAcceptBackoff returns the delay after a failed accept given the previous
+// delay, zero meaning the previous accept succeeded.
+func nextAcceptBackoff(previous time.Duration) time.Duration {
+	if previous <= 0 {
+		return relayAcceptBackoffMin
+	}
+	return min(previous*2, relayAcceptBackoffMax)
+}
+
+func sleepUnlessClosing(d time.Duration, closing <-chan struct{}) {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-closing:
+	}
 }
 
 // URL returns the SOCKS5 proxy URL of the relay, including its
@@ -115,21 +151,39 @@ func (r *upstreamRelay) URL() string { return r.url }
 // Close stops accepting connections. Established tunnels finish with their
 // calls, matching Engine.Close, which does not interrupt in-flight calls.
 func (r *upstreamRelay) Close() error {
+	r.closeOnce.Do(func() { close(r.closing) })
 	err := r.ln.Close()
 	<-r.done
 	return err
 }
 
+// serve accepts connections until the listener is closed. A transient accept
+// error (descriptor or memory exhaustion) must not stop the relay for good:
+// the kernel keeps queueing connections in the backlog while nothing accepts
+// them, and every Claude call would hang. The loop backs off and retries;
+// only net.ErrClosed ends it.
 func (r *upstreamRelay) serve() {
 	defer close(r.done)
+	var delay time.Duration
 	for {
 		conn, err := r.ln.Accept()
 		if err != nil {
-			if !errors.Is(err, net.ErrClosed) {
-				r.logger.Error("upstream relay accept failed", slog.String("error", err.Error()))
+			if errors.Is(err, net.ErrClosed) {
+				return
 			}
-			return
+			delay = nextAcceptBackoff(delay)
+			r.logger.Warn("upstream relay accept failed; retrying",
+				slog.String("error", err.Error()),
+				slog.Duration("delay", delay))
+			sleepUnlessClosing(delay, r.closing)
+			select {
+			case <-r.closing:
+				return
+			default:
+			}
+			continue
 		}
+		delay = 0
 		go r.handle(conn)
 	}
 }

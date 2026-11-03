@@ -11,7 +11,9 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 	"golang.org/x/net/proxy"
@@ -278,4 +280,127 @@ func TestClaudeUpstreamDialsThroughDialUpstream(t *testing.T) {
 			t.Fatalf("record %+v", record)
 		}
 	})
+}
+
+// flakyListener fails the first failures Accept calls with err, then serves
+// connections from the wrapped listener. It records when each Accept call
+// started so tests can observe the backoff delays.
+type flakyListener struct {
+	net.Listener
+	err      error
+	failures int
+	mu       sync.Mutex
+	calls    []time.Time
+}
+
+func (l *flakyListener) Accept() (net.Conn, error) {
+	l.mu.Lock()
+	l.calls = append(l.calls, time.Now())
+	fail := len(l.calls) <= l.failures
+	l.mu.Unlock()
+	if fail {
+		return nil, l.err
+	}
+	return l.Listener.Accept()
+}
+
+func (l *flakyListener) acceptTimes() []time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]time.Time(nil), l.calls...)
+}
+
+func newTestRelay(t *testing.T, ln net.Listener, dial DialFunc) *upstreamRelay {
+	t.Helper()
+	return newUpstreamRelay(ln, []byte("0123456789abcdef0123456789abcdef"), dial, discardLogger())
+}
+
+// A transient accept error such as EMFILE must not stop the relay: the loop
+// backs off, keeps accepting and serves the next connection.
+func TestUpstreamRelaySurvivesTransientAcceptErrors(t *testing.T) {
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer echo.Close()
+	go func() {
+		conn, err := echo.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = io.Copy(conn, conn)
+	}()
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln := &flakyListener{Listener: inner, err: syscall.EMFILE, failures: 2}
+	d := &recordingDial{target: echo.Addr().String(), allow: true}
+	relay := newTestRelay(t, ln, d.dial)
+	defer relay.Close()
+
+	conn, err := relayDialer(t, relay).Dial("tcp", "provider.example.test:443")
+	if err != nil {
+		t.Fatalf("relay did not recover from accept errors: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "ping" {
+		t.Fatalf("echo %q %v", buf, err)
+	}
+	times := ln.acceptTimes()
+	if len(times) < 3 {
+		t.Fatalf("accept calls %d", len(times))
+	}
+	if gap := times[1].Sub(times[0]); gap < relayAcceptBackoffMin {
+		t.Fatalf("first backoff %v is shorter than %v", gap, relayAcceptBackoffMin)
+	}
+	if gap := times[2].Sub(times[1]); gap < 2*relayAcceptBackoffMin {
+		t.Fatalf("second backoff %v is shorter than %v", gap, 2*relayAcceptBackoffMin)
+	}
+}
+
+// Close must return promptly even while the accept loop sleeps in its
+// longest backoff.
+func TestUpstreamRelayCloseInterruptsBackoff(t *testing.T) {
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln := &flakyListener{Listener: inner, err: syscall.EMFILE, failures: 1 << 30}
+	relay := newTestRelay(t, ln, (&recordingDial{allow: true}).dial)
+	// Let the backoff grow towards its maximum.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(ln.acceptTimes()) < 8 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := len(ln.acceptTimes()); got < 8 {
+		t.Fatalf("accept calls %d", got)
+	}
+	start := time.Now()
+	_ = relay.Close()
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("Close took %v during backoff", elapsed)
+	}
+}
+
+func TestUpstreamRelayBackoffDelayIsCappedAndResets(t *testing.T) {
+	var delays []time.Duration
+	delay := time.Duration(0)
+	for range 12 {
+		delay = nextAcceptBackoff(delay)
+		delays = append(delays, delay)
+	}
+	if delays[0] != 5*time.Millisecond || delays[1] != 10*time.Millisecond || delays[len(delays)-1] != time.Second {
+		t.Fatalf("unexpected backoff sequence %v", delays)
+	}
+	// A successful accept resets the delay to zero, so the next failure
+	// starts at the minimum again.
+	if got := nextAcceptBackoff(0); got != relayAcceptBackoffMin {
+		t.Fatalf("backoff after reset %v", got)
+	}
 }
