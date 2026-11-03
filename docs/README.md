@@ -135,6 +135,16 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [API, remote MCP and operations](servers-lane-api-contract.md)
 - [Distribution and common skill](packages-lane-distribution-contract.md)
 
+### anydash
+
+- [Project index](project-anydash.md)
+- [Application, platforms, dashboards, widgets and UX](apps-anydash-foundation.md)
+- [Connect protocol](protos-anydash-v1-contract.md)
+- [API server, persistence, worker and operations](servers-anydash-api-contract.md)
+- [CLI and shared collector](cmds-anydash-cli-contract.md)
+- [Provider adapters and metric rules](cmds-anydash-provider-adapters-contract.md)
+- [Distribution](packages-anydash-distribution-contract.md)
+
 ### mcpa
 
 - [Project index](project-mcpa.md)

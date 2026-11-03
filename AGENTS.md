@@ -211,6 +211,12 @@ Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfin
 - Planned Lane protocol, Rust CLI/local MCP, Rust server/remote MCP and npm distribution paths are routed through the [Lane project index](docs/project-lane.md) and their parent scoped instructions.
 - Read [Lane project](docs/project-lane.md) and [application foundation](docs/apps-lane-foundation.md) before changing these paths.
 
+## AnyDash ownership
+
+- Planned `apps/anydash` owns the shared ReactLynx client, the web host and the desktop, mobile and native widget hosts.
+- Planned `cmds/anydash` owns the Rust `anydash` CLI and shared collector in the root Cargo workspace; planned `servers/anydash-api` owns the Rust API and worker in the server workspace; planned `protos/anydash/v1` owns the schema and generated Go and TypeScript bindings; planned `packages/anydash` owns the `@delinoio/anydash` installer and install scripts.
+- Read [AnyDash project](docs/project-anydash.md) and the domain contracts it lists before changing these paths.
+
 ## Managed CPA ownership
 
 - `servers/mcpa-api`: Go API server, embedded CLIProxyAPI data plane, PostgreSQL migrations, workers, OCI packaging and operator assets. It is the documented Go exception among FSL servers and builds from the root Go module.
