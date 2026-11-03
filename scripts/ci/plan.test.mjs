@@ -16,6 +16,7 @@ test("isolated projects select only their validation", () => {
     delitools: true,
     perfine_api: false,
     lane_api: false,
+    anydash_api: false,
     lane_cli: false,
     lane: false,
     mcpa_api: false,
@@ -36,6 +37,7 @@ test("isolated projects select only their validation", () => {
     delitools: false,
     perfine_api: true,
     lane_api: true,
+    anydash_api: true,
     lane_cli: false,
     lane: false,
     mcpa_api: true,
@@ -56,6 +58,7 @@ test("isolated projects select only their validation", () => {
     delitools: true,
     perfine_api: true,
     lane_api: true,
+    anydash_api: true,
     lane_cli: true,
     lane: true,
     mcpa_api: true,
@@ -88,6 +91,7 @@ for (const [project, key] of [
         delitools: false,
         perfine_api: false,
         lane_api: false,
+        anydash_api: false,
         lane_cli: false,
         lane: false,
         mcpa_api: false,
@@ -113,6 +117,7 @@ test("consumer examples select protocol validation without native runners", () =
     delitools: false,
     perfine_api: false,
     lane_api: false,
+    anydash_api: false,
     lane_cli: false,
     lane: false,
     mcpa_api: false,
@@ -190,6 +195,7 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       delitools: true,
       perfine_api: false,
       lane_api: false,
+      anydash_api: false,
       lane_cli: path === "Cargo.lock",
       lane: false,
       mcpa_api: false,
@@ -214,6 +220,7 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     delitools: false,
     perfine_api: false,
     lane_api: false,
+    anydash_api: false,
     lane_cli: false,
     lane: false,
     mcpa_api: true,
@@ -279,6 +286,7 @@ test("Rust server matrix selects only affected services", () => {
     [
       ["servers/crates/server-common/src/lib.rs"],
       [
+        "anydash-api",
         "delcore-api",
         "delitools-api",
         "devbase-api",
@@ -290,6 +298,7 @@ test("Rust server matrix selects only affected services", () => {
     [
       ["protos/devbase/v1/devbase.proto"],
       [
+        "anydash-api",
         "delcore-api",
         "delitools-api",
         "devbase-api",
@@ -301,6 +310,7 @@ test("Rust server matrix selects only affected services", () => {
     [
       [".github/workflows/CI.yml"],
       [
+        "anydash-api",
         "delcore-api",
         "delitools-api",
         "devbase-api",
@@ -360,6 +370,7 @@ for (const [paths, expected] of [
         "delitools",
         "perfine_api",
         "lane_api",
+        "anydash_api",
         "lane_cli",
         "perfine_fixtures",
       ],
@@ -376,6 +387,7 @@ for (const [paths, expected] of [
       "git_tracker",
       "perfine_api",
       "lane_api",
+      "anydash_api",
       "lane_cli",
       "lane",
       "mcpa_api",
@@ -393,6 +405,7 @@ for (const [paths, expected] of [
       "git_tracker",
       "perfine_api",
       "lane_api",
+      "anydash_api",
       "lane_cli",
       "lane",
       "mcpa_api",
@@ -661,6 +674,37 @@ test("Lane domain paths select owning validators and shared store consumers", ()
       database: "lane_api_test",
     },
   ]);
+});
+
+test("AnyDash server paths select only the AnyDash server validator", () => {
+  for (const path of [
+    "servers/anydash-api/src/lib.rs",
+    "servers/anydash-api/migrations/00001_foundation.sql",
+    "servers/anydash-api/ops/alerts.yml",
+    "servers/anydash-api/ops/check.sh",
+    "servers/anydash-api/loadtest/anydash-load.mjs",
+  ])
+    assert.deepEqual(selectedJobs([path]), ["anydash_api"], path);
+  assert.deepEqual(
+    selectRustServers(select(["servers/anydash-api/src/lib.rs"])),
+    [
+      {
+        service: "anydash-api",
+        port: 55439,
+        user: "anydash",
+        database: "anydash_api_test",
+      },
+    ],
+  );
+  for (const path of ["protos/anydash/v1/anydash.proto", "buf.gen.yaml"])
+    assert.equal(select([path]).anydash_api, true, path);
+  for (const path of [
+    "docs/servers-anydash-api-contract.md",
+    "servers/anydash-api/ops/README.md",
+  ]) {
+    assert.deepEqual(selectedJobs([path]), [], path);
+    assert.deepEqual(selectRustServers(select([path])), [], path);
+  }
 });
 
 const recoveryPolicyPaths = [

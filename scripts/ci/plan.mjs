@@ -186,6 +186,13 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       serverShared ||
       paths.some((path) => /^(servers\/lane-api\/|protos\/)/u.test(path)),
+    anydash_api:
+      serverRust ||
+      shared.rust ||
+      repositoryShared ||
+      shared.protocol ||
+      serverShared ||
+      paths.some((path) => /^(servers\/anydash-api\/|protos\/)/u.test(path)),
     lane_cli:
       repositoryShared ||
       shared.rust ||
@@ -237,6 +244,13 @@ export function select(paths, lockfiles) {
 
 export function selectRustServers(selected) {
   return [
+    {
+      service: "anydash-api",
+      owner: "anydash_api",
+      port: 55439,
+      user: "anydash",
+      database: "anydash_api_test",
+    },
     {
       service: "delcore-api",
       owner: "delcore_api",

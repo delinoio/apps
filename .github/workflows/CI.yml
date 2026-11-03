@@ -891,6 +891,10 @@ jobs:
         if: matrix.service == 'lane-api'
         id: monitoring
         run: servers/lane-api/ops/check.sh
+      - name: Validate AnyDash monitoring rules and routes
+        if: matrix.service == 'anydash-api'
+        id: anydash-monitoring
+        run: servers/anydash-api/ops/check.sh
       - name: Start integration database
         run: |
           # Interrupted jobs can leave this container on a persistent runner.

@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Mount this directory at /etc/anydash-monitoring; change internal targets for your deployment.
+# The API labels requests with `service` (the Connect service name), so the scrape adds no
+# `service` target label. Gauges backed by PostgreSQL are repeated by every replica; rules use
+# max across replicas for them and sum process-local counters.
+global:
+  scrape_interval: 30s
+  scrape_timeout: 5s
+  evaluation_interval: 30s
+rule_files:
+  - /etc/anydash-monitoring/alerts.yml
+  - /etc/anydash-monitoring/recording.yml
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+scrape_configs:
+  - job_name: anydash-api
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/anydash_metrics_token
+    static_configs:
+      - targets: ["anydash-api:46331"]

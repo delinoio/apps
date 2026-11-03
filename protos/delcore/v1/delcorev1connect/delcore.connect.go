@@ -162,6 +162,9 @@ const (
 	// DelcoreServiceListAuditProcedure is the fully-qualified name of the DelcoreService's ListAudit
 	// RPC.
 	DelcoreServiceListAuditProcedure = "/delcore.v1.DelcoreService/ListAudit"
+	// DelcoreServiceGetTenantMemberRolesProcedure is the fully-qualified name of the DelcoreService's
+	// GetTenantMemberRoles RPC.
+	DelcoreServiceGetTenantMemberRolesProcedure = "/delcore.v1.DelcoreService/GetTenantMemberRoles"
 )
 
 // DelcoreServiceClient is a client for the delcore.v1.DelcoreService service.
@@ -211,6 +214,7 @@ type DelcoreServiceClient interface {
 	ListJobs(context.Context, *connect.Request[v1.ListJobsRequest]) (*connect.Response[v1.ListJobsResponse], error)
 	RetryJob(context.Context, *connect.Request[v1.RetryJobRequest]) (*connect.Response[v1.RetryJobResponse], error)
 	ListAudit(context.Context, *connect.Request[v1.ListAuditRequest]) (*connect.Response[v1.ListAuditResponse], error)
+	GetTenantMemberRoles(context.Context, *connect.Request[v1.GetTenantMemberRolesRequest]) (*connect.Response[v1.GetTenantMemberRolesResponse], error)
 }
 
 // NewDelcoreServiceClient constructs a client for the delcore.v1.DelcoreService service. By
@@ -494,6 +498,12 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(delcoreServiceMethods.ByName("ListAudit")),
 			connect.WithClientOptions(opts...),
 		),
+		getTenantMemberRoles: connect.NewClient[v1.GetTenantMemberRolesRequest, v1.GetTenantMemberRolesResponse](
+			httpClient,
+			baseURL+DelcoreServiceGetTenantMemberRolesProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("GetTenantMemberRoles")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -544,6 +554,7 @@ type delcoreServiceClient struct {
 	listJobs             *connect.Client[v1.ListJobsRequest, v1.ListJobsResponse]
 	retryJob             *connect.Client[v1.RetryJobRequest, v1.RetryJobResponse]
 	listAudit            *connect.Client[v1.ListAuditRequest, v1.ListAuditResponse]
+	getTenantMemberRoles *connect.Client[v1.GetTenantMemberRolesRequest, v1.GetTenantMemberRolesResponse]
 }
 
 // DeleteGroup calls delcore.v1.DelcoreService.DeleteGroup.
@@ -771,6 +782,11 @@ func (c *delcoreServiceClient) ListAudit(ctx context.Context, req *connect.Reque
 	return c.listAudit.CallUnary(ctx, req)
 }
 
+// GetTenantMemberRoles calls delcore.v1.DelcoreService.GetTenantMemberRoles.
+func (c *delcoreServiceClient) GetTenantMemberRoles(ctx context.Context, req *connect.Request[v1.GetTenantMemberRolesRequest]) (*connect.Response[v1.GetTenantMemberRolesResponse], error) {
+	return c.getTenantMemberRoles.CallUnary(ctx, req)
+}
+
 // DelcoreServiceHandler is an implementation of the delcore.v1.DelcoreService service.
 type DelcoreServiceHandler interface {
 	DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error)
@@ -818,6 +834,7 @@ type DelcoreServiceHandler interface {
 	ListJobs(context.Context, *connect.Request[v1.ListJobsRequest]) (*connect.Response[v1.ListJobsResponse], error)
 	RetryJob(context.Context, *connect.Request[v1.RetryJobRequest]) (*connect.Response[v1.RetryJobResponse], error)
 	ListAudit(context.Context, *connect.Request[v1.ListAuditRequest]) (*connect.Response[v1.ListAuditResponse], error)
+	GetTenantMemberRoles(context.Context, *connect.Request[v1.GetTenantMemberRolesRequest]) (*connect.Response[v1.GetTenantMemberRolesResponse], error)
 }
 
 // NewDelcoreServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1097,6 +1114,12 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 		connect.WithSchema(delcoreServiceMethods.ByName("ListAudit")),
 		connect.WithHandlerOptions(opts...),
 	)
+	delcoreServiceGetTenantMemberRolesHandler := connect.NewUnaryHandler(
+		DelcoreServiceGetTenantMemberRolesProcedure,
+		svc.GetTenantMemberRoles,
+		connect.WithSchema(delcoreServiceMethods.ByName("GetTenantMemberRoles")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delcore.v1.DelcoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DelcoreServiceDeleteGroupProcedure:
@@ -1189,6 +1212,8 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 			delcoreServiceRetryJobHandler.ServeHTTP(w, r)
 		case DelcoreServiceListAuditProcedure:
 			delcoreServiceListAuditHandler.ServeHTTP(w, r)
+		case DelcoreServiceGetTenantMemberRolesProcedure:
+			delcoreServiceGetTenantMemberRolesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1376,4 +1401,8 @@ func (UnimplementedDelcoreServiceHandler) RetryJob(context.Context, *connect.Req
 
 func (UnimplementedDelcoreServiceHandler) ListAudit(context.Context, *connect.Request[v1.ListAuditRequest]) (*connect.Response[v1.ListAuditResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.ListAudit is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) GetTenantMemberRoles(context.Context, *connect.Request[v1.GetTenantMemberRolesRequest]) (*connect.Response[v1.GetTenantMemberRolesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.GetTenantMemberRoles is not implemented"))
 }

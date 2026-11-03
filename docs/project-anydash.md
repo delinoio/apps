@@ -22,7 +22,7 @@ Paths marked `planned` are not implemented yet. Planned paths are requirements, 
   - `apps/anydash/native/widgets`: separate native widget hosts (for example a Swift WidgetKit extension or a C++/WinRT Widgets Board provider in an MSIX package) when the desktop packaging cannot embed them.
   - `apps/anydash/scripts`: app-local build and development helpers.
 - `cmds/anydash` (`planned`): Rust `anydash` executable, which is both the CLI and the single shared collector process with its local IPC service and provider adapters. It is a member of the root Cargo workspace and uses Apache-2.0.
-- `servers/anydash-api` (`planned`): Rust Connect API and background worker in one process, PostgreSQL migrations, OCI packaging and reusable operator assets under `servers/anydash-api/ops/`. It is a member of the independent server Cargo workspace and uses FSL-1.1-ALv2.
+- `servers/anydash-api` (`implemented`): Rust Connect API and background worker in one process, PostgreSQL migrations, OCI packaging and reusable operator assets under `servers/anydash-api/ops/`. It is a member of the independent server Cargo workspace and uses FSL-1.1-ALv2.
 - `protos/anydash/v1` (`implemented`): canonical `anydash.v1` schema with checked-in Go and TypeScript bindings, registered in `buf.gen.yaml` and exported as `@repo/protos/anydash/v1/anydash_pb`. Rust generation runs in `servers/crates/delino-protos` and, when the CLI is implemented, in the `cmds/anydash` Cargo build output from the same schema.
 - `packages/anydash` (`planned`): npm `@delinoio/anydash` executable launcher, its platform packages and the `sh` and PowerShell install scripts served from `anydash.delino.io`.
 
@@ -42,7 +42,7 @@ The main-only unified release selects AnyDash web, server image, CLI, desktop an
 ### Hosts and local development
 
 - Web: `https://anydash.delino.io` on Cloudflare Pages. API: `https://anydash.api.delino.io`.
-- Local development: the `anydash` Portless route (`https://anydash.localhost`) uses fixed loopback port `127.0.0.1:46330`, and the `anydash-api` route (`https://anydash-api.localhost`) uses fixed loopback port `127.0.0.1:46331`. Both fail on port conflicts. The Compose database service is `anydash-postgres` on loopback port `${ANYDASH_POSTGRES_PORT:-55439}`. The Infisical development folder for the API is `/anydash-api`. Register these in the owning integration files when runtime implementation begins.
+- Local development: the `anydash` Portless route (`https://anydash.localhost`) uses fixed loopback port `127.0.0.1:46330`, and the `anydash-api` route (`https://anydash-api.localhost`) uses fixed loopback port `127.0.0.1:46331`. Both fail on port conflicts. The Compose database service is `anydash-postgres` on loopback port `${ANYDASH_POSTGRES_PORT:-55439}`. The Infisical development folder for the API is `/anydash-api`. The API route, database and Infisical folder are registered in the [workflow](repository-workflow-contract.md#anydash-development-and-validation) and [environment](repository-environment-contract.md#anydash-development-environment) contracts; register the web route when the application runtime begins.
 
 ### Identity, spaces and authorization
 
@@ -50,7 +50,7 @@ The main-only unified release selects AnyDash web, server image, CLI, desktop an
 - AnyDash identifies users by the Delcore internal user ID and spaces by the Delcore tenant ID. A collector device belongs to the Logto-authenticated user who approved its enrollment.
 - Authorization and tenant isolation are enforced on every RPC, apart from the data-owner sharing rules. Only Delcore tenant state `ACTIVE` permits activity; `BLOCKED`, `DELETING`, `DELETED` and `UNKNOWN` deny it, and only explicit `DELETED` permits tenant-lifecycle cleanup.
 - Team role matrix: Owner and Admin create, delete, edit and view team dashboards; Member edits and views; Billing-only users and non-members have no access. Only the data owner changes a shared widget's query period, filters and sharing scope.
-- The role matrix needs each caller's fixed Delcore roles. Delcore currently exposes roles only through `ListMembers` to Owners and Admins. The server contract defines the additive, service-scoped Delcore role read that AnyDash requires; the change that implements the AnyDash server adds it to the Delcore protocol and server contracts without changing existing tenant, role or retention semantics.
+- The role matrix needs each caller's fixed Delcore roles. `ListMembers` serves only Owners and Admins, so AnyDash uses the additive, service-scoped Delcore role read `GetTenantMemberRoles`, defined in the Delcore protocol and server contracts without changing existing tenant, role or retention semantics.
 
 ### Data and protocol
 
