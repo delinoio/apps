@@ -34,6 +34,7 @@ import (
 	"github.com/delinoio/apps/servers/mcpa-api/internal/crypto"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/delcore"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/oauth"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
 
 const (
@@ -116,6 +117,9 @@ type upstream struct {
 	// unavailable makes the next MCP-audience refresh fail with a server
 	// error and leave the refresh token unchanged.
 	unavailable bool
+	// throttled makes the next MCP-audience refresh fail with 429 and leave
+	// the refresh token unchanged, like Logto rate limiting.
+	throttled bool
 }
 
 func (u *upstream) mcpToken() string {
@@ -157,6 +161,10 @@ func (u *upstream) handle(form url.Values) (int, any) {
 			u.n++
 			return http.StatusOK, map[string]any{"access_token": fmt.Sprintf("dc-token-%d", u.n), "refresh_token": u.rotate(), "expires_in": 3600}
 		case mcpResource:
+			if u.throttled {
+				u.throttled = false
+				return http.StatusTooManyRequests, map[string]string{"error": "too_many_requests"}
+			}
 			if u.unavailable {
 				u.unavailable = false
 				return http.StatusServiceUnavailable, map[string]string{"error": "server_error"}
@@ -901,6 +909,7 @@ func TestCodeIsOneTimeUse(t *testing.T) {
 func TestCodeExchangeRetriesAfterRecoverableFailure(t *testing.T) {
 	for name, fail := range map[string]func(*upstream){
 		"logto unavailable":            func(u *upstream) { u.unavailable = true },
+		"logto rate limited":           func(u *upstream) { u.throttled = true },
 		"rotated token not verifiable": func(u *upstream) { u.unverifiable = true },
 	} {
 		e := newEnv(t)
@@ -1056,6 +1065,74 @@ func TestRefreshKeepsRotatedUpstreamTokenWhenVerificationFails(t *testing.T) {
 	}
 	if status, again := e.refresh(r.RefreshToken, clientID); status != http.StatusOK {
 		t.Fatalf("refresh after retry: %d %+v", status, again)
+	}
+}
+
+func TestRefreshRateLimitedKeepsHandleUsable(t *testing.T) {
+	e := newEnv(t)
+	_, tok := e.exchange(e.code(), nil)
+	e.up.set(func(u *upstream) { u.throttled = true })
+	status, r := e.refresh(tok.RefreshToken, clientID)
+	if status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" || r.AccessToken != "" {
+		t.Fatalf("rate limited refresh: %d %+v", status, r)
+	}
+	if e.store.grantCount() != 1 {
+		t.Fatal("grant removed after Logto rate limiting")
+	}
+	status, r = e.refresh(tok.RefreshToken, clientID)
+	if status != http.StatusOK || r.AccessToken == "" || r.RefreshToken == "" {
+		t.Fatalf("retry with the same handle: %d %+v", status, r)
+	}
+}
+
+func TestStorageFailureDuringExchangeIsTemporarilyUnavailable(t *testing.T) {
+	storageDown := fmt.Errorf("%w: connection reset", store.ErrStorage)
+	t.Run("code exchange", func(t *testing.T) {
+		e := newEnv(t)
+		code := e.code()
+		e.store.failNextUpdate(storageDown)
+		status, r := e.exchange(code, nil)
+		if status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" || r.AccessToken != "" {
+			t.Fatalf("storage failure: %d %+v", status, r)
+		}
+		if e.store.grantCount() != 1 {
+			t.Fatal("grant removed after a storage failure")
+		}
+		// Nothing was consumed: the same code still exchanges.
+		status, tok := e.exchange(code, nil)
+		if status != http.StatusOK || tok.AccessToken == "" || tok.RefreshToken == "" {
+			t.Fatalf("retry with the same code: %d %+v", status, tok)
+		}
+	})
+	t.Run("refresh", func(t *testing.T) {
+		e := newEnv(t)
+		_, tok := e.exchange(e.code(), nil)
+		e.store.failNextUpdate(storageDown)
+		status, r := e.refresh(tok.RefreshToken, clientID)
+		if status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" || r.AccessToken != "" {
+			t.Fatalf("storage failure: %d %+v", status, r)
+		}
+		status, r = e.refresh(tok.RefreshToken, clientID)
+		if status != http.StatusOK || r.RefreshToken == "" {
+			t.Fatalf("retry with the same handle: %d %+v", status, r)
+		}
+	})
+	t.Run("deadline", func(t *testing.T) {
+		e := newEnv(t)
+		code := e.code()
+		e.store.failNextUpdate(context.DeadlineExceeded)
+		if status, r := e.exchange(code, nil); status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" {
+			t.Fatalf("deadline: %d %+v", status, r)
+		}
+	})
+}
+
+func TestNonStorageFailuresStayServerError(t *testing.T) {
+	e := newEnv(t)
+	code := e.code()
+	e.store.failNextUpdate(errors.New("seal failed"))
+	if status, r := e.exchange(code, nil); status != http.StatusInternalServerError || r.Error != "server_error" {
+		t.Fatalf("unclassified failure: %d %+v", status, r)
 	}
 }
 

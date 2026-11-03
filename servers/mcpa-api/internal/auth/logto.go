@@ -341,7 +341,9 @@ func (l *Logto) token(ctx context.Context, form url.Values) (*TokenResponse, err
 		if te.Error == "invalid_grant" {
 			return nil, ErrInvalidGrant
 		}
-		if resp.StatusCode >= 500 {
+		// 429 is Logto rate limiting: a retryable outage, not a rejected
+		// grant, so callers keep the credential usable.
+		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
 			return nil, fmt.Errorf("%w: token endpoint status %d", ErrLogtoUnavailable, resp.StatusCode)
 		}
 		return nil, fmt.Errorf("logto: token endpoint status %d error %q", resp.StatusCode, te.Error)

@@ -752,6 +752,11 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		// stored when keptRotation is set.
 		b.cfg.Log.WarnContext(ctx, "mcp token issuance failed", "grant_id", grantID, "upstream_refresh_kept", keptRotation, "error", err)
 		return nil, newOAuthError(errTemporarilyUnavailable, "the identity provider is unavailable; retry later")
+	case errors.Is(err, store.ErrStorage), errors.Is(err, context.DeadlineExceeded):
+		// The database failed or the request ran out of time. Nothing was
+		// consumed: the code or handle stays usable and the client retries.
+		b.cfg.Log.WarnContext(ctx, "mcp token issuance failed: storage unavailable", "grant_id", grantID, "error", err)
+		return nil, newOAuthError(errTemporarilyUnavailable, "retry later")
 	default:
 		b.cfg.Log.ErrorContext(ctx, "mcp token issuance failed", "grant_id", grantID, "error", err)
 		return nil, newOAuthError(errServerError, "")

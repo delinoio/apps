@@ -24,6 +24,10 @@ type fakeStore struct {
 	tokens   map[string]fakeToken
 	// deleteErr, when set, fails DeleteGrant like an unavailable database.
 	deleteErr error
+	// updateErr, when set, fails the next UpdateGrant before it calls fn, like
+	// a database that is unreachable when the transaction begins, and is then
+	// cleared.
+	updateErr error
 	// insertAuthErr, when set, fails InsertAuthRequest like an unavailable
 	// database.
 	insertAuthErr error
@@ -154,6 +158,10 @@ func (f *fakeStore) GrantIDByAccessToken(_ context.Context, tokenHash []byte) (u
 func (f *fakeStore) UpdateGrant(_ context.Context, id uuid.UUID, use store.MCPGrantUse, fn func(store.MCPGrant) (store.MCPGrantChange, error)) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.updateErr; err != nil {
+		f.updateErr = nil
+		return err
+	}
 	g, ok := f.liveGrant(id)
 	if !ok {
 		return store.ErrNotFound
@@ -306,4 +314,10 @@ func (f *fakeStore) authInsertCalls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.insertAuthCalls
+}
+
+func (f *fakeStore) failNextUpdate(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.updateErr = err
 }
