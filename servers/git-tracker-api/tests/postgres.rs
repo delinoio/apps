@@ -83,7 +83,9 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
             "/delcore.v1.DelcoreService/ListMembers" if auth=="Bearer manager"=>json!({}),
             "/delcore.v1.DelcoreService/Authorize"=>json!({"allowed":true}),
             "/user"=>json!({"id":7}),
-            "/repos/owner/repo/pulls/1"=>json!({"base":{"ref":"main","sha":commit},"head":{"sha":commit}}),
+            "/repos/owner/repo/pulls/1"=>json!({"base":{"ref":"main","sha":commit},"head":{"sha":commit,"repo":{"id":99}}}),
+            // The merge commit of the Actions pull request run: parents are the base and the head.
+            p if p==format!("/repos/owner/repo/commits/{}","c".repeat(40))=>json!({"sha":"c".repeat(40),"parents":[{"sha":commit},{"sha":commit}]}),
             "/repos/owner/repo"|"/repositories/42"=>json!({"id":42,"full_name":"owner/repo","private":false,"permissions":{"admin":true}}),
             "/repos/owner/repo/installation"=>json!({"id":1}),
             "/app/installations/1/access_tokens"=>json!({"token":"installation"}),
@@ -96,6 +98,8 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
             "/repos/owner/repo/git/ref/heads/mismatch"=>json!({"ref":"refs/heads/other","object":{"type":"commit","sha":commit}}),
             "/repos/owner/repo/git/ref/heads/annotated"=>json!({"ref":"refs/heads/annotated","object":{"type":"tag","sha":commit}}),
             "/repos/owner/repo/git/ref/heads/badsha"=>json!({"ref":"refs/heads/badsha","object":{"type":"commit","sha":"not-a-sha"}}),
+            // Automatic pull request baseline: the merge base of the base and head commits.
+            p if p.starts_with("/repos/owner/repo/compare/")=>json!({"merge_base_commit":{"sha":commit}}),
             p if p.starts_with("/repos/owner/repo/commits/")=>json!({"sha":commit,"parents":[]}),
             _=>return (StatusCode::UNAUTHORIZED,Json(json!({"code":"unauthenticated"}))),
         };(StatusCode::OK,Json(out))
@@ -254,6 +258,64 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
     )
     .await;
     assert_eq!(denied["code"], "permission_denied");
+    // Pull request uploads through Actions OIDC. A token issued to the connected repository (ID 42)
+    // may set an explicit baseline; a token carrying the fork head repository ID (99) may upload
+    // without one but is denied when it sets a baseline.
+    let merge = "c".repeat(40);
+    let baseline = "d".repeat(40);
+    let pull_token = |repository: &str| {
+        let claims = json!({"iss":"https://token.actions.githubusercontent.com","aud":"https://git-tracker.api.delino.io","exp":now+300,"iat":now,"sub":"repo:owner/repo:pull_request","repository_id":repository,"run_id":"5","run_attempt":"1","sha":merge,"ref":"refs/pull/1/merge","event_name":"pull_request"});
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("fixture".into());
+        let token =
+            jsonwebtoken::encode(&header, &claims, &EncodingKey::from_rsa_pem(KEY).unwrap())
+                .unwrap();
+        format!("Actions {token}")
+    };
+    let mut oidc_pull = context.clone();
+    oidc_pull["pullRequest"] = json!("1");
+    oidc_pull["baselineCommit"] = json!(baseline);
+    oidc_pull["executionId"] = json!("42/5/1");
+    let oidc_rows = json!([{"id":"one","values":{"bytes":"1"}}]);
+    let (status, same_repository) = call(
+        &http,
+        &base,
+        "Upload",
+        &pull_token("42"),
+        json!({"context":oidc_pull,"dataset":dataset,"rows":oidc_rows}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{same_repository}");
+    let (status, saved) = call(
+        &http,
+        &base,
+        "GetExecution",
+        "",
+        json!({"repositoryId":rid,"executionId":"42/5/1"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["execution"]["context"]["baselineCommit"], baseline);
+    oidc_pull["executionId"] = json!("99/5/1");
+    let (_, fork_baseline) = call(
+        &http,
+        &base,
+        "Upload",
+        &pull_token("99"),
+        json!({"context":oidc_pull,"dataset":dataset,"rows":oidc_rows}),
+    )
+    .await;
+    assert_eq!(fork_baseline["code"], "permission_denied");
+    oidc_pull["baselineCommit"] = json!("");
+    let (status, fork_automatic) = call(
+        &http,
+        &base,
+        "Upload",
+        &pull_token("99"),
+        json!({"context":oidc_pull,"dataset":dataset,"rows":oidc_rows}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{fork_automatic}");
     let github_failures = server
         .metrics
         .events

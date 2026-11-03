@@ -288,7 +288,12 @@ impl Server {
         }
         self.authority.allow(h, &r.space_id, role).await
     }
-    async fn verify_actions(&self, raw: &str, r: &Repository, c: &Context) -> Result<()> {
+    pub(crate) async fn verify_actions(
+        &self,
+        raw: &str,
+        r: &Repository,
+        c: &Context,
+    ) -> Result<()> {
         if !r.connected {
             return Err(Fault::denied());
         }
@@ -320,8 +325,12 @@ impl Server {
             return Err(Fault::denied());
         }
         let p = self.github.pull(r, c.pull_request).await?;
+        // Only a token issued to the connected repository itself may override the baseline.
+        // GitHub issues no OIDC token to a `pull_request` run from a fork and the `repository_id`
+        // claim names the repository running the workflow, so a token carrying the head
+        // repository's ID is the fork signal and stays limited to automatic baselines.
         if c.branch != string(&p["base"], "ref")
-            || !c.baseline_commit.is_empty()
+            || (!c.baseline_commit.is_empty() && rid != r.github_repository_id)
             || (rid != r.github_repository_id
                 && rid != integer(&p["head"]["repo"], "id").to_string())
         {

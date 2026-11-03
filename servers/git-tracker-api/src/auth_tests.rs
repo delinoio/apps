@@ -4,13 +4,19 @@
 //! A loopback TCP mock serves the JWKS with a request counter, an arrival signal and gates for
 //! the response head and the response body. A controlled monotonic clock moves the 30-second
 //! attempt interval and the 300-second snapshot freshness without sleeping.
-use crate::auth::Actions;
+use crate::{Server, auth::Actions, github::GitHub};
+use axum::{Json, Router, extract::Request, http::StatusCode};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use connectrpc::ErrorCode;
+use delino_protocol::gittracker::v1::{Context, Repository};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, jwk::JwkSet};
 use rsa::{RsaPrivateKey, pkcs8::DecodePrivateKey, traits::PublicKeyParts};
 use serde_json::{Value, json};
 use server_common::Fault;
+use server_common::{
+    authority::Authority,
+    telemetry::{Metrics, Service},
+};
 use std::{
     sync::{
         Arc, Mutex,
@@ -466,4 +472,168 @@ async fn token_validation_is_preserved() {
     );
     assert_eq!(h.hits(), 0);
     assert!(h.actions.verify(&token("fixture")).await.is_ok());
+}
+
+const HEAD: &str = "1111111111111111111111111111111111111111";
+const MERGE: &str = "2222222222222222222222222222222222222222";
+const BASE: &str = "3333333333333333333333333333333333333333";
+
+/// One pull request upload: the token's repository ID, the head repository ID that GitHub
+/// reports for the pull request and the optional explicit baseline.
+struct PullCase {
+    name: &'static str,
+    token_repository: &'static str,
+    head_repository: i64,
+    baseline: &'static str,
+    allowed: bool,
+}
+
+/// `verify_actions` for pull requests against a mock GitHub, without a database: the Actions
+/// path never touches PostgreSQL, so a lazy pool that never connects is enough.
+#[tokio::test]
+async fn pull_request_baseline_override_requires_a_token_from_the_connected_repository() {
+    let head_repository = Arc::new(AtomicU64::new(0));
+    let served = head_repository.clone();
+    let mock = Router::new().fallback(move |r: Request| {
+        let served = served.clone();
+        async move {
+            let out = match r.uri().path() {
+                "/repos/owner/repo/installation" => json!({"id":1}),
+                "/app/installations/1/access_tokens" => json!({"token":"installation"}),
+                "/repos/owner/repo/pulls/1" => json!({
+                    "base":{"ref":"main","sha":BASE},
+                    "head":{"sha":HEAD,"repo":{"id":served.load(Ordering::SeqCst)}},
+                }),
+                p if p == format!("/repos/owner/repo/commits/{MERGE}") => {
+                    json!({"sha":MERGE,"parents":[{"sha":BASE},{"sha":HEAD}]})
+                }
+                _ => return (StatusCode::NOT_FOUND, Json(json!({}))),
+            };
+            (StatusCode::OK, Json(out))
+        }
+    });
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move { axum::serve(listener, mock).await.unwrap() });
+    let http = reqwest::Client::new();
+    let private = RsaPrivateKey::from_pkcs8_pem(std::str::from_utf8(KEY).unwrap()).unwrap();
+    let keys: JwkSet = serde_json::from_value(json!({"keys":[{
+        "kty":"RSA","kid":"fixture","alg":"RS256","use":"sig",
+        "n":URL_SAFE_NO_PAD.encode(private.n().to_bytes_be()),
+        "e":URL_SAFE_NO_PAD.encode(private.e().to_bytes_be()),
+    }]}))
+    .unwrap();
+    let server = Server {
+        metrics: Arc::new(Metrics::new(Service::GitTracker)),
+        db: sqlx::PgPool::connect_lazy("postgres://unused@127.0.0.1:1/unused").unwrap(),
+        authority: Authority::new(
+            http.clone(),
+            base.clone(),
+            format!("{base}/token"),
+            "resource".into(),
+            "client".into(),
+            "fixture".into(),
+        ),
+        github: GitHub::new(
+            http.clone(),
+            base,
+            "1".into(),
+            EncodingKey::from_rsa_pem(KEY).unwrap(),
+        ),
+        actions: Actions::new(http.clone(), "http://127.0.0.1:1/jwks".into(), keys),
+        audit_retention: chrono::Duration::days(90),
+        webhook_secret: "fixture-only".into(),
+    };
+    let repository = Repository {
+        full_name: "owner/repo".into(),
+        github_repository_id: "42".into(),
+        installation_id: "1".into(),
+        connected: true,
+        ..Default::default()
+    };
+    let cases = [
+        PullCase {
+            name: "same-repository token with an explicit baseline",
+            token_repository: "42",
+            head_repository: 42,
+            baseline: BASE,
+            allowed: true,
+        },
+        PullCase {
+            name: "same-repository token without a baseline",
+            token_repository: "42",
+            head_repository: 42,
+            baseline: "",
+            allowed: true,
+        },
+        PullCase {
+            name: "fork head token without a baseline",
+            token_repository: "99",
+            head_repository: 99,
+            baseline: "",
+            allowed: true,
+        },
+        PullCase {
+            name: "fork head token with an explicit baseline",
+            token_repository: "99",
+            head_repository: 99,
+            baseline: BASE,
+            allowed: false,
+        },
+        PullCase {
+            name: "fork head token with an explicit baseline for a same-repository pull request",
+            token_repository: "99",
+            head_repository: 42,
+            baseline: BASE,
+            allowed: false,
+        },
+        PullCase {
+            name: "unrelated repository token without a baseline",
+            token_repository: "7",
+            head_repository: 99,
+            baseline: "",
+            allowed: false,
+        },
+        PullCase {
+            name: "unrelated repository token with an explicit baseline",
+            token_repository: "7",
+            head_repository: 99,
+            baseline: BASE,
+            allowed: false,
+        },
+    ];
+    for case in cases {
+        head_repository.store(case.head_repository as u64, Ordering::SeqCst);
+        let mut claims = claims();
+        claims["repository_id"] = case.token_repository.into();
+        claims["run_id"] = "5".into();
+        claims["run_attempt"] = "1".into();
+        claims["sha"] = MERGE.into();
+        claims["ref"] = "refs/pull/1/merge".into();
+        claims["sub"] = "repo:owner/repo:pull_request".into();
+        claims["event_name"] = "pull_request".into();
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("fixture".to_owned());
+        let raw = sign(header, &claims);
+        let context = Context {
+            execution_id: format!("{}/5/1", case.token_repository),
+            commit: HEAD.into(),
+            branch: "main".into(),
+            pull_request: 1,
+            baseline_commit: case.baseline.into(),
+            ..Default::default()
+        };
+        let result = server.verify_actions(&raw, &repository, &context).await;
+        if case.allowed {
+            assert!(result.is_ok(), "{} must be allowed", case.name);
+        } else {
+            assert_eq!(
+                result.expect_err(case.name).code,
+                ErrorCode::PermissionDenied,
+                "{} must be denied",
+                case.name
+            );
+        }
+    }
+    task.abort();
 }

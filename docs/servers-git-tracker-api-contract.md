@@ -70,7 +70,7 @@ External individuals and organizations, CI jobs and service operators.
 
 ### Comparison rules
 
-- Allow explicit baseline SHA override in addition to automatic selection.
+- Allow explicit baseline SHA override in addition to automatic selection. An Actions OIDC pull request upload may set it only when the token's `repository_id` equals the connected repository's GitHub ID; a token carrying a fork head repository ID is denied when it sets a baseline.
 - PR automatic baseline: the merge-base commit. Pin the baseline commit and its representative completed execution at the target execution's first upload. If unavailable then, retain comparison-unavailable status for that execution; do not silently switch to a later uploaded baseline.
 - Push automatic baseline: use first-parent Git ancestry, with row-level fallback for skipped measurements. Fix an eligibility cutoff at the target execution's first upload. For each row, select the nearest ancestor measurement from executions completed by that cutoff. Later-arriving jobs in the same execution use the same cutoff, not their individual upload times. Freeze the selected row baseline.
 - Row-level historical fallback is specific to automatic push comparison. It does not mean using different baseline commits for a user-requested exact two-commit comparison.
