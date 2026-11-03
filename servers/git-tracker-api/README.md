@@ -14,11 +14,11 @@ The web origin is an exact CORS allowlist entry. The default listener is `127.0.
 
 Build the Rust executable from the repository root with `cargo build --locked --manifest-path servers/Cargo.toml -p git-tracker-api`. Cargo requires `protoc`. Root development builds all three servers once through Turborepo; service-local development runs the already built binary.
 
-Run `./servers/target/debug/git-tracker-api migrate` once against an empty Git Tracker database. Migration errors stop the command. Start the process with `./servers/target/debug/git-tracker-api`. The process handles graceful shutdown and runs interruption, finalized-space deletion and audit retention maintenance every minute.
+Run `./servers/target/debug/git-tracker-api migrate` before the first start and after every upgrade that adds a migration. It records applied files and digests in `git_tracker_schema`, is safe to repeat, and upgrades a database that holds only the earlier untracked bootstrap schema in place. Migration errors stop the command. Start the process with `./servers/target/debug/git-tracker-api`. The process handles graceful shutdown and runs interruption, finalized-space deletion, GitHub webhook event application and audit retention maintenance every minute. `POST /github/events` stores a verified delivery (`X-GitHub-Delivery` is required) and returns 204 without waiting for repository locks; the event is applied right away and retried every minute until it succeeds.
 
 Repository rows serialize atomic uploads, completion, deletion and comment publication across service instances. JSONB stores decimal strings and frozen references; comparison uses exact rational arithmetic. Tokens are stored only as SHA-256 digests. Deleting a referenced baseline does not preserve its measurements in comparison caches.
 
-`/healthz` reports liveness; `/readyz` checks database connectivity and schema presence; `/metrics` exposes bounded Prometheus counters. The process emits structured logs and OpenTelemetry HTTP traces. Responses include correlation identifiers and `Cache-Control: no-store`. Never include raw measurements, tokens or provider payloads in telemetry.
+`/healthz` reports liveness; `/readyz` succeeds only when the database holds exactly this binary's migrations; `/metrics` exposes bounded Prometheus counters. The process emits structured logs and OpenTelemetry HTTP traces. Responses include correlation identifiers and `Cache-Control: no-store`. Never include raw measurements, tokens or provider payloads in telemetry.
 
 ## Alert rules
 

@@ -5,6 +5,7 @@ use hmac::{Hmac, Mac};
 use serde_json::Value;
 use server_common::{Fault, Result, integer, now, string, uuid};
 use sha2::Sha256;
+use sqlx::Row;
 /// Returns the instant before which audit rows have expired, or `None` when `retention` reaches
 /// back past the earliest representable timestamp. In that case no application-created audit row
 /// can be older than the cutoff, so there is nothing to expire. Never substitute a sentinel or a
@@ -19,6 +20,8 @@ impl Server {
     /// Runs one maintenance cycle as of `now`. Production uses [`Server::maintain`]; tests pass a
     /// fixed instant to exercise the audit retention boundary deterministically.
     pub async fn maintain_at(&self, now: DateTime<Utc>) -> Result<()> {
+        // Stored webhook events first: a disconnect must not wait behind the slower synchronization.
+        self.apply_webhooks().await?;
         let spaces: Vec<uuid::Uuid> = sqlx::query_scalar(
             "SELECT DISTINCT space_id FROM git_tracker_repositories ORDER BY space_id",
         )
@@ -106,6 +109,14 @@ impl Server {
                     .bind(cutoff)
                     .execute(&self.db)
                     .await?;
+                // Only applied events expire; a pending event is retried until it applies. After
+                // expiry a very late redelivery of the same delivery ID would apply again.
+                sqlx::query(
+                    "DELETE FROM git_tracker_webhook_events WHERE applied_at IS NOT NULL AND applied_at<$1",
+                )
+                .bind(cutoff)
+                .execute(&self.db)
+                .await?;
             }
             None => tracing::debug!(
                 retention_seconds = self.audit_retention.num_seconds(),
@@ -114,7 +125,21 @@ impl Server {
         }
         Ok(())
     }
-    pub async fn webhook(&self, event_type: &str, signature: &str, raw: &[u8]) -> Result<()> {
+    /// Verifies a GitHub delivery and stores it durably, then returns. It takes no repository lock
+    /// and makes no GitHub call, so the response stays within GitHub's delivery deadline however
+    /// long uploads, reads or maintenance hold repository locks. [`Server::apply_webhooks`]
+    /// applies the stored event.
+    ///
+    /// `delivery_id` is the `X-GitHub-Delivery` header. A redelivery of a stored delivery is
+    /// acknowledged and ignored. A verified delivery without that header is rejected as invalid
+    /// and stores nothing, because the identifier is what makes redelivery idempotent.
+    pub async fn webhook(
+        &self,
+        event_type: &str,
+        delivery_id: &str,
+        signature: &str,
+        raw: &[u8],
+    ) -> Result<()> {
         let signature = signature
             .strip_prefix("sha256=")
             .ok_or_else(Fault::unauthenticated)?;
@@ -124,22 +149,120 @@ impl Server {
         mac.update(raw);
         mac.verify_slice(&signature)
             .map_err(|_| Fault::unauthenticated())?;
-        let event: Value = serde_json::from_slice(raw)?;
-        let installation = integer(&event["installation"], "id").to_string();
-        let github = integer(&event["repository"], "id");
-        let action = string(&event, "action");
+        if !valid_delivery_id(delivery_id) {
+            return Err(Fault::invalid("X-GitHub-Delivery is missing or invalid"));
+        }
+        if !WebhookEvent::is_handled(event_type) {
+            tracing::debug!(delivery_id, event_type, "webhook event type ignored");
+            return Ok(());
+        }
+        let event = WebhookEvent::parse(event_type, raw)?;
+        let stored = sqlx::query(
+            "INSERT INTO git_tracker_webhook_events(id,delivery_id,event_type,action,installation_id,github_id,removed_ids,received_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (delivery_id) DO NOTHING",
+        )
+        .bind(uuid::Uuid::now_v7())
+        .bind(delivery_id)
+        .bind(&event.event_type)
+        .bind(&event.action)
+        .bind(&event.installation_id)
+        .bind(event.github_id)
+        .bind(&event.removed_ids)
+        .bind(now())
+        .execute(&self.db)
+        .await?
+        .rows_affected();
+        tracing::info!(
+            delivery_id,
+            event_type,
+            action = event.action,
+            duplicate = stored == 0,
+            "webhook stored"
+        );
+        Ok(())
+    }
+    /// Applies stored webhook events that are still pending, oldest receipt first, and returns the
+    /// number applied. Each event runs in its own transaction with a bounded lock wait, and
+    /// `applied_at` commits with the event's effect, so an event takes effect at most once per
+    /// commit and a crash or failure leaves it pending for the next call. A failed event is
+    /// counted in the failure metric and retried on the next call; the remaining events still
+    /// run, which is safe because every effect either sets a disconnected state or re-reads
+    /// current GitHub metadata. Concurrent callers, including other replicas, never apply the same
+    /// event twice.
+    pub async fn apply_webhooks(&self) -> Result<usize> {
+        let mut applied = 0;
+        let mut after: Option<(DateTime<Utc>, uuid::Uuid)> = None;
+        loop {
+            let page: Vec<(uuid::Uuid, DateTime<Utc>)> = match after {
+                None => sqlx::query_as(
+                    "SELECT id,received_at FROM git_tracker_webhook_events WHERE applied_at IS NULL ORDER BY received_at,id LIMIT 100",
+                )
+                .fetch_all(&self.db)
+                .await?,
+                Some((at, id)) => sqlx::query_as(
+                    "SELECT id,received_at FROM git_tracker_webhook_events WHERE applied_at IS NULL AND (received_at,id)>($1,$2) ORDER BY received_at,id LIMIT 100",
+                )
+                .bind(at)
+                .bind(id)
+                .fetch_all(&self.db)
+                .await?,
+            };
+            let Some(&(last_id, last_at)) = page.last() else {
+                return Ok(applied);
+            };
+            for (id, _) in page {
+                match self.apply_webhook(id).await {
+                    Ok(true) => applied += 1,
+                    Ok(false) => {}
+                    Err(fault) => {
+                        self.record_failure(&fault);
+                        tracing::warn!(
+                            category = "webhook",
+                            event_id = %id,
+                            "webhook event stays pending"
+                        );
+                    }
+                }
+            }
+            after = Some((last_at, last_id));
+        }
+    }
+    /// Applies one pending event. It returns `false` when another caller already applied or holds
+    /// the event.
+    async fn apply_webhook(&self, id: uuid::Uuid) -> Result<bool> {
         let mut tx = self.db.begin().await?;
-        match event_type {
+        sqlx::query("SELECT set_config('lock_timeout',$1,true)")
+            .bind(format!("{}ms", WEBHOOK_LOCK_TIMEOUT.as_millis()))
+            .execute(&mut *tx)
+            .await?;
+        let Some(row) = sqlx::query(
+            "SELECT delivery_id,event_type,action,installation_id,github_id,removed_ids FROM git_tracker_webhook_events WHERE id=$1 AND applied_at IS NULL FOR UPDATE SKIP LOCKED",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        else {
+            return Ok(false);
+        };
+        let delivery_id: String = row.get("delivery_id");
+        let event = WebhookEvent {
+            event_type: row.get("event_type"),
+            action: row.get("action"),
+            installation_id: row.get("installation_id"),
+            github_id: row.get("github_id"),
+            removed_ids: row.get("removed_ids"),
+        };
+        let (installation, github, action) = (
+            &event.installation_id,
+            event.github_id,
+            event.action.as_str(),
+        );
+        match event.event_type.as_str() {
             "installation" if matches!(action, "deleted" | "suspend") => {
-                sqlx::query("UPDATE git_tracker_repositories SET connected=false,public=false WHERE installation_id=$1").bind(&installation).execute(&mut *tx).await?;
+                sqlx::query("UPDATE git_tracker_repositories SET connected=false,public=false WHERE installation_id=$1").bind(installation).execute(&mut *tx).await?;
             }
             "installation_repositories" => {
-                for removed in event["repositories_removed"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                {
-                    sqlx::query("UPDATE git_tracker_repositories SET connected=false,public=false WHERE github_id=$1 AND installation_id=$2").bind(integer(removed,"id")).bind(&installation).execute(&mut *tx).await?;
+                for removed in &event.removed_ids {
+                    sqlx::query("UPDATE git_tracker_repositories SET connected=false,public=false WHERE github_id=$1 AND installation_id=$2").bind(removed).bind(installation).execute(&mut *tx).await?;
                 }
             }
             "repository" if action == "deleted" => {
@@ -154,23 +277,69 @@ impl Server {
             }
             _ => {}
         }
-        if matches!(
+        let spaces:Vec<uuid::Uuid>=sqlx::query_scalar("SELECT DISTINCT space_id FROM git_tracker_repositories WHERE ($1<>0 AND github_id=$1) OR ($2<>'0' AND installation_id=$2)").bind(github).bind(installation).fetch_all(&mut *tx).await?;
+        for space in spaces {
+            audit(
+                &mut tx,
+                &space.to_string(),
+                "github_connection_event",
+                &server_common::id(),
+            )
+            .await?
+        }
+        sqlx::query("UPDATE git_tracker_webhook_events SET applied_at=$2 WHERE id=$1")
+            .bind(id)
+            .bind(now())
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        tracing::info!(
+            delivery_id,
+            event_type = event.event_type,
+            action = event.action,
+            "webhook applied"
+        );
+        Ok(true)
+    }
+}
+/// Longest wait for a row lock while applying one webhook event.
+const WEBHOOK_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Reports whether `id` can identify a delivery: non-empty printable ASCII of bounded length.
+/// GitHub sends a GUID.
+fn valid_delivery_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 128 && id.bytes().all(|b| b.is_ascii_graphic())
+}
+/// The fields of a verified delivery that its effect needs.
+#[derive(Debug, PartialEq, Eq)]
+pub struct WebhookEvent {
+    pub event_type: String,
+    pub action: String,
+    pub installation_id: String,
+    pub github_id: i64,
+    pub removed_ids: Vec<i64>,
+}
+impl WebhookEvent {
+    /// Event types that change connection state.
+    pub fn is_handled(event_type: &str) -> bool {
+        matches!(
             event_type,
             "repository" | "installation" | "installation_repositories"
-        ) {
-            let spaces:Vec<uuid::Uuid>=sqlx::query_scalar("SELECT DISTINCT space_id FROM git_tracker_repositories WHERE ($1<>0 AND github_id=$1) OR ($2<>'0' AND installation_id=$2)").bind(github).bind(&installation).fetch_all(&mut *tx).await?;
-            for space in spaces {
-                audit(
-                    &mut tx,
-                    &space.to_string(),
-                    "github_connection_event",
-                    &server_common::id(),
-                )
-                .await?
-            }
-        }
-        tx.commit().await?;
-        Ok(())
+        )
+    }
+    pub fn parse(event_type: &str, raw: &[u8]) -> Result<Self> {
+        let event: Value = serde_json::from_slice(raw)?;
+        Ok(Self {
+            event_type: event_type.to_owned(),
+            action: string(&event, "action").to_owned(),
+            installation_id: integer(&event["installation"], "id").to_string(),
+            github_id: integer(&event["repository"], "id"),
+            removed_ids: event["repositories_removed"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|removed| integer(removed, "id"))
+                .collect(),
+        })
     }
 }
 #[cfg(test)]
@@ -219,5 +388,43 @@ mod tests {
         );
         let huge = chrono::Duration::from_std(Duration::from_secs(35_999_999_996_400)).unwrap();
         assert_eq!(audit_cutoff(now, huge), None);
+    }
+
+    #[test]
+    fn webhook_payload_is_reduced_to_the_fields_its_effect_needs() {
+        let raw = br#"{"action":"removed","installation":{"id":7},"repository":{"id":42},
+            "repositories_removed":[{"id":1},{"id":"2"},{"name":"no-id"}],"sender":{"login":"x"}}"#;
+        assert_eq!(
+            WebhookEvent::parse("installation_repositories", raw).unwrap(),
+            WebhookEvent {
+                event_type: "installation_repositories".into(),
+                action: "removed".into(),
+                installation_id: "7".into(),
+                github_id: 42,
+                removed_ids: vec![1, 2, 0],
+            }
+        );
+        let bare = WebhookEvent::parse("installation", br#"{"action":"deleted"}"#).unwrap();
+        assert_eq!((bare.installation_id.as_str(), bare.github_id), ("0", 0));
+        assert!(WebhookEvent::parse("installation", b"not json").is_err());
+    }
+
+    #[test]
+    fn only_connection_events_are_stored() {
+        for handled in ["repository", "installation", "installation_repositories"] {
+            assert!(WebhookEvent::is_handled(handled));
+        }
+        for ignored in ["ping", "push", "installation_target", ""] {
+            assert!(!WebhookEvent::is_handled(ignored));
+        }
+    }
+
+    #[test]
+    fn delivery_ids_are_bounded_printable_ascii() {
+        assert!(valid_delivery_id("72d3162e-cc78-11e3-81ab-4c9367dc0958"));
+        assert!(!valid_delivery_id(""));
+        assert!(!valid_delivery_id("has space"));
+        assert!(!valid_delivery_id(&"a".repeat(129)));
+        assert!(valid_delivery_id(&"a".repeat(128)));
     }
 }

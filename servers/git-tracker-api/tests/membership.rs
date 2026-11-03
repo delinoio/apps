@@ -617,10 +617,7 @@ async fn postgres_commit_beyond_rest_cap_uploads_appends_and_completes_after_hea
         .connect(&url)
         .await
         .unwrap();
-    sqlx::raw_sql(include_str!("../migrations/00001_git_tracker.sql"))
-        .execute(&db)
-        .await
-        .unwrap();
+    git_tracker_api::schema::migrate(&db).await.unwrap();
 
     // t0: the PR head is T = C251, which the capped REST list omits once the head advances.
     let target = sha(251);

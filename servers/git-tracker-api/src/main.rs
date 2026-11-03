@@ -46,9 +46,8 @@ async fn run() -> anyhow::Result<()> {
         .await
         .map_err(|_| anyhow::anyhow!("database unavailable"))?;
     if command == "migrate" {
-        sqlx::raw_sql(include_str!("../migrations/00001_git_tracker.sql"))
-            .execute(&db)
-            .await?;
+        git_tracker_api::schema::migrate(&db).await?;
+        tracing::info!("migrations complete");
         return Ok(());
     }
     required("AUDIT_RETENTION")?;
@@ -72,6 +71,9 @@ async fn run() -> anyhow::Result<()> {
                 .with_max_request_body_size(8 << 20),
         );
     let webhook = server.clone();
+    // Wakes the apply task as soon as a delivery is stored; the per-minute cycle is the fallback.
+    let stored = Arc::new(tokio::sync::Notify::new());
+    let webhook_stored = stored.clone();
     let ready = db.clone();
     let metrics = server.metrics.clone();
     let app = Router::new()
@@ -81,14 +83,10 @@ async fn run() -> anyhow::Result<()> {
             get(move || {
                 let db = ready.clone();
                 async move {
-                    match sqlx::query_scalar::<_, bool>(
-                        "SELECT to_regclass('git_tracker_repositories') IS NOT NULL",
-                    )
-                    .fetch_one(&db)
-                    .await
-                    {
-                        Ok(true) => StatusCode::OK,
-                        _ => StatusCode::SERVICE_UNAVAILABLE,
+                    // Ready only when the database holds exactly this binary's migrations.
+                    match git_tracker_api::schema::check(&db).await {
+                        Ok(()) => StatusCode::OK,
+                        Err(_) => StatusCode::SERVICE_UNAVAILABLE,
                     }
                 }
             }),
@@ -109,6 +107,7 @@ async fn run() -> anyhow::Result<()> {
             "/github/events",
             post(move |headers: HeaderMap, body: Bytes| {
                 let server = webhook.clone();
+                let stored = webhook_stored.clone();
                 async move {
                     let event = headers
                         .get("X-GitHub-Event")
@@ -118,8 +117,15 @@ async fn run() -> anyhow::Result<()> {
                         .get("X-Hub-Signature-256")
                         .and_then(|v| v.to_str().ok())
                         .unwrap_or("");
-                    match server.webhook(event, signature, &body).await {
-                        Ok(()) => StatusCode::NO_CONTENT,
+                    let delivery = headers
+                        .get("X-GitHub-Delivery")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    match server.webhook(event, delivery, signature, &body).await {
+                        Ok(()) => {
+                            stored.notify_one();
+                            StatusCode::NO_CONTENT
+                        }
                         Err(f) => {
                             server.record_failure(&f);
                             match f.code {
@@ -153,6 +159,16 @@ async fn run() -> anyhow::Result<()> {
         .unwrap_or_else(|| "127.0.0.1:46321".into());
     let listener = tokio::net::TcpListener::bind(&listen).await?;
     tracing::info!(address = listen, "git-tracker-api listening");
+    let applier = server.clone();
+    let apply = tokio::spawn(async move {
+        loop {
+            stored.notified().await;
+            if let Err(fault) = applier.apply_webhooks().await {
+                applier.record_failure(&fault);
+                tracing::error!(category = "persistence", "webhook apply failed")
+            }
+        }
+    });
     let maintenance = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
         interval.tick().await;
@@ -178,6 +194,8 @@ async fn run() -> anyhow::Result<()> {
     .await?;
     maintenance.abort();
     let _ = maintenance.await;
+    apply.abort();
+    let _ = apply.await;
     db.close().await;
     if let Some(provider) = provider {
         provider.shutdown()?

@@ -11,7 +11,10 @@ use server_common::{
     telemetry::{Metrics, Service},
 };
 use sha2::Sha256;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 const KEY: &[u8] = include_bytes!("fixtures/github-test-key.pem");
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
@@ -52,10 +55,7 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
         .connect(&url)
         .await
         .unwrap();
-    sqlx::raw_sql(include_str!("../migrations/00001_git_tracker.sql"))
-        .execute(&db)
-        .await
-        .unwrap();
+    git_tracker_api::schema::migrate(&db).await.unwrap();
     let actor = uuid::Uuid::now_v7().to_string();
     let space = uuid::Uuid::now_v7().to_string();
     let commit = "a".repeat(40);
@@ -457,7 +457,7 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
     let event = serde_json::to_vec(&json!({"action":"deleted","installation":{"id":1}})).unwrap();
     assert!(
         server
-            .webhook("installation", "sha256=00", &event)
+            .webhook("installation", "delivery-1", "sha256=00", &event)
             .await
             .is_err()
     );
@@ -465,9 +465,11 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
     mac.update(&event);
     let signature = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
     server
-        .webhook("installation", &signature, &event)
+        .webhook("installation", "delivery-1", &signature, &event)
         .await
         .unwrap();
+    // The route only stores the delivery; the apply step takes effect.
+    assert_eq!(server.apply_webhooks().await.unwrap(), 1);
     let (_, private) = call(
         &http,
         &base,
@@ -646,10 +648,7 @@ async fn fixture() -> Fixture {
         .connect(&url)
         .await
         .unwrap();
-    sqlx::raw_sql(include_str!("../migrations/00001_git_tracker.sql"))
-        .execute(&db)
-        .await
-        .unwrap();
+    git_tracker_api::schema::migrate(&db).await.unwrap();
     let actor = uuid::Uuid::now_v7().to_string();
     let space = uuid::Uuid::now_v7().to_string();
     let commit = "a".repeat(40);
@@ -942,7 +941,10 @@ async fn connect_does_not_restore_anonymous_access(interleaving: Interleaving) {
         match interleaving {
             Interleaving::Webhook => {
                 let (signature, raw) = webhook_event();
-                server.webhook("repository", &signature, &raw).await
+                server
+                    .webhook("repository", "delivery-interleaved", &signature, &raw)
+                    .await?;
+                server.apply_webhooks().await.map(|_| ())
             }
             Interleaving::Maintenance => server.maintain().await,
         }
@@ -1041,4 +1043,238 @@ async fn postgres_connect_aborts_without_partial_state_when_locked_refresh_fails
     assert_ne!(status, StatusCode::OK, "{failed}");
     assert_eq!(f.row().await, Some((rid, false, false)));
     assert_eq!(f.audit_count().await, audits);
+}
+
+fn sign(raw: &[u8]) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(b"fixture-only").unwrap();
+    mac.update(raw);
+    format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+}
+
+impl Fixture {
+    async fn deliver(
+        &self,
+        event: &str,
+        delivery: &str,
+        payload: Value,
+    ) -> server_common::Result<()> {
+        let raw = serde_json::to_vec(&payload).unwrap();
+        self.server
+            .webhook(event, delivery, &sign(&raw), &raw)
+            .await
+    }
+    async fn events(&self) -> Vec<(String, bool)> {
+        sqlx::query(&format!(
+            "SELECT delivery_id,applied_at IS NOT NULL FROM {}.git_tracker_webhook_events ORDER BY received_at,id",
+            self.schema
+        ))
+        .fetch_all(&self.admin)
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| {
+            use sqlx::Row;
+            (r.get(0), r.get(1))
+        })
+        .collect()
+    }
+    /// Connects the repository, uploads one execution and returns its connection ID.
+    async fn connected(&self) -> String {
+        let (status, connected) = self.connect().await;
+        assert_eq!(status, StatusCode::OK, "{connected}");
+        connected["repository"]["id"].as_str().unwrap().to_owned()
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_webhook_is_acknowledged_while_the_repository_lock_is_held() {
+    let f = fixture().await;
+    let rid = f.connected().await;
+    let audits = f.audit_count().await;
+
+    // An upload, read or maintenance pass holds the repository row lock.
+    let mut holder = f.admin.begin().await.unwrap();
+    sqlx::query(&format!(
+        "SELECT id FROM {}.git_tracker_repositories FOR UPDATE",
+        f.schema
+    ))
+    .fetch_all(&mut *holder)
+    .await
+    .unwrap();
+
+    let started = Instant::now();
+    f.deliver(
+        "installation",
+        "delivery-locked",
+        json!({"action":"deleted","installation":{"id":1}}),
+    )
+    .await
+    .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "the acknowledgement waited {:?} for the repository lock",
+        started.elapsed()
+    );
+    assert_eq!(f.events().await, vec![("delivery-locked".into(), false)]);
+    assert_eq!(f.row().await, Some((rid.clone(), true, true)));
+
+    // While the lock is held the apply step gives up after its bounded lock wait, counts the
+    // failure and leaves the event pending.
+    let failures = f
+        .server
+        .metrics
+        .events
+        .with_label_values(&["persistence", "failure"]);
+    let before = failures.get();
+    let started = Instant::now();
+    assert_eq!(f.server.apply_webhooks().await.unwrap(), 0);
+    assert!(
+        started.elapsed() >= Duration::from_secs(4) && started.elapsed() < Duration::from_secs(15),
+        "the lock wait was {:?}",
+        started.elapsed()
+    );
+    assert_eq!(failures.get(), before + 1);
+    assert_eq!(f.events().await, vec![("delivery-locked".into(), false)]);
+    assert_eq!(f.audit_count().await, audits);
+
+    // After the lock is released one maintenance cycle disconnects the repository.
+    holder.commit().await.unwrap();
+    f.server.maintain().await.unwrap();
+    assert_eq!(f.row().await, Some((rid, false, false)));
+    assert_eq!(f.events().await, vec![("delivery-locked".into(), true)]);
+    assert_eq!(f.audit_count().await, audits + 1);
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_webhook_redelivery_applies_once() {
+    let f = fixture().await;
+    let rid = f.connected().await;
+    let audits = f.audit_count().await;
+    let removed =
+        json!({"action":"removed","installation":{"id":1},"repositories_removed":[{"id":42}]});
+    f.deliver(
+        "installation_repositories",
+        "delivery-twice",
+        removed.clone(),
+    )
+    .await
+    .unwrap();
+    f.deliver(
+        "installation_repositories",
+        "delivery-twice",
+        removed.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(f.events().await.len(), 1);
+    assert_eq!(f.server.apply_webhooks().await.unwrap(), 1);
+    // Redelivery after application, and a second apply pass, change nothing.
+    f.deliver("installation_repositories", "delivery-twice", removed)
+        .await
+        .unwrap();
+    assert_eq!(f.server.apply_webhooks().await.unwrap(), 0);
+    f.server.maintain().await.unwrap();
+    assert_eq!(f.events().await, vec![("delivery-twice".into(), true)]);
+    assert_eq!(f.audit_count().await, audits + 1);
+    assert_eq!(f.row().await, Some((rid, false, false)));
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_webhook_rejects_unverified_and_unidentified_deliveries() {
+    let f = fixture().await;
+    let rid = f.connected().await;
+    let raw = serde_json::to_vec(&json!({"action":"deleted","installation":{"id":1}})).unwrap();
+    for signature in ["", "sha256=00", "sha1=00", &sign(b"other")] {
+        let denied = f
+            .server
+            .webhook("installation", "delivery-bad", signature, &raw)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            denied.code,
+            connectrpc::ErrorCode::Unauthenticated,
+            "{signature}"
+        );
+    }
+    for delivery in ["", "has space", &"x".repeat(129)] {
+        let invalid = f
+            .server
+            .webhook("installation", delivery, &sign(&raw), &raw)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            invalid.code,
+            connectrpc::ErrorCode::InvalidArgument,
+            "{delivery:?}"
+        );
+    }
+    // Event types without an effect are acknowledged but not stored.
+    f.deliver("ping", "delivery-ping", json!({"zen":"x"}))
+        .await
+        .unwrap();
+    assert_eq!(f.events().await, vec![]);
+    assert_eq!(f.server.apply_webhooks().await.unwrap(), 0);
+    assert_eq!(f.row().await, Some((rid, true, true)));
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_failed_webhook_effect_stays_pending_and_applies_next_cycle() {
+    use std::sync::atomic::Ordering;
+    let f = fixture().await;
+    let rid = f.connected().await;
+    f.github.private.store(true, Ordering::SeqCst);
+    f.github.fail_metadata.store(true, Ordering::SeqCst);
+    f.deliver(
+        "repository",
+        "delivery-retry",
+        json!({"action":"privatized","repository":{"id":42},"installation":{"id":1}}),
+    )
+    .await
+    .unwrap();
+    let failures = f
+        .server
+        .metrics
+        .events
+        .with_label_values(&["github", "failure"]);
+    let before = failures.get();
+    assert_eq!(f.server.apply_webhooks().await.unwrap(), 0);
+    assert!(failures.get() > before, "the GitHub failure is counted");
+    assert_eq!(f.events().await, vec![("delivery-retry".into(), false)]);
+    assert_eq!(f.row().await, Some((rid.clone(), true, true)));
+
+    f.github.fail_metadata.store(false, Ordering::SeqCst);
+    assert_eq!(f.server.apply_webhooks().await.unwrap(), 1);
+    assert_eq!(f.events().await, vec![("delivery-retry".into(), true)]);
+    assert_eq!(f.row().await, Some((rid, false, true)));
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_webhook_events_apply_in_receipt_order() {
+    let f = fixture().await;
+    f.connected().await;
+    for (delivery, action) in [("d1", "created"), ("d2", "unsuspend"), ("d3", "deleted")] {
+        f.deliver(
+            "installation",
+            delivery,
+            json!({"action":action,"installation":{"id":1}}),
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(f.server.apply_webhooks().await.unwrap(), 3);
+    let order: Vec<String> = sqlx::query_scalar(&format!(
+        "SELECT delivery_id FROM {}.git_tracker_webhook_events ORDER BY applied_at,id",
+        f.schema
+    ))
+    .fetch_all(&f.admin)
+    .await
+    .unwrap();
+    assert_eq!(order, ["d1", "d2", "d3"]);
+    // Every connection event is audited once; only the last one disconnects.
+    assert_eq!(f.row().await.map(|r| r.2), Some(false));
 }

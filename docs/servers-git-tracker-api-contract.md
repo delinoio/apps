@@ -107,7 +107,7 @@ External individuals and organizations, CI jobs and service operators.
 - Supply Prometheus alert rules for API server error rate, upload/completion persistence failures, GitHub integration failures, and automatically interrupted executions. Require operator-defined thresholds and observation windows. Alert windows and hold durations (`ALERT_<name>_WINDOW` and `ALERT_<name>_FOR`) are positive single-unit integers ending in `s`, `m`, `h` or `d` that Prometheus can parse: the value in nanoseconds must not exceed 9223372036854775807 (largest accepted: `9223372036s`, `153722867m`, `2562047h`, `106751d`). Generation validates this with checked arithmetic for every alert key, including digit strings that overflow integer parsing, and fails with a configuration error and no rules output otherwise. Operators connect receiving routes through Alertmanager or equivalent; the service does not send alert messages itself.
 - Implement a threat model and automated security tests for tenancy, OIDC/token validation, fork PR restrictions, webhook verification, visibility changes, and secret redaction. Follow repository secret/configuration rules; never commit credentials or expose them in telemetry.
 - No feature flag is required because this is a new independent service. Authorization and data-access rules remain enforced independently.
-- `servers/git-tracker-api/Dockerfile` packages the server as a distroless OCI image that includes the server and protocol licenses, listens on port 46321 through `LISTEN` and is published by the `delino` release (see the [workflow contract](repository-workflow-contract.md#server-image-publication)). The release does not deploy the image or run the one-time `migrate` command; apply it manually before first use. Deployment rollback, infrastructure provisioning, and Runbooks are outside this PRD. These exclusions do not remove the in-scope runtime state, retention, telemetry, and alert-rule behavior described above.
+- `servers/git-tracker-api/Dockerfile` packages the server as a distroless OCI image that includes the server and protocol licenses, listens on port 46321 through `LISTEN` and is published by the `delino` release (see the [workflow contract](repository-workflow-contract.md#server-image-publication)). The release does not deploy the image or run `migrate`; operators apply it explicitly before first use and after every release that adds a migration (see Database migrations). Deployment rollback, infrastructure provisioning, and Runbooks are outside this PRD. These exclusions do not remove the in-scope runtime state, retention, telemetry, and alert-rule behavior described above.
 
 ### Documentation and support
 
@@ -119,6 +119,10 @@ External individuals and organizations, CI jobs and service operators.
 ## Storage
 
 PostgreSQL is authoritative for server state. Stored executions use the generated Rust protobuf JSON serializer directly. There is no Go-format encoder or null-slice adapter; reset development state written by retired implementations. Clients do not persist credentials or measurement history. Configuration and measurements retain stable IDs independently of display names.
+
+## Database migrations
+
+Migrations are explicit, ordered and immutable SQL files embedded in the binary. `git-tracker-api migrate` applies the files that the database lacks in one transaction under an advisory lock, and records each version and SHA-256 digest in `git_tracker_schema`. Repeating it is a no-op. A recorded digest that differs from the binary's file, or a database newer than the binary, stops the command. `/readyz` succeeds only when the database holds exactly this binary's migrations; `serve` never migrates. A database created before version tracking holds only the bootstrap schema: `migrate` records it as version 1 without running that script again, then applies the later files, so retained databases upgrade in place. Recovery is fix-forward only under the [service migration and recovery policy](repository-workflow-contract.md#service-migration-and-recovery): correct a schema defect with a new numbered file and never edit a released file or write a reverse migration.
 
 ## Security
 
@@ -156,6 +160,12 @@ Update the project index and affected protocol/client/server contracts when beha
 
 - [Project](project-git-tracker.md)
 - [Defaults](repository-defaults.md)
+
+## GitHub webhook handling
+
+`POST /github/events` verifies the `X-Hub-Signature-256` HMAC over the raw body first (401 on failure, no row). A verified delivery must carry `X-GitHub-Delivery`; a missing, empty, non-printable or longer than 128 byte identifier returns 400 and stores nothing. The route then stores `repository`, `installation` and `installation_repositories` deliveries in `git_tracker_webhook_events` with `INSERT ... ON CONFLICT (delivery_id) DO NOTHING` and returns 204. Other event types are acknowledged and not stored. The route takes no repository lock and makes no GitHub call, so the acknowledgement does not depend on uploads, reads, maintenance or publication that hold repository locks.
+
+Effects are durable and applied at least once, in delivery-receipt order (`received_at`, then ID). A task in the same process applies a stored event right after receipt, and every per-minute maintenance cycle applies the remaining pending events before its other work, on every replica. Each event runs in its own transaction with a 5 second `lock_timeout`; its effect, its `github_connection_event` audit rows and `applied_at` commit together, and a competing replica skips an event that another replica is applying. A failed event (lock timeout, database or GitHub failure) rolls back, stays pending, increments the existing persistence or GitHub failure counter and is retried by the next cycle. Later events still run after a failure, which is safe because every effect either disconnects (`connected=false`, `public=false`) or re-reads current GitHub metadata. Disconnect semantics and audit rows are unchanged. A redelivery with a stored delivery ID neither applies nor audits again. Maintenance deletes applied events whose `applied_at` is strictly before `now - AUDIT_RETENTION`; pending events never expire, and a redelivery after that expiry is applied again.
 
 ## Connection identity and deletion references
 

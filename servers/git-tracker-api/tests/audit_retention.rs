@@ -42,10 +42,7 @@ async fn fixture(retention: chrono::Duration) -> Fixture {
         .connect(&url)
         .await
         .unwrap();
-    sqlx::raw_sql(include_str!("../migrations/00001_git_tracker.sql"))
-        .execute(&db)
-        .await
-        .unwrap();
+    git_tracker_api::schema::migrate(&db).await.unwrap();
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(1))
         .build()
@@ -153,5 +150,61 @@ async fn ninety_day_retention_deletes_strictly_older_rows_at_a_fixed_instant() {
     assert!(!f.present(before).await);
     assert!(f.present(exact).await);
     assert!(f.present(after).await);
+    f.close().await;
+}
+
+impl Fixture {
+    async fn insert_event(&self, applied_at: Option<DateTime<Utc>>) -> uuid::Uuid {
+        let id = uuid::Uuid::now_v7();
+        // `ping` events are never stored by the route, so applying this fixture row is a no-op.
+        sqlx::query("INSERT INTO git_tracker_webhook_events(id,delivery_id,event_type,action,installation_id,github_id,received_at,applied_at) VALUES($1,$2,'ping','','0',0,$3,$4)")
+            .bind(id)
+            .bind(id.to_string())
+            .bind(at("2000-01-01T00:00:00Z"))
+            .bind(applied_at)
+            .execute(&self.db)
+            .await
+            .unwrap();
+        id
+    }
+    async fn event_present(&self, id: uuid::Uuid) -> bool {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM git_tracker_webhook_events WHERE id=$1")
+            .bind(id)
+            .fetch_one(&self.db)
+            .await
+            .unwrap()
+            == 1
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn retention_deletes_only_applied_webhook_events_older_than_the_cutoff() {
+    let f = fixture(chrono::Duration::from_std(Duration::from_secs(2160 * 3600)).unwrap()).await;
+    let cutoff = at("2026-07-24T00:00:00Z");
+    let micro = chrono::Duration::microseconds(1);
+    let before = f.insert_event(Some(cutoff - micro)).await;
+    let exact = f.insert_event(Some(cutoff)).await;
+    let after = f.insert_event(Some(cutoff + micro)).await;
+    // A pending event never expires, however old it is; the cycle applies it first.
+    let pending = f.insert_event(None).await;
+    f.server
+        .maintain_at(at("2026-10-22T00:00:00Z"))
+        .await
+        .unwrap();
+    assert!(!f.event_present(before).await);
+    assert!(f.event_present(exact).await);
+    assert!(f.event_present(after).await);
+    assert!(
+        f.event_present(pending).await,
+        "an applied event stays until its own retention passes"
+    );
+    let applied: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT applied_at FROM git_tracker_webhook_events WHERE id=$1")
+            .bind(pending)
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+    assert!(applied.is_some(), "maintenance applies pending events");
     f.close().await;
 }

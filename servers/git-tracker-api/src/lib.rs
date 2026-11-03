@@ -9,6 +9,7 @@ pub mod github;
 mod history_range_tests;
 pub mod maintenance;
 pub mod measurement;
+pub mod schema;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use connectrpc::{RequestContext, Response, ServiceRequest, ServiceResult};

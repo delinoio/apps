@@ -89,7 +89,7 @@ DATABASE_URL='postgres://delitools:local-delitools@127.0.0.1:55435/delitools?ssl
 pnpm dev
 ```
 
-Delcore, DevBase and DeliTools track migration versions and checksums; rerun their migration commands after schema changes. Git Tracker currently embeds a single bootstrap SQL script with unconditional table and index creation. Run its migration command only once against an empty database. Do not rerun it on a retained volume after restarts or schema changes. Until upgrade migrations are supported, use a fresh disposable Git Tracker database for a changed schema; preserve any needed data before resetting its volume.
+Delcore, DevBase, DeliTools and Git Tracker track migration versions and checksums; rerun their migration commands after schema changes. Git Tracker records its migrations in `git_tracker_schema`; a retained volume that holds only the earlier untracked bootstrap schema is recorded as version 1 and upgraded in place, so the command is safe to repeat.
 
 Database health does not establish schema readiness. Compose and root `pnpm dev` do not apply application migrations. Service-local `pnpm dev` can also use these databases; start Compose separately before using that command.
 
@@ -296,7 +296,7 @@ Service contracts own migration commands, schema checks, backup and restore proc
 
 Image publication completes the preparation phase. Server runtime deployment and deployment-specific monitoring settings are maintained in private operator automation, outside this repository. Server code, migrations, Dockerfiles, safe service configuration examples and reusable monitoring assets with their validation remain here. Operators apply explicit migrations and verify the deployed revision and readiness under the owning server contracts before authorizing component publication. There is no server mock deployment workflow.
 
-All services support fix-forward recovery only under the common [service migration and recovery policy](#service-migration-and-recovery). Git Tracker's initial schema migration is not repeatable. Make GHCR images readable by the deployment target using public visibility or target-held registry credentials, and pin deployed images by digest. GHCR package creation and visibility have not been exercised against a real account; record the first real release as platform acceptance evidence. Dispatch receipt only confirms event acceptance; inspect the matching public workflow result before recording publication success.
+All services support fix-forward recovery only under the common [service migration and recovery policy](#service-migration-and-recovery). Git Tracker's migration command is repeatable and applies later migrations to retained databases. Make GHCR images readable by the deployment target using public visibility or target-held registry credentials, and pin deployed images by digest. GHCR package creation and visibility have not been exercised against a real account; record the first real release as platform acceptance evidence. Dispatch receipt only confirms event acceptance; inspect the matching public workflow result before recording publication success.
 
 ## Lane binary publication
 
