@@ -61,6 +61,16 @@ export function parseConfiguration(text) {
       throw new Error(`Dataset ${key} must be a non-empty string`);
   if (!Array.isArray(data.columns))
     throw new Error("Dataset id, name and columns are required");
+  // Any other column key is a typo such as "absoluteTreshold". Dropping it
+  // would silently remove a regression threshold, so reject it instead.
+  const columnKeys = new Set([
+    "id",
+    "name",
+    "unit",
+    "direction",
+    "absoluteThreshold",
+    "percentageThreshold",
+  ]);
   const directions = {
     lower: "DIRECTION_LOWER",
     higher: "DIRECTION_HIGHER",
@@ -84,6 +94,11 @@ export function parseConfiguration(text) {
           throw new Error(`Column ${label} ${key} must be a string`);
       if (typeof c.direction !== "string")
         throw new Error(`Column ${label} direction must be a string`);
+      const unknownKey = Object.keys(c).find((key) => !columnKeys.has(key));
+      if (unknownKey !== undefined)
+        throw new Error(
+          `Column ${label} has unknown key ${JSON.stringify(unknownKey.slice(0, 64))}`,
+        );
       if (!directions[c.direction])
         throw new Error(
           `Column ${label} direction must be lower, higher or neutral`,

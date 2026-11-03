@@ -191,6 +191,11 @@ test("malformed configuration and measurements fail before any request", async (
       validRows,
       /columns\[0\] \(id "bytes"\).*unit/u,
     ],
+    [
+      `${validConfiguration}    absoluteTreshold: 0\n`,
+      validRows,
+      /columns\[0\] \(id "bytes"\) has unknown key "absoluteTreshold"/u,
+    ],
   ];
   for (const [configuration, rows, message] of malformed) {
     const result = await run(configuration, rows);
@@ -211,4 +216,12 @@ test("malformed configuration and measurements fail before any request", async (
   assert.deepEqual(requests[0].rows, [
     { id: "file", values: { bytes: "9007199254740993.0000000000000001" } },
   ]);
+  // The corrected spelling uploads and keeps the threshold.
+  const corrected = await run(
+    `${validConfiguration}    absoluteThreshold: 0\n`,
+    validRows,
+  );
+  assert.equal(corrected.code, 0, corrected.log);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].dataset.columns[0].absoluteThreshold, "0");
 });
