@@ -398,3 +398,53 @@ fn deletion_of_unknown_targets_is_not_found_and_leaves_state_unchanged() {
     assert_eq!(s.delete_repository(), 0);
     assert_eq!(s.deleted.len(), 2);
 }
+#[test]
+fn nul_characters_are_rejected_by_field_without_echoing_the_value() {
+    use git_tracker_api::measurement::validate;
+    let ok = || vec![row("one", "1")];
+    let named_row = |f: &mut Row| f.name = "bad\0name".into();
+    type Case = (&'static str, Box<dyn Fn(&mut Dataset, &mut Vec<Row>)>);
+    let cases: Vec<Case> = vec![
+        ("dataset id", Box::new(|d, _| d.id = "da\0ta".into())),
+        ("dataset name", Box::new(|d, _| d.name = "na\0me".into())),
+        (
+            "column id",
+            Box::new(|d, _| d.columns[0].id = "si\0ze".into()),
+        ),
+        (
+            "column name",
+            Box::new(|d, _| d.columns[0].name = "n\0".into()),
+        ),
+        (
+            "column unit",
+            Box::new(|d, _| d.columns[0].unit = "B\0".into()),
+        ),
+        ("row id", Box::new(|_, r| r[0].id = "o\0ne".into())),
+        ("row name", Box::new(move |_, r| named_row(&mut r[0]))),
+    ];
+    for (field, mutate) in cases {
+        let (mut d, mut rows) = (dataset(), ok());
+        mutate(&mut d, &mut rows);
+        let message = validate(&d, &rows).unwrap_err().message;
+        assert!(
+            message.starts_with(field) && message.contains("NUL"),
+            "{field}: {message}"
+        );
+        assert!(!message.contains('\0'), "{field} echoed the value");
+        // The same upload through State leaves no trace.
+        let mut s = State::default();
+        let c = context("run", "a");
+        assert!(
+            s.upload(&c, &d, &rows, Utc::now(), vec![], String::new())
+                .is_err()
+        );
+        assert!(s.records.is_empty() && s.deleted.is_empty(), "{field}");
+    }
+    // Non-ASCII text and other control characters are unchanged.
+    let mut d = dataset();
+    d.name = "크기\u{1}\t\u{7f}".into();
+    d.columns[0].name = "サイズ".into();
+    let mut r = row("행\u{1b}", "1");
+    r.name = "名前\u{85}".into();
+    validate(&d, &[r]).unwrap();
+}

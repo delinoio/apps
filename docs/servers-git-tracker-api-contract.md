@@ -34,7 +34,7 @@ External individuals and organizations, CI jobs and service operators.
 
 ### Dataset configuration and numeric values
 
-- A dataset is a table of items (rows) and measurement columns. Dataset, row, and column IDs are stable and separate from display names. Renaming with the same ID preserves history.
+- A dataset is a table of items (rows) and measurement columns. Dataset, row, and column IDs are stable and separate from display names. Renaming with the same ID preserves history. Reject any client-supplied text that Git Tracker stores, namely the execution ID, branch, dataset ID and name, column ID, name and unit, row ID and name, and the ID of a deletion request, when it contains the NUL character (U+0000), because the PostgreSQL `jsonb` state column cannot hold it. The request fails with a client error before any state is written, names the offending field, never echoes the value and does not count as a persistence failure, so the Action does not retry it. Other control characters and non-ASCII text stay valid.
 - Store configuration in a version-controlled YAML file. The Action transmits it; direct API users provide equivalent configuration. Measurement uploads use the defined JSON format.
 - Columns specify units, improvement direction, and optional regression thresholds. Configuration is immutable within an execution for each dataset: the first upload establishes it, and differing later configuration is rejected.
 - Allow finite integers and decimal values, including negative values. Preserve the JSON number's decimal value through parsing, transport, storage, and comparison; do not introduce a binary floating-point round trip. Display rounding does not affect decisions.

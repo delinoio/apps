@@ -47,7 +47,30 @@ fn find<'a>(
     }
     (None, None)
 }
+/// Rejects a client-supplied string that contains U+0000. Measurement state is stored in a
+/// PostgreSQL `jsonb` column, which cannot hold that character, so accepting it would fail the
+/// whole write later as a persistence outage and make the Action retry. The message names the
+/// field and never echoes the value.
+pub fn reject_nul(field: &str, value: &str) -> Result<()> {
+    if value.contains('\0') {
+        return Err(Fault::precondition(format!(
+            "{field} must not contain a NUL character"
+        )));
+    }
+    Ok(())
+}
 pub fn validate(dataset: &Dataset, rows: &[Row]) -> Result<()> {
+    reject_nul("dataset id", &dataset.id)?;
+    reject_nul("dataset name", &dataset.name)?;
+    for c in &dataset.columns {
+        reject_nul("column id", &c.id)?;
+        reject_nul("column name", &c.name)?;
+        reject_nul("column unit", &c.unit)?;
+    }
+    for row in rows {
+        reject_nul("row id", &row.id)?;
+        reject_nul("row name", &row.name)?;
+    }
     if dataset.id.is_empty() || dataset.name.is_empty() || dataset.columns.is_empty() {
         return Err(Fault::precondition(
             "dataset id, name and columns are required",

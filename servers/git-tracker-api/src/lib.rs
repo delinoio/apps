@@ -111,6 +111,8 @@ fn valid_context(c: &Context) -> Result<()> {
             "repository, execution, commit and branch are required",
         ));
     }
+    measurement::reject_nul("execution id", &c.execution_id)?;
+    measurement::reject_nul("branch", &c.branch)?;
     Ok(())
 }
 pub fn repository_row(row: &sqlx::postgres::PgRow) -> Repository {
@@ -341,6 +343,10 @@ impl Server {
                 // A deletion that changes nothing is not audited. The execution and dataset
                 // kinds fail with not-found before the state is written, so a mistyped
                 // ID cannot tombstone an execution or mark a dataset as deleted.
+                // The ID becomes a key of the stored state, which `jsonb` cannot hold with U+0000.
+                if string(&q, "id").contains('\0') {
+                    return Err(Fault::invalid("id must not contain a NUL character"));
+                }
                 let changed = match string(&q, "kind") {
                     "DELETE_KIND_REPOSITORY" => state.delete_repository() > 0,
                     "DELETE_KIND_EXECUTION" => state.delete_execution(string(&q, "id"))?,

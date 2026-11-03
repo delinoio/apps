@@ -1269,3 +1269,153 @@ async fn postgres_delete_fails_for_missing_targets_and_limits_dataset_markers() 
         "a deleted execution stays deleted: {body}"
     );
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_nul_characters_are_rejected_before_persistence() {
+    let f = fixture().await;
+    let (status, connected) = f.connect().await;
+    assert_eq!(status, StatusCode::OK, "{connected}");
+    let rid = connected["repository"]["id"].as_str().unwrap().to_owned();
+    let (_, issued) = f
+        .call(
+            "IssueToken",
+            "Bearer manager",
+            json!({"repositoryId":rid,"expiresAt":(chrono::Utc::now()+chrono::Duration::days(1)).to_rfc3339()}),
+        )
+        .await;
+    let auth = format!("Bearer {}", issued["token"].as_str().unwrap());
+    let failures = f
+        .server
+        .metrics
+        .events
+        .with_label_values(&["persistence", "failure"]);
+    let before = failures.get();
+    let state = || async {
+        sqlx::query_scalar::<_, Value>(&format!(
+            "SELECT state FROM {}.git_tracker_repositories WHERE id::text=$1",
+            f.schema
+        ))
+        .bind(&rid)
+        .fetch_one(&f.admin)
+        .await
+        .unwrap()
+    };
+    let initial = state().await;
+    let audits = f.audit_count().await;
+    let context = |execution: &str, branch: &str| json!({"repositoryId":rid,"executionId":execution,"commit":f.commit,"branch":branch});
+    let dataset = |id: &str, column: &str, unit: &str| json!({"id":id,"name":"Size","columns":[{"id":column,"name":"Size","unit":unit,"direction":"DIRECTION_LOWER"}]});
+    let upload = |context: Value, dataset: Value, row: &str| {
+        let f = &f;
+        let row = row.to_owned();
+        let auth = auth.clone();
+        let column = dataset["columns"][0]["id"].clone();
+        async move {
+            f.call(
+                "Upload",
+                &auth,
+                json!({"context":context,"dataset":dataset,"rows":[{"id":row,"values":{column.as_str().unwrap():"1"}}]}),
+            )
+            .await
+        }
+    };
+    let rejected = [
+        (
+            "execution id",
+            upload(
+                context("run\u{0}", "main"),
+                dataset("size", "bytes", "B"),
+                "one",
+            )
+            .await,
+        ),
+        (
+            "branch",
+            upload(
+                context("run", "ma\u{0}in"),
+                dataset("size", "bytes", "B"),
+                "one",
+            )
+            .await,
+        ),
+        (
+            "dataset id",
+            upload(
+                context("run", "main"),
+                dataset("si\u{0}ze", "bytes", "B"),
+                "one",
+            )
+            .await,
+        ),
+        (
+            "column id",
+            upload(
+                context("run", "main"),
+                dataset("size", "by\u{0}tes", "B"),
+                "one",
+            )
+            .await,
+        ),
+        (
+            "column unit",
+            upload(
+                context("run", "main"),
+                dataset("size", "bytes", "B\u{0}"),
+                "one",
+            )
+            .await,
+        ),
+        (
+            "row id",
+            upload(
+                context("run", "main"),
+                dataset("size", "bytes", "B"),
+                "on\u{0}e",
+            )
+            .await,
+        ),
+    ];
+    for (field, (status, body)) in rejected {
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{field}: {body}");
+        let code = body["code"].as_str().unwrap();
+        assert!(
+            code == "failed_precondition" || code == "invalid_argument",
+            "{field}: {body}"
+        );
+        let message = body["message"].as_str().unwrap();
+        assert!(message.contains("NUL"), "{field}: {body}");
+        assert!(
+            !message.contains('\u{0}'),
+            "{field} echoed the value: {body}"
+        );
+    }
+    let (status, body) = f
+        .call(
+            "Delete",
+            "Bearer manager",
+            json!({"repositoryId":rid,"kind":"DELETE_KIND_EXECUTION","id":"ru\u{0}n","confirmed":true}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(
+        failures.get(),
+        before,
+        "a rejected upload counted as a persistence failure"
+    );
+    assert_eq!(
+        state().await,
+        initial,
+        "a rejected request changed the stored state"
+    );
+    assert_eq!(f.audit_count().await, audits);
+
+    // Other control characters and non-ASCII text are stored unchanged.
+    let (status, body) = upload(
+        context("run", "main"),
+        dataset("크기\u{1}", "bytes", "B"),
+        "행\t",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(failures.get(), before);
+}
