@@ -824,6 +824,31 @@ func TestIntegrationBudgetLimitPrecision(t *testing.T) {
 	}
 }
 
+// proxyHTTPRequests reads mcpa_http_requests_total for the proxy surface.
+func proxyHTTPRequests(t *testing.T, e *itEnv, codeClass string) float64 {
+	t.Helper()
+	families, err := e.app.Metrics.Registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var total float64
+	for _, f := range families {
+		if f.GetName() != "mcpa_http_requests_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+			if labels["surface"] == "proxy" && labels["code_class"] == codeClass {
+				total += m.GetCounter().GetValue()
+			}
+		}
+	}
+	return total
+}
+
 // metricValue reads one counter sample from the server registry.
 func metricValue(t *testing.T, e *itEnv, name, label, value string) float64 {
 	t.Helper()
@@ -899,16 +924,51 @@ func TestIntegrationKeyInvalidation(t *testing.T) {
 		f.denied[e.tenant+"/"+e.users["invoker"]+"/invoke_models"] = []delcorev1.BlockReason{delcorev1.BlockReason_BLOCK_REASON_PERMISSION}
 	})
 	time.Sleep(250 * time.Millisecond)
-	if got := status(key, id); got != http.StatusUnauthorized {
-		t.Fatalf("after leaving the tenant: %d", got)
+	// This 401 is raised after the call state exists. Like the earlier 401s
+	// it must leave no call record, outbox row, aggregate change or call
+	// sample, and the response still carries the request ID.
+	usageState := func() [4]int64 {
+		return [4]int64{
+			e.scalar(`SELECT count(*) FROM call_records`),
+			e.scalar(`SELECT count(*) FROM usage_outbox`),
+			e.scalar(`SELECT COALESCE(sum(request_bytes + response_bytes), 0)::bigint FROM usage_daily`),
+			e.scalar(`SELECT count(*) FROM usage_daily`),
+		}
+	}
+	before := usageState()
+	proxy4xx := proxyHTTPRequests(t, e, "4xx")
+	denied := e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if denied.status != http.StatusUnauthorized || gjson.GetBytes(denied.body, "error.type").String() != "invalid_call_key" {
+		t.Fatalf("after leaving the tenant: %d %s", denied.status, denied.body)
+	}
+	if denied.callID == "" {
+		t.Fatal("permission denial has no request ID")
+	}
+	// The HTTP request metric is the last step of the handler, after any
+	// metering commit, so waiting for it makes the checks below conclusive.
+	for deadline := time.Now().Add(5 * time.Second); proxyHTTPRequests(t, e, "4xx") == proxy4xx; {
+		if time.Now().After(deadline) {
+			t.Fatal("the permission denial was not counted as an HTTP request")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if after := usageState(); after != before {
+		t.Fatalf("permission denial changed usage state: before %v, after %v", before, after)
+	}
+	if e.scalar(`SELECT count(*) FROM call_records WHERE id = $1`, denied.callID) != 0 {
+		t.Fatal("permission denial was recorded")
 	}
 	e.dc.set(func(f *fakeDelcore) { delete(f.denied, e.tenant+"/"+e.users["invoker"]+"/invoke_models") })
 	// Inactive tenants cannot call; Delcore errors after cache expiry fail
-	// closed.
+	// closed. Both are rejections after a valid key and stay recorded.
 	e.dc.set(func(f *fakeDelcore) { f.states[e.tenant] = delcorev1.TenantState_TENANT_STATE_BLOCKED })
 	time.Sleep(250 * time.Millisecond)
-	if got := status(key, id); got != http.StatusForbidden {
-		t.Fatalf("blocked tenant: %d", got)
+	blocked := e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if blocked.status != http.StatusForbidden {
+		t.Fatalf("blocked tenant: %d", blocked.status)
+	}
+	if rec := e.waitFinal(blocked.callID); rec.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_TENANT {
+		t.Fatalf("blocked tenant record %+v", rec)
 	}
 	e.dc.set(func(f *fakeDelcore) { delete(f.states, e.tenant); f.down = true })
 	time.Sleep(250 * time.Millisecond)
@@ -945,6 +1005,10 @@ func TestIntegrationKeyInvalidation(t *testing.T) {
 	mustDo(e, "owner", e.rpc.DeleteResource, &mcpav1.DeleteResourceRequest{ResourceId: id, ConfirmName: "keys"})
 	if got := status(ownerKey, id); got != http.StatusUnauthorized {
 		t.Fatalf("deleted resource: %d", got)
+	}
+	// No invalid-key rejection reaches the call metric.
+	if got := metricValue(t, e, "mcpa_calls_total", "status", "unspecified"); got != 0 {
+		t.Fatalf("mcpa_calls_total has an unspecified sample: %v", got)
 	}
 	// Removing a credential takes effect for the next call.
 	otherKey, _ := e.callKey("owner", other)

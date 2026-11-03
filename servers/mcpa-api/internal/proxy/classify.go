@@ -95,6 +95,8 @@ func statusClassOf(status int) mcpav1.StatusClass {
 }
 
 // rejectionOutcome maps a rejection to the recorded status and error class.
+// Engine.ServeHTTP never records a RejectionInvalidCallKey call, so the first
+// case only keeps the mapping total; no call record carries it.
 func rejectionOutcome(code RejectionCode) (mcpav1.CallStatus, ErrorClass) {
 	switch code {
 	case RejectionInvalidCallKey:
