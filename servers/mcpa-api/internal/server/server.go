@@ -68,7 +68,7 @@ func New(cfg Config) http.Handler {
 	mux := http.NewServeMux()
 	s := &server{cfg: cfg}
 
-	path, connectHandler := mcpav1connect.NewMcpaServiceHandler(cfg.Service, connect.WithInterceptors(s.interceptor()))
+	path, connectHandler := mcpav1connect.NewMcpaServiceHandler(cfg.Service, append(handlerCodecs(), connect.WithInterceptors(s.interceptor()))...)
 	mux.Handle(path, s.wrap(obs.SurfaceManagement, s.browserPolicy(connectHandler, false)))
 
 	cfg.Web.Register(mux, func(h http.Handler) http.Handler {
@@ -243,7 +243,15 @@ func (s *server) interceptor() connect.UnaryInterceptorFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			start := time.Now()
 			procedure := req.Spec().Procedure
-			p, err := s.cfg.Authenticator.Request(ctx, req.Header())
+			var p *auth.Principal
+			var err error
+			if requestDecodeFailed(req.Any()) {
+				// The codecs rejected the body. Fail before authentication, as
+				// connect-go did before, with a fixed message and no content.
+				err = apperr.InvalidInput(invalidInputMessage)
+			} else {
+				p, err = s.cfg.Authenticator.Request(ctx, req.Header())
+			}
 			if err == nil {
 				ctx = auth.WithPrincipal(ctx, p)
 				var resp connect.AnyResponse
