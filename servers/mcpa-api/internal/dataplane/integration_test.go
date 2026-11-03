@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -110,6 +111,13 @@ func TestIntegrationHappyPath(t *testing.T) {
 	if s.GetCallCount() != int64(len(calls)) || s.GetTotalBytes() != total || s.GetRequestBytes() != reqBytes ||
 		s.GetTotalGib() != pricing.GiB(total) || s.GetEstimatedUsd() != pricing.EstimateUSD(total) {
 		t.Fatalf("summary %+v, want %d bytes", s, total)
+	}
+	// The summary strings are exact decimals, not rounded to six places.
+	if gib, ok := new(big.Rat).SetString(s.GetTotalGib()); !ok || gib.Cmp(new(big.Rat).SetFrac64(total, 1<<30)) != 0 {
+		t.Fatalf("total_gib %q is not exactly %d / 2^30", s.GetTotalGib(), total)
+	}
+	if usd, ok := new(big.Rat).SetString(s.GetEstimatedUsd()); !ok || usd.Cmp(pricing.SpendUSD(total)) != 0 {
+		t.Fatalf("estimated_usd %q is not exactly the spend of %d bytes", s.GetEstimatedUsd(), total)
 	}
 	var rowBytes, rowCalls int64
 	for _, r := range usage.GetRows() {

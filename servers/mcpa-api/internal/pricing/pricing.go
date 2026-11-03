@@ -36,6 +36,15 @@ var (
 	limitPattern = regexp.MustCompile(`^(0|[1-9][0-9]{0,11})(\.[0-9]{1,6})?$`)
 )
 
+// Maximum fraction digits of exact byte-derived amounts. Any byte count is
+// n / 2^30, which terminates after at most 30 fraction digits, and the USD
+// amount n * 7 / (100 * 2^30) terminates after at most 32 fraction digits, so
+// rendering with these widths never rounds.
+const (
+	gibFractionDigits = 30
+	usdFractionDigits = 32
+)
+
 // PerByte returns the USD price of one byte.
 func PerByte() *big.Rat { return new(big.Rat).Set(usdPerByte) }
 
@@ -44,14 +53,16 @@ func SpendUSD(bytes int64) *big.Rat {
 	return new(big.Rat).Mul(new(big.Rat).SetInt64(bytes), usdPerByte)
 }
 
-// GiB returns bytes / 2^30 as a canonical decimal with at most 6 places.
+// GiB returns bytes / 2^30 as an exact canonical decimal (at most 30 fraction
+// digits, no trailing zeros). Display rounding belongs to the console.
 func GiB(bytes int64) string {
-	return Format(new(big.Rat).Quo(new(big.Rat).SetInt64(bytes), gib), 6)
+	return Format(new(big.Rat).Quo(new(big.Rat).SetInt64(bytes), gib), gibFractionDigits)
 }
 
-// EstimateUSD returns the estimated USD amount of bytes with at most 6 places.
+// EstimateUSD returns the exact estimated USD amount of bytes (at most 32
+// fraction digits, no trailing zeros). Display rounding belongs to the console.
 func EstimateUSD(bytes int64) string {
-	return Format(SpendUSD(bytes), 6)
+	return Format(SpendUSD(bytes), usdFractionDigits)
 }
 
 // Format renders r rounded half-up to at most places decimals, without

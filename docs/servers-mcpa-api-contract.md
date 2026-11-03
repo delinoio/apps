@@ -293,7 +293,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 
 ### Usage, errors and audit
 
-- **Usage.** `GetUsage` returns a `UsageSummary` and daily `UsageRow` aggregates. The summary has bytes per segment, total bytes, total GiB (`total_bytes / 2^30`) and the estimated USD (`total_gib × 0.07`), all as exact canonical decimals. Views state that Delcore issues the final bill.
+- **Usage.** `GetUsage` returns a `UsageSummary` and daily `UsageRow` aggregates. The summary has bytes per segment, total bytes, total GiB (`total_bytes / 2^30`) and the estimated USD (`total_gib × 0.07`), all as exact canonical decimals without rounding (up to 30 fraction digits for GiB and 32 for USD, trailing zeros removed). Views state that Delcore issues the final bill.
 - **Errors.** `ListCallRecords` returns request-level call records. Each record has the call outcome category (`CallStatus`), the provider status class (`StatusClass`), a bounded `error_class` and the debug `request_id`.
 - **Filters.** Usage and error views filter by resource, model, provider, call key, status and time range. Without resource filters, tenant-wide results cover the resources on which the caller has the required role.
 - **Stored data.** A call record holds only metadata: start time, resource, key, provider, model, format, streaming flag, status, provider status class, error class, request bytes, response bytes, latency and request ID. Request and response bodies (prompts and outputs) are never stored or logged. SDK request-body logging stays disabled, and there is no opt-in debug body logging.
