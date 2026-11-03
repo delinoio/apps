@@ -198,6 +198,38 @@ test("unknown column keys are rejected and named", () => {
   );
 });
 
+test("inherited property names are not column directions", () => {
+  for (const name of [
+    "constructor",
+    "toString",
+    "valueOf",
+    "hasOwnProperty",
+    "__proto__",
+    "isPrototypeOf",
+    "toLocaleString",
+  ])
+    assert.throws(
+      () => parseConfiguration(columnYaml(`id: bytes\ndirection: ${name}`)),
+      /columns\[0\] \(id "bytes"\) direction must be lower, higher or neutral/u,
+      name,
+    );
+  // Casing and padding are not accepted either, as before.
+  for (const name of ["Lower", "LOWER", "lower "])
+    assert.throws(
+      () => parseConfiguration(columnYaml(`id: bytes\ndirection: "${name}"`)),
+      /direction must be lower, higher or neutral/u,
+      name,
+    );
+  const mapped = parseConfiguration(
+    "id: size\nname: Size\ncolumns:\n  - id: a\n    direction: lower\n  - id: b\n    direction: higher\n  - id: c\n    direction: neutral\n",
+  ).columns.map((column) => column.direction);
+  assert.deepEqual(mapped, [
+    "DIRECTION_LOWER",
+    "DIRECTION_HIGHER",
+    "DIRECTION_NEUTRAL",
+  ]);
+});
+
 test("unknown keys outside columns are not rejected", () => {
   const dataset = parseConfiguration(
     `${columnYaml(validColumn)}description: extra\n`,

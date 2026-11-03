@@ -436,3 +436,92 @@ test("API error reasons reach the Action log and respect warn-on-api-error", asy
     /::warning::API failed \(429\); correlation ID: corr-flow; resource_exhausted: slow down/u,
   );
 });
+
+test("invalid column directions fail before any identity or API request", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "git-tracker-action-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "event.json"), "{}");
+  await writeFile(
+    join(directory, "rows.json"),
+    '{"rows":[{"id":"file","values":{"bytes":1}}]}',
+  );
+  const hits = [];
+  const server = createServer(async (request, response) => {
+    for await (const chunk of request); // drain
+    hits.push(request.url);
+    response.setHeader("Content-Type", "application/json");
+    response.end(
+      request.url.startsWith("/identity") ? '{"value":"oidc-fixture"}' : "{}",
+    );
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const run = async (direction, extra) => {
+    await writeFile(
+      join(directory, "dataset.yaml"),
+      `id: size\nname: Size\ncolumns:\n  - id: bytes\n    direction: ${direction}\n`,
+    );
+    return new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [fileURLToPath(new URL("./main.mjs", import.meta.url))],
+        {
+          env: {
+            PATH: process.env.PATH,
+            GITHUB_ACTIONS: "true",
+            GITHUB_EVENT_PATH: join(directory, "event.json"),
+            GITHUB_SHA: "a".repeat(40),
+            GITHUB_REF_NAME: "main",
+            GITHUB_REPOSITORY_ID: "42",
+            GITHUB_RUN_ID: "123",
+            GITHUB_RUN_ATTEMPT: "1",
+            ACTIONS_ID_TOKEN_REQUEST_URL: `${origin}/identity?fixture=1`,
+            ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-fixture",
+            "INPUT_API-URL": origin,
+            "INPUT_REPOSITORY-ID": "42",
+            INPUT_CONFIGURATION: join(directory, "dataset.yaml"),
+            INPUT_MEASUREMENTS: join(directory, "rows.json"),
+            ...extra,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let log = "";
+      child.stdout.on("data", (chunk) => (log += chunk));
+      child.stderr.on("data", (chunk) => (log += chunk));
+      child.on("error", reject);
+      child.on("exit", (code) => resolve({ code, log }));
+    });
+  };
+  // Both authentication modes: a repository token and the Actions identity.
+  for (const auth of [{ INPUT_TOKEN: "repo-token-fixture" }, {}])
+    for (const direction of ["constructor", "__proto__", "toString"]) {
+      const result = await run(direction, auth);
+      assert.equal(result.code, 1, result.log);
+      assert.match(
+        result.log,
+        /::error::Column columns\[0\] \(id "bytes"\) direction must be lower, higher or neutral/u,
+      );
+    }
+  assert.deepEqual(hits, [], "invalid input must not cause any request");
+
+  // A valid direction still uploads, with an identity request in OIDC mode.
+  let result = await run("lower", { INPUT_TOKEN: "repo-token-fixture" });
+  assert.equal(result.code, 0, result.log);
+  assert.deepEqual(hits, ["/gittracker.v1.GitTrackerService/Upload"]);
+  hits.length = 0;
+  result = await run("neutral", {});
+  assert.equal(result.code, 0, result.log);
+  assert.equal(hits.length, 2);
+  assert.match(hits[0], /^\/identity/u);
+
+  // The complete operation reads no input files and is unaffected.
+  hits.length = 0;
+  result = await run("constructor", {
+    INPUT_TOKEN: "repo-token-fixture",
+    INPUT_OPERATION: "complete",
+  });
+  assert.equal(result.code, 0, result.log);
+  assert.deepEqual(hits, ["/gittracker.v1.GitTrackerService/Complete"]);
+});
