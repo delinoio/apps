@@ -476,6 +476,16 @@ func (r *upstreamRelay) openTunnel(callID string, client, upstream net.Conn) *tu
 		}
 	}
 	r.open++
+	// The timer is set before the tunnel is published in r.calls: CloseCall
+	// can reach close, which stops the timer, as soon as r.mu is released. The
+	// idle callback takes r.mu first so that even a timer that fires at once
+	// observes the assignment, which happens under the same lock.
+	t.timer = time.AfterFunc(t.idle, func() {
+		r.mu.Lock()
+		r.mu.Unlock()
+		r.logger.Debug("upstream relay tunnel idle timeout", slog.String("call_id", callID))
+		t.close()
+	})
 	if callID != "" {
 		set := r.calls[callID]
 		if set == nil {
@@ -485,10 +495,6 @@ func (r *upstreamRelay) openTunnel(callID string, client, upstream net.Conn) *tu
 		set[t] = struct{}{}
 	}
 	r.mu.Unlock()
-	t.timer = time.AfterFunc(t.idle, func() {
-		r.logger.Debug("upstream relay tunnel idle timeout", slog.String("call_id", callID))
-		t.close()
-	})
 	return t
 }
 

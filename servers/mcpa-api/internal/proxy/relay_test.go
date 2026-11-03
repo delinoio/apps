@@ -705,3 +705,47 @@ func TestUpstreamRelayDialContextCarriesCallID(t *testing.T) {
 		t.Fatalf("call IDs seen by the dial function: %q", ids)
 	}
 }
+
+// CloseCall can run while a tunnel is being opened for the same call, for
+// example when a cancelled Claude call tears down while its relay connection
+// is still being established. close stops the idle timer, so the timer must
+// exist before the tunnel is visible to CloseCall. Under -race, publishing the
+// tunnel first reports a data race on the timer field and can panic with a nil
+// timer.
+func TestUpstreamRelayOpenTunnelIsSafeAgainstConcurrentCloseCall(t *testing.T) {
+	for _, idle := range []time.Duration{time.Hour, time.Nanosecond} {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		relay := newUpstreamRelay(ln, []byte("0123456789abcdef0123456789abcdef"), nil, discardLogger(), withRelayIdleTimeout(idle))
+		stop := make(chan struct{})
+		var closer sync.WaitGroup
+		closer.Add(1)
+		go func() {
+			defer closer.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					relay.CloseCall("call-race")
+				}
+			}
+		}()
+		const tunnels = 500
+		for i := 0; i < tunnels; i++ {
+			clientSide, clientPeer := net.Pipe()
+			upstreamSide, upstreamPeer := net.Pipe()
+			tn := relay.openTunnel("call-race", clientSide, upstreamSide)
+			tn.close()
+			_ = clientPeer.Close()
+			_ = upstreamPeer.Close()
+		}
+		close(stop)
+		closer.Wait()
+		relay.CloseCall("call-race")
+		waitFor(t, 2*time.Second, "all tunnels to close", func() bool { return relay.openTunnels() == 0 })
+		_ = relay.Close()
+	}
+}
