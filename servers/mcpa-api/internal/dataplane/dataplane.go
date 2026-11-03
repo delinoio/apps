@@ -58,6 +58,11 @@ type Config struct {
 	// which does not use BaseTransport. The default applies the same
 	// public-address guard as the default BaseTransport.
 	DialUpstream proxy.DialFunc
+	// GeminiCLIClientID and GeminiCLIClientSecret are the operator-configured
+	// Google OAuth client that refreshes Gemini CLI tokens whose payload
+	// carries no client.
+	GeminiCLIClientID     string
+	GeminiCLIClientSecret string
 	// Now defaults to time.Now.
 	Now func() time.Time
 }
@@ -135,6 +140,9 @@ func New(cfg Config) (*DataPlane, error) {
 		BaseTransport:      cfg.BaseTransport,
 		DialUpstream:       cfg.DialUpstream,
 		Now:                cfg.Now,
+
+		GeminiCLIClientID:     cfg.GeminiCLIClientID,
+		GeminiCLIClientSecret: cfg.GeminiCLIClientSecret,
 	})
 	if err != nil {
 		return nil, err

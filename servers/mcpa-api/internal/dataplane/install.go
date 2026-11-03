@@ -34,20 +34,23 @@ type InstallOptions struct {
 // tenant lifecycle, the cross-replica credential listener and engine
 // shutdown.
 func Install(a *app.App, opts InstallOptions) (*DataPlane, error) {
+	geminiClient := opts.OAuth.GeminiCLIClient
+	if geminiClient == (provideroauth.GoogleOAuthClient{}) {
+		geminiClient = provideroauth.GoogleOAuthClient{ClientID: a.Config.GeminiCLIOAuthClientID, ClientSecret: a.Config.GeminiCLIOAuthClientSecret}
+	}
 	dp, err := New(Config{
 		Store: a.Store, Keys: a.Keys, Delcore: a.Delcore, Metrics: a.Metrics, Log: a.Log,
 		CheckpointInterval: a.Config.CheckpointInterval, OutboxInterval: a.Config.OutboxInterval,
 		DependencyTimeout: a.Config.DependencyTimeout, RetentionInterval: opts.RetentionInterval,
 		LifecycleInterval: opts.LifecycleInterval, BaseTransport: opts.BaseTransport, Now: opts.Now,
+		GeminiCLIClientID: geminiClient.ClientID, GeminiCLIClientSecret: geminiClient.ClientSecret,
 	})
 	if err != nil {
 		return nil, err
 	}
 	oauth := opts.OAuth
 	oauth.Store, oauth.Keys, oauth.Listener, oauth.Log = a.Store, a.Keys, dp.Sync, a.Log
-	if oauth.GeminiCLIClient == (provideroauth.GoogleOAuthClient{}) {
-		oauth.GeminiCLIClient = provideroauth.GoogleOAuthClient{ClientID: a.Config.GeminiCLIOAuthClientID, ClientSecret: a.Config.GeminiCLIOAuthClientSecret}
-	}
+	oauth.GeminiCLIClient = geminiClient
 	if oauth.AntigravityClient == (provideroauth.GoogleOAuthClient{}) {
 		oauth.AntigravityClient = provideroauth.GoogleOAuthClient{ClientID: a.Config.AntigravityOAuthClientID, ClientSecret: a.Config.AntigravityOAuthClientSecret}
 	}
