@@ -338,28 +338,18 @@ impl Server {
                 if q["confirmed"] != true {
                     return Err(Fault::invalid("deletion confirmation is required"));
                 }
-                match string(&q, "kind") {
-                    "DELETE_KIND_REPOSITORY" => {
-                        state
-                            .deleted
-                            .extend(state.records.keys().map(|id| (id.clone(), true)));
-                        state.records.clear();
-                    }
-                    "DELETE_KIND_EXECUTION" => {
-                        let id = string(&q, "id");
-                        state.deleted.insert(id.into(), true);
-                        state.records.remove(id);
-                    }
-                    "DELETE_KIND_DATASET" => {
-                        let id = string(&q, "id");
-                        for r in state.records.values_mut() {
-                            r.removed.insert(id.into(), true);
-                            r.execution.measurements.retain(|m| m.dataset.id != id);
-                        }
-                    }
+                // A deletion that changes nothing is not audited. The execution and dataset
+                // kinds fail with not-found before the state is written, so a mistyped
+                // ID cannot tombstone an execution or mark a dataset as deleted.
+                let changed = match string(&q, "kind") {
+                    "DELETE_KIND_REPOSITORY" => state.delete_repository() > 0,
+                    "DELETE_KIND_EXECUTION" => state.delete_execution(string(&q, "id"))?,
+                    "DELETE_KIND_DATASET" => state.delete_dataset(string(&q, "id"))? > 0,
                     _ => return Err(Fault::invalid("invalid deletion kind")),
+                };
+                if changed {
+                    audit(&mut tx, &repo.space_id, "measurements_deleted", trace).await?;
                 }
-                audit(&mut tx, &repo.space_id, "measurements_deleted", trace).await?;
             }
             Op::ConnectRepository | Op::ListRepositories => unreachable!(),
         }

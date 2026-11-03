@@ -233,3 +233,168 @@ fn current_storage_rows_round_trip() {
         s.records["run"].execution
     );
 }
+fn named(id: &str) -> Dataset {
+    Dataset {
+        id: id.into(),
+        name: id.into(),
+        columns: vec![column("B")],
+        ..Default::default()
+    }
+}
+#[test]
+fn dataset_deletion_marks_only_executions_that_held_the_dataset() {
+    let mut s = State::default();
+    let at = Utc::now();
+    // X holds dataset A only; Y holds A and D.
+    let x = context("x", "bx");
+    s.upload(
+        &x,
+        &named("a"),
+        &[row("one", "10")],
+        at,
+        vec![],
+        String::new(),
+    )
+    .unwrap();
+    s.complete(&x, at).unwrap();
+    let y = context("y", "by");
+    s.upload(
+        &y,
+        &named("a"),
+        &[row("one", "10")],
+        at,
+        vec![],
+        String::new(),
+    )
+    .unwrap();
+    s.upload(
+        &y,
+        &named("d"),
+        &[row("one", "10")],
+        at,
+        vec![],
+        String::new(),
+    )
+    .unwrap();
+    s.complete(&y, at).unwrap();
+
+    // M is still measuring and holds A only.
+    let m = context("m", "bm");
+    s.upload(
+        &m,
+        &named("a"),
+        &[row("one", "10")],
+        at,
+        vec![],
+        String::new(),
+    )
+    .unwrap();
+
+    assert_eq!(s.delete_dataset("d").unwrap(), 1);
+    assert!(s.records["x"].removed.is_empty());
+    assert!(s.records["m"].removed.is_empty());
+    assert_eq!(s.records["y"].removed.get("d"), Some(&true));
+    // Rows are removed from the holder; the other dataset stays.
+    let held: Vec<_> = s.records["y"]
+        .execution
+        .measurements
+        .iter()
+        .map(|m| m.dataset.id.as_str())
+        .collect();
+    assert_eq!(held, ["a"]);
+    // No execution holds D any more, so a second deletion is not found and changes nothing.
+    assert!(s.delete_dataset("d").is_err());
+    assert!(s.delete_dataset("never").is_err());
+    assert!(s.records["x"].removed.is_empty());
+
+    // A delayed retry into the holder is still rejected.
+    assert!(
+        s.upload(
+            &y,
+            &named("d"),
+            &[row("one", "10")],
+            at,
+            vec![],
+            String::new()
+        )
+        .is_err()
+    );
+    // Pull requests pinned to X and Y upload D afterwards: X never held it, so its
+    // comparison is new; Y held it, so its comparison reports the deleted baseline.
+    for (id, pr, base, expected) in [
+        ("p", 1, "bx", COMPARISON_STATUS_NEW),
+        ("q", 2, "by", COMPARISON_STATUS_BASELINE_DELETED),
+    ] {
+        let mut c = context(id, "head");
+        c.pull_request = pr;
+        s.upload(
+            &c,
+            &named("d"),
+            &[row("one", "11")],
+            at,
+            vec![],
+            base.into(),
+        )
+        .unwrap();
+        let comparisons = s.comparisons(&s.records[id], None);
+        assert_eq!(comparisons.len(), 1);
+        assert_eq!(comparisons[0].status, expected, "execution {id}");
+    }
+    // An execution that never held the dataset keeps accepting it.
+    s.upload(
+        &m,
+        &named("d"),
+        &[row("one", "10")],
+        at,
+        vec![],
+        String::new(),
+    )
+    .unwrap();
+    assert!(s.records["m"].removed.is_empty());
+}
+#[test]
+fn deletion_of_unknown_targets_is_not_found_and_leaves_state_unchanged() {
+    let mut s = State::default();
+    let at = Utc::now();
+    let c = context("run", "a");
+    s.upload(
+        &c,
+        &dataset(),
+        &[row("one", "1")],
+        at,
+        vec![],
+        String::new(),
+    )
+    .unwrap();
+    assert!(s.delete_execution("typo").is_err());
+    assert!(s.deleted.is_empty());
+    // The mistyped ID is still usable.
+    let typo = context("typo", "a");
+    s.upload(
+        &typo,
+        &dataset(),
+        &[row("one", "1")],
+        at,
+        vec![],
+        String::new(),
+    )
+    .unwrap();
+    // A real deletion is applied once and then reported as already done.
+    assert!(s.delete_execution("run").unwrap());
+    assert!(!s.delete_execution("run").unwrap());
+    assert!(
+        s.upload(
+            &c,
+            &dataset(),
+            &[row("one", "1")],
+            at,
+            vec![],
+            String::new()
+        )
+        .is_err()
+    );
+    // Repository deletion reports how many executions it removed.
+    assert_eq!(s.delete_repository(), 1);
+    assert_eq!(s.delete_repository(), 0);
+    assert_eq!(s.deleted.len(), 2);
+}

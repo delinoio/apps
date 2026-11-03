@@ -1134,3 +1134,138 @@ async fn postgres_connect_aborts_without_partial_state_when_locked_refresh_fails
     assert_eq!(f.row().await, Some((rid, false, false)));
     assert_eq!(f.audit_count().await, audits);
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_delete_fails_for_missing_targets_and_limits_dataset_markers() {
+    let f = fixture().await;
+    let (status, connected) = f.connect().await;
+    assert_eq!(status, StatusCode::OK, "{connected}");
+    let rid = connected["repository"]["id"].as_str().unwrap().to_owned();
+    let (_, issued) = f
+        .call(
+            "IssueToken",
+            "Bearer manager",
+            json!({"repositoryId":rid,"expiresAt":(chrono::Utc::now()+chrono::Duration::days(1)).to_rfc3339()}),
+        )
+        .await;
+    let auth = format!("Bearer {}", issued["token"].as_str().unwrap());
+    let upload = |execution: &str, dataset: &str| {
+        let context =
+            json!({"repositoryId":rid,"executionId":execution,"commit":f.commit,"branch":"main"});
+        let dataset = json!({"id":dataset,"name":dataset,"columns":[{"id":"bytes","unit":"B","direction":"DIRECTION_LOWER"}]});
+        let auth = auth.clone();
+        let f = &f;
+        async move {
+            f.call(
+                "Upload",
+                &auth,
+                json!({"context":context,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+            )
+            .await
+        }
+    };
+    let delete = |kind: &str, id: &str| {
+        let q = json!({"repositoryId":rid,"kind":kind,"id":id,"confirmed":true});
+        let f = &f;
+        async move { f.call("Delete", "Bearer manager", q).await }
+    };
+    let state = || async {
+        sqlx::query_scalar::<_, Value>(&format!(
+            "SELECT state FROM {}.git_tracker_repositories WHERE id::text=$1",
+            f.schema
+        ))
+        .bind(&rid)
+        .fetch_one(&f.admin)
+        .await
+        .unwrap()
+    };
+
+    // A mistyped execution or dataset ID fails with not-found: no tombstone, no marker, no audit.
+    let audits = f.audit_count().await;
+    let (status, missing) = delete("DELETE_KIND_EXECUTION", "typo").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
+    assert_eq!(missing["code"], "not_found");
+    let (status, missing) = delete("DELETE_KIND_DATASET", "ghost").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
+    assert_eq!(f.audit_count().await, audits);
+    assert!(
+        state().await["deleted"]
+            .as_object()
+            .is_none_or(|d| d.is_empty())
+    );
+    let (status, body) = upload("typo", "a").await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "an unknown ID must stay usable: {body}"
+    );
+    // An empty repository deletion succeeds without an audit row.
+    let (status, body) = delete("DELETE_KIND_REPOSITORY", "").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        f.audit_count().await,
+        audits + 1,
+        "repository deletion removed one execution"
+    );
+    let (status, body) = delete("DELETE_KIND_REPOSITORY", "").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        f.audit_count().await,
+        audits + 1,
+        "an empty repository deletion is not audited"
+    );
+
+    // Dataset deletion marks only the executions that held the dataset.
+    for (execution, dataset) in [("x", "a"), ("y", "a"), ("y", "d")] {
+        let (status, body) = upload(execution, dataset).await;
+        assert_eq!(status, StatusCode::OK, "{execution}/{dataset}: {body}");
+    }
+    let audits = f.audit_count().await;
+    let (status, body) = delete("DELETE_KIND_DATASET", "d").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(f.audit_count().await, audits + 1);
+    let stored = state().await;
+    assert!(
+        stored["records"]["x"]["removed"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(stored["records"]["y"]["removed"], json!({"d":true}));
+    let (status, body) = delete("DELETE_KIND_DATASET", "d").await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "no execution holds the dataset any more: {body}"
+    );
+    assert_eq!(f.audit_count().await, audits + 1);
+    let (status, body) = upload("x", "d").await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "an execution that never held the dataset accepts it: {body}"
+    );
+    let (status, body) = upload("y", "d").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "failed_precondition");
+
+    // Deleting an execution is idempotent and audited once.
+    let audits = f.audit_count().await;
+    let (status, body) = delete("DELETE_KIND_EXECUTION", "x").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(f.audit_count().await, audits + 1);
+    let (status, body) = delete("DELETE_KIND_EXECUTION", "x").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        f.audit_count().await,
+        audits + 1,
+        "a repeated deletion is not audited"
+    );
+    let (status, body) = upload("x", "a").await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a deleted execution stays deleted: {body}"
+    );
+}

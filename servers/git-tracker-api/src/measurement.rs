@@ -288,6 +288,51 @@ impl State {
         self.records.insert(c.execution_id.clone(), r);
         Ok(())
     }
+    /// Deletes every execution of the repository and tombstones their IDs so delayed
+    /// retries cannot recreate them. It returns how many executions were removed;
+    /// an empty repository is not an error.
+    pub fn delete_repository(&mut self) -> usize {
+        let removed = self.records.len();
+        self.deleted
+            .extend(self.records.keys().map(|id| (id.clone(), true)));
+        self.records.clear();
+        removed
+    }
+    /// Deletes one execution and tombstones its ID. It returns `Ok(true)` when the
+    /// execution was removed now and `Ok(false)` when an earlier deletion already
+    /// tombstoned it, which keeps a repeated deletion idempotent. An ID that never
+    /// existed is not found and leaves the state, including the tombstones,
+    /// unchanged, so a later upload with that ID still works.
+    pub fn delete_execution(&mut self, id: &str) -> Result<bool> {
+        if self.records.remove(id).is_some() {
+            self.deleted.insert(id.into(), true);
+            return Ok(true);
+        }
+        if self.deleted.get(id) == Some(&true) {
+            return Ok(false);
+        }
+        Err(Fault::missing())
+    }
+    /// Removes a dataset from every execution that holds it and marks only those
+    /// executions as having lost it, so delayed retries into a holder are rejected
+    /// while executions that never held the dataset keep accepting it and compare
+    /// as new. It returns the number of holders; a dataset that no execution holds
+    /// is not found and leaves the state unchanged. Markers stored by earlier
+    /// deletions are not rewritten.
+    pub fn delete_dataset(&mut self, id: &str) -> Result<usize> {
+        let mut holders = 0;
+        for r in self.records.values_mut() {
+            if r.execution.measurements.iter().any(|m| m.dataset.id == id) {
+                holders += 1;
+                r.removed.insert(id.into(), true);
+                r.execution.measurements.retain(|m| m.dataset.id != id);
+            }
+        }
+        if holders == 0 {
+            return Err(Fault::missing());
+        }
+        Ok(holders)
+    }
     pub fn complete(&mut self, c: &Context, now: DateTime<Utc>) -> Result<()> {
         if self.deleted.get(&c.execution_id) == Some(&true) {
             return Err(Fault::precondition("execution was deleted"));
