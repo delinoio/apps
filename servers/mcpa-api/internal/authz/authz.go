@@ -186,14 +186,38 @@ func (a *Authorizer) WithRefreshTimeout(d time.Duration) *Authorizer {
 
 // RefreshGroups refreshes the tenant group snapshot with the principal's
 // Delcore user token when it is older than the refresh TTL. Failures keep
-// the previous snapshot and are logged; capability checks stay live.
+// the previous snapshot and are logged; capability checks stay live. It is
+// the best-effort form for callers that have no console request to fail,
+// such as the OAuth grant snapshot. Console request paths call
+// RequireGroups, which also reports a lost MFA evidence.
 func (a *Authorizer) RefreshGroups(ctx context.Context, p *auth.Principal, tenantID string) {
+	if err := a.RequireGroups(ctx, p, tenantID); err != nil && isMFARequired(err) {
+		a.log.WarnContext(ctx, "group snapshot refresh skipped because the session lost MFA evidence", "error", err)
+	}
+}
+
+// RequireGroups is RefreshGroups for console request paths. Other refresh
+// failures keep the previous snapshot and are logged, and it returns only an
+// ERROR_REASON_MFA_REQUIRED error: a console session whose in-request token
+// refresh finds no MFA evidence must not serve data in that request, because
+// the request was admitted with the MFA flag stored before the refresh.
+func (a *Authorizer) RequireGroups(ctx context.Context, p *auth.Principal, tenantID string) error {
 	if !p.HasUserToken() {
-		return
+		return nil
 	}
 	if _, err := a.refreshGroupsIfStale(ctx, p, tenantID); err != nil {
+		if isMFARequired(err) {
+			return err
+		}
 		a.log.WarnContext(ctx, "group snapshot refresh failed", "error", err)
 	}
+	return nil
+}
+
+// isMFARequired reports whether err is an MFA-required application error.
+func isMFARequired(err error) bool {
+	var ae *apperr.Error
+	return errors.As(err, &ae) && ae.Reason == mcpav1.ErrorReason_ERROR_REASON_MFA_REQUIRED
 }
 
 // SnapshotGroups returns the tenant's groups after the TTL-aware refresh of
@@ -223,7 +247,7 @@ func (a *Authorizer) SnapshotGroups(ctx context.Context, p *auth.Principal, tena
 // isCredentialError reports whether err means that the principal's Delcore
 // user credentials are missing, expired or rejected.
 func isCredentialError(err error) bool {
-	if errors.Is(err, auth.ErrNoUserToken) || delcore.IsUnauthenticated(err) {
+	if errors.Is(err, auth.ErrNoUserToken) || delcore.IsUnauthenticated(err) || isMFARequired(err) {
 		return true
 	}
 	var ae *apperr.Error
@@ -429,7 +453,9 @@ func (a *Authorizer) Resource(ctx context.Context, p *auth.Principal, resourceID
 	if p.IsPersonalKey() && p.KeyTenantID != r.TenantID {
 		return Access{}, apperr.NotFound("resource not found")
 	}
-	a.RefreshGroups(ctx, p, r.TenantID)
+	if err := a.RequireGroups(ctx, p, r.TenantID); err != nil {
+		return Access{}, err
+	}
 	role, err := a.EffectiveRole(ctx, a.db.Pool, r.TenantID, r.ID, p.UserID)
 	if err != nil {
 		return Access{}, apperr.DependencyUnavailable(err)

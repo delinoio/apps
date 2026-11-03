@@ -95,6 +95,7 @@ func New(ctx context.Context, cfg *config.Serve, log *slog.Logger, metrics *obs.
 		APIResource:     cfg.APIResource,
 		DelcoreResource: cfg.DelcoreResource,
 		MFAClaim:        cfg.MFAClaim,
+		ReauthURL:       cfg.MFAReauthURL,
 		Log:             log,
 	})
 	authenticator := auth.NewAuthenticator(auth.AuthenticatorConfig{
