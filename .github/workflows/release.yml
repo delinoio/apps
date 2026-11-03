@@ -157,6 +157,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      actions: read
     uses: ./.github/workflows/deploy-component.yml
     with:
       revision: ${{ needs.publish-plan.outputs.revision }}

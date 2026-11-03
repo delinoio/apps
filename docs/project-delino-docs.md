@@ -32,7 +32,9 @@ DeliTools' `delitools` section covers the translation and extraction API referen
 
 Lane’s `lane` section covers installation, local tasks and prompts, optional synchronization, MCP connections and troubleshooting. Product behavior remains owned by the [Lane contracts](project-lane.md).
 
-English routes have no language prefix. Perfine and Lane public pages are English-only; their exact coverage declarations and language-menu fallback follow the localization contract. For translated content, every registered non-English language uses `/<language>/services/<service-id>/`. Shared local generation in `scripts/localization/` also serves the marketing app. Keep cross-site language links aligned with its registered languages.
+AnyDash's `anydash` section covers getting started and device connection, the CLI reference, provider connections, data, sharing and deletion, and troubleshooting. Product behavior remains owned by the [AnyDash contracts](project-anydash.md).
+
+English routes have no language prefix. Perfine, Lane and AnyDash public pages are English-only; their exact coverage declarations and language-menu fallback follow the localization contract. For translated content, every registered non-English language uses `/<language>/services/<service-id>/`. Shared local generation in `scripts/localization/` also serves the marketing app. Keep cross-site language links aligned with its registered languages.
 
 Repository-root `docs/` remains the internal source of truth. Public pages describe user-facing behavior, supported workflows and stable public interfaces. Do not publish internal contracts automatically.
 

@@ -21,9 +21,12 @@ import { ico, png } from "./icons.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = join(root, "native/desktop/build");
 const action = process.argv[2];
-const { version } = JSON.parse(
-  readFileSync(join(root, "package.json"), "utf8"),
-);
+const release = process.env.ANYDASH_RELEASE_BUILD === "1";
+// Release builds carry the `anydash@vX.Y.Z` release version so the in-app
+// updater compares it with the published feed; local builds use the package.
+const version = release
+  ? process.env.ANYDASH_RELEASE_VERSION
+  : JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
 function run(command, args) {
   console.info(JSON.stringify({ event: "anydash_desktop_command", command }));
@@ -68,9 +71,26 @@ try {
       ? join(app, "Contents/Resources/app")
       : join(app, "resources/app");
   if (action === "build") {
-    const release = process.env.ANYDASH_RELEASE_BUILD === "1";
-    if (release && !process.env.ANYDASH_UPDATE_PUBLIC_KEY)
-      throw new Error("Release builds require ANYDASH_UPDATE_PUBLIC_KEY.");
+    if (release) {
+      if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version ?? ""))
+        throw new Error("Release builds require ANYDASH_RELEASE_VERSION.");
+      if (!process.env.ANYDASH_UPDATE_PUBLIC_KEY)
+        throw new Error("Release builds require ANYDASH_UPDATE_PUBLIC_KEY.");
+      // The updater accepts only updates signed by this team or publisher.
+      if (process.platform === "darwin" && !process.env.ANYDASH_APPLE_TEAM_ID)
+        throw new Error("Release builds require ANYDASH_APPLE_TEAM_ID.");
+      if (
+        process.platform === "win32" &&
+        !process.env.ANYDASH_WINDOWS_PUBLISHER
+      )
+        throw new Error("Release builds require ANYDASH_WINDOWS_PUBLISHER.");
+      if (!existsSync(process.env.ANYDASH_COLLECTOR_EXECUTABLE ?? ""))
+        throw new Error(
+          "Release builds require ANYDASH_COLLECTOR_EXECUTABLE (the signed CLI).",
+        );
+      if (!existsSync(process.env.ANYDASH_WIDGET_HOST ?? ""))
+        throw new Error("Release builds require ANYDASH_WIDGET_HOST.");
+    }
     const runtime = await ensureRuntime({
       variant: "devtool",
       allowFetch: false,
@@ -193,13 +213,42 @@ try {
         ],
       }))
         run("plutil", ["-replace", key, "-json", JSON.stringify(value), plist]);
-      // Local builds use ad-hoc signing; release credentials remain external.
-      run("codesign", ["--force", "--deep", "--sign", "-", app]);
+      if (release)
+        run("plutil", [
+          "-replace",
+          "CFBundleVersion",
+          "-string",
+          version,
+          plist,
+        ]);
     }
+    // The separate native widget host travels inside the desktop package: the
+    // WidgetKit containing app in the bundle's Helpers on macOS, the Widgets
+    // Board MSIX beside the main process on Windows.
+    const widgetHost = process.env.ANYDASH_WIDGET_HOST;
+    if (widgetHost && existsSync(widgetHost)) {
+      const destination =
+        process.platform === "darwin"
+          ? join(app, "Contents/Helpers/AnyDash Widgets.app")
+          : join(resources, "widgets/AnyDash.Widgets.msix");
+      mkdirSync(dirname(destination), { recursive: true });
+      cpSync(widgetHost, destination, {
+        recursive: true,
+        dereference: false,
+        verbatimSymlinks: true,
+      });
+    }
+    // Local builds use ad-hoc signing. Release builds keep the embedded widget
+    // host's Developer ID signature; the release job signs inside-out.
+    if (process.platform === "darwin" && !release)
+      run("codesign", ["--force", "--deep", "--sign", "-", app]);
     console.info(
       JSON.stringify({
         event: "anydash_desktop_built",
+        version,
+        release,
         collectorEmbedded: !!collector,
+        widgetHostEmbedded: !!widgetHost,
       }),
     );
   } else {

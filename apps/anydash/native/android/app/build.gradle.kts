@@ -26,8 +26,9 @@ android {
         applicationId = "io.delino.anydash"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // The unified release passes its run number and release version.
+        versionCode = providers.gradleProperty("anydashVersionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("anydashVersionName").orNull ?: "0.1.0"
         val appId = providers.gradleProperty("anydashNativeAppId").orNull
             ?: System.getenv("PUBLIC_ANYDASH_NATIVE_APP_ID") ?: ""
         require(appId.matches(Regex("[A-Za-z0-9_-]*"))) { "anydashNativeAppId must be a Logto application ID" }
@@ -36,6 +37,20 @@ android {
         buildConfigField("String", "DELCORE_RESOURCE", "\"${origin("delcoreResource", "https://delcore.api.delino.io")}\"")
         buildConfigField("String", "LOGTO_ENDPOINT", "\"${origin("logtoEndpoint", "")}\"")
         buildConfigField("String", "LOGTO_APP_ID", "\"$appId\"")
+    }
+    // Release signing exists only when the protected release environment
+    // supplies the upload key; local release builds stay unsigned.
+    val keystore = System.getenv("ANYDASH_ANDROID_KEYSTORE_PATH")
+    if (!keystore.isNullOrEmpty()) {
+        signingConfigs {
+            create("upload") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("ANYDASH_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANYDASH_ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANYDASH_ANDROID_KEY_PASSWORD")
+            }
+        }
+        buildTypes { getByName("release") { signingConfig = signingConfigs.getByName("upload") } }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

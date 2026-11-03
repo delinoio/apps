@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Renders the AnyDash mark (the web favicon's three tiles) as PNG and ICO at
-// build time, so no generated image binaries are committed.
+// build time, and the iOS app icon asset catalog, so no generated image
+// binaries are committed.
 import { deflateSync } from "node:zlib";
 
 const crcTable = Array.from({ length: 256 }, (_, n) => {
@@ -22,8 +23,12 @@ const chunk = (type, data) => {
   return Buffer.concat([length, body, sum]);
 };
 
-/** RGBA pixels of the mark; `template` draws black tiles for macOS menu bars. */
-export function markPixels(size, { template = false } = {}) {
+/**
+ * RGBA pixels of the mark; `template` draws black tiles for macOS menu bars.
+ * `opaque` fills the whole square with the mark background, like the Android
+ * adaptive icon, because iOS applies its own corner mask.
+ */
+export function markPixels(size, { template = false, opaque = false } = {}) {
   const pixels = Buffer.alloc(size * size * 4);
   const s = size / 64;
   const inRounded = (x, y, left, top, width, height, radius) => {
@@ -50,7 +55,7 @@ export function markPixels(size, { template = false } = {}) {
       if (template) {
         if (tiles.some(([l, t, w, h]) => inRounded(px, py, l, t, w, h, 4)))
           color = [0, 0, 0, 255];
-      } else if (inRounded(px, py, 0, 0, 64, 64, 14)) {
+      } else if (opaque || inRounded(px, py, 0, 0, 64, 64, 14)) {
         color = [32, 33, 36, 255];
         for (const [l, t, w, h, rgb] of tiles)
           if (inRounded(px, py, l, t, w, h, 4)) color = [...rgb, 255];
@@ -63,15 +68,22 @@ export function markPixels(size, { template = false } = {}) {
   return pixels;
 }
 
-export function png(size, options) {
+/** PNG of the mark; `opaque` images are RGB without an alpha channel. */
+export function png(size, options = {}) {
   const pixels = markPixels(size, options);
-  const rows = Buffer.alloc(size * (size * 4 + 1));
+  const channels = options.opaque ? 3 : 4;
+  const stride = size * channels + 1;
+  const rows = Buffer.alloc(size * stride);
   for (let y = 0; y < size; y++)
-    pixels.copy(rows, y * (size * 4 + 1) + 1, y * size * 4, (y + 1) * size * 4);
+    for (let x = 0; x < size; x++)
+      for (let c = 0; c < channels; c++)
+        rows[y * stride + 1 + x * channels + c] =
+          pixels[(y * size + x) * 4 + c];
   const header = Buffer.alloc(13);
   header.writeUInt32BE(size, 0);
   header.writeUInt32BE(size, 4);
-  header.set([8, 6, 0, 0, 0], 8);
+  // Bit depth 8; color type 2 (RGB) or 6 (RGBA).
+  header.set([8, options.opaque ? 2 : 6, 0, 0, 0], 8);
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk("IHDR", header),
@@ -98,4 +110,32 @@ export function ico(sizes = [16, 32, 48, 256]) {
     offset += images[index].length;
   });
   return Buffer.concat([header, ...images]);
+}
+
+export const IOS_APP_ICON_NAME = "AppIcon";
+
+/**
+ * Files of the iOS asset catalog with the single-size 1024 pt app icon, keyed
+ * by path inside `Assets.xcassets`. App Store Connect rejects an app icon with
+ * transparency or an alpha channel, so the image is opaque RGB.
+ */
+export function iosAppIconCatalog() {
+  const set = `${IOS_APP_ICON_NAME}.appiconset`;
+  const contents = (value) => `${JSON.stringify(value, null, 2)}\n`;
+  const info = { author: "xcode", version: 1 };
+  return {
+    "Contents.json": contents({ info }),
+    [`${set}/Contents.json`]: contents({
+      images: [
+        {
+          filename: "AppIcon-1024.png",
+          idiom: "universal",
+          platform: "ios",
+          size: "1024x1024",
+        },
+      ],
+      info,
+    }),
+    [`${set}/AppIcon-1024.png`]: png(1024, { opaque: true }),
+  };
 }

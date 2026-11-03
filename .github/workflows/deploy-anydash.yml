@@ -1,0 +1,488 @@
+name: Release AnyDash binaries
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      tag:
+        description: Exact anydash@vX.Y.Z from the committed release plan
+        required: true
+        type: string
+      publish:
+        description: Publish the verified set to GitHub Releases (draft until component completion) and npm
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: release-anydash
+  cancel-in-progress: false
+env:
+  ANYDASH_RELEASE_TAG: ${{ inputs.tag }}
+  ANYDASH_SOURCE_REVISION: ${{ inputs.revision }}
+jobs:
+  source:
+    if: github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      retained-run: ${{ steps.retained.outputs.run-id }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Require the release version in the launcher, platform packages and CLI
+        id: source
+        run: node "scripts/release/anydash.mjs" source
+      # Signed and notarized builds are not reproducible, so a repeated
+      # dispatch of this publication identity publishes the set an earlier
+      # run assembled instead of rebuilding over already uploaded assets.
+      - name: Find the release set an earlier dispatch assembled
+        id: retained
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "scripts/release/anydash.mjs" retained
+
+  # Linux builds run in Debian 12, the oldest supported glibc, so the
+  # executables also run on Ubuntu 24.04 and 26.04 and Debian 13.
+  cli-linux:
+    needs: source
+    if: needs.source.outputs.retained-run == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: rust:1.95-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1
+    timeout-minutes: 60
+    env:
+      ANYDASH_PLATFORM: ${{ matrix.platform }}
+      ANYDASH_TARGET: ${{ matrix.target }}
+    steps:
+      - name: Install the protocol compiler
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: nightly-2026-09-28
+          targets: ${{ matrix.target }}
+      - run: cargo build --locked --release -p anydash --target "$ANYDASH_TARGET"
+      - name: Package, smoke and collect the CLI candidate
+        run: |
+          set -eu
+          pnpm --filter @delinoio/anydash test
+          pnpm --filter @delinoio/anydash build --no-compile --platform "$ANYDASH_PLATFORM"
+          pnpm --filter @delinoio/anydash smoke
+          node "scripts/release/anydash.mjs" candidate "packages/anydash/dist/candidate"
+          {
+            echo "Source: $ANYDASH_SOURCE_REVISION"
+            echo "CLI $ANYDASH_PLATFORM: built and smoke-checked on $(. /etc/os-release && echo "$PRETTY_NAME") (glibc $(ldd --version | head -n 1 | awk '{print $NF}'))."
+            echo "Linux archives are covered by the signed SHA256SUMS; Ubuntu 24.04/26.04 and Debian 13 execution is not performed here."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: anydash-native-${{ matrix.platform }}
+          path: packages/anydash/dist/candidate/
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: rm -rf "packages/anydash/dist" "apps/anydash/dist"
+
+  # macOS and Windows build the CLI and the desktop app that embeds it. These
+  # are the only AnyDash release jobs on macOS runners; ordinary CI stays on
+  # Ubuntu.
+  native:
+    needs: source
+    if: needs.source.outputs.retained-run == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            runner: macos-15
+            targets: aarch64-apple-darwin
+            cli: darwin-arm64
+          - platform: darwin-x64
+            runner: macos-15-intel
+            targets: x86_64-apple-darwin
+            cli: darwin-x64
+          - platform: windows-x64
+            runner: windows-2025
+            targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+            cli: windows-x64 windows-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    environment: release-signing
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      ANYDASH_PLATFORM: ${{ matrix.platform }}
+      ANYDASH_RELEASE_VERSION: ${{ needs.source.outputs.version }}
+      ANYDASH_RELEASE_BUILD: "1"
+      ANYDASH_BUILD_NUMBER: ${{ format('{0}', github.run_number) }}
+      ANYDASH_UPDATE_PUBLIC_KEY: ${{ vars.ANYDASH_UPDATE_PUBLIC_KEY }}
+      ANYDASH_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ANYDASH_WINDOWS_PUBLISHER: ${{ vars.WINDOWS_SIGNING_PUBLISHER }}
+      PUBLIC_LOGTO_ENDPOINT: ${{ vars.PUBLIC_LOGTO_ENDPOINT }}
+      PUBLIC_ANYDASH_NATIVE_APP_ID: ${{ vars.PUBLIC_ANYDASH_NATIVE_APP_ID }}
+      PUBLIC_ANYDASH_API_URL: ${{ vars.PUBLIC_ANYDASH_API_URL }}
+      PUBLIC_ANYDASH_RESOURCE: ${{ vars.PUBLIC_ANYDASH_RESOURCE }}
+      PUBLIC_DELCORE_RESOURCE: ${{ vars.PUBLIC_DELCORE_RESOURCE }}
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          lfs: true
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - name: Install the locked workspace with the desktop runtime
+        env:
+          LYNXTRON_SKIP_DOWNLOAD: "0"
+        run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: nightly-2026-09-28
+          targets: ${{ matrix.targets }}
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: |
+          brew install protobuf xcodegen
+          echo "PROTOC_INCLUDE=$(brew --prefix protobuf)/include" >> "$GITHUB_ENV"
+      - name: Install Windows protocol compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install protoc --no-progress --yes
+          if ($LASTEXITCODE -ne 0) { throw "Cannot install protoc" }
+          $compiler = Get-ChildItem "$env:ChocolateyInstall/lib/protoc" -Recurse -Filter protoc.exe | Select-Object -First 1
+          $descriptor = Get-ChildItem "$env:ChocolateyInstall/lib/protoc" -Recurse -Filter descriptor.proto | Select-Object -First 1
+          if (!$compiler -or !$descriptor) { throw "protoc or well-known includes missing" }
+          $include = Split-Path (Split-Path $descriptor.DirectoryName -Parent) -Parent
+          "PROTOC=$($compiler.FullName)" >> $env:GITHUB_ENV
+          "PROTOC_INCLUDE=$include" >> $env:GITHUB_ENV
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        if: runner.os == 'Windows'
+        with:
+          dotnet-version: 8.0.x
+      - name: Build the CLI executables
+        run: |
+          set -euo pipefail
+          IFS=, read -ra targets <<< "${{ matrix.targets }}"
+          for target in "${targets[@]}"; do
+            cargo build --locked --release -p anydash --target "$target"
+          done
+
+      - name: Import the Developer ID certificate and notarization key
+        if: runner.os == 'macOS'
+        env:
+          CERTIFICATE_P12_B64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_P12_B64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          for name in CERTIFICATE_P12_B64 CERTIFICATE_PASSWORD PRIVATE_KEY_B64 APPLE_API_KEY APPLE_API_ISSUER ANYDASH_APPLE_TEAM_ID; do
+            test -n "${!name}" || { echo "Missing $name" >&2; exit 1; }
+          done
+          keychain="$RUNNER_TEMP/anydash-signing.keychain-db"
+          password="$(openssl rand -hex 24)"
+          printf '%s' "$CERTIFICATE_P12_B64" | base64 --decode > "$RUNNER_TEMP/anydash-signing.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/anydash-signing.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/anydash-signing.p12"
+          identity="$(security find-identity -v -p codesigning "$keychain" | grep -o '"Developer ID Application: [^"]*('"$ANYDASH_APPLE_TEAM_ID"')"' | head -n 1 | tr -d '"')"
+          test -n "$identity" || { echo "No Developer ID Application identity for the team" >&2; exit 1; }
+          printf '%s' "$PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/anydash-notary.p8"
+          {
+            echo "ANYDASH_KEYCHAIN=$keychain"
+            echo "ANYDASH_MACOS_SIGNING_IDENTITY=$identity"
+            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/anydash-notary.p8"
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+          } >> "$GITHUB_ENV"
+      - name: Sign and notarize the macOS CLI
+        if: runner.os == 'macOS'
+        run: |
+          node "scripts/release/anydash.mjs" sign-macos-files "target/${{ matrix.targets }}/release/anydash"
+          node "scripts/release/anydash.mjs" notarize "target/${{ matrix.targets }}/release/anydash"
+      - name: Sign in to Azure for Artifact Signing
+        if: runner.os == 'Windows'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Authenticode-sign the Windows CLI
+        if: runner.os == 'Windows'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\target\x86_64-pc-windows-msvc\release\anydash.exe
+            ${{ github.workspace }}\target\aarch64-pc-windows-msvc\release\anydash.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Package and smoke the signed CLI
+        run: |
+          set -euo pipefail
+          arguments=()
+          for platform in ${{ matrix.cli }}; do arguments+=(--platform "$platform"); done
+          pnpm --filter @delinoio/anydash test
+          pnpm --filter @delinoio/anydash build --no-compile "${arguments[@]}"
+          pnpm --filter @delinoio/anydash smoke
+
+      - name: Build the signed macOS widget host
+        if: runner.os == 'macOS'
+        run: |
+          node "apps/anydash/scripts/native.mjs" macos-widgets release
+          echo "ANYDASH_WIDGET_HOST=$PWD/apps/anydash/native/widgets/macos/build/release/AnyDash Widgets.app" >> "$GITHUB_ENV"
+          echo "ANYDASH_COLLECTOR_EXECUTABLE=$PWD/target/${{ matrix.targets }}/release/anydash" >> "$GITHUB_ENV"
+      - name: Build the Windows Widgets Board package
+        if: runner.os == 'Windows'
+        run: |
+          node "apps/anydash/scripts/native.mjs" windows-widgets release
+          echo "ANYDASH_WIDGET_HOST=$(cygpath -w "$PWD/apps/anydash/native/widgets/windows/build/release/AnyDash.Widgets.msix")" >> "$GITHUB_ENV"
+          echo "ANYDASH_COLLECTOR_EXECUTABLE=$(cygpath -w "$PWD/target/x86_64-pc-windows-msvc/release/anydash.exe")" >> "$GITHUB_ENV"
+      - name: Sign the Windows Widgets Board package
+        if: runner.os == 'Windows'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\apps\anydash\native\widgets\windows\build\release\AnyDash.Widgets.msix
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Test and build the desktop app with the signed collector
+        run: |
+          pnpm --dir "apps/anydash" test
+          pnpm --dir "apps/anydash" build:desktop
+      - name: Sign, notarize and staple the macOS app
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app="apps/anydash/native/desktop/build/AnyDash.app"
+          node "scripts/release/anydash.mjs" sign-macos-app "$app" "Contents/Resources/app/bin/anydash" "Contents/Helpers/AnyDash Widgets.app"
+          node "scripts/release/anydash.mjs" notarize "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+      - name: List the Windows desktop files to sign
+        if: runner.os == 'Windows'
+        id: windows-files
+        run: node "scripts/release/anydash.mjs" windows-signing-files "apps/anydash/native/desktop/build/application" "resources/app/bin/anydash.exe"
+      - name: Authenticode-sign the Windows desktop app
+        if: runner.os == 'Windows'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ steps.windows-files.outputs.files }}
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Build, sign and notarize the macOS disk image
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          arch="${ANYDASH_PLATFORM#darwin-}"
+          output="packages/anydash/dist/candidate"
+          image="$output/AnyDash-$ANYDASH_RELEASE_VERSION-macos-$arch.dmg"
+          staging="$RUNNER_TEMP/anydash-dmg"
+          rm -rf "$staging"
+          mkdir -p "$staging" "$output"
+          ditto "apps/anydash/native/desktop/build/AnyDash.app" "$staging/AnyDash.app"
+          ln -s /Applications "$staging/Applications"
+          hdiutil create -volname AnyDash -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$image"
+          codesign --force --sign "$ANYDASH_MACOS_SIGNING_IDENTITY" --keychain "$ANYDASH_KEYCHAIN" --timestamp "$image"
+          node "scripts/release/anydash.mjs" notarize "$image"
+          rm -rf "$staging"
+      - name: Build the Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $output = "packages/anydash/dist/candidate"
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:ANYDASH_RELEASE_VERSION" "/DSourceDir=$PWD\apps\anydash\native\desktop\build\application" "/O$PWD\$output" "apps\anydash\native\desktop\windows\AnyDash.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+      - name: Authenticode-sign the Windows installer
+        if: runner.os == 'Windows'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\packages\anydash\dist\candidate\AnyDash-Setup-${{ needs.source.outputs.version }}-windows-x64.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Verify Windows signatures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @(
+            "apps/anydash/native/desktop/build/application/lynxtron.exe",
+            "apps/anydash/native/desktop/build/application/resources/app/bin/anydash.exe",
+            "apps/anydash/native/desktop/build/application/resources/app/widgets/AnyDash.Widgets.msix",
+            "packages/anydash/dist/candidate/AnyDash-Setup-$env:ANYDASH_RELEASE_VERSION-windows-x64.exe"
+          )
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file
+            if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate.Subject.Contains($env:ANYDASH_WINDOWS_PUBLISHER)) {
+              throw "Invalid signature: $file"
+            }
+          }
+      - name: Package the desktop update archive and collect the candidate
+        run: |
+          set -euo pipefail
+          node "scripts/release/anydash.mjs" desktop "$ANYDASH_PLATFORM" "packages/anydash/dist/candidate"
+          node "scripts/release/anydash.mjs" candidate "packages/anydash/dist/candidate"
+          {
+            echo "Source: $ANYDASH_SOURCE_REVISION"
+            echo "Host $ANYDASH_PLATFORM: CLI ${{ matrix.cli }} signed and packaged; host CLI smoke passed; desktop signed$([ "$RUNNER_OS" = macOS ] && echo ', notarized and stapled'); installer built."
+            echo "Windows ARM64 CLI is cross-built and not executed. Desktop installation, GUI behavior, widgets, updates on a real device and store acceptance remain separate."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: anydash-native-${{ matrix.platform }}
+          path: packages/anydash/dist/candidate/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove signing material and generated output
+        if: always()
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            security delete-keychain "$RUNNER_TEMP/anydash-signing.keychain-db" 2>/dev/null || true
+          fi
+          rm -f "$RUNNER_TEMP/anydash-signing.p12" "$RUNNER_TEMP/anydash-notary.p8"
+          rm -rf "packages/anydash/dist" "apps/anydash/dist" "apps/anydash/native/desktop/build" \
+            "apps/anydash/native/widgets/macos/build" "apps/anydash/native/widgets/windows/build" \
+            "apps/anydash/native/widgets/windows/Provider/AppPackages"
+
+  assemble:
+    needs: [source, cli-linux, native]
+    if: needs.source.outputs.retained-run == ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release-signing
+    env:
+      ANYDASH_UPDATE_PUBLIC_KEY: ${{ vars.ANYDASH_UPDATE_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: anydash-native-*
+          path: packages/anydash/dist/hosts
+      - name: Require six CLI targets and three desktop packages, then sign SHA256SUMS
+        env:
+          ANYDASH_UPDATE_PRIVATE_KEY: ${{ secrets.ANYDASH_UPDATE_PRIVATE_KEY }}
+        run: |
+          node "scripts/release/anydash.mjs" assemble "packages/anydash/dist/hosts" "packages/anydash/dist/release"
+          node "scripts/release/anydash.mjs" sign-checksums "packages/anydash/dist/release"
+          node "scripts/release/anydash.mjs" verify "packages/anydash/dist/release"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: anydash-release-${{ inputs.revision }}
+          path: packages/anydash/dist/release/
+          if-no-files-found: error
+          # Repeated dispatches of this identity reuse the set while it is retained.
+          retention-days: 30
+      - if: always()
+        run: rm -rf "packages/anydash/dist"
+
+  publish:
+    if: >-
+      ${{ inputs.publish && !cancelled() && needs.source.result == 'success' &&
+      (needs.assemble.result == 'success' ||
+      (needs.assemble.result == 'skipped' && needs.source.outputs.retained-run != '')) }}
+    needs: [source, assemble]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release-publish
+    permissions:
+      contents: write
+      id-token: write
+      actions: read
+    env:
+      ANYDASH_UPDATE_PUBLIC_KEY: ${{ vars.ANYDASH_UPDATE_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Download the release set assembled in this run
+        if: needs.source.outputs.retained-run == ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: anydash-release-${{ inputs.revision }}
+          path: packages/anydash/dist/release/
+      - name: Download the release set an earlier dispatch assembled
+        if: needs.source.outputs.retained-run != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: anydash-release-${{ inputs.revision }}
+          path: packages/anydash/dist/release/
+          run-id: ${{ needs.source.outputs.retained-run }}
+          github-token: ${{ github.token }}
+      - name: Upload the verified set to the draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "scripts/release/anydash.mjs" publish "packages/anydash/dist/release"
+      - name: Publish the platform packages, then the launcher, to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.ANYDASH_NPM_TOKEN }}
+          ANYDASH_APPROVE_RELEASE: "true"
+        run: node "scripts/release/anydash.mjs" publish-npm "packages/anydash/dist/release"
+      - if: always()
+        run: rm -rf "packages/anydash/dist"

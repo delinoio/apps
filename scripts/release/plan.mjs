@@ -9,6 +9,7 @@ export const Component = Object.freeze({
   Perfine: "perfine",
   Lane: "lane",
   Mcpa: "mcpa",
+  AnyDash: "anydash",
 });
 export const serverDependencies = Object.freeze({
   "delcore-api": [],
@@ -18,6 +19,7 @@ export const serverDependencies = Object.freeze({
   "perfine-api": ["delcore-api"],
   "lane-api": ["delcore-api"],
   "mcpa-api": ["delcore-api"],
+  "anydash-api": ["delcore-api"],
 });
 const owners = {
   "delino-site": "delino",
@@ -34,6 +36,8 @@ const owners = {
   "perfine-api": "perfine",
   mcpa: "mcpa",
   "mcpa-api": "mcpa",
+  anydash: "anydash",
+  "anydash-api": "anydash",
 };
 const frontendServers = {
   devbase: ["devbase-api"],
@@ -41,8 +45,16 @@ const frontendServers = {
   lane: ["lane-api"],
   delitools: ["delitools-api"],
   mcpa: ["mcpa-api"],
+  anydash: ["anydash-api"],
 };
 const weight = { none: 0, patch: 1, minor: 2, major: 3 };
+// Distribution packages outside apps/ and servers/ that publish binaries.
+const distributions = {
+  perfine: "perfine",
+  "@actions/perfine": "perfine",
+  "@delinoio/lane": "lane",
+  "@delinoio/anydash": "anydash",
+};
 const greatest = (a = "none", b = "none") => (weight[a] >= weight[b] ? a : b);
 export const compareVersion = (a, b) => {
   const x = a.split(".").map(BigInt),
@@ -107,18 +119,11 @@ export function makePlan(records, inventory, read, priorVersions = {}) {
     const file = inventory[name],
       parts = file.split("/"),
       leaf = parts[1];
-    let owner = owners[leaf];
-    if (name === "perfine" || name === "@actions/perfine") owner = "perfine";
-    if (name === "@delinoio/lane") owner = "lane";
+    const owner = distributions[name] ?? owners[leaf];
     const app = parts[0] === "apps" && owner && !leaf.endsWith("-api");
     const server =
       parts[0] === "servers" && Object.hasOwn(serverDependencies, leaf);
-    if (
-      !owner ||
-      (!app &&
-        !server &&
-        !["perfine", "@actions/perfine", "@delinoio/lane"].includes(name))
-    ) {
+    if (!owner || (!app && !server && !Object.hasOwn(distributions, name))) {
       if (
         bumps[name] &&
         bumps[name] !== "none" &&
@@ -131,15 +136,19 @@ export function makePlan(records, inventory, read, priorVersions = {}) {
     }
     const entry = selectComponent(owner, bumps[name]);
     if (app) {
-      entry.apps.push(leaf);
+      if (!entry.apps.includes(leaf)) entry.apps.push(leaf);
       for (const dependency of frontendServers[leaf] ?? [])
         selectServer(dependency);
-      if (leaf === "lane") entry.binaries = true;
-      if (leaf === "delitools") entry.mobile = true;
+      // The AnyDash desktop apps embed the CLI, so both publish together.
+      if (leaf === "lane" || leaf === "anydash") entry.binaries = true;
+      if (leaf === "delitools" || leaf === "anydash") entry.mobile = true;
     }
     if (server) selectServer(leaf);
-    if (["perfine", "@actions/perfine", "@delinoio/lane"].includes(name))
-      entry.binaries = true;
+    if (Object.hasOwn(distributions, name)) entry.binaries = true;
+    // anydash.delino.io serves the CLI install scripts, so a CLI distribution
+    // release also redeploys the AnyDash web host.
+    if (name === "@delinoio/anydash" && !entry.apps.includes("anydash"))
+      entry.apps.push("anydash");
   }
   for (const [name, bump] of Object.entries(bumps)) {
     if (bump === "none") continue;

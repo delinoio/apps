@@ -63,9 +63,23 @@ jobs:
       tag: v${{ fromJSON(inputs.component).version }}
       publish: true
     secrets: inherit
+  anydash:
+    needs: status
+    if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).component == 'anydash' && fromJSON(inputs.component).binaries
+    # actions: read finds and downloads the release set of an earlier dispatch.
+    permissions:
+      contents: write
+      id-token: write
+      actions: read
+    uses: ./.github/workflows/deploy-anydash.yml
+    with:
+      revision: ${{ inputs.revision }}
+      tag: ${{ fromJSON(inputs.component).tag }}
+      publish: true
+    secrets: inherit
   mobile:
     needs: status
-    if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).mobile
+    if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).component == 'delitools' && fromJSON(inputs.component).mobile
     uses: ./.github/workflows/deploy-delitools-mobile.yml
     with:
       revision: ${{ inputs.revision }}
@@ -73,14 +87,25 @@ jobs:
       platform: all
       publish: false
     secrets: inherit
+  anydash-mobile:
+    needs: status
+    if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).component == 'anydash' && fromJSON(inputs.component).mobile
+    uses: ./.github/workflows/deploy-anydash-mobile.yml
+    with:
+      revision: ${{ inputs.revision }}
+      version: ${{ fromJSON(inputs.component).version }}
+      build_number: ${{ format('{0}', github.run_number) }}
+      platform: all
+      publish: false
+    secrets: inherit
   complete:
-    needs: [status, web, lane, perfine, mobile]
+    needs: [status, web, lane, perfine, anydash, mobile, anydash-mobile]
     if: >-
       ${{ !cancelled() && needs.status.result == 'success' &&
       (needs.status.outputs.tagged == 'true' ||
       ((toJSON(fromJSON(inputs.component).apps) == '[]' || needs.web.result == 'success') &&
-      (!fromJSON(inputs.component).binaries || (fromJSON(inputs.component).component == 'lane' && needs.lane.result == 'success') || (fromJSON(inputs.component).component == 'perfine' && needs.perfine.result == 'success')) &&
-      (!fromJSON(inputs.component).mobile || needs.mobile.result == 'success'))) }}
+      (!fromJSON(inputs.component).binaries || (fromJSON(inputs.component).component == 'lane' && needs.lane.result == 'success') || (fromJSON(inputs.component).component == 'perfine' && needs.perfine.result == 'success') || (fromJSON(inputs.component).component == 'anydash' && needs.anydash.result == 'success')) &&
+      (!fromJSON(inputs.component).mobile || (fromJSON(inputs.component).component == 'delitools' && needs.mobile.result == 'success') || (fromJSON(inputs.component).component == 'anydash' && needs['anydash-mobile'].result == 'success')))) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

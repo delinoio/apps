@@ -22,6 +22,7 @@ jobs:
       lane_cli: ${{ steps.plan.outputs.lane_cli }}
       mcpa: ${{ steps.plan.outputs.mcpa }}
       mcpa_api: ${{ steps.plan.outputs.mcpa_api }}
+      anydash_cli: ${{ steps.plan.outputs.anydash_cli }}
       anydash: ${{ steps.plan.outputs.anydash }}
       devbase: ${{ steps.plan.outputs.devbase }}
       git_tracker: ${{ steps.plan.outputs.git_tracker }}
@@ -477,6 +478,58 @@ jobs:
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "packages/lane/dist"
+  anydash-cli:
+    needs: changes
+    if: needs.changes.outputs.anydash_cli == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: nightly-2026-09-28
+      - name: Install protocol compiler
+        id: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: cli
+        run: |
+          pnpm --filter @delinoio/anydash test
+          pnpm --filter @delinoio/anydash build --platform linux-x64
+          pnpm --filter @delinoio/anydash smoke
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: anydash-cli
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: validation-anydash-cli-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove generated output
+        if: ${{ always() }}
+        run: rm -rf "packages/anydash/dist"
   git-tracker-clients:
     needs: changes
     if: needs.changes.outputs.git_tracker == 'true'
@@ -1200,6 +1253,7 @@ jobs:
       - delitools-frontend
       - lane-frontend
       - lane-cli
+      - anydash-cli
       - anydash-frontend
       - devbase-frontend
       - git-tracker-clients
@@ -1224,7 +1278,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'lane-cli': selection.lane_cli === 'true', 'lane-frontend': selection.lane === 'true', 'anydash-frontend': selection.anydash === 'true', 'perfine-profiles': selection.perfine_fixtures === 'true', 'perfine-adapters': selection.perfine_fixtures === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'mcpa-frontend': selection.mcpa === 'true', 'mcpa-api': selection.mcpa_api === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'lane-cli': selection.lane_cli === 'true', 'anydash-cli': selection.anydash_cli === 'true', 'lane-frontend': selection.lane === 'true', 'anydash-frontend': selection.anydash === 'true', 'perfine-profiles': selection.perfine_fixtures === 'true', 'perfine-adapters': selection.perfine_fixtures === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'mcpa-frontend': selection.mcpa === 'true', 'mcpa-api': selection.mcpa_api === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);

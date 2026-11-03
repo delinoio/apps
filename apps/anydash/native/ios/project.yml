@@ -21,6 +21,8 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      # App icon catalog generated from the AnyDash mark by `ios init`.
+      - path: Generated/Assets.xcassets
       - path: ../widgets/shared/AnyDashSnapshot.swift
       - path: ../../dist/main.lynx.bundle
         buildPhase: resources
@@ -73,6 +75,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.delino.anydash
         TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_OBJC_BRIDGING_HEADER: Sources/AnyDash-Bridging-Header.h
     postBuildScripts:
       - name: Include dependency notices

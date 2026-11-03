@@ -21,6 +21,9 @@ async function files(directory) {
   }
   return result;
 }
+// Services whose whole section is English-only, from the registered directory
+// sections of the service index.
+const englishOnlyServices = registry.sourceOnly.sections["services/index.md"];
 const route = (path) =>
   path
     .replace(/\.html$/u, "")
@@ -79,29 +82,31 @@ test("built English-only pages and locale navigation have existing destinations"
       if (/\.[a-z0-9]+$/iu.test(href) && !href.endsWith(".html")) continue;
       assert.ok(routes.has(route(href)), `${path} links to missing ${href}`);
     }
-    if (path.startsWith("services/perfine/")) {
-      for (const { lang } of registry.locales.filter(
-        ({ lang }) => lang !== registry.sourceLang,
-      )) {
-        assert.ok(
-          text.includes(`href="/${lang}/services/`),
-          `${path}: missing ${lang} fallback`,
-        );
-        assert.ok(
-          !text.includes(`/${lang}/services/perfine`),
-          `${path}: false translation link`,
-        );
+    for (const service of englishOnlyServices) {
+      if (path.startsWith(`services/${service}/`)) {
+        for (const { lang } of registry.locales.filter(
+          ({ lang }) => lang !== registry.sourceLang,
+        )) {
+          assert.ok(
+            text.includes(`href="/${lang}/services/`),
+            `${path}: missing ${lang} fallback`,
+          );
+          assert.ok(
+            !text.includes(`/${lang}/services/${service}`),
+            `${path}: false translation link`,
+          );
+        }
       }
-    }
-    if (
-      registry.locales.some(
-        ({ lang }) => lang !== "en" && path.startsWith(`${lang}/`),
+      if (
+        registry.locales.some(
+          ({ lang }) => lang !== "en" && path.startsWith(`${lang}/`),
+        )
       )
-    )
-      assert.ok(
-        !text.includes("/services/perfine"),
-        `${path}: English-only service leaked into locale navigation`,
-      );
+        assert.ok(
+          !text.includes(`/services/${service}/`),
+          `${path}: English-only service ${service} leaked into locale navigation`,
+        );
+    }
   }
   const directory = await readFile(join(root, "services/index.html"), "utf8");
   assert.ok(
@@ -109,4 +114,24 @@ test("built English-only pages and locale navigation have existing destinations"
       "investigate performance locally with profiles, isolated candidates, and optional private hosting.",
     ),
   );
+  assert.ok(
+    directory.includes(
+      "see AI coding subscription limits, local AI session usage from your devices, and deployment platform status and cost in one dashboard.",
+    ),
+  );
+  const anydash = await readFile(
+    join(root, "services/anydash/index.html"),
+    "utf8",
+  );
+  for (const page of [
+    "getting-started",
+    "cli",
+    "providers",
+    "data",
+    "troubleshooting",
+  ])
+    assert.ok(
+      anydash.includes(`href="/services/anydash/${page}`),
+      `AnyDash sidebar is missing ${page}`,
+    );
 });

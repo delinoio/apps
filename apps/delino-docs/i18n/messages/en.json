@@ -47,5 +47,9 @@
   "perfineGithubActions": "GitHub Actions",
   "laneInstallation": "Installation",
   "laneMcp": "MCP connections",
-  "laneUserGuide": "User guide"
+  "laneUserGuide": "User guide",
+  "anydashGettingStarted": "Getting started",
+  "anydashCli": "CLI reference",
+  "anydashProviders": "Provider connections",
+  "anydashData": "Data and sharing"
 }

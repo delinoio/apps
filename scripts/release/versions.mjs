@@ -73,6 +73,15 @@ export function synchronizeVersions(changes, read, components) {
       perfine.version,
     );
   }
+  // AnyDash CLI, npm launcher and desktop packages share the release version so
+  // the install scripts and the desktop update feed resolve one tag.
+  const anydash = components.find(
+    (entry) => entry.component === "anydash" && entry.binaries,
+  );
+  if (anydash) {
+    jsonVersion("packages/anydash/package.json", anydash.version, true);
+    rustVersion("cmds/anydash/Cargo.toml", "anydash", anydash.version);
+  }
   for (const file of Object.keys(changes))
     if (changes[file] === read(file)) delete changes[file];
   return changes;

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { NativeAuth, pkcePair, subject } from "./auth.mjs";
-import { Collector, ipcCall, socketPath } from "./collector.mjs";
+import { Collector, dataDirectory, ipcCall, socketPath } from "./collector.mjs";
 import { DesktopHost, withDelcoreToken } from "./host.mjs";
 import { memoryStore } from "./secure-store.mjs";
 import {
@@ -21,7 +21,12 @@ import {
 
 async function socketServer(handler) {
   const dir = await mkdtemp(join(tmpdir(), "anydash-ipc-"));
-  const path = join(dir, "collector.sock");
+  // Windows local IPC is a named pipe, as the collector uses there; a
+  // filesystem path is only a valid listen address for Unix domain sockets.
+  const path =
+    process.platform === "win32"
+      ? `\\\\.\\pipe\\anydash-ipc-test-${process.pid}-${Date.now()}`
+      : join(dir, "collector.sock");
   const server = createServer(handler);
   await new Promise((resolve) => server.listen(path, resolve));
   return {
@@ -112,9 +117,23 @@ test("connects to a running collector and stops only one it started", async () =
 });
 
 test("uses the contract socket and pipe names", () => {
+  // Paths follow the target platform's separators on every host, so the
+  // expectations hold when the suite runs on the Windows release runner.
   assert.match(
     socketPath("darwin", {}),
     /Library\/Application Support\/io\.delino\.anydash\/collector\.sock$/,
+  );
+  assert.equal(
+    socketPath("darwin", { ANYDASH_HOME: "/home/u/.anydash" }),
+    "/home/u/.anydash/data/collector.sock",
+  );
+  assert.equal(
+    socketPath("linux", { XDG_RUNTIME_DIR: "/run/user/1000" }),
+    "/run/user/1000/anydash/collector.sock",
+  );
+  assert.equal(
+    dataDirectory("win32", { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }),
+    "C:\\Users\\u\\AppData\\Local\\Delino\\AnyDash\\Data",
   );
   assert.equal(
     socketPath("win32", {}, "S-1-5-21-1"),

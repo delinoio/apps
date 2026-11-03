@@ -7,12 +7,16 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { request } from "node:http";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 
 export const SERVICE = "anydash.v1.LocalCollectorService";
 
+/** Path rules of the target platform, independent of the host running this code. */
+const pathFor = (platform) => (platform === "win32" ? win32 : posix);
+
 /** Data directory from the CLI contract; ANYDASH_HOME overrides it. */
 export function dataDirectory(platform = process.platform, env = process.env) {
+  const { join } = pathFor(platform);
   if (env.ANYDASH_HOME) return join(env.ANYDASH_HOME, "data");
   if (platform === "darwin")
     return join(homedir(), "Library/Application Support/io.delino.anydash");
@@ -43,6 +47,7 @@ export function socketPath(
 ) {
   if (platform === "win32")
     return `\\\\.\\pipe\\io.delino.anydash.collector.${sid ?? windowsUserSid()}`;
+  const { join } = pathFor(platform);
   if (platform === "linux" && env.XDG_RUNTIME_DIR && !env.ANYDASH_HOME)
     return join(env.XDG_RUNTIME_DIR, "anydash", "collector.sock");
   return join(dataDirectory(platform, env), "collector.sock");

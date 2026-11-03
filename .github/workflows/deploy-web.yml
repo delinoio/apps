@@ -38,16 +38,20 @@ jobs:
           WEB_APP: ${{ matrix.app }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT: ${{ vars[matrix.app == 'delino-site' && 'CLOUDFLARE_PAGES_PROJECT_SITE' || matrix.app == 'delino-docs' && 'CLOUDFLARE_PAGES_PROJECT_DOCS' || matrix.app == 'git-tracker' && 'CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER' || matrix.app == 'lane' && 'CLOUDFLARE_PAGES_PROJECT_LANE' || matrix.app == 'devbase' && 'CLOUDFLARE_PAGES_PROJECT_DEVBASE' || matrix.app == 'mcpa' && 'CLOUDFLARE_PAGES_PROJECT_MCPA' || 'CLOUDFLARE_PAGES_PROJECT_DELITOOLS'] }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars[matrix.app == 'delino-site' && 'CLOUDFLARE_PAGES_PROJECT_SITE' || matrix.app == 'delino-docs' && 'CLOUDFLARE_PAGES_PROJECT_DOCS' || matrix.app == 'git-tracker' && 'CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER' || matrix.app == 'lane' && 'CLOUDFLARE_PAGES_PROJECT_LANE' || matrix.app == 'devbase' && 'CLOUDFLARE_PAGES_PROJECT_DEVBASE' || matrix.app == 'mcpa' && 'CLOUDFLARE_PAGES_PROJECT_MCPA' || matrix.app == 'anydash' && 'CLOUDFLARE_PAGES_PROJECT_ANYDASH' || 'CLOUDFLARE_PAGES_PROJECT_DELITOOLS'] }}
         run: node "scripts/release/web.mjs"
       - name: Install locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Validate and build the selected web application
         env:
           WEB_COMMAND: ${{ (matrix.app == 'devbase' || matrix.app == 'delitools') && 'test' || 'build' }}
-          # Public browser identifiers only; Git Tracker is the only consumer.
+          # Public browser identifiers only, read by Git Tracker and AnyDash.
+          # AnyDash signs in with its own Logto application.
           PUBLIC_LOGTO_ENDPOINT: ${{ vars.PUBLIC_LOGTO_ENDPOINT }}
-          PUBLIC_LOGTO_APP_ID: ${{ vars.PUBLIC_LOGTO_APP_ID }}
+          PUBLIC_LOGTO_APP_ID: ${{ matrix.app == 'anydash' && vars.PUBLIC_ANYDASH_LOGTO_APP_ID || vars.PUBLIC_LOGTO_APP_ID }}
+          PUBLIC_ANYDASH_API_URL: ${{ vars.PUBLIC_ANYDASH_API_URL }}
+          PUBLIC_ANYDASH_RESOURCE: ${{ vars.PUBLIC_ANYDASH_RESOURCE }}
+          PUBLIC_DELCORE_RESOURCE: ${{ vars.PUBLIC_DELCORE_RESOURCE }}
         working-directory: apps/${{ matrix.app }}
         run: pnpm "$WEB_COMMAND"
       - name: Include distribution notices
