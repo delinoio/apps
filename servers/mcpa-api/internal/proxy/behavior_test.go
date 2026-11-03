@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -274,6 +275,266 @@ func TestAllowlistRejectsBeforeProviderContact(t *testing.T) {
 	}
 }
 
+// modelRecordingUpstream answers chat completions and records the model name
+// of every request body it receives.
+func modelRecordingUpstream(t *testing.T) (*upstream, func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var models []string
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		model := gjson.GetBytes(body, "model").String()
+		mu.Lock()
+		models = append(models, model)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, openAIChatResponse(model, "ok"))
+	})
+	return up, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), models...)
+	}
+}
+
+func TestAllowlistMatchesExactModelStringOnly(t *testing.T) {
+	h := newHarness(t)
+	up, seen := modelRecordingUpstream(t)
+	resourceID := newResourceID()
+	key := h.addKey(resourceID)
+	h.addCredential(compatCredential(resourceID, up.URL(), "sk", "gpt-4o"))
+	h.routing.set(resourceID, "gpt-4o")
+
+	for _, model := range []string{"gpt-4o(extra)", "gpt-4o(high)", "gpt-4o(8192)"} {
+		res := h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"`+model+`","messages":[]}`, nil)
+		if res.resp.StatusCode != http.StatusForbidden || gjson.GetBytes(res.body, "error.type").String() != "model_not_allowed" {
+			t.Fatalf("%s: %d %s", model, res.resp.StatusCode, res.body)
+		}
+		record := h.sink.waitFinal(t, res.callID)
+		if record.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED {
+			t.Fatalf("%s: record %+v", model, record)
+		}
+	}
+	if up.hits.Load() != 0 {
+		t.Fatalf("suffixed names reached the provider: %d hits", up.hits.Load())
+	}
+
+	res := h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"gpt-4o","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusOK {
+		t.Fatalf("exact model: %d %s", res.resp.StatusCode, res.body)
+	}
+	if got := seen(); len(got) != 1 || got[0] != "gpt-4o" {
+		t.Fatalf("provider models %v", got)
+	}
+
+	// An allowlist entry that itself carries a suffix still matches exactly.
+	h.routing.set(resourceID, "gpt-4o(high)")
+	res = h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"gpt-4o(high)","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusOK {
+		t.Fatalf("suffixed entry: %d %s", res.resp.StatusCode, res.body)
+	}
+	res = h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"gpt-4o","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("base name against suffixed entry: %d %s", res.resp.StatusCode, res.body)
+	}
+
+	// An empty allowlist stays unrestricted, suffixed names included.
+	h.routing.set(resourceID)
+	res = h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"gpt-4o(extra)","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusOK {
+		t.Fatalf("empty allowlist: %d %s", res.resp.StatusCode, res.body)
+	}
+}
+
+func TestHasDuplicateTopLevelKey(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"single key", `{"model":"alpha","messages":[]}`, false},
+		{"two top-level keys", `{"model":"alpha","messages":[],"model":"beta"}`, true},
+		{"same value twice", `{"model":"alpha","model":"alpha"}`, true},
+		{"escaped duplicate", `{"model":"alpha","mo\u0064el":"beta"}`, true},
+		{"case-folded duplicate", `{"model":"alpha","Model":"beta"}`, true},
+		{"nested key only", `{"model":"alpha","metadata":{"model":"beta"},"messages":[{"model":"gamma"}]}`, false},
+		{"nested duplicate only", `{"model":"alpha","metadata":{"model":"a","model":"b"}}`, false},
+		{"no model", `{"messages":[]}`, false},
+		{"array body", `[{"model":"a"},{"model":"b"}]`, false},
+		{"not json", `model=a&model=b`, false},
+		{"empty", ``, false},
+	}
+	for _, tc := range cases {
+		if got := hasDuplicateTopLevelKey([]byte(tc.body), "model"); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestDuplicateModelKeyRejectedBeforeAllowlist(t *testing.T) {
+	const duplicate = `{"model":"alpha","messages":[],"model":"beta"}`
+	cases := []struct {
+		path, typePath string
+		header         map[string]string
+	}{
+		{"/v1/chat/completions", "error.type", nil},
+		{"/v1/completions", "error.type", nil},
+		{"/v1/responses", "error.type", nil},
+		{"/v1/messages", "error.type", map[string]string{"Anthropic-Version": "2023-06-01"}},
+		{"/v1/messages/count_tokens", "error.type", map[string]string{"Anthropic-Version": "2023-06-01"}},
+	}
+	for _, allowlist := range [][]string{{"alpha"}, {"alpha", "beta"}, nil} {
+		h := newHarness(t)
+		up, seen := modelRecordingUpstream(t)
+		resourceID := newResourceID()
+		key := h.addKey(resourceID)
+		h.addCredential(compatCredential(resourceID, up.URL(), "sk", "alpha", "beta"))
+		h.routing.set(resourceID, allowlist...)
+
+		for _, tc := range cases {
+			res := h.call(http.MethodPost, "/r/"+resourceID+tc.path, key, duplicate, tc.header)
+			if res.resp.StatusCode != http.StatusForbidden || gjson.GetBytes(res.body, tc.typePath).String() != "model_not_allowed" {
+				t.Fatalf("allowlist %v %s: %d %s", allowlist, tc.path, res.resp.StatusCode, res.body)
+			}
+			if strings.Contains(string(res.body), "alpha") || strings.Contains(string(res.body), "beta") {
+				t.Fatalf("allowlist %v %s: rejection echoes a model: %s", allowlist, tc.path, res.body)
+			}
+			record := h.sink.waitFinal(t, res.callID)
+			if record.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED || record.Model != "" {
+				t.Fatalf("allowlist %v %s: record %+v", allowlist, tc.path, record)
+			}
+			// Only the customer-segment response bytes are billed.
+			if reqBytes, respBytes := h.sink.sums(res.callID); reqBytes != 0 || respBytes != expectedResponseBytes(res.resp, res.body) {
+				t.Fatalf("allowlist %v %s: billed request %d response %d", allowlist, tc.path, reqBytes, respBytes)
+			}
+		}
+		if up.hits.Load() != 0 || len(seen()) != 0 {
+			t.Fatalf("allowlist %v: duplicate-key bodies reached the provider", allowlist)
+		}
+	}
+}
+
+func TestSingleAndNestedModelKeysBehaveAsBefore(t *testing.T) {
+	h := newHarness(t)
+	up, seen := modelRecordingUpstream(t)
+	resourceID := newResourceID()
+	key := h.addKey(resourceID)
+	h.addCredential(compatCredential(resourceID, up.URL(), "sk", "alpha", "beta"))
+	h.routing.set(resourceID, "alpha")
+
+	for _, body := range []string{
+		`{"model":"alpha","messages":[]}`,
+		`{"model":"alpha","metadata":{"model":"beta"},"messages":[]}`,
+	} {
+		res := h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, body, nil)
+		if res.resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d %s", body, res.resp.StatusCode, res.body)
+		}
+	}
+	if got := seen(); len(got) != 2 || got[0] != "alpha" || got[1] != "alpha" {
+		t.Fatalf("provider models %v", got)
+	}
+	res := h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"beta","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("unlisted single key: %d %s", res.resp.StatusCode, res.body)
+	}
+}
+
+func TestBudgetGateRunsAfterModelAllowlist(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	metrics, err := NewMetrics(reg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, func(o *Options) { o.Metrics = metrics })
+	up, seen := modelRecordingUpstream(t)
+	resourceID := newResourceID()
+	key := h.addKey(resourceID)
+	h.addCredential(compatCredential(resourceID, up.URL(), "sk", "a", "b"))
+	h.routing.set(resourceID, "a")
+	chat := "/r/" + resourceID + "/v1/chat/completions"
+	exhausted := &Rejection{Code: RejectionBudgetExhausted, Message: "the resource budget is exhausted", BudgetScope: BudgetScopeResource}
+	budgetRejections := func() float64 {
+		return testutil.ToFloat64(metrics.budgetRejections.WithLabelValues("resource")) +
+			testutil.ToFloat64(metrics.budgetRejections.WithLabelValues("tenant"))
+	}
+	type result struct {
+		status int
+		code   string
+		call   mcpav1.CallStatus
+		gates  []string
+	}
+	send := func(path, body string) result {
+		t.Helper()
+		h.authz.reset()
+		res := h.call(http.MethodPost, path, key, body, nil)
+		record := h.sink.waitFinal(t, res.callID)
+		return result{res.resp.StatusCode, gjson.GetBytes(res.body, "error.type").String(), record.Status, h.authz.gates()}
+	}
+	assertResult := func(name string, got, want result) {
+		t.Helper()
+		if got.status != want.status || got.code != want.code || got.call != want.call || strings.Join(got.gates, ",") != strings.Join(want.gates, ",") {
+			t.Fatalf("%s: got %+v, want %+v", name, got, want)
+		}
+	}
+	disallowed := result{http.StatusForbidden, "model_not_allowed", mcpav1.CallStatus_CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED, []string{"authorize"}}
+
+	// An exhausted budget never masks a disallowed model, and a disallowed
+	// model never counts as a budget rejection.
+	h.authz.setBudget(exhausted)
+	assertResult("disallowed model, exhausted budget", send(chat, `{"model":"b","messages":[]}`), disallowed)
+	assertResult("missing model, exhausted budget", send(chat, `{"messages":[]}`), disallowed)
+	assertResult("duplicate model key, exhausted budget", send(chat, `{"model":"a","model":"b"}`), disallowed)
+	if got := budgetRejections(); got != 0 {
+		t.Fatalf("budget rejections after disallowed models: %v", got)
+	}
+
+	// An allowed model on the same resource still meets the budget gate.
+	assertResult("allowed model, exhausted budget",
+		send(chat, `{"model":"a","messages":[]}`),
+		result{http.StatusTooManyRequests, "budget_exhausted", mcpav1.CallStatus_CALL_STATUS_REJECTED_BUDGET, []string{"authorize", "budgets"}})
+	if got := testutil.ToFloat64(metrics.budgetRejections.WithLabelValues("resource")); got != 1 {
+		t.Fatalf("resource budget rejections %v", got)
+	}
+
+	// Model listings keep the budget gate.
+	h.authz.reset()
+	if res := h.call(http.MethodGet, "/r/"+resourceID+"/v1/models", key, "", nil); res.resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("listing with exhausted budget: %d %s", res.resp.StatusCode, res.body)
+	}
+
+	// An unreadable billing period fails closed only for models that reach the
+	// budget gate.
+	h.authz.setBudget(Reject(RejectionDependencyUnavailable, "a required service is unavailable; retry later"))
+	assertResult("disallowed model, unreadable period", send(chat, `{"model":"b","messages":[]}`), disallowed)
+	assertResult("allowed model, unreadable period",
+		send(chat, `{"model":"a","messages":[]}`),
+		result{http.StatusServiceUnavailable, "dependency_unavailable", mcpav1.CallStatus_CALL_STATUS_REJECTED_DEPENDENCY, []string{"authorize", "budgets"}})
+	if up.hits.Load() != 0 {
+		t.Fatalf("rejected calls reached the provider: %d hits", up.hits.Load())
+	}
+
+	// The authorization gate still runs first, before the body is considered.
+	h.authz.setBudget(nil)
+	h.authz.set(Reject(RejectionTenantInactive, "tenant is blocked"))
+	assertResult("blocked tenant, disallowed model",
+		send(chat, `{"model":"b","messages":[]}`),
+		result{http.StatusForbidden, "tenant_inactive", mcpav1.CallStatus_CALL_STATUS_REJECTED_TENANT, []string{"authorize"}})
+	h.authz.set(nil)
+
+	// Without a budget the call proceeds as before.
+	assertResult("allowed model, no budget",
+		send(chat, `{"model":"a","messages":[]}`),
+		result{http.StatusOK, "", mcpav1.CallStatus_CALL_STATUS_SUCCEEDED, []string{"authorize", "budgets"}})
+	if got := seen(); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("provider models %v", got)
+	}
+	// One rejected call and one rejected listing, nothing else.
+	if got := budgetRejections(); got != 2 {
+		t.Fatalf("budget rejections %v", got)
+	}
+}
+
 func TestRemoveCredentialTakesEffectImmediately(t *testing.T) {
 	h := newHarness(t)
 	up := openAIUpstream(t, "ok")
@@ -401,7 +662,15 @@ func TestRejectionsUseClientFormatShapes(t *testing.T) {
 		{errors.New("delcore timeout"), 503, "dependency_unavailable", mcpav1.CallStatus_CALL_STATUS_REJECTED_DEPENDENCY},
 	}
 	for _, c := range checks {
-		h.authz.set(c.err)
+		// Budget rejections come from the budget gate, which runs after the
+		// allowlist; the other rejections come from the authorization gate.
+		if c.call == mcpav1.CallStatus_CALL_STATUS_REJECTED_BUDGET {
+			h.authz.set(nil)
+			h.authz.setBudget(c.err)
+		} else {
+			h.authz.set(c.err)
+			h.authz.setBudget(nil)
+		}
 		res := h.call(http.MethodPost, openai, key, chatBody, nil)
 		if res.resp.StatusCode != c.status || gjson.GetBytes(res.body, "error.type").String() != c.code {
 			t.Fatalf("%s: %d %s", c.code, res.resp.StatusCode, res.body)

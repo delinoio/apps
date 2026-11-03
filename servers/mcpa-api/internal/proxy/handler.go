@@ -117,13 +117,15 @@ func callKeyFrom(r *http.Request) string {
 }
 
 // modelAllowed applies the resource allowlist. An empty list allows every
-// model; otherwise the requested name, or its base name without an SDK
-// thinking suffix, must be listed exactly.
+// model; otherwise the requested model string must be listed exactly. A
+// suffixed name such as "model(high)" is a different name than "model": the
+// SDK rewrites it to the base name before the provider call, so matching on
+// the base name would let an unlisted name reach a listed model.
 func modelAllowed(model string, allowlist []string) bool {
 	if len(allowlist) == 0 {
 		return true
 	}
-	return slices.Contains(allowlist, model) || slices.Contains(allowlist, baseModelName(model))
+	return slices.Contains(allowlist, model)
 }
 
 type runtimeContextKey struct{}
@@ -255,6 +257,14 @@ func (e *Engine) serveCall(w *countingResponseWriter, r *http.Request, call *cal
 			return
 		}
 		if rt.format != mcpav1.EndpointFormat_ENDPOINT_FORMAT_GEMINI {
+			// The gate reads the first "model" key but the body is forwarded
+			// unchanged, so a decoder that reads another occurrence would
+			// serve a model the allowlist never saw. The message must not
+			// echo any model value from the body.
+			if hasDuplicateTopLevelKey(body, "model") {
+				reject(Reject(RejectionModelNotAllowed, "the request body names the model more than once"))
+				return
+			}
 			call.mu.Lock()
 			call.model = strings.TrimSpace(gjson.GetBytes(body, "model").String())
 			call.streaming = gjson.GetBytes(body, "stream").Bool()
@@ -276,6 +286,14 @@ func (e *Engine) serveCall(w *countingResponseWriter, r *http.Request, call *cal
 			reject(Reject(RejectionModelNotAllowed, "model "+strconv.Quote(call.model)+" is not allowed for this resource"))
 			return
 		}
+	}
+
+	// Budgets come after the allowlist so that a disallowed model is reported
+	// as model_not_allowed and never counts as a budget rejection. Listings
+	// keep the budget gate they always had.
+	if err := e.opts.Authorizer.CheckBudgets(ctx, call.principal); err != nil {
+		reject(asRejection(err, RejectionDependencyUnavailable))
+		return
 	}
 
 	runtime, err := e.runtime(ctx, call.resourceID)

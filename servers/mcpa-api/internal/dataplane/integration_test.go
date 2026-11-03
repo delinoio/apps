@@ -677,6 +677,61 @@ func TestIntegrationBudgets(t *testing.T) {
 	}
 }
 
+// The model allowlist is applied before the budget gate: a disallowed model is
+// reported as model_not_allowed and is not counted as a budget rejection.
+func TestIntegrationBudgetGateRunsAfterAllowlist(t *testing.T) {
+	e := newEnv(t, func(v map[string]string) { v["MCPA_AUTHORIZE_CACHE_TTL"] = "200ms" })
+	id := e.resource("budget-allowlist")
+	key, _ := e.callKey("owner", id)
+	mustDo(e, "owner", e.rpc.UpdateRouting, &mcpav1.UpdateRoutingRequest{ResourceId: id, Routing: &mcpav1.RoutingSettings{ModelAllowlist: []string{"compat-model"}}})
+	mustDo(e, "owner", e.rpc.SetResourceBudget, &mcpav1.SetResourceBudgetRequest{ResourceId: id, LimitUsd: "0"})
+	disallowed := strings.Replace(chatBody(false), "compat-model", "other-model", 1)
+	hits := e.up.hits.Load()
+
+	rej := e.call(e.srv.URL, id, key, "/v1/chat/completions", disallowed, nil)
+	if rej.status != http.StatusForbidden || gjson.GetBytes(rej.body, "error.type").String() != "model_not_allowed" {
+		t.Fatalf("disallowed model, exhausted budget: %d %s", rej.status, rej.body)
+	}
+	if rec := e.waitFinal(rej.callID); rec.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED {
+		t.Fatalf("disallowed record %+v", rec)
+	}
+	if got := metricValue(t, e, "mcpa_budget_rejections_total", "scope", "resource"); got != 0 {
+		t.Fatalf("disallowed model counted as a budget rejection: %v", got)
+	}
+
+	rej = e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if rej.status != http.StatusTooManyRequests || gjson.GetBytes(rej.body, "error.type").String() != "budget_exhausted" {
+		t.Fatalf("allowed model, exhausted budget: %d %s", rej.status, rej.body)
+	}
+	if rec := e.waitFinal(rej.callID); rec.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_BUDGET {
+		t.Fatalf("budget record %+v", rec)
+	}
+	if got := metricValue(t, e, "mcpa_budget_rejections_total", "scope", "resource"); got != 1 {
+		t.Fatalf("resource budget rejections %v", got)
+	}
+
+	// An unreadable billing period fails closed only where the budget gate
+	// is reached.
+	mustDo(e, "owner", e.rpc.SetResourceBudget, &mcpav1.SetResourceBudgetRequest{ResourceId: id, LimitUsd: "10"})
+	e.dc.set(func(f *fakeDelcore) { f.periodDown = true })
+	time.Sleep(300 * time.Millisecond) // period cache
+	rej = e.call(e.srv.URL, id, key, "/v1/chat/completions", disallowed, nil)
+	if rej.status != http.StatusForbidden || gjson.GetBytes(rej.body, "error.type").String() != "model_not_allowed" {
+		t.Fatalf("disallowed model, unreadable period: %d %s", rej.status, rej.body)
+	}
+	rej = e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if rej.status != http.StatusServiceUnavailable || gjson.GetBytes(rej.body, "error.type").String() != "dependency_unavailable" {
+		t.Fatalf("allowed model, unreadable period: %d %s", rej.status, rej.body)
+	}
+	if got := e.up.hits.Load(); got != hits {
+		t.Fatalf("rejected calls reached the provider: %d hits", got-hits)
+	}
+	if got := metricValue(t, e, "mcpa_budget_rejections_total", "scope", "resource"); got != 1 {
+		t.Fatalf("resource budget rejections after dependency failure %v", got)
+	}
+	e.dc.set(func(f *fakeDelcore) { f.periodDown = false })
+}
+
 // Budget limits keep their full precision end to end: they are stored and
 // returned unrounded and the exhaustion check compares exactly.
 func TestIntegrationBudgetLimitPrecision(t *testing.T) {

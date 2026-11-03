@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy"
+	"github.com/tidwall/gjson"
 )
 
 // writeModelListing answers model listings from the resource's own
@@ -118,4 +119,25 @@ func geminiModel(model *cliproxy.ModelInfo) map[string]any {
 		out["outputTokenLimit"] = model.OutputTokenLimit
 	}
 	return out
+}
+
+// hasDuplicateTopLevelKey reports whether the top-level JSON object of body
+// holds name more than once. Keys are compared after JSON unescaping and
+// without case, because decoders in the request path differ: gjson reads the
+// first occurrence and is case-sensitive, while a last-wins or case-folding
+// decoder (such as encoding/json) reads another one. Nested objects are not
+// inspected. Bodies that are not JSON objects hold no duplicates.
+func hasDuplicateTopLevelKey(body []byte, name string) bool {
+	root := gjson.ParseBytes(body)
+	if !root.IsObject() {
+		return false
+	}
+	seen := 0
+	root.ForEach(func(key, _ gjson.Result) bool {
+		if strings.EqualFold(key.String(), name) {
+			seen++
+		}
+		return seen < 2
+	})
+	return seen > 1
 }
