@@ -494,6 +494,112 @@ func TestAuthorizeRequiresS256AndState(t *testing.T) {
 	}
 }
 
+func TestAuthorizeRejectsInvalidStateWithoutRedirect(t *testing.T) {
+	e := newEnv(t)
+	cases := map[string]string{
+		"NUL byte":          "a\x00b",
+		"control character": "a\nb",
+		"DEL":               "a\x7fb",
+		"invalid UTF-8":     "a\xffb",
+		"overlong UTF-8":    "a\xc0\xafb",
+		"non-ASCII UTF-8":   "caf\u00e9",
+		"too long":          strings.Repeat("s", 513),
+	}
+	for name, state := range cases {
+		rec := e.get(authorizeQuery(map[string]string{"state": state}))
+		var body map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: body %q: %v", name, rec.Body.String(), err)
+		}
+		if rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" ||
+			body["error"] != "invalid_request" || body["error_description"] != "state is invalid" {
+			t.Fatalf("%s: status %d location %q body %v", name, rec.Code, rec.Header().Get("Location"), body)
+		}
+		if strings.Contains(rec.Body.String(), state) || len(rec.Result().Cookies()) != 0 {
+			t.Fatalf("%s: state echoed or cookie set: %s", name, rec.Body.String())
+		}
+	}
+	if n := e.store.authInsertCalls(); n != 0 {
+		t.Fatalf("InsertAuthRequest called %d times for invalid states", n)
+	}
+	// An invalid state is refused before any other parameter is judged.
+	rec := e.get(authorizeQuery(map[string]string{"state": "a\x00b", "response_type": "token"}))
+	if rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" {
+		t.Fatalf("invalid state with bad response_type: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestAuthorizeAcceptsPrintableStateUpToLimit(t *testing.T) {
+	e := newEnv(t)
+	printable := ""
+	for c := byte(0x20); c <= 0x7e; c++ {
+		printable += string(c)
+	}
+	for name, state := range map[string]string{
+		"512 characters":     strings.Repeat("s", 512),
+		"all printable":      printable,
+		"single character":   "x",
+		"space and specials": " &=?#%+/\\\"<> ",
+	} {
+		e.store.mu.Lock()
+		before := len(e.store.requests)
+		e.store.mu.Unlock()
+		rec := e.get(authorizeQuery(map[string]string{"state": state}))
+		u := location(t, rec)
+		if !strings.HasPrefix(u.String(), e.logto.Issuer()+"/auth?") {
+			t.Fatalf("%s: redirect to %s", name, u)
+		}
+		e.store.mu.Lock()
+		stored := e.store.requests
+		var got string
+		for _, r := range stored {
+			if r.ClientState == state {
+				got = r.ClientState
+			}
+		}
+		after := len(stored)
+		e.store.mu.Unlock()
+		if after != before+1 || got != state {
+			t.Fatalf("%s: stored requests %d -> %d, client state kept = %v", name, before, after, got == state)
+		}
+	}
+}
+
+func TestAuthorizeEchoesMaximumLengthState(t *testing.T) {
+	e := newEnv(t)
+	state := strings.Repeat("s", 512)
+	rec := e.get(authorizeQuery(map[string]string{"state": state}))
+	q := location(t, rec).Query()
+	e.up.set(func(u *upstream) { u.nonce = q.Get("nonce"); u.upstreamChallenge = q.Get("code_challenge") })
+	var browser *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "mcpa_mcp_oauth" {
+			browser = c
+		}
+	}
+	if browser == nil {
+		t.Fatal("no browser cookie")
+	}
+	cb := e.get(oauth.CallbackPath+"?"+url.Values{"code": {"logto-code"}, "state": {q.Get("state")}}.Encode(), browser)
+	final := location(t, cb)
+	if final.Query().Get("state") != state || final.Query().Get("code") == "" {
+		t.Fatalf("final redirect %s", final)
+	}
+}
+
+func TestAuthorizeStorageFailureStillRedirectsTemporarilyUnavailable(t *testing.T) {
+	e := newEnv(t)
+	e.store.setInsertAuthErr(errors.New("database down"))
+	u := location(t, e.get(authorizeQuery(nil)))
+	q := u.Query()
+	if u.Scheme+"://"+u.Host+u.Path != redirectURI || q.Get("error") != "temporarily_unavailable" || q.Get("state") != "client-state" {
+		t.Fatalf("storage failure redirect %s", u)
+	}
+	if n := e.store.authInsertCalls(); n != 1 {
+		t.Fatalf("InsertAuthRequest calls = %d, want 1", n)
+	}
+}
+
 func TestLoginIssuesMCPTokens(t *testing.T) {
 	e := newEnv(t)
 	code := e.code()

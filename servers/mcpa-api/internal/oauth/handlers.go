@@ -86,6 +86,25 @@ func pkceChallenge(verifier string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
+// maxClientStateLength is the longest client state the broker accepts.
+const maxClientStateLength = 512
+
+// validClientState reports whether state is 1 to 512 bytes, all printable
+// ASCII (%x20-7E). The value is stored as text and echoed in redirects, so
+// NUL bytes, control characters and invalid UTF-8 are refused up front
+// instead of failing the insert later.
+func validClientState(state string) bool {
+	if len(state) == 0 || len(state) > maxClientStateLength {
+		return false
+	}
+	for i := 0; i < len(state); i++ {
+		if c := state[i]; c < 0x20 || c > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
 // validPKCEValue reports whether v is a 43 to 128 character PKCE verifier
 // (RFC 7636 section 4.1). S256 challenges are always 43 characters.
 func validPKCEValue(v string) bool {
@@ -245,6 +264,14 @@ func (b *Broker) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	if !b.registeredRedirect(clientID, redirectURI) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": string(errInvalidRequest), "error_description": "redirect_uri is not registered for this client"})
+		return
+	}
+	// A non-empty state that cannot be stored or echoed safely is refused
+	// directly: it is never redirected back, so it is not reflected to the
+	// registered redirect URI. An empty state keeps its OAuth error redirect
+	// below.
+	if state != "" && !validClientState(state) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": string(errInvalidRequest), "error_description": "state is invalid"})
 		return
 	}
 	switch {

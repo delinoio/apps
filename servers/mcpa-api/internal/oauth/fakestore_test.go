@@ -24,6 +24,11 @@ type fakeStore struct {
 	tokens   map[string]fakeToken
 	// deleteErr, when set, fails DeleteGrant like an unavailable database.
 	deleteErr error
+	// insertAuthErr, when set, fails InsertAuthRequest like an unavailable
+	// database.
+	insertAuthErr error
+	// insertAuthCalls counts InsertAuthRequest calls, failed ones included.
+	insertAuthCalls int
 }
 
 type fakeCode struct {
@@ -51,6 +56,10 @@ func newFakeStore(now func() time.Time) *fakeStore {
 func (f *fakeStore) InsertAuthRequest(_ context.Context, r store.MCPAuthRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.insertAuthCalls++
+	if f.insertAuthErr != nil {
+		return f.insertAuthErr
+	}
 	f.requests[string(r.StateHash)] = r
 	return nil
 }
@@ -285,4 +294,16 @@ func (f *fakeStore) grantCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.grants)
+}
+
+func (f *fakeStore) setInsertAuthErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.insertAuthErr = err
+}
+
+func (f *fakeStore) authInsertCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.insertAuthCalls
 }
