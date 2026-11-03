@@ -3174,7 +3174,7 @@ function parseConfiguration(text) {
         throw new Error(
           `Column ${label} has unknown key ${JSON.stringify(unknownKey.slice(0, 64))}`
         );
-      if (!directions[c.direction])
+      if (!Object.hasOwn(directions, c.direction))
         throw new Error(
           `Column ${label} direction must be lower, higher or neutral`
         );
@@ -3300,6 +3300,15 @@ details-url=${details}
     );
   let authorization;
   try {
+    const operation = input("operation") || "upload";
+    let dataset;
+    let rows;
+    if (operation === "upload") {
+      dataset = parseConfiguration(
+        await (0, import_promises.readFile)(input("configuration"), "utf8")
+      );
+      rows = parseMeasurements(await (0, import_promises.readFile)(input("measurements"), "utf8"));
+    }
     const token = input("token");
     if (token) {
       console.log(`::add-mask::${escapeCommand(token)}`);
@@ -3328,17 +3337,10 @@ details-url=${details}
       console.log(`::add-mask::${escapeCommand(result2.value)}`);
       authorization = `Actions ${result2.value}`;
     }
-    const operation = input("operation") || "upload";
     let result;
     if (operation === "complete")
       result = await rpc(api, "Complete", { context }, authorization);
     else if (operation === "upload") {
-      const dataset = parseConfiguration(
-        await (0, import_promises.readFile)(input("configuration"), "utf8")
-      );
-      const rows = parseMeasurements(
-        await (0, import_promises.readFile)(input("measurements"), "utf8")
-      );
       result = await rpc(
         api,
         "Upload",
