@@ -14,7 +14,13 @@ import { Field } from "../components/field";
 function BudgetSummary({ budget }: { budget: Budget }) {
   const limit = budget.limitUsd ? Number(budget.limitUsd) : undefined;
   const spent = Number(budget.spentUsd || "0");
-  const ratio = limit ? Math.min(spent / limit, 1) : 0;
+  // A zero limit is exhausted at once, but dividing by it is meaningless, so
+  // the server's exhausted flag decides the full meter.
+  const ratio = budget.exhausted
+    ? 1
+    : limit && limit > 0
+      ? Math.min(spent / limit, 1)
+      : 0;
   return (
     <div className="budget">
       <dl className="stats">
@@ -86,7 +92,11 @@ function BudgetDialog({
   const [invalid, setInvalid] = useState(false);
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const normalized = normalizeUsdInput(value);
+    // An untouched prefilled limit is already canonical API output, so send it
+    // back as is. Typed input is limited to 12 integer and 6 fraction digits,
+    // which is narrower than what the server stores.
+    const normalized =
+      current && value === current ? current : normalizeUsdInput(value);
     if (!normalized) {
       setInvalid(true);
       return;

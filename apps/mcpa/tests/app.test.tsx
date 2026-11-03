@@ -1012,3 +1012,242 @@ describe("OAuth connection", () => {
     expect(cachedMutationText(queryClient)).not.toContain("sk-registered");
   });
 });
+
+describe("form validation matches the server", () => {
+  const koreanName = "가".repeat(34); // 102 UTF-8 bytes, 34 UTF-16 units
+
+  it("rejects a call-key name over 100 bytes without a request", async () => {
+    const issueCallKey = rs.fn(() => ({}));
+    renderApp({
+      path: resourcePath("keys"),
+      service: { ...baseService(), issueCallKey },
+    });
+    fireEvent.click(
+      (await screen.findAllByRole("button", { name: "Issue call key" }))[0],
+    );
+    const form = await screen.findByRole("dialog");
+    fireEvent.change(within(form).getByLabelText("Name"), {
+      target: { value: koreanName },
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "Issue key" }));
+    expect(
+      await within(form).findByText("Use a shorter name (up to 100 bytes)."),
+    ).toBeTruthy();
+    expect(issueCallKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects a long resource name or description without a request", async () => {
+    const createResource = rs.fn(() => ({ resource: resource() }));
+    renderApp({
+      path: `/tenants/${TENANT_ID}`,
+      service: { ...baseService(), createResource },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create resource" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const submit = () =>
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Create resource" }),
+      );
+    fireEvent.change(within(dialog).getByLabelText("Name"), {
+      target: { value: koreanName },
+    });
+    submit();
+    expect(
+      await within(dialog).findByText("Use a shorter name (up to 100 bytes)."),
+    ).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText("Name"), {
+      target: { value: "Bot" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Description (optional)"), {
+      target: { value: "가".repeat(334) }, // 1,002 bytes
+    });
+    submit();
+    expect(
+      await within(dialog).findByText(
+        "Use a shorter description (up to 1,000 bytes).",
+      ),
+    ).toBeTruthy();
+    expect(createResource).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid allowlist entries and accepts a valid one", async () => {
+    renderApp({ path: resourcePath("routing") });
+    const input = await screen.findByLabelText("Model name");
+    const add = screen.getByRole("button", { name: "Add" });
+    fireEvent.change(input, { target: { value: "my model" } });
+    fireEvent.click(add);
+    expect(
+      await screen.findByText(
+        "A model name can't contain spaces or control characters.",
+      ),
+    ).toBeTruthy();
+    fireEvent.change(input, { target: { value: "a".repeat(201) } });
+    fireEvent.click(add);
+    expect(
+      await screen.findByText("Use a shorter model name (up to 200 bytes)."),
+    ).toBeTruthy();
+    fireEvent.change(input, { target: { value: "gpt-4.1" } });
+    fireEvent.click(add);
+    expect(await screen.findByText("gpt-4.1")).toBeTruthy();
+  });
+
+  it("requires https for an OpenAI-compatible base URL", async () => {
+    const registerApiKeyCredential = rs.fn(() => ({
+      credential: { id: "cred-1", name: "Local" },
+    }));
+    renderApp({
+      path: resourcePath("credentials"),
+      service: { ...baseService(), registerApiKeyCredential },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Add API key" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Provider"), {
+      target: { value: String(Provider.OPENAI_COMPATIBLE) },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Name"), {
+      target: { value: "Local" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("API key"), {
+      target: { value: "sk-secret" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Base URL"), {
+      target: { value: "http://api.example.com/v1" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Models"), {
+      target: { value: "model-a" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add API key" }),
+    );
+    expect(
+      await within(dialog).findByText("Enter a URL starting with https://."),
+    ).toBeTruthy();
+    expect(registerApiKeyCredential).not.toHaveBeenCalled();
+  });
+
+  it("rejects a budget limit over 12 integer digits", async () => {
+    const setResourceBudget = rs.fn(() => ({ budget: {} }));
+    renderApp({
+      path: resourcePath("budget"),
+      service: {
+        ...baseService(),
+        getResourceBudget: () => ({ budget: { limitUsd: "", spentUsd: "0" } }),
+        setResourceBudget,
+      },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Set a limit" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Monthly limit (USD)"), {
+      target: { value: "1000000000000" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save limit" }));
+    expect(
+      await within(dialog).findByText("Enter an amount such as 25 or 25.50."),
+    ).toBeTruthy();
+    expect(setResourceBudget).not.toHaveBeenCalled();
+  });
+});
+
+describe("budget display", () => {
+  const meter = async () => (await screen.findByRole("meter")) as HTMLElement;
+
+  it("shows a full meter for an exhausted zero limit", async () => {
+    renderApp({
+      path: resourcePath("budget"),
+      service: {
+        ...baseService(),
+        getResourceBudget: () => ({
+          budget: { limitUsd: "0", spentUsd: "0", exhausted: true },
+        }),
+      },
+    });
+    const element = await meter();
+    expect(element.getAttribute("aria-valuenow")).toBe("100");
+    const fill = element.querySelector("span") as HTMLElement;
+    expect(fill.style.width).toBe("100%");
+    expect(fill.hasAttribute("data-full")).toBe(true);
+  });
+
+  it("shows the spent share of the limit", async () => {
+    renderApp({
+      path: resourcePath("budget"),
+      service: {
+        ...baseService(),
+        getResourceBudget: () => ({
+          budget: { limitUsd: "10", spentUsd: "2.5" },
+        }),
+      },
+    });
+    const element = await meter();
+    expect(element.getAttribute("aria-valuenow")).toBe("25");
+    expect((element.querySelector("span") as HTMLElement).style.width).toBe(
+      "25%",
+    );
+  });
+
+  it("shows no meter without a limit", async () => {
+    renderApp({
+      path: resourcePath("budget"),
+      service: {
+        ...baseService(),
+        getResourceBudget: () => ({ budget: { limitUsd: "", spentUsd: "1" } }),
+      },
+    });
+    expect(await screen.findByText("No limit")).toBeTruthy();
+    expect(screen.queryByRole("meter")).toBeNull();
+  });
+
+  it("saves an untouched prefilled limit unchanged even beyond typed-input limits", async () => {
+    const setResourceBudget = rs.fn((request: { limitUsd: string }) => ({
+      budget: { limitUsd: request.limitUsd, spentUsd: "0" },
+    }));
+    renderApp({
+      path: resourcePath("budget"),
+      service: {
+        ...baseService(),
+        getResourceBudget: () => ({
+          budget: { limitUsd: "0.12345678", spentUsd: "0" },
+        }),
+        setResourceBudget,
+      },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Change limit" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save limit" }));
+    await waitFor(() => expect(setResourceBudget).toHaveBeenCalledTimes(1));
+    expect(
+      (setResourceBudget.mock.calls[0] as unknown as [{ limitUsd: string }])[0]
+        .limitUsd,
+    ).toBe("0.12345678");
+  });
+
+  it("saves a prefilled six-digit fraction limit unchanged", async () => {
+    const setResourceBudget = rs.fn((request: { limitUsd: string }) => ({
+      budget: { limitUsd: request.limitUsd, spentUsd: "0" },
+    }));
+    renderApp({
+      path: resourcePath("budget"),
+      service: {
+        ...baseService(),
+        getResourceBudget: () => ({
+          budget: { limitUsd: "0.075", spentUsd: "0" },
+        }),
+        setResourceBudget,
+      },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Change limit" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save limit" }));
+    await waitFor(() => expect(setResourceBudget).toHaveBeenCalledTimes(1));
+    expect(
+      (setResourceBudget.mock.calls[0] as unknown as [{ limitUsd: string }])[0]
+        .limitUsd,
+    ).toBe("0.075");
+  });
+});
