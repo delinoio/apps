@@ -33,7 +33,7 @@ var (
 	gib          = new(big.Rat).SetInt64(1 << 30)
 	usdPerGiB    = big.NewRat(7, 100)
 	usdPerByte   = new(big.Rat).Quo(usdPerGiB, gib)
-	limitPattern = regexp.MustCompile(`^(0|[1-9][0-9]{0,11})(\.[0-9]{1,6})?$`)
+	limitPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]+)?$`)
 )
 
 // Maximum fraction digits of exact byte-derived amounts. Any byte count is
@@ -44,6 +44,9 @@ const (
 	gibFractionDigits = 30
 	usdFractionDigits = 32
 )
+
+// MaxLimitLength is the maximum length in characters of a budget limit.
+const MaxLimitLength = 64
 
 // PerByte returns the USD price of one byte.
 func PerByte() *big.Rat { return new(big.Rat).Set(usdPerByte) }
@@ -83,17 +86,39 @@ func Format(r *big.Rat, places int) string {
 }
 
 // ErrInvalidLimit means a budget limit is not a canonical nonnegative decimal.
-var ErrInvalidLimit = errors.New("limit must be a nonnegative decimal with at most 12 integer digits and 6 decimal places")
+var ErrInvalidLimit = errors.New("limit must be a canonical nonnegative decimal with at most 64 characters")
+
+// CanonicalDecimal removes the trailing fraction zeros of a canonical
+// nonnegative decimal string, so "10.50" becomes "10.5" and "1.000" becomes
+// "1". It works on the digits and never rounds. It reports false when raw is
+// not a canonical nonnegative decimal (no sign, exponent, leading zeros,
+// missing integer or fraction digits, or whitespace). It does not bound the
+// length; ParseLimit does.
+func CanonicalDecimal(raw string) (string, bool) {
+	if !limitPattern.MatchString(raw) {
+		return "", false
+	}
+	if strings.Contains(raw, ".") {
+		raw = strings.TrimRight(raw, "0")
+		raw = strings.TrimSuffix(raw, ".")
+	}
+	return raw, true
+}
 
 // ParseLimit validates a USD budget limit and returns its canonical form.
-// Trailing fractional zeros are removed, so "10.50" becomes "10.5".
+// The raw input is limited to MaxLimitLength characters. Trailing fractional
+// zeros are removed, so "10.50" becomes "10.5". The value is never rounded.
 func ParseLimit(raw string) (string, *big.Rat, error) {
-	if !limitPattern.MatchString(raw) {
+	if len(raw) > MaxLimitLength {
 		return "", nil, ErrInvalidLimit
 	}
-	r, ok := new(big.Rat).SetString(raw)
+	canonical, ok := CanonicalDecimal(raw)
 	if !ok {
 		return "", nil, ErrInvalidLimit
 	}
-	return Format(r, 6), r, nil
+	r, ok := new(big.Rat).SetString(canonical)
+	if !ok {
+		return "", nil, ErrInvalidLimit
+	}
+	return canonical, r, nil
 }

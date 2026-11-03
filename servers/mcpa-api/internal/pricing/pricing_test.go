@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/big"
 	"math/rand"
+	"strings"
 	"testing"
 )
 
@@ -84,16 +85,74 @@ func TestExactEstimatesRoundTrip(t *testing.T) {
 }
 
 func TestParseLimit(t *testing.T) {
-	ok := map[string]string{"0": "0", "10": "10", "10.50": "10.5", "0.000001": "0.000001", "1.000000": "1"}
+	ok := map[string]string{
+		"0": "0", "10": "10", "10.50": "10.5", "0.000001": "0.000001", "1.000000": "1",
+		// Limits are never rounded, whatever their scale or magnitude.
+		"0.0000001":     "0.0000001",
+		"1000000000000": "1000000000000",
+		"1234567890123": "1234567890123",
+		"1.0000001":     "1.0000001",
+		"0.10":          "0.1",
+		"0.000":         "0",
+		"7.0":           "7",
+	}
 	for in, want := range ok {
-		got, _, err := ParseLimit(in)
+		got, r, err := ParseLimit(in)
 		if err != nil || got != want {
 			t.Errorf("%q => %q, %v", in, got, err)
+			continue
+		}
+		if wantRat, _ := new(big.Rat).SetString(want); r.Cmp(wantRat) != 0 {
+			t.Errorf("%q parsed as %s, want %s", in, r.FloatString(10), want)
 		}
 	}
-	for _, in := range []string{"", "-1", "01", "1.", ".5", "1e3", "1.0000001", "1234567890123", " 1", "NaN"} {
+	for _, in := range []string{"", "-1", "+1", "01", "00", "1.", ".5", "1e3", "1E3", "0x10", "1,5", " 1", "1 ", "\t1", "NaN", "Inf", "-0", "1.5.2", "0.1\n"} {
 		if _, _, err := ParseLimit(in); err == nil {
 			t.Errorf("accepted %q", in)
+		}
+	}
+}
+
+func TestParseLimitLengthBound(t *testing.T) {
+	// 64 characters: 32 integer digits, a dot and 31 fraction digits.
+	long64 := "1" + strings.Repeat("0", 31) + "." + strings.Repeat("0", 30) + "1"
+	if len(long64) != MaxLimitLength {
+		t.Fatalf("fixture has %d characters", len(long64))
+	}
+	got, r, err := ParseLimit(long64)
+	if err != nil || got != long64 {
+		t.Fatalf("64-character limit => %q, %v", got, err)
+	}
+	if want, _ := new(big.Rat).SetString(long64); r.Cmp(want) != 0 {
+		t.Fatalf("64-character limit parsed inexactly: %s", r.FloatString(40))
+	}
+	if _, _, err := ParseLimit(long64 + "0"); err == nil {
+		t.Fatal("accepted a 65-character limit")
+	}
+	// The bound applies to the raw input, even when trailing fraction zeros
+	// would shorten the canonical form.
+	if _, _, err := ParseLimit("1." + strings.Repeat("0", 63)); err == nil {
+		t.Fatal("accepted a 65-character limit that canonicalizes to 1")
+	}
+	if got, _, err := ParseLimit("1." + strings.Repeat("0", 62)); err != nil || got != "1" {
+		t.Fatalf("64-character limit of trailing zeros => %q, %v", got, err)
+	}
+	if _, _, err := ParseLimit(strings.Repeat("9", 65)); err == nil {
+		t.Fatal("accepted 65 integer digits")
+	}
+}
+
+func TestCanonicalDecimal(t *testing.T) {
+	for in, want := range map[string]string{"": "", "10.500": "10.5", "5": "5", "0.0": "0", "100": "100", "100.0": "100"} {
+		got, ok := CanonicalDecimal(in)
+		if in == "" {
+			if ok {
+				t.Errorf("accepted the empty string")
+			}
+			continue
+		}
+		if !ok || got != want {
+			t.Errorf("%q => %q, %v; want %q", in, got, ok, want)
 		}
 	}
 }

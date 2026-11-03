@@ -282,7 +282,7 @@ Billable bytes are the request bytes that Managed CPA writes to the provider plu
 
 ### Budgets
 
-- Each resource and each tenant can have an optional USD limit, a canonical non-negative decimal of at most 64 characters. Resource managers set the resource limit. Holders of `manage_tenant_budget` set the tenant limit. An empty value removes the limit.
+- Each resource and each tenant can have an optional USD limit, a canonical non-negative decimal of at most 64 characters. Canonical means digits with an optional fraction: no sign, exponent, leading zeros, bare dot, whitespace or non-numeric value. The server removes trailing fraction zeros (`10.50` becomes `10.5`), rejects longer raw input with `invalid_input`, and stores and returns the limit without rounding. The exhaustion check compares exact decimals; `spent_usd` is the spend rounded to six places. Resource managers set the resource limit. Holders of `manage_tenant_budget` set the tenant limit. An empty value removes the limit.
 - The budget period is the tenant's current Delcore billing period, read from `ListMeterAggregates` and cached for `MCPA_AUTHORIZE_CACHE_TTL`.
 - Measured spend is the bytes committed locally by checkpoints for calls that started in the period, multiplied by the per-byte price. It uses exact decimal arithmetic.
 - Daily usage aggregates supply the UTC days that the period fully covers. Budget spend entries supply the partial first and last days. Each entry holds the committed bytes of the calls of one resource that started at one instant. Spend entries outlive every Delcore billing period, so spend from early in a 31-day period stays counted after its call records expire.
