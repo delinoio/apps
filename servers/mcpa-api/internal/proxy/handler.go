@@ -257,6 +257,14 @@ func (e *Engine) serveCall(w *countingResponseWriter, r *http.Request, call *cal
 			return
 		}
 		if rt.format != mcpav1.EndpointFormat_ENDPOINT_FORMAT_GEMINI {
+			// The gate reads the first "model" key but the body is forwarded
+			// unchanged, so a decoder that reads another occurrence would
+			// serve a model the allowlist never saw. The message must not
+			// echo any model value from the body.
+			if hasDuplicateTopLevelKey(body, "model") {
+				reject(Reject(RejectionModelNotAllowed, "the request body names the model more than once"))
+				return
+			}
 			call.mu.Lock()
 			call.model = strings.TrimSpace(gjson.GetBytes(body, "model").String())
 			call.streaming = gjson.GetBytes(body, "stream").Bool()

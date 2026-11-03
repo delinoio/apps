@@ -346,6 +346,100 @@ func TestAllowlistMatchesExactModelStringOnly(t *testing.T) {
 	}
 }
 
+func TestHasDuplicateTopLevelKey(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"single key", `{"model":"alpha","messages":[]}`, false},
+		{"two top-level keys", `{"model":"alpha","messages":[],"model":"beta"}`, true},
+		{"same value twice", `{"model":"alpha","model":"alpha"}`, true},
+		{"escaped duplicate", `{"model":"alpha","mo\u0064el":"beta"}`, true},
+		{"case-folded duplicate", `{"model":"alpha","Model":"beta"}`, true},
+		{"nested key only", `{"model":"alpha","metadata":{"model":"beta"},"messages":[{"model":"gamma"}]}`, false},
+		{"nested duplicate only", `{"model":"alpha","metadata":{"model":"a","model":"b"}}`, false},
+		{"no model", `{"messages":[]}`, false},
+		{"array body", `[{"model":"a"},{"model":"b"}]`, false},
+		{"not json", `model=a&model=b`, false},
+		{"empty", ``, false},
+	}
+	for _, tc := range cases {
+		if got := hasDuplicateTopLevelKey([]byte(tc.body), "model"); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestDuplicateModelKeyRejectedBeforeAllowlist(t *testing.T) {
+	const duplicate = `{"model":"alpha","messages":[],"model":"beta"}`
+	cases := []struct {
+		path, typePath string
+		header         map[string]string
+	}{
+		{"/v1/chat/completions", "error.type", nil},
+		{"/v1/completions", "error.type", nil},
+		{"/v1/responses", "error.type", nil},
+		{"/v1/messages", "error.type", map[string]string{"Anthropic-Version": "2023-06-01"}},
+		{"/v1/messages/count_tokens", "error.type", map[string]string{"Anthropic-Version": "2023-06-01"}},
+	}
+	for _, allowlist := range [][]string{{"alpha"}, {"alpha", "beta"}, nil} {
+		h := newHarness(t)
+		up, seen := modelRecordingUpstream(t)
+		resourceID := newResourceID()
+		key := h.addKey(resourceID)
+		h.addCredential(compatCredential(resourceID, up.URL(), "sk", "alpha", "beta"))
+		h.routing.set(resourceID, allowlist...)
+
+		for _, tc := range cases {
+			res := h.call(http.MethodPost, "/r/"+resourceID+tc.path, key, duplicate, tc.header)
+			if res.resp.StatusCode != http.StatusForbidden || gjson.GetBytes(res.body, tc.typePath).String() != "model_not_allowed" {
+				t.Fatalf("allowlist %v %s: %d %s", allowlist, tc.path, res.resp.StatusCode, res.body)
+			}
+			if strings.Contains(string(res.body), "alpha") || strings.Contains(string(res.body), "beta") {
+				t.Fatalf("allowlist %v %s: rejection echoes a model: %s", allowlist, tc.path, res.body)
+			}
+			record := h.sink.waitFinal(t, res.callID)
+			if record.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED || record.Model != "" {
+				t.Fatalf("allowlist %v %s: record %+v", allowlist, tc.path, record)
+			}
+			// Only the customer-segment response bytes are billed.
+			if reqBytes, respBytes := h.sink.sums(res.callID); reqBytes != 0 || respBytes != expectedResponseBytes(res.resp, res.body) {
+				t.Fatalf("allowlist %v %s: billed request %d response %d", allowlist, tc.path, reqBytes, respBytes)
+			}
+		}
+		if up.hits.Load() != 0 || len(seen()) != 0 {
+			t.Fatalf("allowlist %v: duplicate-key bodies reached the provider", allowlist)
+		}
+	}
+}
+
+func TestSingleAndNestedModelKeysBehaveAsBefore(t *testing.T) {
+	h := newHarness(t)
+	up, seen := modelRecordingUpstream(t)
+	resourceID := newResourceID()
+	key := h.addKey(resourceID)
+	h.addCredential(compatCredential(resourceID, up.URL(), "sk", "alpha", "beta"))
+	h.routing.set(resourceID, "alpha")
+
+	for _, body := range []string{
+		`{"model":"alpha","messages":[]}`,
+		`{"model":"alpha","metadata":{"model":"beta"},"messages":[]}`,
+	} {
+		res := h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, body, nil)
+		if res.resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d %s", body, res.resp.StatusCode, res.body)
+		}
+	}
+	if got := seen(); len(got) != 2 || got[0] != "alpha" || got[1] != "alpha" {
+		t.Fatalf("provider models %v", got)
+	}
+	res := h.call(http.MethodPost, "/r/"+resourceID+"/v1/chat/completions", key, `{"model":"beta","messages":[]}`, nil)
+	if res.resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("unlisted single key: %d %s", res.resp.StatusCode, res.body)
+	}
+}
+
 func TestRemoveCredentialTakesEffectImmediately(t *testing.T) {
 	h := newHarness(t)
 	up := openAIUpstream(t, "ok")
