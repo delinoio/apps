@@ -8,7 +8,7 @@ inputs:
     description: Git Tracker repository connection ID returned when connecting the repository
     required: true
   execution-id:
-    description: Shared execution ID (defaults to repository_id/run_id/run_attempt)
+    description: Shared execution ID (defaults to repository_id/run_id/run_attempt; any other value requires the token input)
   configuration:
     description: Path to the dataset YAML file
   measurements:

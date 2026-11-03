@@ -195,9 +195,8 @@ export async function main() {
     await readFile(process.env.GITHUB_EVENT_PATH, "utf8"),
   );
   const pr = event.pull_request;
-  const executionId =
-    input("execution-id") ||
-    `${process.env.GITHUB_REPOSITORY_ID}/${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}`;
+  const defaultExecutionId = `${process.env.GITHUB_REPOSITORY_ID}/${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}`;
+  const executionId = input("execution-id") || defaultExecutionId;
   if (!/^[A-Za-z0-9_./-]{1,200}$/u.test(executionId))
     throw new Error("Invalid execution ID");
   const context = {
@@ -221,6 +220,14 @@ export async function main() {
       console.log(`::add-mask::${escapeCommand(token)}`);
       authorization = `Bearer ${token}`;
     } else {
+      // The API accepts an Actions identity only for the default execution
+      // ID, so a different one can never authenticate. Fail before any
+      // identity or API request. An explicit value equal to the default is
+      // the same identity and stays valid.
+      if (executionId !== defaultExecutionId)
+        throw new Error(
+          "A custom execution-id requires a repository token; provide the token input or omit execution-id to use the default Actions identity",
+        );
       if (
         !process.env.ACTIONS_ID_TOKEN_REQUEST_URL ||
         !process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
