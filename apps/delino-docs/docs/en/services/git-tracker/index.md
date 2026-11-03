@@ -90,7 +90,7 @@ jobs:
           repository-id: '019b0000-0000-7000-8000-000000000001'
 ```
 
-Independent jobs share the default execution ID, `repository_id/run_id/run_attempt`, and can upload disjoint rows. Use a new execution ID for reruns. Actions OIDC requires the default identity; custom execution IDs are for repository-token callers. Fork OIDC uploads are limited to the PR head and cannot supply baseline overrides or write upstream push history.
+Independent jobs share the default execution ID, `repository_id/run_id/run_attempt`, and can upload disjoint rows. Use a new execution ID for reruns. Actions OIDC requires the default identity; custom execution IDs are for repository-token callers. Same-repository PR jobs may set `baseline`. Fork OIDC uploads are limited to the PR head and cannot supply baseline overrides or write upstream push history.
 
 Each upload job judges only its own uploaded rows. Regressions are reported without failing CI by default. Set `fail-on-regression: 'true'` to fail that job on regressions. Missing comparisons do not fail CI. The completion job only says measurement is finished; it does not submit CI success/failure/cancellation or perform aggregate gating. An empty completion is valid when all jobs were skipped.
 
