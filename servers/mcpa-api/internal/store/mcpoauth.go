@@ -233,11 +233,16 @@ func (m *MCPOAuth) GrantByAccessToken(ctx context.Context, tokenHash []byte) (MC
 // token, which the upstream refresh already consumed, without issuing a
 // handle or token, and the client can retry with the same credential.
 //
+// Once the lock and the checks pass, fn runs with a context that is not
+// canceled with ctx but ends after the store's detach bound, and the updates
+// and the commit use the same context. A canceled request therefore cannot
+// roll back a rotated upstream refresh token that fn already consumed.
+//
 // Database failures (begin, lock, checks, updates and commit) wrap
 // ErrStorage so callers can tell a retryable storage outage from an error of
 // fn or from a sentinel result. Errors returned by fn and the sentinels
 // ErrNotFound, ErrHandleRetired and ErrCodeReused are never wrapped.
-func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, use MCPGrantUse, fn func(MCPGrant) (MCPGrantChange, error)) error {
+func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, use MCPGrantUse, fn func(ctx context.Context, g MCPGrant) (MCPGrantChange, error)) error {
 	// fnErr is the error of fn when its partial change was committed.
 	var fnErr error
 	// logicErr is a non-database result that aborts the transaction: a
@@ -247,7 +252,7 @@ func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, use MCPGrantUs
 		logicErr = err
 		return err
 	}
-	err := m.s.InTx(ctx, func(tx pgx.Tx) error {
+	err := m.s.InTxDetached(ctx, func(tx pgx.Tx, detach func() context.Context) error {
 		g, err := scanMCPGrant(tx.QueryRow(ctx, `SELECT `+mcpGrantColumns+` FROM mcp_grants WHERE id = $1 AND expire_time > now() FOR UPDATE`, id))
 		if errors.Is(err, ErrNotFound) {
 			return abort(err)
@@ -284,16 +289,22 @@ func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, use MCPGrantUs
 				return abort(ErrNotFound)
 			}
 		}
-		ch, err := fn(g)
+		// Everything from here on belongs to one consumption of the upstream
+		// refresh token: fn may rotate it at the identity provider, so fn, the
+		// consumption of the code or handle and the commit must finish even
+		// when the request is canceled meanwhile. The lock wait and the checks
+		// above stay under the request context.
+		wctx := detach()
+		ch, err := fn(wctx, g)
 		if err != nil {
 			if !ch.Delete && ch.Tokens == nil {
 				return abort(err)
 			}
 			fnErr = err
-			return storageErr(applyMCPGrantChange(ctx, tx, id, MCPGrantChange{Delete: ch.Delete, Tokens: ch.Tokens}))
+			return storageErr(applyMCPGrantChange(wctx, tx, id, MCPGrantChange{Delete: ch.Delete, Tokens: ch.Tokens}))
 		}
 		if use.Handle != nil {
-			tag, err := tx.Exec(ctx, `UPDATE mcp_refresh_handles SET retire_time = now()
+			tag, err := tx.Exec(wctx, `UPDATE mcp_refresh_handles SET retire_time = now()
 				WHERE handle_hash = $1 AND grant_id = $2 AND retire_time IS NULL`, use.Handle, id)
 			if err != nil {
 				return storageErr(err)
@@ -303,7 +314,7 @@ func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, use MCPGrantUs
 			}
 		}
 		if use.Code != nil {
-			tag, err := tx.Exec(ctx, `UPDATE mcp_authorization_codes SET use_time = now()
+			tag, err := tx.Exec(wctx, `UPDATE mcp_authorization_codes SET use_time = now()
 				WHERE code_hash = $1 AND grant_id = $2 AND use_time IS NULL`, use.Code, id)
 			if err != nil {
 				return storageErr(err)
@@ -312,7 +323,7 @@ func (m *MCPOAuth) UpdateGrant(ctx context.Context, id uuid.UUID, use MCPGrantUs
 				return abort(ErrCodeReused)
 			}
 		}
-		return storageErr(applyMCPGrantChange(ctx, tx, id, ch))
+		return storageErr(applyMCPGrantChange(wctx, tx, id, ch))
 	})
 	if err != nil {
 		if logicErr != nil {
