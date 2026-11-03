@@ -63,6 +63,9 @@ type callState struct {
 	streamFailed    bool
 	dataBeforeError bool
 	rejection       *Rejection
+	// kimiDeviceID is the device ID that Kimi provider requests carry (see
+	// rewriteKimiDeviceHeaders). It is set only for Kimi calls.
+	kimiDeviceID string
 
 	checkpoint checkpointState
 }
@@ -86,6 +89,21 @@ func (c *callState) selected(credentialID string, provider mcpav1.Provider) {
 	c.executorInvoked = true
 	c.credentialID = credentialID
 	c.provider = provider
+}
+
+// setKimiDeviceID records the device ID for Kimi provider requests.
+func (c *callState) setKimiDeviceID(id string) {
+	c.mu.Lock()
+	c.kimiDeviceID = id
+	c.mu.Unlock()
+}
+
+// kimiDevice returns the device ID for Kimi provider requests, or false when
+// the call is not served by a Kimi credential.
+func (c *callState) kimiDevice() (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.kimiDeviceID, c.provider == mcpav1.Provider_PROVIDER_KIMI && c.kimiDeviceID != ""
 }
 
 // observeHTTPStatus records the status of a provider response seen by the
@@ -263,6 +281,7 @@ func (t *meteringTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return t.base.RoundTrip(req)
 	}
 	call.addRequestBytes(requestLineBytes(req.Method, req.URL.RequestURI()))
+	rewriteKimiDeviceHeaders := kimiDeviceHeaderRewrite(call, req)
 	trace := &httptrace.ClientTrace{
 		WroteHeaderField: func(name string, values []string) {
 			if strings.HasPrefix(name, ":") {
@@ -278,6 +297,9 @@ func (t *meteringTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		WroteHeaders: func() { call.addRequestBytes(int64(len("\r\n"))) },
 	}
 	out := req.Clone(httptrace.WithClientTrace(req.Context(), trace))
+	// The headers are rewritten on the clone before the transport writes
+	// them, so the byte counts above are those of the rewritten request.
+	rewriteKimiDeviceHeaders(out.Header)
 	if req.Body != nil && req.Body != http.NoBody {
 		out.Body = &countingReadCloser{ReadCloser: req.Body, call: call}
 	}

@@ -120,6 +120,9 @@ func (e *resourceExecutor) begin(ctx context.Context, auth *coreauth.Auth, opts 
 		return ctx, nil, isolationError{}
 	}
 	call.selected(auth.Attributes[attrCredentialID], providerFromSDK(e.sdkProvider))
+	if e.sdkProvider == sdkProviderKimi {
+		call.setKimiDeviceID(kimiDeviceIDFor(auth))
+	}
 	if baseURL, ok := e.traceMeteringBase(auth, opts); ok {
 		ctx = withTraceMetering(ctx, call, requestURIFor(baseURL, claudeURI))
 	}
