@@ -1131,3 +1131,427 @@ async fn refresh_token_requests_need_one_pooled_connection() {
     narrow.db.close().await;
     f.cleanup().await;
 }
+
+/// Polling maps only a missing enrollment to UNAUTHENTICATED. The collector treats that reason as
+/// a permanent invalidation, so a database failure must stay a retryable server error.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn poll_enrollment_database_failure_is_not_unauthenticated() {
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let start = f
+        .ok(
+            &f.anonymous(),
+            "DeviceService/StartEnrollment",
+            json!({"deviceName":"laptop","platform":"DEVICE_PLATFORM_LINUX","architecture":"CPU_ARCHITECTURE_X64","collectorKind":"COLLECTOR_KIND_CLI","collectorVersion":"1.0.0","osVersion":"24.04"}),
+        )
+        .await;
+    let enrollment = start["enrollmentId"].as_str().unwrap().to_owned();
+    let poll = json!({"enrollmentId":enrollment,"deviceCode":start["deviceCode"]});
+
+    // A lock held by another transaction makes the row read fail after the lock timeout.
+    let impatient = f.with_lock_timeout(200).await;
+    let lock = f
+        .lock_row(&format!(
+            "SELECT id FROM enrollments WHERE id='{enrollment}' FOR UPDATE"
+        ))
+        .await;
+    let failed = impatient
+        .fail(
+            &impatient.anonymous(),
+            "DeviceService/PollEnrollment",
+            poll.clone(),
+            "ERROR_REASON_INTERNAL",
+        )
+        .await;
+    assert_eq!(failed.status, 500);
+    lock.rollback().await.unwrap();
+
+    // Once the lock is released the same request succeeds: nothing was invalidated.
+    let pending = impatient
+        .ok(&impatient.anonymous(), "DeviceService/PollEnrollment", poll)
+        .await;
+    assert_eq!(pending["state"], "ENROLLMENT_STATE_PENDING");
+    let state = f
+        .count(&format!(
+            "SELECT count(*) FROM enrollments WHERE id='{enrollment}' AND state=1"
+        ))
+        .await;
+    assert_eq!(state, 1, "the enrollment is still pending");
+
+    // A missing enrollment and a wrong device code are still authentication failures.
+    impatient
+        .fail(
+            &impatient.anonymous(),
+            "DeviceService/PollEnrollment",
+            json!({"enrollmentId":id(),"deviceCode":start["deviceCode"]}),
+            "ERROR_REASON_UNAUTHENTICATED",
+        )
+        .await;
+    impatient
+        .fail(
+            &impatient.anonymous(),
+            "DeviceService/PollEnrollment",
+            json!({"enrollmentId":enrollment,"deviceCode":"x".repeat(43)}),
+            "ERROR_REASON_UNAUTHENTICATED",
+        )
+        .await;
+    impatient.db.close().await;
+    f.cleanup().await;
+}
+
+/// Timestamps outside years 1 to 9999 are INVALID_ARGUMENT naming the field, never a database
+/// error or a silently dropped value. ProtoJSON cannot express them, so the requests use the
+/// binary protobuf encoding.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn out_of_range_timestamps_are_invalid_arguments() {
+    use buffa_types::google::protobuf::Timestamp;
+    use delino_protocol::anydash::v1::{
+        __buffa::oneof::metric_value::Value as MetricOneof, MetricObservation, MetricState,
+        MetricValue, ReportParserStatusRequest, ReportSnapshotRequest, UploadUsageRequest,
+    };
+    const INVALID: &str = "ERROR_REASON_INVALID_ARGUMENT";
+    let out_of_range = || {
+        Some(Timestamp {
+            seconds: -999_999_999_900,
+            ..Default::default()
+        })
+        .into()
+    };
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let (_, access, _) = f.enroll(&a, "laptop", "").await;
+    let d = f.device(&access);
+
+    // UploadUsage: the bucket start is part of the whole-request validation.
+    let mut upload: UploadUsageRequest = serde_json::from_value(json!({"buckets":[bucket(
+        "LOCAL_TOOL_CODEX",
+        "gpt-5",
+        bucket_start(Duration::hours(2)),
+        1,
+        1,
+        json!({"inputTokens":"10"}),
+    )]}))
+    .unwrap();
+    upload.buckets[0].bucket_start = out_of_range();
+    let e = f
+        .fail_proto(&d, "CollectorService/UploadUsage", &upload, INVALID)
+        .await;
+    assert_eq!(e.status, 400);
+    assert_eq!(e.detail.field, "buckets[0].bucket_start");
+    // Year 9999 is representable but not aligned or current; the far future stays invalid.
+    upload.buckets[0].bucket_start = Some(Timestamp {
+        seconds: 253_402_300_800,
+        ..Default::default()
+    })
+    .into();
+    let e = f
+        .fail_proto(&d, "CollectorService/UploadUsage", &upload, INVALID)
+        .await;
+    assert_eq!(e.detail.field, "buckets[0].bucket_start");
+    // A 100-day-old aligned bucket is still a valid bucket outside retention.
+    let r = f
+        .ok(
+            &d,
+            "CollectorService/UploadUsage",
+            json!({"buckets":[bucket(
+                "LOCAL_TOOL_CODEX",
+                "gpt-5",
+                bucket_start(Duration::days(100)),
+                1,
+                1,
+                json!({"inputTokens":"10"}),
+            )]}),
+        )
+        .await;
+    assert_eq!(
+        r["results"][0]["outcome"],
+        "BUCKET_OUTCOME_OUTSIDE_RETENTION"
+    );
+
+    // ReportParserStatus: observed_at is optional, but a present value must be valid.
+    let mut status: ReportParserStatusRequest = serde_json::from_value(json!({"statuses":[
+        {"tool":"LOCAL_TOOL_CODEX","state":"PARSER_STATE_OK","parserVersion":"1"},
+        {"tool":"LOCAL_TOOL_CLAUDE_CODE","state":"PARSER_STATE_OK","parserVersion":"1"},
+    ]}))
+    .unwrap();
+    status.statuses[1].observed_at = out_of_range();
+    let e = f
+        .fail_proto(&d, "CollectorService/ReportParserStatus", &status, INVALID)
+        .await;
+    assert_eq!(e.detail.field, "statuses[1].observed_at");
+    assert_eq!(
+        f.count("SELECT count(*) FROM device_parser_status").await,
+        0,
+        "an invalid request stores nothing"
+    );
+    status.statuses[1].observed_at = Some(Timestamp {
+        seconds: bucket_start(Duration::hours(1)).timestamp(),
+        ..Default::default()
+    })
+    .into();
+    f.ok(
+        &d,
+        "CollectorService/ReportParserStatus",
+        json!({"statuses":[
+            {"tool":"LOCAL_TOOL_CODEX","state":"PARSER_STATE_OK","parserVersion":"1"},
+            {"tool":"LOCAL_TOOL_CLAUDE_CODE","state":"PARSER_STATE_OK","parserVersion":"1","observedAt":at(Utc::now())},
+        ]}),
+    )
+    .await;
+    assert_eq!(
+        f.count("SELECT count(*) FROM device_parser_status WHERE observed_at IS NULL")
+            .await,
+        1,
+        "an absent observed_at is still stored as absent"
+    );
+
+    // ReportSnapshot: metric periods and time values are validated before any lease check.
+    let snapshot = |metric: Value| -> ReportSnapshotRequest {
+        serde_json::from_value(json!({"connectionId":id(),"leaseEpoch":"1","snapshot":{
+            "observedAt":at(Utc::now()),"status":"COLLECTION_STATUS_SUCCEEDED","metrics":[metric],
+            "source":"OBSERVATION_SOURCE_ACTIVE_POLL"}}))
+        .unwrap()
+    };
+    let cumulative = || {
+        json!({"kind":"METRIC_KIND_SUBSCRIPTION_USED_PERCENT","dimension":"week","temporality":"METRIC_TEMPORALITY_CUMULATIVE",
+            "value":{"state":"METRIC_STATE_VALUE","percent":1.0},
+            "periodStart":at(Utc::now() - Duration::hours(2)),"periodEnd":at(Utc::now() - Duration::hours(1))})
+    };
+    let report = |request: ReportSnapshotRequest, edit: &dyn Fn(&mut MetricObservation)| {
+        let mut request = request;
+        let mut snap = request.snapshot.as_option().cloned().unwrap();
+        edit(&mut snap.metrics[0]);
+        request.snapshot = Some(snap).into();
+        let f = &f;
+        let d = &d;
+        async move {
+            f.fail_proto(d, "CollectorService/ReportSnapshot", &request, INVALID)
+                .await
+        }
+    };
+    let e = report(snapshot(cumulative()), &|m| m.period_start = out_of_range()).await;
+    assert_eq!(e.detail.field, "snapshot.metrics[0].period_start");
+    let e = report(snapshot(cumulative()), &|m| m.period_end = out_of_range()).await;
+    assert_eq!(e.detail.field, "snapshot.metrics[0].period_end");
+    // A non-cumulative metric with an invalid period used to drop the period silently.
+    let instantaneous = json!({"kind":"METRIC_KIND_SUBSCRIPTION_USED_PERCENT","dimension":"week",
+        "temporality":"METRIC_TEMPORALITY_INSTANTANEOUS","value":{"state":"METRIC_STATE_VALUE","percent":1.0}});
+    let e = report(snapshot(instantaneous.clone()), &|m| {
+        m.period_end = out_of_range()
+    })
+    .await;
+    assert_eq!(e.detail.field, "snapshot.metrics[0].period_end");
+    // A time-valued metric outside the range is invalid too.
+    let e = report(snapshot(instantaneous), &|m| {
+        m.value = Some(MetricValue {
+            state: MetricState::Value.into(),
+            value: Some(MetricOneof::Time(Box::new(Timestamp {
+                seconds: -999_999_999_900,
+                ..Default::default()
+            }))),
+            ..Default::default()
+        })
+        .into()
+    })
+    .await;
+    assert_eq!(e.detail.field, "snapshot.metrics[0].value");
+    f.cleanup().await;
+}
+
+/// Reports parser statuses as a device.
+async fn report_parsers(f: &Fixture, caller: &support::Caller, statuses: Value) {
+    f.ok(
+        caller,
+        "CollectorService/ReportParserStatus",
+        json!({"statuses":statuses}),
+    )
+    .await;
+}
+
+/// Returns (parser state, skipped count) of the breakdown row whose `field` equals `key`. The
+/// row is read 25 times through QueryWidgetData and once through QueryDashboardData; all reads
+/// must agree.
+async fn breakdown_row(
+    f: &Fixture,
+    user: &support::Caller,
+    dash: &str,
+    widget: &str,
+    field: &str,
+    key: &str,
+) -> (Value, Value) {
+    let mut seen = Vec::new();
+    for _ in 0..25 {
+        let data = f
+            .ok(
+                user,
+                "WidgetDataService/QueryWidgetData",
+                json!({"dashboardId":dash,"widgetId":widget}),
+            )
+            .await;
+        let rows = data["data"]["usageBreakdown"]["rows"].as_array().unwrap();
+        let r = rows.iter().find(|r| r[field] == key).unwrap();
+        seen.push((r["parserState"].clone(), r["skippedRecordCount"].clone()));
+    }
+    let whole = f
+        .ok(
+            user,
+            "WidgetDataService/QueryDashboardData",
+            json!({"dashboardId":dash}),
+        )
+        .await;
+    let data = whole["widgets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["widgetId"] == widget)
+        .unwrap();
+    let rows = data["usageBreakdown"]["rows"].as_array().unwrap();
+    let r = rows.iter().find(|r| r[field] == key).unwrap();
+    seen.push((r["parserState"].clone(), r["skippedRecordCount"].clone()));
+    assert!(
+        seen.windows(2).all(|w| w[0] == w[1]),
+        "unstable row {key}: {seen:?}"
+    );
+    seen.remove(0)
+}
+
+/// A breakdown row covering several parser statuses reports the same state on every query:
+/// PARTIAL > OK > NO_SOURCES > DISABLED, with the skipped record counts summed.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn breakdown_parser_state_follows_a_fixed_precedence() {
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let user = f.user(&a);
+    let (laptop, laptop_access, _) = f.enroll(&a, "laptop", "").await;
+    let (desk, desk_access, _) = f.enroll(&a, "desk", "").await;
+    let (laptop_caller, desk_caller) = (f.device(&laptop_access), f.device(&desk_access));
+    let start = bucket_start(Duration::hours(2));
+    let tokens = json!({"inputTokens":"10","outputTokens":"1","cacheReadTokens":"0"});
+    for (caller, tool) in [
+        (&laptop_caller, "LOCAL_TOOL_CODEX"),
+        (&laptop_caller, "LOCAL_TOOL_CLAUDE_CODE"),
+        (&desk_caller, "LOCAL_TOOL_CODEX"),
+        (&desk_caller, "LOCAL_TOOL_CLAUDE_CODE"),
+    ] {
+        f.ok(
+            caller,
+            "CollectorService/UploadUsage",
+            json!({"buckets":[bucket(tool, "gpt-5", start, 1, 1, tokens.clone())]}),
+        )
+        .await;
+    }
+    let status = |tool: &str, state: &str, skipped: u32| json!({"tool":tool,"state":state,"skippedRecordCount":skipped.to_string(),"parserVersion":"1"});
+
+    let dash = f
+        .ok(
+            &user,
+            "DashboardService/CreateDashboard",
+            json!({"requestId":id(),"spaceId":a.personal,"name":"Parsers"}),
+        )
+        .await["dashboard"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut widgets = Vec::new();
+    for (version, dimension, y) in [
+        ("1", "USAGE_BREAKDOWN_DIMENSION_DEVICE", 0),
+        ("2", "USAGE_BREAKDOWN_DIMENSION_TOOL", 3),
+    ] {
+        let added = f
+            .ok(
+                &user,
+                "DashboardService/AddWidget",
+                json!({"dashboardId":dash,"expectedVersion":version,"requestId":id(),"type":"WIDGET_TYPE_LOCAL_USAGE_BREAKDOWN",
+                    "layout":{"x":0,"y":y,"width":6,"height":3,"presentation":"WIDGET_PRESENTATION_TABLE"},
+                    "query":{"period":"QUERY_PERIOD_LAST_24_HOURS","breakdown":dimension},"source":{"allDevices":true}}),
+            )
+            .await;
+        widgets.push(added["widgetId"].as_str().unwrap().to_owned());
+    }
+    let (by_device, by_tool) = (&widgets[0], &widgets[1]);
+
+    // Laptop: Codex OK, Claude Code NO_SOURCES. Desk: Codex DISABLED, Claude Code NO_SOURCES.
+    report_parsers(
+        &f,
+        &laptop_caller,
+        json!([
+            status("LOCAL_TOOL_CODEX", "PARSER_STATE_OK", 0),
+            status("LOCAL_TOOL_CLAUDE_CODE", "PARSER_STATE_NO_SOURCES", 0)
+        ]),
+    )
+    .await;
+    report_parsers(
+        &f,
+        &desk_caller,
+        json!([
+            status("LOCAL_TOOL_CODEX", "PARSER_STATE_DISABLED", 0),
+            status("LOCAL_TOOL_CLAUDE_CODE", "PARSER_STATE_NO_SOURCES", 0)
+        ]),
+    )
+    .await;
+    // DEVICE rows combine the tools of one device; TOOL rows combine the devices of one tool.
+    macro_rules! row {
+        ($widget:expr, $field:expr, $key:expr) => {
+            breakdown_row(&f, &user, &dash, $widget, $field, $key).await
+        };
+    }
+    assert_eq!(row!(by_device, "deviceId", &laptop).0, "PARSER_STATE_OK");
+    assert_eq!(
+        row!(by_device, "deviceId", &desk).0,
+        "PARSER_STATE_NO_SOURCES"
+    );
+    assert_eq!(
+        row!(by_tool, "tool", "LOCAL_TOOL_CODEX").0,
+        "PARSER_STATE_OK"
+    );
+    assert_eq!(
+        row!(by_tool, "tool", "LOCAL_TOOL_CLAUDE_CODE").0,
+        "PARSER_STATE_NO_SOURCES"
+    );
+
+    // NO_SOURCES outranks DISABLED.
+    report_parsers(
+        &f,
+        &laptop_caller,
+        json!([status("LOCAL_TOOL_CODEX", "PARSER_STATE_DISABLED", 0)]),
+    )
+    .await;
+    assert_eq!(
+        row!(by_device, "deviceId", &laptop).0,
+        "PARSER_STATE_NO_SOURCES"
+    );
+    assert_eq!(
+        row!(by_tool, "tool", "LOCAL_TOOL_CODEX").0,
+        "PARSER_STATE_DISABLED"
+    );
+
+    // PARTIAL outranks everything and the skipped counts add up.
+    report_parsers(
+        &f,
+        &laptop_caller,
+        json!([status("LOCAL_TOOL_CODEX", "PARSER_STATE_PARTIAL", 3)]),
+    )
+    .await;
+    report_parsers(
+        &f,
+        &desk_caller,
+        json!([status("LOCAL_TOOL_CODEX", "PARSER_STATE_OK", 4)]),
+    )
+    .await;
+    assert_eq!(
+        row!(by_device, "deviceId", &laptop),
+        (json!("PARSER_STATE_PARTIAL"), json!("3"))
+    );
+    assert_eq!(
+        row!(by_tool, "tool", "LOCAL_TOOL_CODEX"),
+        (json!("PARSER_STATE_PARTIAL"), json!("7"))
+    );
+    assert_eq!(row!(by_device, "deviceId", &desk).0, "PARSER_STATE_OK");
+    f.cleanup().await;
+}

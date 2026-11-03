@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -22,9 +23,22 @@ import (
 // Provider is a fake Logto issuer with discovery, JWKS and a token endpoint.
 type Provider struct {
 	Server *httptest.Server
-	key    *ecdsa.PrivateKey
 
 	mu sync.Mutex
+	// published holds the keys served by the JWKS endpoint; the last
+	// signing key is the one Sign uses.
+	published []signingKey
+	// discoveryRequests counts discovery document requests.
+	discoveryRequests int
+	// discoveryHang, when non-nil, holds discovery requests until it is
+	// closed.
+	discoveryHang chan struct{}
+	// jwksRequests counts JWKS endpoint requests.
+	jwksRequests int
+	// jwksStatus, when set, fails JWKS requests with this status.
+	jwksStatus int
+	// jwksHang, when non-nil, holds JWKS requests until it is closed.
+	jwksHang chan struct{}
 	// TokenHandler answers token endpoint requests when set.
 	TokenHandler func(form url.Values) (int, any)
 	// TokenRequests records token endpoint forms.
@@ -36,6 +50,11 @@ type Provider struct {
 	revokeStatus int
 }
 
+type signingKey struct {
+	kid string
+	key *ecdsa.PrivateKey
+}
+
 // New starts a provider and stops it at test cleanup.
 func New(t testing.TB) *Provider {
 	t.Helper()
@@ -43,9 +62,20 @@ func New(t testing.TB) *Provider {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &Provider{key: key}
+	p := &Provider{published: []signingKey{{kid: "k1", key: key}}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		p.discoveryRequests++
+		hang := p.discoveryHang
+		p.mu.Unlock()
+		if hang != nil {
+			select {
+			case <-hang:
+			case <-r.Context().Done():
+				return
+			}
+		}
 		base := p.Server.URL
 		writeJSON(w, http.StatusOK, map[string]any{
 			"issuer":                                base,
@@ -58,7 +88,27 @@ func New(t testing.TB) *Provider {
 		})
 	})
 	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &p.key.PublicKey, KeyID: "k1", Algorithm: "ES256", Use: "sig"}}})
+		p.mu.Lock()
+		p.jwksRequests++
+		status := p.jwksStatus
+		hang := p.jwksHang
+		set := jose.JSONWebKeySet{}
+		for _, k := range p.published {
+			set.Keys = append(set.Keys, jose.JSONWebKey{Key: &k.key.PublicKey, KeyID: k.kid, Algorithm: "ES256", Use: "sig"})
+		}
+		p.mu.Unlock()
+		if hang != nil {
+			select {
+			case <-hang:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		if status != 0 {
+			writeJSON(w, status, map[string]string{"error": "temporarily_unavailable"})
+			return
+		}
+		writeJSON(w, http.StatusOK, set)
 	})
 	mux.HandleFunc("POST /token", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -105,7 +155,94 @@ func (p *Provider) Issuer() string { return p.Server.URL }
 // validity and the current time.
 func (p *Provider) Sign(t testing.TB, claims map[string]any) string {
 	t.Helper()
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: p.key}, (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "k1"))
+	p.mu.Lock()
+	active := p.published[len(p.published)-1]
+	p.mu.Unlock()
+	return p.signWith(t, active.key, active.kid, claims)
+}
+
+// SignForged signs claims with a key the JWKS endpoint never publishes but
+// names kid in the token header. With the ID of a published key it models a
+// bad signature; with an unknown ID it models an unknown key.
+func (p *Provider) SignForged(t testing.TB, kid string, claims map[string]any) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.signWith(t, key, kid, claims)
+}
+
+// RotateKey publishes a new signing key, retires every earlier key from the
+// JWKS endpoint and makes Sign use the new key. It returns the new key ID.
+func (p *Provider) RotateKey(t testing.TB) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	kid := "k" + strconv.Itoa(len(p.published)+1)
+	p.published = []signingKey{{kid: kid, key: key}}
+	return kid
+}
+
+// JWKSRequests returns how many requests the JWKS endpoint has received.
+func (p *Provider) JWKSRequests() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.jwksRequests
+}
+
+// DiscoveryRequests returns how many requests the discovery endpoint has
+// received.
+func (p *Provider) DiscoveryRequests() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.discoveryRequests
+}
+
+// SetDiscoveryHang makes discovery requests wait until it is called again
+// with false, which releases them. Tests that enable it must release before
+// cleanup.
+func (p *Provider) SetDiscoveryHang(hang bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch {
+	case hang && p.discoveryHang == nil:
+		p.discoveryHang = make(chan struct{})
+	case !hang && p.discoveryHang != nil:
+		close(p.discoveryHang)
+		p.discoveryHang = nil
+	}
+}
+
+// SetJWKSStatus makes the JWKS endpoint fail with status; zero restores
+// success.
+func (p *Provider) SetJWKSStatus(status int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.jwksStatus = status
+}
+
+// SetJWKSHang makes JWKS requests wait until it is called again with false,
+// which releases them. Tests that enable it must release before cleanup.
+func (p *Provider) SetJWKSHang(hang bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch {
+	case hang && p.jwksHang == nil:
+		p.jwksHang = make(chan struct{})
+	case !hang && p.jwksHang != nil:
+		close(p.jwksHang)
+		p.jwksHang = nil
+	}
+}
+
+func (p *Provider) signWith(t testing.TB, key *ecdsa.PrivateKey, kid string, claims map[string]any) string {
+	t.Helper()
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: key}, (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kid))
 	if err != nil {
 		t.Fatal(err)
 	}

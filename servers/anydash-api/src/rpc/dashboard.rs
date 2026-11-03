@@ -724,16 +724,19 @@ pub fn applicable_kind(t: WidgetType, k: MetricKind) -> bool {
 
 /// Validates the layout fields.
 pub fn check_layout(field: &str, t: WidgetType, l: &WidgetLayout) -> Result<WidgetLayout> {
-    if l.x > 11
-        || !(1..=12).contains(&l.width)
-        || l.x + l.width > 12
-        || l.y > 999
-        || !(1..=12).contains(&l.height)
-    {
-        return Err(ApiError::invalid(
-            &format!("{field}.width"),
-            "the widget does not fit the 12-column grid",
-        ));
+    // Report the violating field. `x` is checked before `x + width`, so the sum cannot overflow.
+    let fits = "the widget does not fit the 12-column grid";
+    if l.x > 11 {
+        return Err(ApiError::invalid(&format!("{field}.x"), fits));
+    }
+    if !(1..=12).contains(&l.width) || l.x + l.width > 12 {
+        return Err(ApiError::invalid(&format!("{field}.width"), fits));
+    }
+    if l.y > 999 {
+        return Err(ApiError::invalid(&format!("{field}.y"), fits));
+    }
+    if !(1..=12).contains(&l.height) {
+        return Err(ApiError::invalid(&format!("{field}.height"), fits));
     }
     let title = validate::text(&format!("{field}.title"), &l.title, 0, 100)?;
     let presentation = validate::known(&format!("{field}.presentation"), &l.presentation)?;
@@ -1474,6 +1477,37 @@ mod tests {
         assert_eq!(team(Roles::ADMIN).permissions().len(), 5);
         assert_eq!(team(Roles::MEMBER).permissions().len(), 2);
         assert_eq!(personal.permissions().len(), 4);
+    }
+    #[test]
+    fn layout_errors_name_the_violating_field() {
+        let layout = |x, y, width, height| WidgetLayout {
+            x,
+            y,
+            width,
+            height,
+            presentation: WidgetPresentation::LineChart.into(),
+            ..Default::default()
+        };
+        let field_of = |l: WidgetLayout| {
+            check_layout("l", WidgetType::LocalUsageSeries, &l)
+                .expect_err("layout must be rejected")
+                .detail
+                .field
+        };
+        assert_eq!(field_of(layout(12, 0, 1, 1)), "l.x");
+        assert_eq!(field_of(layout(0, 0, 0, 1)), "l.width");
+        assert_eq!(field_of(layout(0, 0, 13, 1)), "l.width");
+        assert_eq!(field_of(layout(8, 0, 6, 1)), "l.width");
+        assert_eq!(field_of(layout(0, 1000, 1, 1)), "l.y");
+        assert_eq!(field_of(layout(0, 0, 1, 0)), "l.height");
+        assert_eq!(field_of(layout(0, 0, 1, 13)), "l.height");
+        // The order of the checks is unchanged: x, then width, then y, then height.
+        assert_eq!(field_of(layout(12, 1000, 13, 13)), "l.x");
+        assert_eq!(field_of(layout(0, 1000, 13, 13)), "l.width");
+        assert_eq!(field_of(layout(0, 1000, 1, 13)), "l.y");
+        // Layouts on every edge of the grid are accepted.
+        assert!(check_layout("l", WidgetType::LocalUsageSeries, &layout(11, 999, 1, 12)).is_ok());
+        assert!(check_layout("l", WidgetType::LocalUsageSeries, &layout(0, 0, 12, 1)).is_ok());
     }
     #[test]
     fn layout_and_query_rules_per_widget_type() {

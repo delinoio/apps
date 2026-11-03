@@ -3,6 +3,7 @@
 package oauth_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -34,6 +35,7 @@ import (
 	"github.com/delinoio/apps/servers/mcpa-api/internal/crypto"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/delcore"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/oauth"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
 
 const (
@@ -82,9 +84,14 @@ type fakeGroups struct {
 	mu      sync.Mutex
 	tenants []string
 	tokens  []string
+	// hook, when set, runs at the start of every refresh like a slow Delcore.
+	hook func(ctx context.Context)
 }
 
 func (g *fakeGroups) RefreshGroups(ctx context.Context, p *auth.Principal, tenantID string) {
+	if g.hook != nil {
+		g.hook(ctx)
+	}
 	token, _ := p.DelcoreToken(ctx)
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -111,6 +118,12 @@ type upstream struct {
 	// unavailable makes the next MCP-audience refresh fail with a server
 	// error and leave the refresh token unchanged.
 	unavailable bool
+	// throttled makes the next MCP-audience refresh fail with 429 and leave
+	// the refresh token unchanged, like Logto rate limiting.
+	throttled bool
+	// afterMCPRotation, when set, runs once after an MCP-audience refresh
+	// rotated the refresh token and before the response is sent.
+	afterMCPRotation func()
 }
 
 func (u *upstream) mcpToken() string {
@@ -152,9 +165,18 @@ func (u *upstream) handle(form url.Values) (int, any) {
 			u.n++
 			return http.StatusOK, map[string]any{"access_token": fmt.Sprintf("dc-token-%d", u.n), "refresh_token": u.rotate(), "expires_in": 3600}
 		case mcpResource:
+			if u.throttled {
+				u.throttled = false
+				return http.StatusTooManyRequests, map[string]string{"error": "too_many_requests"}
+			}
 			if u.unavailable {
 				u.unavailable = false
 				return http.StatusServiceUnavailable, map[string]string{"error": "server_error"}
+			}
+			hook := u.afterMCPRotation
+			u.afterMCPRotation = nil
+			if hook != nil {
+				defer hook()
 			}
 			if u.unverifiable {
 				u.unverifiable = false
@@ -200,6 +222,13 @@ func (e *env) advance(d time.Duration) {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWith(t, nil)
+}
+
+// newEnvWith builds the environment after letting tune adjust the broker
+// configuration.
+func newEnvWith(t *testing.T, tune func(*oauth.Config)) *env {
+	t.Helper()
 	e := &env{t: t, clock: time.Now(), dc: &fakeDelcore{}, groups: &fakeGroups{}}
 	e.logto = authtest.New(t)
 	e.up = &upstream{t: t, p: e.logto, mfa: true, subject: subject}
@@ -222,7 +251,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.broker = oauth.New(oauth.Config{
+	cfg := oauth.Config{
 		Store:   e.store,
 		Keys:    keys,
 		Logto:   auth.NewLogto(e.logto.Issuer(), logtoClientID, "logto-secret", nil),
@@ -235,7 +264,11 @@ func newEnv(t *testing.T) *env {
 		PublicURL: publicURL, WebOrigin: webOrigin, MCPResource: mcpResource, DelcoreResource: delcoreResource,
 		MFAClaim: config.DefaultMFAClaim, ReauthURL: reauthURL,
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
+	}
+	if tune != nil {
+		tune(&cfg)
+	}
+	e.broker = oauth.New(cfg)
 	e.broker.SetClock(e.now)
 	mux := http.NewServeMux()
 	for _, m := range e.broker.Mounts() {
@@ -494,6 +527,165 @@ func TestAuthorizeRequiresS256AndState(t *testing.T) {
 	}
 }
 
+func TestAuthorizeRejectsInvalidStateWithoutRedirect(t *testing.T) {
+	e := newEnv(t)
+	cases := map[string]string{
+		"NUL byte":          "a\x00b",
+		"control character": "a\nb",
+		"DEL":               "a\x7fb",
+		"invalid UTF-8":     "a\xffb",
+		"overlong UTF-8":    "a\xc0\xafb",
+		"non-ASCII UTF-8":   "caf\u00e9",
+		"too long":          strings.Repeat("s", 513),
+	}
+	for name, state := range cases {
+		rec := e.get(authorizeQuery(map[string]string{"state": state}))
+		var body map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: body %q: %v", name, rec.Body.String(), err)
+		}
+		if rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" ||
+			body["error"] != "invalid_request" || body["error_description"] != "state is invalid" {
+			t.Fatalf("%s: status %d location %q body %v", name, rec.Code, rec.Header().Get("Location"), body)
+		}
+		if strings.Contains(rec.Body.String(), state) || len(rec.Result().Cookies()) != 0 {
+			t.Fatalf("%s: state echoed or cookie set: %s", name, rec.Body.String())
+		}
+	}
+	if n := e.store.authInsertCalls(); n != 0 {
+		t.Fatalf("InsertAuthRequest called %d times for invalid states", n)
+	}
+	// An invalid state is refused before any other parameter is judged.
+	rec := e.get(authorizeQuery(map[string]string{"state": "a\x00b", "response_type": "token"}))
+	if rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" {
+		t.Fatalf("invalid state with bad response_type: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestAuthorizeAcceptsPrintableStateUpToLimit(t *testing.T) {
+	e := newEnv(t)
+	printable := ""
+	for c := byte(0x20); c <= 0x7e; c++ {
+		printable += string(c)
+	}
+	for name, state := range map[string]string{
+		"512 characters":     strings.Repeat("s", 512),
+		"all printable":      printable,
+		"single character":   "x",
+		"space and specials": " &=?#%+/\\\"<> ",
+	} {
+		e.store.mu.Lock()
+		before := len(e.store.requests)
+		e.store.mu.Unlock()
+		rec := e.get(authorizeQuery(map[string]string{"state": state}))
+		u := location(t, rec)
+		if !strings.HasPrefix(u.String(), e.logto.Issuer()+"/auth?") {
+			t.Fatalf("%s: redirect to %s", name, u)
+		}
+		e.store.mu.Lock()
+		stored := e.store.requests
+		var got string
+		for _, r := range stored {
+			if r.ClientState == state {
+				got = r.ClientState
+			}
+		}
+		after := len(stored)
+		e.store.mu.Unlock()
+		if after != before+1 || got != state {
+			t.Fatalf("%s: stored requests %d -> %d, client state kept = %v", name, before, after, got == state)
+		}
+	}
+}
+
+func TestAuthorizeEchoesMaximumLengthState(t *testing.T) {
+	e := newEnv(t)
+	state := strings.Repeat("s", 512)
+	rec := e.get(authorizeQuery(map[string]string{"state": state}))
+	q := location(t, rec).Query()
+	e.up.set(func(u *upstream) { u.nonce = q.Get("nonce"); u.upstreamChallenge = q.Get("code_challenge") })
+	var browser *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "mcpa_mcp_oauth" {
+			browser = c
+		}
+	}
+	if browser == nil {
+		t.Fatal("no browser cookie")
+	}
+	cb := e.get(oauth.CallbackPath+"?"+url.Values{"code": {"logto-code"}, "state": {q.Get("state")}}.Encode(), browser)
+	final := location(t, cb)
+	if final.Query().Get("state") != state || final.Query().Get("code") == "" {
+		t.Fatalf("final redirect %s", final)
+	}
+}
+
+func TestAuthorizeStorageFailureStillRedirectsTemporarilyUnavailable(t *testing.T) {
+	e := newEnv(t)
+	e.store.setInsertAuthErr(errors.New("database down"))
+	u := location(t, e.get(authorizeQuery(nil)))
+	q := u.Query()
+	if u.Scheme+"://"+u.Host+u.Path != redirectURI || q.Get("error") != "temporarily_unavailable" || q.Get("state") != "client-state" {
+		t.Fatalf("storage failure redirect %s", u)
+	}
+	if n := e.store.authInsertCalls(); n != 1 {
+		t.Fatalf("InsertAuthRequest calls = %d, want 1", n)
+	}
+}
+
+func TestSlowGroupRefreshDoesNotSpendCodeLifetime(t *testing.T) {
+	e := newEnv(t)
+	// Every refresh takes longer than the whole code lifetime on the fake
+	// clock, like a Delcore that answers late.
+	e.groups.hook = func(context.Context) { e.advance(oauth.CodeLifetime + 10*time.Second) }
+	code := e.code()
+	if len(e.groups.tenants) == 0 {
+		t.Fatal("group snapshots were not refreshed")
+	}
+	// The code exchanges at once, within its full lifetime.
+	if status, tok := e.exchange(code, nil); status != http.StatusOK || tok.RefreshToken == "" {
+		t.Fatalf("immediate exchange after a slow refresh: %d %+v", status, tok)
+	}
+}
+
+func TestStoredCodeExpiryCoversFullLifetimeAfterRefresh(t *testing.T) {
+	e := newEnv(t)
+	slow := oauth.CodeLifetime + 10*time.Second
+	e.groups.hook = func(context.Context) { e.advance(slow) }
+	code := e.code()
+	done := e.now()
+	e.store.mu.Lock()
+	var expire time.Time
+	for _, c := range e.store.codes {
+		expire = c.code.ExpireTime
+	}
+	e.store.mu.Unlock()
+	if expire.Sub(done) < oauth.CodeLifetime {
+		t.Fatalf("stored code expires %v after the redirect, want at least %v", expire.Sub(done), oauth.CodeLifetime)
+	}
+	// The code is still valid until its full lifetime has passed.
+	e.advance(oauth.CodeLifetime - time.Second)
+	if status, _ := e.exchange(code, nil); status != http.StatusOK {
+		t.Fatalf("exchange within the lifetime: %d", status)
+	}
+}
+
+func TestHangingGroupRefreshIsBoundedAndNeverFailsLogin(t *testing.T) {
+	const bound = 150 * time.Millisecond
+	e := newEnvWith(t, func(c *oauth.Config) { c.DependencyTimeout = bound })
+	e.groups.hook = func(ctx context.Context) { <-ctx.Done() }
+	start := time.Now()
+	code := e.code()
+	elapsed := time.Since(start)
+	// Two tenants each wait for the shared deadline, not one bound each.
+	if elapsed < bound || elapsed > 5*bound {
+		t.Fatalf("login with hanging refresh took %v, want about %v", elapsed, bound)
+	}
+	if status, tok := e.exchange(code, nil); status != http.StatusOK || tok.RefreshToken == "" {
+		t.Fatalf("exchange: %d %+v", status, tok)
+	}
+}
+
 func TestLoginIssuesMCPTokens(t *testing.T) {
 	e := newEnv(t)
 	code := e.code()
@@ -618,6 +810,24 @@ func TestCallbackDelcoreFailureIssuesNoCode(t *testing.T) {
 	}
 }
 
+func TestCallbackSigningKeyOutageIssuesNoCode(t *testing.T) {
+	e := newEnv(t)
+	e.logto.SetJWKSStatus(503)
+	q := e.login().Query()
+	if q.Get("error") != "temporarily_unavailable" || q.Get("code") != "" || q.Get("state") != "client-state" {
+		t.Fatalf("redirect %v", q)
+	}
+	if e.store.grantCount() != 0 {
+		t.Fatal("grant created while token signatures could not be verified")
+	}
+
+	// Once Logto recovers a new sign-in succeeds.
+	e.logto.SetJWKSStatus(0)
+	if q := e.login().Query(); q.Get("error") != "" || q.Get("code") == "" {
+		t.Fatalf("redirect after recovery %v", q)
+	}
+}
+
 func TestVerifyPKCE(t *testing.T) {
 	// RFC 7636 appendix B.
 	if !oauth.VerifyPKCE("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM") {
@@ -708,6 +918,7 @@ func TestCodeIsOneTimeUse(t *testing.T) {
 func TestCodeExchangeRetriesAfterRecoverableFailure(t *testing.T) {
 	for name, fail := range map[string]func(*upstream){
 		"logto unavailable":            func(u *upstream) { u.unavailable = true },
+		"logto rate limited":           func(u *upstream) { u.throttled = true },
 		"rotated token not verifiable": func(u *upstream) { u.unverifiable = true },
 	} {
 		e := newEnv(t)
@@ -863,6 +1074,124 @@ func TestRefreshKeepsRotatedUpstreamTokenWhenVerificationFails(t *testing.T) {
 	}
 	if status, again := e.refresh(r.RefreshToken, clientID); status != http.StatusOK {
 		t.Fatalf("refresh after retry: %d %+v", status, again)
+	}
+}
+
+// A client that disconnects after Logto rotated the upstream refresh token
+// must not lose the replacement: the refresh runs detached from the request,
+// so the next refresh still works and the grant survives.
+func TestRefreshStoresRotatedTokenAfterRequestCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		unverifiable bool
+	}{
+		// The client is gone before issuance completes, so it never gets a
+		// new handle: the presented handle must stay usable.
+		{"before issuance completes", false},
+		{"later step fails", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := &bytes.Buffer{}
+			e := newEnvWith(t, func(c *oauth.Config) { c.Log = slog.New(slog.NewTextHandler(logs, nil)) })
+			_, tok := e.exchange(e.code(), nil)
+
+			reqCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			e.up.set(func(u *upstream) {
+				u.unverifiable = tc.unverifiable
+				u.afterMCPRotation = func() {
+					cancel()
+					time.Sleep(100 * time.Millisecond) // let the cancellation reach the client first
+				}
+			})
+			form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok.RefreshToken}, "client_id": {clientID}}
+			req := httptest.NewRequest(http.MethodPost, oauth.TokenPath, strings.NewReader(form.Encode())).WithContext(reqCtx)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			e.h.ServeHTTP(rec, req)
+			first := decodeToken(t, rec)
+			if first.AccessToken != "" || e.store.grantCount() != 1 {
+				t.Fatalf("canceled refresh: %d %+v, grants %d; want no token issued and the grant kept", rec.Code, first, e.store.grantCount())
+			}
+			if !strings.Contains(logs.String(), "request_cancelled=true") || strings.Contains(logs.String(), "rt-") {
+				t.Fatalf("log lacks request_cancelled=true or leaks token material:\n%s", logs.String())
+			}
+
+			// The rotated upstream token was stored and the handle is still
+			// active, so a live retry succeeds.
+			status, r := e.refresh(tok.RefreshToken, clientID)
+			if status != http.StatusOK || r.AccessToken == "" || r.RefreshToken == "" {
+				t.Fatalf("refresh after the cancellation: %d %+v", status, r)
+			}
+		})
+	}
+}
+
+func TestRefreshRateLimitedKeepsHandleUsable(t *testing.T) {
+	e := newEnv(t)
+	_, tok := e.exchange(e.code(), nil)
+	e.up.set(func(u *upstream) { u.throttled = true })
+	status, r := e.refresh(tok.RefreshToken, clientID)
+	if status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" || r.AccessToken != "" {
+		t.Fatalf("rate limited refresh: %d %+v", status, r)
+	}
+	if e.store.grantCount() != 1 {
+		t.Fatal("grant removed after Logto rate limiting")
+	}
+	status, r = e.refresh(tok.RefreshToken, clientID)
+	if status != http.StatusOK || r.AccessToken == "" || r.RefreshToken == "" {
+		t.Fatalf("retry with the same handle: %d %+v", status, r)
+	}
+}
+
+func TestStorageFailureDuringExchangeIsTemporarilyUnavailable(t *testing.T) {
+	storageDown := fmt.Errorf("%w: connection reset", store.ErrStorage)
+	t.Run("code exchange", func(t *testing.T) {
+		e := newEnv(t)
+		code := e.code()
+		e.store.failNextUpdate(storageDown)
+		status, r := e.exchange(code, nil)
+		if status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" || r.AccessToken != "" {
+			t.Fatalf("storage failure: %d %+v", status, r)
+		}
+		if e.store.grantCount() != 1 {
+			t.Fatal("grant removed after a storage failure")
+		}
+		// Nothing was consumed: the same code still exchanges.
+		status, tok := e.exchange(code, nil)
+		if status != http.StatusOK || tok.AccessToken == "" || tok.RefreshToken == "" {
+			t.Fatalf("retry with the same code: %d %+v", status, tok)
+		}
+	})
+	t.Run("refresh", func(t *testing.T) {
+		e := newEnv(t)
+		_, tok := e.exchange(e.code(), nil)
+		e.store.failNextUpdate(storageDown)
+		status, r := e.refresh(tok.RefreshToken, clientID)
+		if status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" || r.AccessToken != "" {
+			t.Fatalf("storage failure: %d %+v", status, r)
+		}
+		status, r = e.refresh(tok.RefreshToken, clientID)
+		if status != http.StatusOK || r.RefreshToken == "" {
+			t.Fatalf("retry with the same handle: %d %+v", status, r)
+		}
+	})
+	t.Run("deadline", func(t *testing.T) {
+		e := newEnv(t)
+		code := e.code()
+		e.store.failNextUpdate(context.DeadlineExceeded)
+		if status, r := e.exchange(code, nil); status != http.StatusServiceUnavailable || r.Error != "temporarily_unavailable" {
+			t.Fatalf("deadline: %d %+v", status, r)
+		}
+	})
+}
+
+func TestNonStorageFailuresStayServerError(t *testing.T) {
+	e := newEnv(t)
+	code := e.code()
+	e.store.failNextUpdate(errors.New("seal failed"))
+	if status, r := e.exchange(code, nil); status != http.StatusInternalServerError || r.Error != "server_error" {
+		t.Fatalf("unclassified failure: %d %+v", status, r)
 	}
 }
 

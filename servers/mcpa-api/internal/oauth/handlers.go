@@ -86,6 +86,25 @@ func pkceChallenge(verifier string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
+// maxClientStateLength is the longest client state the broker accepts.
+const maxClientStateLength = 512
+
+// validClientState reports whether state is 1 to 512 bytes, all printable
+// ASCII (%x20-7E). The value is stored as text and echoed in redirects, so
+// NUL bytes, control characters and invalid UTF-8 are refused up front
+// instead of failing the insert later.
+func validClientState(state string) bool {
+	if len(state) == 0 || len(state) > maxClientStateLength {
+		return false
+	}
+	for i := 0; i < len(state); i++ {
+		if c := state[i]; c < 0x20 || c > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
 // validPKCEValue reports whether v is a 43 to 128 character PKCE verifier
 // (RFC 7636 section 4.1). S256 challenges are always 43 characters.
 func validPKCEValue(v string) bool {
@@ -247,6 +266,14 @@ func (b *Broker) authorize(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": string(errInvalidRequest), "error_description": "redirect_uri is not registered for this client"})
 		return
 	}
+	// A non-empty state that cannot be stored or echoed safely is refused
+	// directly: it is never redirected back, so it is not reflected to the
+	// registered redirect URI. An empty state keeps its OAuth error redirect
+	// below.
+	if state != "" && !validClientState(state) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": string(errInvalidRequest), "error_description": "state is invalid"})
+		return
+	}
 	switch {
 	case p["response_type"] != "code":
 		b.redirectError(w, r, redirectURI, state, newOAuthError(errUnsupportedResponseType, "response_type must be code"))
@@ -361,6 +388,10 @@ func (b *Broker) callback(w http.ResponseWriter, r *http.Request) {
 		b.redirectError(w, r, req.RedirectURI, req.ClientState, newOAuthError(errServerError, ""))
 		return
 	}
+	// Refresh the group snapshots before the code exists so that a slow
+	// Delcore cannot spend the code's lifetime before the client receives it.
+	// The refresh is bounded as a whole and never fails the login.
+	b.refreshSnapshots(ctx, grant)
 	if err := b.cfg.Store.InsertGrant(ctx, grant.grant, store.MCPCode{
 		CodeHash: auth.Digest(code), ClientID: req.ClientID, RedirectURI: req.RedirectURI,
 		CodeChallenge: req.CodeChallenge, ExpireTime: b.now().Add(CodeLifetime),
@@ -370,7 +401,6 @@ func (b *Broker) callback(w http.ResponseWriter, r *http.Request) {
 		b.redirectError(w, r, req.RedirectURI, req.ClientState, newOAuthError(errTemporarilyUnavailable, "retry later"))
 		return
 	}
-	b.refreshSnapshots(ctx, grant)
 	b.cfg.Log.InfoContext(ctx, "mcp grant created", "grant_id", grant.grant.ID, "client_id", req.ClientID)
 	b.redirectToClient(w, r, req.RedirectURI, url.Values{"code": {code}, "state": {req.ClientState}})
 }
@@ -460,15 +490,23 @@ func (b *Broker) completeLogin(ctx context.Context, code string, req store.MCPAu
 // refreshSnapshots refreshes the group-membership snapshots of the user's
 // tenants, as console sessions do when they operate in a tenant. Snapshots
 // newer than the refresh TTL are kept; failures keep the previous snapshot.
+// The refresh as a whole is bounded by the dependency timeout, and tenants
+// not reached in time are skipped.
 func (b *Broker) refreshSnapshots(ctx context.Context, l *completedLogin) {
 	if b.cfg.Groups == nil {
 		return
 	}
+	ctx, cancel := context.WithTimeout(ctx, b.cfg.DependencyTimeout)
+	defer cancel()
 	token := l.delcoreToken
 	p := auth.NewUserPrincipal(mcpav1.ActorKind_ACTOR_KIND_MCP, l.grant.UserID, l.grant.Subject,
 		func(context.Context) (string, error) { return token, nil })
 	for i, tenantID := range l.tenantIDs {
 		if i >= maxSnapshotTenants {
+			break
+		}
+		if ctx.Err() != nil {
+			b.cfg.Log.WarnContext(ctx, "mcp group snapshot refresh skipped the remaining tenants", "refreshed", i, "tenants", len(l.tenantIDs))
 			break
 		}
 		b.cfg.Groups.RefreshGroups(ctx, p, tenantID)
@@ -629,7 +667,10 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 	var resp *tokenResponse
 	var lostRefresh string
 	keptRotation := false
-	err := b.cfg.Store.UpdateGrant(ctx, grantID, use, func(g store.MCPGrant) (store.MCPGrantChange, error) {
+	// ran is set once the grant is locked and the upstream refresh starts.
+	ran := false
+	err := b.cfg.Store.UpdateGrant(ctx, grantID, use, func(wctx context.Context, g store.MCPGrant) (store.MCPGrantChange, error) {
+		ran = true
 		if g.ClientID != clientID {
 			return store.MCPGrantChange{}, errClientMismatch
 		}
@@ -637,7 +678,7 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		if err != nil {
 			return store.MCPGrantChange{}, fmt.Errorf("open grant tokens: %w", err)
 		}
-		tr, err := b.cfg.Logto.RefreshForResource(ctx, t.RefreshToken, b.cfg.MCPResource)
+		tr, err := b.cfg.Logto.RefreshForResource(wctx, t.RefreshToken, b.cfg.MCPResource)
 		if errors.Is(err, auth.ErrInvalidGrant) {
 			return store.MCPGrantChange{Delete: true}, auth.ErrInvalidGrant
 		}
@@ -658,7 +699,7 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		if rotated {
 			keep.Tokens = &sealed
 		}
-		tok, err := b.cfg.Logto.VerifyAccessToken(ctx, tr.AccessToken, b.cfg.MCPResource)
+		tok, err := b.cfg.Logto.VerifyAccessToken(wctx, tr.AccessToken, b.cfg.MCPResource)
 		if err != nil {
 			keptRotation = rotated
 			return keep, fmt.Errorf("%w: refreshed token: %v", auth.ErrLogtoUnavailable, err)
@@ -670,6 +711,14 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		if !auth.MFAEvidence(tok.Claims, b.cfg.MFAClaim) {
 			lostRefresh = t.RefreshToken
 			return store.MCPGrantChange{Delete: true}, b.mfaRequired()
+		}
+		// A client that is gone cannot receive the new handle, so consuming
+		// the presented one would leave the grant without a usable handle.
+		// Keep only the rotated upstream refresh token; the client retries
+		// with the same handle.
+		if err := ctx.Err(); err != nil {
+			keptRotation = rotated
+			return keep, err
 		}
 		handle, err := auth.RandomToken()
 		if err != nil {
@@ -688,6 +737,14 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 	})
 	if lostRefresh != "" {
 		b.revokeUpstream(ctx, lostRefresh)
+	}
+	if ran && ctx.Err() != nil {
+		// The upstream refresh ran detached from the canceled request, so a
+		// rotated upstream refresh token was stored (or the grant deleted) as
+		// for a live request. Log without token material.
+		b.cfg.Log.WarnContext(ctx, "mcp token issuance finished after the request was canceled",
+			"grant_id", grantID, "client_id", clientID, "request_cancelled", true,
+			"upstream_refresh_kept", keptRotation, "issued", err == nil)
 	}
 	switch {
 	case err == nil:
@@ -714,6 +771,16 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		// stored when keptRotation is set.
 		b.cfg.Log.WarnContext(ctx, "mcp token issuance failed", "grant_id", grantID, "upstream_refresh_kept", keptRotation, "error", err)
 		return nil, newOAuthError(errTemporarilyUnavailable, "the identity provider is unavailable; retry later")
+	case errors.Is(err, context.Canceled):
+		// The client left before issuance finished; nothing was consumed
+		// except a rotated upstream refresh token, which is stored.
+		b.cfg.Log.WarnContext(ctx, "mcp token issuance abandoned: request canceled", "grant_id", grantID, "upstream_refresh_kept", keptRotation)
+		return nil, newOAuthError(errTemporarilyUnavailable, "retry later")
+	case errors.Is(err, store.ErrStorage), errors.Is(err, context.DeadlineExceeded):
+		// The database failed or the request ran out of time. Nothing was
+		// consumed: the code or handle stays usable and the client retries.
+		b.cfg.Log.WarnContext(ctx, "mcp token issuance failed: storage unavailable", "grant_id", grantID, "error", err)
+		return nil, newOAuthError(errTemporarilyUnavailable, "retry later")
 	default:
 		b.cfg.Log.ErrorContext(ctx, "mcp token issuance failed", "grant_id", grantID, "error", err)
 		return nil, newOAuthError(errServerError, "")
