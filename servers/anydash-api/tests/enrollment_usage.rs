@@ -1200,3 +1200,164 @@ async fn poll_enrollment_database_failure_is_not_unauthenticated() {
     impatient.db.close().await;
     f.cleanup().await;
 }
+
+/// Timestamps outside years 1 to 9999 are INVALID_ARGUMENT naming the field, never a database
+/// error or a silently dropped value. ProtoJSON cannot express them, so the requests use the
+/// binary protobuf encoding.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn out_of_range_timestamps_are_invalid_arguments() {
+    use buffa_types::google::protobuf::Timestamp;
+    use delino_protocol::anydash::v1::{
+        __buffa::oneof::metric_value::Value as MetricOneof, MetricObservation, MetricState,
+        MetricValue, ReportParserStatusRequest, ReportSnapshotRequest, UploadUsageRequest,
+    };
+    const INVALID: &str = "ERROR_REASON_INVALID_ARGUMENT";
+    let out_of_range = || {
+        Some(Timestamp {
+            seconds: -999_999_999_900,
+            ..Default::default()
+        })
+        .into()
+    };
+    let f = Fixture::setup().await;
+    let a = f.person("alice");
+    f.connect(&a).await;
+    let (_, access, _) = f.enroll(&a, "laptop", "").await;
+    let d = f.device(&access);
+
+    // UploadUsage: the bucket start is part of the whole-request validation.
+    let mut upload: UploadUsageRequest = serde_json::from_value(json!({"buckets":[bucket(
+        "LOCAL_TOOL_CODEX",
+        "gpt-5",
+        bucket_start(Duration::hours(2)),
+        1,
+        1,
+        json!({"inputTokens":"10"}),
+    )]}))
+    .unwrap();
+    upload.buckets[0].bucket_start = out_of_range();
+    let e = f
+        .fail_proto(&d, "CollectorService/UploadUsage", &upload, INVALID)
+        .await;
+    assert_eq!(e.status, 400);
+    assert_eq!(e.detail.field, "buckets[0].bucket_start");
+    // Year 9999 is representable but not aligned or current; the far future stays invalid.
+    upload.buckets[0].bucket_start = Some(Timestamp {
+        seconds: 253_402_300_800,
+        ..Default::default()
+    })
+    .into();
+    let e = f
+        .fail_proto(&d, "CollectorService/UploadUsage", &upload, INVALID)
+        .await;
+    assert_eq!(e.detail.field, "buckets[0].bucket_start");
+    // A 100-day-old aligned bucket is still a valid bucket outside retention.
+    let r = f
+        .ok(
+            &d,
+            "CollectorService/UploadUsage",
+            json!({"buckets":[bucket(
+                "LOCAL_TOOL_CODEX",
+                "gpt-5",
+                bucket_start(Duration::days(100)),
+                1,
+                1,
+                json!({"inputTokens":"10"}),
+            )]}),
+        )
+        .await;
+    assert_eq!(
+        r["results"][0]["outcome"],
+        "BUCKET_OUTCOME_OUTSIDE_RETENTION"
+    );
+
+    // ReportParserStatus: observed_at is optional, but a present value must be valid.
+    let mut status: ReportParserStatusRequest = serde_json::from_value(json!({"statuses":[
+        {"tool":"LOCAL_TOOL_CODEX","state":"PARSER_STATE_OK","parserVersion":"1"},
+        {"tool":"LOCAL_TOOL_CLAUDE_CODE","state":"PARSER_STATE_OK","parserVersion":"1"},
+    ]}))
+    .unwrap();
+    status.statuses[1].observed_at = out_of_range();
+    let e = f
+        .fail_proto(&d, "CollectorService/ReportParserStatus", &status, INVALID)
+        .await;
+    assert_eq!(e.detail.field, "statuses[1].observed_at");
+    assert_eq!(
+        f.count("SELECT count(*) FROM device_parser_status").await,
+        0,
+        "an invalid request stores nothing"
+    );
+    status.statuses[1].observed_at = Some(Timestamp {
+        seconds: bucket_start(Duration::hours(1)).timestamp(),
+        ..Default::default()
+    })
+    .into();
+    f.ok(
+        &d,
+        "CollectorService/ReportParserStatus",
+        json!({"statuses":[
+            {"tool":"LOCAL_TOOL_CODEX","state":"PARSER_STATE_OK","parserVersion":"1"},
+            {"tool":"LOCAL_TOOL_CLAUDE_CODE","state":"PARSER_STATE_OK","parserVersion":"1","observedAt":at(Utc::now())},
+        ]}),
+    )
+    .await;
+    assert_eq!(
+        f.count("SELECT count(*) FROM device_parser_status WHERE observed_at IS NULL")
+            .await,
+        1,
+        "an absent observed_at is still stored as absent"
+    );
+
+    // ReportSnapshot: metric periods and time values are validated before any lease check.
+    let snapshot = |metric: Value| -> ReportSnapshotRequest {
+        serde_json::from_value(json!({"connectionId":id(),"leaseEpoch":"1","snapshot":{
+            "observedAt":at(Utc::now()),"status":"COLLECTION_STATUS_SUCCEEDED","metrics":[metric],
+            "source":"OBSERVATION_SOURCE_ACTIVE_POLL"}}))
+        .unwrap()
+    };
+    let cumulative = || {
+        json!({"kind":"METRIC_KIND_SUBSCRIPTION_USED_PERCENT","dimension":"week","temporality":"METRIC_TEMPORALITY_CUMULATIVE",
+            "value":{"state":"METRIC_STATE_VALUE","percent":1.0},
+            "periodStart":at(Utc::now() - Duration::hours(2)),"periodEnd":at(Utc::now() - Duration::hours(1))})
+    };
+    let report = |request: ReportSnapshotRequest, edit: &dyn Fn(&mut MetricObservation)| {
+        let mut request = request;
+        let mut snap = request.snapshot.as_option().cloned().unwrap();
+        edit(&mut snap.metrics[0]);
+        request.snapshot = Some(snap).into();
+        let f = &f;
+        let d = &d;
+        async move {
+            f.fail_proto(d, "CollectorService/ReportSnapshot", &request, INVALID)
+                .await
+        }
+    };
+    let e = report(snapshot(cumulative()), &|m| m.period_start = out_of_range()).await;
+    assert_eq!(e.detail.field, "snapshot.metrics[0].period_start");
+    let e = report(snapshot(cumulative()), &|m| m.period_end = out_of_range()).await;
+    assert_eq!(e.detail.field, "snapshot.metrics[0].period_end");
+    // A non-cumulative metric with an invalid period used to drop the period silently.
+    let instantaneous = json!({"kind":"METRIC_KIND_SUBSCRIPTION_USED_PERCENT","dimension":"week",
+        "temporality":"METRIC_TEMPORALITY_INSTANTANEOUS","value":{"state":"METRIC_STATE_VALUE","percent":1.0}});
+    let e = report(snapshot(instantaneous.clone()), &|m| {
+        m.period_end = out_of_range()
+    })
+    .await;
+    assert_eq!(e.detail.field, "snapshot.metrics[0].period_end");
+    // A time-valued metric outside the range is invalid too.
+    let e = report(snapshot(instantaneous), &|m| {
+        m.value = Some(MetricValue {
+            state: MetricState::Value.into(),
+            value: Some(MetricOneof::Time(Box::new(Timestamp {
+                seconds: -999_999_999_900,
+                ..Default::default()
+            }))),
+            ..Default::default()
+        })
+        .into()
+    })
+    .await;
+    assert_eq!(e.detail.field, "snapshot.metrics[0].value");
+    f.cleanup().await;
+}

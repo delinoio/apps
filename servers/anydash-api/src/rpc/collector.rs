@@ -8,6 +8,7 @@ use crate::{
     cost::{self, Prices},
     time, validate,
 };
+use buffa_types::google::protobuf::Timestamp;
 use chrono::Duration;
 use delino_protocol::anydash::v1::__buffa::oneof::metric_value::Value as MetricOneof;
 use sqlx::Row;
@@ -365,6 +366,17 @@ struct Bucket {
     tokens: cost::Tokens,
 }
 
+/// Reads an optional timestamp: an absent field is `None`, a present but invalid one is
+/// INVALID_ARGUMENT for `field` instead of being stored as absent.
+fn optional_time(field: &str, t: Option<&Timestamp>) -> Result<Option<DateTime<Utc>>> {
+    match t {
+        None => Ok(None),
+        Some(t) => time::from_timestamp(t)
+            .map(Some)
+            .ok_or_else(|| ApiError::invalid(field, "invalid timestamp")),
+    }
+}
+
 fn parse_bucket(i: usize, b: &UsageBucket) -> Result<Bucket> {
     let f = |name: &str| format!("buckets[{i}].{name}");
     let tool = validate::known(&f("tool"), &b.tool)?;
@@ -586,7 +598,7 @@ pub async fn report_parser_status(
             tool,
             state,
             skipped,
-            st.observed_at.as_option().and_then(time::from_timestamp),
+            optional_time(&f("observed_at"), st.observed_at.as_option())?,
             st.parser_version.clone(),
             st.source_path_count as i32,
         ));
@@ -686,8 +698,8 @@ fn parse_metric(field: &str, resource_id: &str, m: &MetricObservation) -> Result
         return Err(ApiError::invalid(&format!("{field}.unit"), "invalid unit"));
     }
     let temporality = validate::optional_enum(&format!("{field}.temporality"), &m.temporality)?;
-    let period_start = m.period_start.as_option().and_then(time::from_timestamp);
-    let period_end = m.period_end.as_option().and_then(time::from_timestamp);
+    let period_start = optional_time(&format!("{field}.period_start"), m.period_start.as_option())?;
+    let period_end = optional_time(&format!("{field}.period_end"), m.period_end.as_option())?;
     if temporality == Some(MetricTemporality::Cumulative)
         && state == MetricState::Value
         && (period_start.is_none() || period_end.is_none() || period_start >= period_end)

@@ -501,14 +501,59 @@ impl Fixture {
         method: &str,
         body: Value,
     ) -> Result<Value, Box<Failure>> {
+        self.send(
+            caller,
+            method,
+            "application/json",
+            body.to_string().into_bytes(),
+        )
+        .await
+    }
+
+    /// Calls a method with a binary protobuf request and expects a failure with the given
+    /// `ErrorReason` value name. ProtoJSON cannot carry timestamps outside years 1 to 9999, so
+    /// the binary encoding is the only way to send them. Error responses stay Connect JSON.
+    pub async fn fail_proto(
+        &self,
+        caller: &Caller,
+        method: &str,
+        request: &impl Message,
+        reason: &str,
+    ) -> Box<Failure> {
+        match self
+            .send(caller, method, "application/proto", request.encode_to_vec())
+            .await
+        {
+            Ok(v) => panic!("{method} unexpectedly succeeded: {v}"),
+            Err(e) => {
+                use buffa::Enumeration;
+                let name = e
+                    .detail
+                    .reason
+                    .as_known()
+                    .map(|r| r.proto_name())
+                    .unwrap_or_default();
+                assert_eq!(name, reason, "{method}: {e:?}");
+                e
+            }
+        }
+    }
+
+    async fn send(
+        &self,
+        caller: &Caller,
+        method: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> Result<Value, Box<Failure>> {
         let mut request = self
             .http
             .post(format!("{}/anydash.v1.{method}", self.base))
-            .header("content-type", "application/json")
+            .header("content-type", content_type)
             .header("connect-protocol-version", "1")
             .header("x-anydash-client-kind", caller.kind)
             .header("x-anydash-client-version", caller.version)
-            .body(body.to_string());
+            .body(body);
         if let Some(a) = &caller.authorization {
             request = request.header("authorization", a);
         }
