@@ -122,6 +122,71 @@ func (s *Store) InTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
 	return pgx.BeginFunc(ctx, s.Pool, fn)
 }
 
+// defaultDetachBound bounds detached transaction work when the store has no
+// dependency timeout (ModeMaintenance).
+const defaultDetachBound = 20 * time.Second
+
+// detachBound is the time that detached transaction work may take: four
+// times the dependency timeout, which covers the sequential upstream calls of
+// a token refresh (two token requests, token verification and signing-key
+// discovery) that each end within the dependency timeout.
+func (s *Store) detachBound() time.Duration {
+	if s.timeout <= 0 {
+		return defaultDetachBound
+	}
+	return 4 * s.timeout
+}
+
+// InTxDetached runs fn in a read-committed transaction like InTx, for work
+// that must finish once it has consumed something outside the database, such
+// as a refresh token that an identity provider rotated. The transaction
+// starts, and fn takes its row lock, under the request context, so waiting
+// for the lock still ends when the request ends. fn then calls detach, which
+// returns a context that is no longer canceled with the request but ends
+// after the detach bound, and runs the rest of its work, including upstream
+// calls and every statement, under that context. The commit uses the
+// detached context when detach was called, so a canceled request cannot roll
+// back work that was already consumed upstream. The rollback always uses a
+// bounded detached context so the connection is released cleanly.
+func (s *Store) InTxDetached(ctx context.Context, fn func(tx pgx.Tx, detach func() context.Context) error) (err error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	var work context.Context
+	cancelWork := func() {}
+	detach := func() context.Context {
+		if work == nil {
+			work, cancelWork = context.WithTimeout(context.WithoutCancel(ctx), s.detachBound())
+		}
+		return work
+	}
+	defer func() { cancelWork() }()
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.detachBound())
+		defer cancel()
+		if rbErr := tx.Rollback(rollbackCtx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) && err == nil {
+			err = rbErr
+		}
+	}()
+	if err := fn(tx, detach); err != nil {
+		return err
+	}
+	commitCtx := ctx
+	if work != nil {
+		commitCtx = work
+	}
+	if err := tx.Commit(commitCtx); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
+
 // NewID returns a UUID v7.
 func NewID() uuid.UUID {
 	id, err := uuid.NewV7()

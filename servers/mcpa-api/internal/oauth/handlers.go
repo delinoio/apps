@@ -667,7 +667,10 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 	var resp *tokenResponse
 	var lostRefresh string
 	keptRotation := false
-	err := b.cfg.Store.UpdateGrant(ctx, grantID, use, func(g store.MCPGrant) (store.MCPGrantChange, error) {
+	// ran is set once the grant is locked and the upstream refresh starts.
+	ran := false
+	err := b.cfg.Store.UpdateGrant(ctx, grantID, use, func(wctx context.Context, g store.MCPGrant) (store.MCPGrantChange, error) {
+		ran = true
 		if g.ClientID != clientID {
 			return store.MCPGrantChange{}, errClientMismatch
 		}
@@ -675,7 +678,7 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		if err != nil {
 			return store.MCPGrantChange{}, fmt.Errorf("open grant tokens: %w", err)
 		}
-		tr, err := b.cfg.Logto.RefreshForResource(ctx, t.RefreshToken, b.cfg.MCPResource)
+		tr, err := b.cfg.Logto.RefreshForResource(wctx, t.RefreshToken, b.cfg.MCPResource)
 		if errors.Is(err, auth.ErrInvalidGrant) {
 			return store.MCPGrantChange{Delete: true}, auth.ErrInvalidGrant
 		}
@@ -696,7 +699,7 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		if rotated {
 			keep.Tokens = &sealed
 		}
-		tok, err := b.cfg.Logto.VerifyAccessToken(ctx, tr.AccessToken, b.cfg.MCPResource)
+		tok, err := b.cfg.Logto.VerifyAccessToken(wctx, tr.AccessToken, b.cfg.MCPResource)
 		if err != nil {
 			keptRotation = rotated
 			return keep, fmt.Errorf("%w: refreshed token: %v", auth.ErrLogtoUnavailable, err)
@@ -708,6 +711,14 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		if !auth.MFAEvidence(tok.Claims, b.cfg.MFAClaim) {
 			lostRefresh = t.RefreshToken
 			return store.MCPGrantChange{Delete: true}, b.mfaRequired()
+		}
+		// A client that is gone cannot receive the new handle, so consuming
+		// the presented one would leave the grant without a usable handle.
+		// Keep only the rotated upstream refresh token; the client retries
+		// with the same handle.
+		if err := ctx.Err(); err != nil {
+			keptRotation = rotated
+			return keep, err
 		}
 		handle, err := auth.RandomToken()
 		if err != nil {
@@ -726,6 +737,14 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 	})
 	if lostRefresh != "" {
 		b.revokeUpstream(ctx, lostRefresh)
+	}
+	if ran && ctx.Err() != nil {
+		// The upstream refresh ran detached from the canceled request, so a
+		// rotated upstream refresh token was stored (or the grant deleted) as
+		// for a live request. Log without token material.
+		b.cfg.Log.WarnContext(ctx, "mcp token issuance finished after the request was canceled",
+			"grant_id", grantID, "client_id", clientID, "request_cancelled", true,
+			"upstream_refresh_kept", keptRotation, "issued", err == nil)
 	}
 	switch {
 	case err == nil:
@@ -752,6 +771,11 @@ func (b *Broker) issue(ctx context.Context, grantID uuid.UUID, clientID string, 
 		// stored when keptRotation is set.
 		b.cfg.Log.WarnContext(ctx, "mcp token issuance failed", "grant_id", grantID, "upstream_refresh_kept", keptRotation, "error", err)
 		return nil, newOAuthError(errTemporarilyUnavailable, "the identity provider is unavailable; retry later")
+	case errors.Is(err, context.Canceled):
+		// The client left before issuance finished; nothing was consumed
+		// except a rotated upstream refresh token, which is stored.
+		b.cfg.Log.WarnContext(ctx, "mcp token issuance abandoned: request canceled", "grant_id", grantID, "upstream_refresh_kept", keptRotation)
+		return nil, newOAuthError(errTemporarilyUnavailable, "retry later")
 	case errors.Is(err, store.ErrStorage), errors.Is(err, context.DeadlineExceeded):
 		// The database failed or the request ran out of time. Nothing was
 		// consumed: the code or handle stays usable and the client retries.

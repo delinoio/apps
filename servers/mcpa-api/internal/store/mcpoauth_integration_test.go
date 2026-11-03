@@ -135,7 +135,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{Tokens: &kept, NewHandle: digest("h0"), AccessToken: digest("at0"), AccessExpire: time.Now().Add(time.Hour)}, boom
 	}); !errors.Is(err, boom) {
 		t.Fatalf("failed issuance = %v", err)
@@ -152,7 +152,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 
 	// Issue an access token and the first handle; this consumes the code.
 	accessExpire := time.Now().Add(time.Hour)
-	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(got store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(_ context.Context, got store.MCPGrant) (store.MCPGrantChange, error) {
 		if got.UserID != "user" {
 			t.Errorf("locked grant = %+v", got)
 		}
@@ -167,7 +167,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 		t.Fatalf("reuse = %+v, %v", c, err)
 	}
 	called := false
-	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		called = true
 		return store.MCPGrantChange{}, nil
 	}); !errors.Is(err, store.ErrCodeReused) || called {
@@ -181,7 +181,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	}
 
 	// Rotation retires h1 and adds h2; reusing h1 fails without calling fn.
-	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h1")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h1")}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{NewHandle: digest("h2")}, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 		t.Fatal("h1 not retired")
 	}
 	called = false
-	err = m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h1")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	err = m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h1")}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		called = true
 		return store.MCPGrantChange{}, nil
 	})
@@ -199,7 +199,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	}
 
 	// A failing fn rolls back unless it deletes.
-	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h2")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h2")}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{NewHandle: digest("h3")}, boom
 	}); !errors.Is(err, boom) {
 		t.Fatalf("fn error = %v", err)
@@ -220,7 +220,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h2")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Handle: digest("h2")}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{
 			Tokens: &replaced, NewHandle: digest("h3"), AccessToken: digest("at3"), AccessExpire: accessExpire,
 			ExpireTime: time.Now().Add(48 * time.Hour),
@@ -247,7 +247,7 @@ func TestMCPOAuthCodesHandlesAndTokens(t *testing.T) {
 	if _, err := m.GrantByAccessToken(ctx, digest("at3")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("at3 after kept tokens = %v", err)
 	}
-	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{Delete: true}, boom
 	}); !errors.Is(err, boom) {
 		t.Fatalf("delete error = %v", err)
@@ -288,7 +288,7 @@ func TestMCPOAuthConcurrentCodeUse(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs[i] = m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Code: code.CodeHash}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+			errs[i] = m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{Code: code.CodeHash}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 				calls.Add(1)
 				// Hold the lock like an upstream refresh does.
 				time.Sleep(50 * time.Millisecond)
@@ -325,13 +325,13 @@ func TestMCPOAuthExpiry(t *testing.T) {
 	if _, err := m.LookupCode(ctx, digest("expired-code")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expired code: %v", err)
 	}
-	if err := m.UpdateGrant(ctx, live.ID, store.MCPGrantUse{Code: digest("expired-code")}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, live.ID, store.MCPGrantUse{Code: digest("expired-code")}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		t.Error("fn called for an expired code")
 		return store.MCPGrantChange{}, nil
 	}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("issue with expired code: %v", err)
 	}
-	if err := m.UpdateGrant(ctx, live.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, live.ID, store.MCPGrantUse{}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{AccessToken: digest("old-token"), AccessExpire: time.Now().Add(-time.Second)}, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -348,7 +348,7 @@ func TestMCPOAuthExpiry(t *testing.T) {
 	if _, err := m.GetGrant(ctx, dead.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expired grant visible: %v", err)
 	}
-	if err := m.UpdateGrant(ctx, dead.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, dead.ID, store.MCPGrantUse{}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{}, nil
 	}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expired grant locked: %v", err)
@@ -422,13 +422,15 @@ func TestMCPOAuthUpdateGrantClassifiesStorageFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	codeUse := store.MCPGrantUse{Code: code.CodeHash}
-	noop := func(store.MCPGrant) (store.MCPGrantChange, error) { return store.MCPGrantChange{}, nil }
+	noop := func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
+		return store.MCPGrantChange{}, nil
+	}
 
 	// A cancelled context fails when the transaction begins.
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	called := false
-	err := m.UpdateGrant(cancelled, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	err := m.UpdateGrant(cancelled, g.ID, codeUse, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		called = true
 		return store.MCPGrantChange{}, nil
 	})
@@ -448,12 +450,12 @@ func TestMCPOAuthUpdateGrantClassifiesStorageFailures(t *testing.T) {
 
 	// A failing statement inside the transaction: the change inserts a handle
 	// that already exists. Nothing is consumed, so the code still works.
-	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{NewHandle: digest("dup")}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	err = m.UpdateGrant(ctx, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	err = m.UpdateGrant(ctx, g.ID, codeUse, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{NewHandle: digest("dup")}, nil
 	})
 	if !errors.Is(err, store.ErrStorage) {
@@ -465,7 +467,7 @@ func TestMCPOAuthUpdateGrantClassifiesStorageFailures(t *testing.T) {
 
 	// Errors of fn and sentinel results are not storage failures.
 	boom := errors.New("boom")
-	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	if err := m.UpdateGrant(ctx, g.ID, codeUse, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{}, boom
 	}); !errors.Is(err, boom) || errors.Is(err, store.ErrStorage) {
 		t.Fatalf("fn error = %v", err)
@@ -481,7 +483,7 @@ func TestMCPOAuthUpdateGrantClassifiesStorageFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{}, func(store.MCPGrant) (store.MCPGrantChange, error) {
+	err = m.UpdateGrant(ctx, g.ID, store.MCPGrantUse{}, func(_ context.Context, _ store.MCPGrant) (store.MCPGrantChange, error) {
 		return store.MCPGrantChange{Tokens: &kept}, boom
 	})
 	if !errors.Is(err, boom) || errors.Is(err, store.ErrStorage) {

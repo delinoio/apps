@@ -89,7 +89,7 @@ type Store interface {
 	GetGrant(ctx context.Context, id uuid.UUID) (store.MCPGrant, error)
 	GrantByAccessToken(ctx context.Context, tokenHash []byte) (store.MCPGrant, error)
 	GrantIDByAccessToken(ctx context.Context, tokenHash []byte) (uuid.UUID, error)
-	UpdateGrant(ctx context.Context, id uuid.UUID, use store.MCPGrantUse, fn func(store.MCPGrant) (store.MCPGrantChange, error)) error
+	UpdateGrant(ctx context.Context, id uuid.UUID, use store.MCPGrantUse, fn func(ctx context.Context, g store.MCPGrant) (store.MCPGrantChange, error)) error
 	DeleteGrant(ctx context.Context, id uuid.UUID) (store.MCPGrant, error)
 	DeleteExpired(ctx context.Context) (int64, error)
 }
@@ -261,7 +261,9 @@ func (b *Broker) ResolveMCPToken(ctx context.Context, tok *auth.VerifiedToken) (
 // grant.
 func (b *Broker) refreshDelcoreToken(ctx context.Context, id uuid.UUID) (string, error) {
 	var token string
-	err := b.cfg.Store.UpdateGrant(ctx, id, store.MCPGrantUse{}, func(g store.MCPGrant) (store.MCPGrantChange, error) {
+	ran := false
+	err := b.cfg.Store.UpdateGrant(ctx, id, store.MCPGrantUse{}, func(wctx context.Context, g store.MCPGrant) (store.MCPGrantChange, error) {
+		ran = true
 		t, err := b.open(g)
 		if err != nil {
 			return store.MCPGrantChange{}, apperr.Internal(fmt.Errorf("open grant tokens: %w", err))
@@ -271,9 +273,9 @@ func (b *Broker) refreshDelcoreToken(ctx context.Context, id uuid.UUID) (string,
 			token = t.DelcoreAccessToken
 			return store.MCPGrantChange{}, nil
 		}
-		dc, err := b.cfg.Logto.RefreshForResource(ctx, t.RefreshToken, b.cfg.DelcoreResource)
+		dc, err := b.cfg.Logto.RefreshForResource(wctx, t.RefreshToken, b.cfg.DelcoreResource)
 		if errors.Is(err, auth.ErrInvalidGrant) {
-			b.cfg.Log.InfoContext(ctx, "mcp grant upstream refresh token rejected; grant deleted", "grant_id", id)
+			b.cfg.Log.InfoContext(wctx, "mcp grant upstream refresh token rejected; grant deleted", "grant_id", id)
 			return store.MCPGrantChange{Delete: true}, auth.ErrNoUserToken
 		}
 		if err != nil {
@@ -291,6 +293,10 @@ func (b *Broker) refreshDelcoreToken(ctx context.Context, id uuid.UUID) (string,
 		token = dc.AccessToken
 		return store.MCPGrantChange{Tokens: &sealed}, nil
 	})
+	if ran && ctx.Err() != nil {
+		b.cfg.Log.WarnContext(ctx, "mcp grant Delcore token refresh finished after the request was canceled",
+			"grant_id", id, "request_cancelled", true, "ok", err == nil)
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		return "", auth.ErrNoUserToken
 	}

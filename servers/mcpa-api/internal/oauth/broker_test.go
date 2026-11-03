@@ -3,6 +3,7 @@
 package oauth_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -120,6 +121,9 @@ type upstream struct {
 	// throttled makes the next MCP-audience refresh fail with 429 and leave
 	// the refresh token unchanged, like Logto rate limiting.
 	throttled bool
+	// afterMCPRotation, when set, runs once after an MCP-audience refresh
+	// rotated the refresh token and before the response is sent.
+	afterMCPRotation func()
 }
 
 func (u *upstream) mcpToken() string {
@@ -168,6 +172,11 @@ func (u *upstream) handle(form url.Values) (int, any) {
 			if u.unavailable {
 				u.unavailable = false
 				return http.StatusServiceUnavailable, map[string]string{"error": "server_error"}
+			}
+			hook := u.afterMCPRotation
+			u.afterMCPRotation = nil
+			if hook != nil {
+				defer hook()
 			}
 			if u.unverifiable {
 				u.unverifiable = false
@@ -1065,6 +1074,56 @@ func TestRefreshKeepsRotatedUpstreamTokenWhenVerificationFails(t *testing.T) {
 	}
 	if status, again := e.refresh(r.RefreshToken, clientID); status != http.StatusOK {
 		t.Fatalf("refresh after retry: %d %+v", status, again)
+	}
+}
+
+// A client that disconnects after Logto rotated the upstream refresh token
+// must not lose the replacement: the refresh runs detached from the request,
+// so the next refresh still works and the grant survives.
+func TestRefreshStoresRotatedTokenAfterRequestCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		unverifiable bool
+	}{
+		// The client is gone before issuance completes, so it never gets a
+		// new handle: the presented handle must stay usable.
+		{"before issuance completes", false},
+		{"later step fails", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := &bytes.Buffer{}
+			e := newEnvWith(t, func(c *oauth.Config) { c.Log = slog.New(slog.NewTextHandler(logs, nil)) })
+			_, tok := e.exchange(e.code(), nil)
+
+			reqCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			e.up.set(func(u *upstream) {
+				u.unverifiable = tc.unverifiable
+				u.afterMCPRotation = func() {
+					cancel()
+					time.Sleep(100 * time.Millisecond) // let the cancellation reach the client first
+				}
+			})
+			form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok.RefreshToken}, "client_id": {clientID}}
+			req := httptest.NewRequest(http.MethodPost, oauth.TokenPath, strings.NewReader(form.Encode())).WithContext(reqCtx)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			e.h.ServeHTTP(rec, req)
+			first := decodeToken(t, rec)
+			if first.AccessToken != "" || e.store.grantCount() != 1 {
+				t.Fatalf("canceled refresh: %d %+v, grants %d; want no token issued and the grant kept", rec.Code, first, e.store.grantCount())
+			}
+			if !strings.Contains(logs.String(), "request_cancelled=true") || strings.Contains(logs.String(), "rt-") {
+				t.Fatalf("log lacks request_cancelled=true or leaks token material:\n%s", logs.String())
+			}
+
+			// The rotated upstream token was stored and the handle is still
+			// active, so a live retry succeeds.
+			status, r := e.refresh(tok.RefreshToken, clientID)
+			if status != http.StatusOK || r.AccessToken == "" || r.RefreshToken == "" {
+				t.Fatalf("refresh after the cancellation: %d %+v", status, r)
+			}
+		})
 	}
 }
 
