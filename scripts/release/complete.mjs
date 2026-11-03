@@ -11,7 +11,7 @@ const entry = plan.components.find((c) => c.component === component);
 assert.ok(entry, "Component absent from release plan");
 assert.match(
   entry.tag,
-  /^(delino|delitools|devbase|perfine|lane|mcpa)@v\d+\.\d+\.\d+$/,
+  /^(delino|delitools|devbase|perfine|lane|mcpa|anydash)@v\d+\.\d+\.\d+$/,
 );
 assert.equal(
   execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),

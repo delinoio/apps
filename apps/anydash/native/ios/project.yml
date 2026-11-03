@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: Apache-2.0
+name: AnyDash
+options:
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CLANG_ENABLE_OBJC_ARC: YES
+    SWIFT_VERSION: "5.0"
+    ANYDASH_API_URL: https://anydash.api.delino.io
+    ANYDASH_RESOURCE: https://anydash.api.delino.io
+    DELCORE_RESOURCE: https://delcore.api.delino.io
+    LOGTO_ENDPOINT: ""
+    LOGTO_NATIVE_APP_ID: ""
+targets:
+  AnyDash:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      # App icon catalog generated from the AnyDash mark by `ios init`.
+      - path: Generated/Assets.xcassets
+      - path: ../widgets/shared/AnyDashSnapshot.swift
+      - path: ../../dist/main.lynx.bundle
+        buildPhase: resources
+      - path: ../../dist/LICENSE
+        buildPhase: resources
+      - path: ../../dist/NOTICE
+        buildPhase: resources
+      - path: ../licenses
+        buildPhase: resources
+    dependencies:
+      - target: AnyDashWidgets
+      - sdk: Security.framework
+      - sdk: AuthenticationServices.framework
+      - sdk: WidgetKit.framework
+    info:
+      path: Generated/Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: AnyDash
+        CFBundleURLTypes:
+          - CFBundleURLName: io.delino.anydash
+            CFBundleURLSchemes: [anydash]
+        AnyDashAPIURL: "$(ANYDASH_API_URL)"
+        AnyDashResource: "$(ANYDASH_RESOURCE)"
+        DelcoreResource: "$(DELCORE_RESOURCE)"
+        LogtoEndpoint: "$(LOGTO_ENDPOINT)"
+        LogtoAppID: "$(LOGTO_NATIVE_APP_ID)"
+        AnyDashSharedKeychainGroup: "$(AppIdentifierPrefix)io.delino.anydash.shared"
+        UISupportedInterfaceOrientations:
+          [
+            UIInterfaceOrientationPortrait,
+            UIInterfaceOrientationLandscapeLeft,
+            UIInterfaceOrientationLandscapeRight,
+          ]
+        UISupportedInterfaceOrientations~ipad:
+          [
+            UIInterfaceOrientationPortrait,
+            UIInterfaceOrientationPortraitUpsideDown,
+            UIInterfaceOrientationLandscapeLeft,
+            UIInterfaceOrientationLandscapeRight,
+          ]
+    entitlements:
+      path: Generated/AnyDash.entitlements
+      properties:
+        com.apple.security.application-groups: [group.io.delino.anydash]
+        keychain-access-groups:
+          - "$(AppIdentifierPrefix)io.delino.anydash"
+          - "$(AppIdentifierPrefix)io.delino.anydash.shared"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.delino.anydash
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/AnyDash-Bridging-Header.h
+    postBuildScripts:
+      - name: Include dependency notices
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          cp "${PODS_ROOT}/Target Support Files/Pods-AnyDash/Pods-AnyDash-acknowledgements.plist" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ThirdPartyNotices.plist"
+          if [ -d "${SRCROOT}/../../dist/licenses" ]; then
+            mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/BundleLicenses"
+            cp -R "${SRCROOT}/../../dist/licenses/." "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/BundleLicenses/"
+          fi
+        inputFiles:
+          - "$(PODS_ROOT)/Target Support Files/Pods-AnyDash/Pods-AnyDash-acknowledgements.plist"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ThirdPartyNotices.plist"
+  AnyDashWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+      - path: ../widgets/shared/AnyDashSnapshot.swift
+      - path: ../widgets/shared/AnyDashWidgetView.swift
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+      - sdk: Security.framework
+      # Links AppIntents so Xcode extracts the widget configuration intent metadata.
+      - sdk: AppIntents.framework
+    info:
+      path: Generated/Widgets-Info.plist
+      properties:
+        CFBundleDisplayName: AnyDash
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        AnyDashAPIURL: "$(ANYDASH_API_URL)"
+        AnyDashSharedKeychainGroup: "$(AppIdentifierPrefix)io.delino.anydash.shared"
+    entitlements:
+      path: Generated/AnyDashWidgets.entitlements
+      properties:
+        com.apple.security.application-groups: [group.io.delino.anydash]
+        keychain-access-groups:
+          - "$(AppIdentifierPrefix)io.delino.anydash.shared"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.delino.anydash.widgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: 0.1.0

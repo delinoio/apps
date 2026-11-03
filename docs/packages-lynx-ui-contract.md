@@ -97,6 +97,11 @@ to its trigger; set `initialFocusRef` to the sole critical input when present.
 Render Dialog near the root, outside clipped or transformed containers. Use library controls inside
 Dialog so its native focus scope can register them. Nested dialogs and arbitrary
 third-party focusable children require a separate host integration.
+Apps with their own dialog layout use `useFocusContainment()` and render
+`FocusContainment` with its `scope` around the dialog. Call `move(backward)` on Tab
+and Shift+Tab; it applies the Dialog's rendered-order containment to the enabled
+library controls inside, and `focusFirst()` focuses the first of them. The app
+keeps its Escape handling and initial focus.
 
 ### Web host bridge
 

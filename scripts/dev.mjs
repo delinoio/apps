@@ -12,6 +12,7 @@ export const Api = Object.freeze({
   Perfine: "perfine",
   Lane: "lane",
   Mcpa: "mcpa",
+  AnyDash: "anydash",
 });
 export const databaseHandoff = "DEV_COMPOSE_DATABASE_URLS";
 const root = fileURLToPath(new URL("../", import.meta.url));

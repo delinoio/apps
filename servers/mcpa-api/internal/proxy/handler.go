@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,25 @@ import (
 
 // ResourcePathPrefix is the path prefix of model-call endpoints.
 const ResourcePathPrefix = "/r/"
+
+// maxModelNameBytes bounds a requested model name. It equals the longest name
+// an allowlist or credential can hold, so a longer name can never be allowed
+// or served. Longer names are rejected before the allowlist check and are
+// truncated wherever the call state or a log line carries them.
+const maxModelNameBytes = 200
+
+// truncateModelName shortens s to at most maxModelNameBytes bytes without
+// splitting a UTF-8 sequence. It does not change shorter names.
+func truncateModelName(s string) string {
+	if len(s) <= maxModelNameBytes {
+		return s
+	}
+	n := maxModelNameBytes
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
 
 type routeKind int
 
@@ -117,13 +137,15 @@ func callKeyFrom(r *http.Request) string {
 }
 
 // modelAllowed applies the resource allowlist. An empty list allows every
-// model; otherwise the requested name, or its base name without an SDK
-// thinking suffix, must be listed exactly.
+// model; otherwise the requested model string must be listed exactly. A
+// suffixed name such as "model(high)" is a different name than "model": the
+// SDK rewrites it to the base name before the provider call, so matching on
+// the base name would let an unlisted name reach a listed model.
 func modelAllowed(model string, allowlist []string) bool {
 	if len(allowlist) == 0 {
 		return true
 	}
-	return slices.Contains(allowlist, model) || slices.Contains(allowlist, baseModelName(model))
+	return slices.Contains(allowlist, model)
 }
 
 type runtimeContextKey struct{}
@@ -162,9 +184,10 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resourceID: resourceID,
 		principal:  principal,
 		format:     rt.format,
-		model:      rt.model,
-		streaming:  rt.streaming,
-		start:      e.opts.Now(),
+		// The path model is unbounded; serveCall rejects an overlong one.
+		model:     truncateModelName(rt.model),
+		streaming: rt.streaming,
+		start:     e.opts.Now(),
 	}
 	cw := newCountingResponseWriter(w, call)
 	var result outcome
@@ -199,6 +222,24 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	close(stop)
 	wg.Wait()
+
+	// An invalid_call_key rejection raised after the call state exists (a
+	// permission denial or a resource that is gone at the allowlist read)
+	// means the key is no longer valid, so the request is not attributable to
+	// a valid key. Like the rejections before the call state exists, it is
+	// not recorded, metered or billed. The 401 response is already written.
+	if call.invalidCallKeyRejected() {
+		e.opts.Metrics.httpRequest(cw.statusCode())
+		e.logger.Info("model call rejected",
+			slog.String("call_id", call.id),
+			slog.String("resource_id", call.resourceID),
+			slog.String("call_key_id", principal.CallKeyID),
+			slog.String("format", formatLabel(call.format)),
+			slog.String("error_class", string(ErrorClassInvalidCallKey)),
+			slog.Int("http_status", cw.statusCode()),
+		)
+		return
+	}
 	result = classify(call.outcomeInput(ctx.Err() != nil, cw.statusCode()))
 	latency := e.opts.Now().Sub(call.start)
 	e.cp.commit(ctx, call, record, true)
@@ -255,11 +296,33 @@ func (e *Engine) serveCall(w *countingResponseWriter, r *http.Request, call *cal
 			return
 		}
 		if rt.format != mcpav1.EndpointFormat_ENDPOINT_FORMAT_GEMINI {
+			// The gate reads the first "model" key but the body is forwarded
+			// unchanged, so a decoder that reads another occurrence would
+			// serve a model the allowlist never saw. The message must not
+			// echo any model value from the body.
+			if hasDuplicateTopLevelKey(body, "model") {
+				reject(Reject(RejectionModelNotAllowed, "the request body names the model more than once"))
+				return
+			}
+			model := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 			call.mu.Lock()
-			call.model = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+			call.model = truncateModelName(model)
+			call.mu.Unlock()
+			if len(model) > maxModelNameBytes {
+				reject(Reject(RejectionModelNotAllowed, "the model name is too long"))
+				return
+			}
+			call.mu.Lock()
 			call.streaming = gjson.GetBytes(body, "stream").Bool()
 			call.mu.Unlock()
 		}
+	}
+
+	// The Gemini path model is not covered by the body limit. The message must
+	// not echo the model.
+	if len(rt.model) > maxModelNameBytes {
+		reject(Reject(RejectionModelNotAllowed, "the model name is too long"))
+		return
 	}
 
 	allowlist, err := e.opts.Routing.ModelAllowlist(ctx, call.resourceID)
@@ -276,6 +339,14 @@ func (e *Engine) serveCall(w *countingResponseWriter, r *http.Request, call *cal
 			reject(Reject(RejectionModelNotAllowed, "model "+strconv.Quote(call.model)+" is not allowed for this resource"))
 			return
 		}
+	}
+
+	// Budgets come after the allowlist so that a disallowed model is reported
+	// as model_not_allowed and never counts as a budget rejection. Listings
+	// keep the budget gate they always had.
+	if err := e.opts.Authorizer.CheckBudgets(ctx, call.principal); err != nil {
+		reject(asRejection(err, RejectionDependencyUnavailable))
+		return
 	}
 
 	runtime, err := e.runtime(ctx, call.resourceID)

@@ -141,7 +141,9 @@ func (s *Service) ListResources(ctx context.Context, req *connect.Request[mcpav1
 	if err := s.authz.Capability(ctx, p, tenant, delcore.CapabilityAccessResources); err != nil {
 		return nil, err
 	}
-	s.authz.RefreshGroups(ctx, p, tenant)
+	if err := s.authz.RequireGroups(ctx, p, tenant); err != nil {
+		return nil, err
+	}
 	groups, err := s.authz.UserGroups(ctx, tenant, p.UserID)
 	if err != nil {
 		return nil, dbErr(err)

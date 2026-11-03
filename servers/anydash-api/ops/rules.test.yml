@@ -1,0 +1,208 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+rule_files: [recording.yml, alerts.yml]
+evaluation_interval: 30s
+group_eval_order: [anydash-recording, anydash-alerts]
+tests:
+  - name: server errors above 2% fire after five minutes; equality and low traffic do not
+    interval: 30s
+    input_series:
+      # 100 requests per 30 s; 3 server errors (3%) from the start.
+      - series: anydash_api_requests_total{job="anydash-api",instance="a",service="DeviceService",method="Heartbeat",outcome="success"}
+        values: "0+97x40"
+      - series: anydash_api_requests_total{job="anydash-api",instance="a",service="DeviceService",method="Heartbeat",outcome="server_error"}
+        values: "0+3x40"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: [{ exp_labels: { job: anydash-api, severity: critical } }]
+  - name: exactly 2% does not fire
+    interval: 30s
+    input_series:
+      - series: anydash_api_requests_total{job="anydash-api",outcome="success"}
+        values: "0+98x40"
+      - series: anydash_api_requests_total{job="anydash-api",outcome="server_error"}
+        values: "0+2x40"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: []
+  - name: timeouts count as server errors; 10% fires and 1% does not
+    interval: 30s
+    input_series:
+      # Job a: 90 completed requests and 10 timeouts (10%) per 30 s. The handlers of timed-out
+      # requests never record a request sample, so timeouts only appear in the timeout counter.
+      - series: anydash_api_requests_total{job="a",instance="a",service="DeviceService",method="Heartbeat",outcome="success"}
+        values: "0+90x40"
+      - series: anydash_api_timeouts_total{job="a",instance="a"}
+        values: "0+10x40"
+      # Job b: 99 completed requests and 1 timeout (1%) per 30 s.
+      - series: anydash_api_requests_total{job="b",instance="a",service="DeviceService",method="Heartbeat",outcome="success"}
+        values: "0+99x40"
+      - series: anydash_api_timeouts_total{job="b",instance="a"}
+        values: "0+1x40"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: [{ exp_labels: { job: a, severity: critical } }]
+  - name: timeouts fire when no request sample exists at all
+    interval: 30s
+    input_series:
+      # Every request times out: the request counter has no series, only the timeout counter does.
+      - series: anydash_api_timeouts_total{job="anydash-api",instance="a"}
+        values: "0+30x40"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: [{ exp_labels: { job: anydash-api, severity: critical } }]
+  - name: a few timeouts cannot fire
+    interval: 30s
+    input_series:
+      - series: anydash_api_timeouts_total{job="anydash-api",instance="a"}
+        values: "0+0.1x40"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: []
+  - name: few requests cannot fire
+    interval: 30s
+    input_series:
+      - series: anydash_api_requests_total{job="anydash-api",outcome="server_error"}
+        values: "0+0.1x40"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: AnyDashApiServerErrors
+        exp_alerts: []
+  - name: failed retention or deletion jobs fire; other jobs do not
+    interval: 30s
+    input_series:
+      - series: anydash_worker_job_runs_total{job="anydash-api",worker_job="deletion",outcome="failure"}
+        values: "0 0 1+0x10"
+      - series: anydash_worker_job_runs_total{job="anydash-api",worker_job="price_sync",outcome="failure"}
+        values: "0 1+0x10"
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: AnyDashWorkerJobFailed
+        exp_alerts: []
+      - eval_time: 1m30s
+        alertname: AnyDashWorkerJobFailed
+        exp_alerts:
+          [
+            {
+              exp_labels:
+                { job: anydash-api, worker_job: deletion, severity: critical },
+            },
+          ]
+  - name: a counter that first appears at 1 hides the first failure, so the server creates it at 0
+    interval: 30s
+    input_series:
+      # Uninitialized shape: the server's first exposed sample is already 1, so increase() is 0
+      # and the alert cannot fire. The server avoids this by exposing every worker_job and
+      # outcome series at 0 from startup (see the initialized case above).
+      - series: anydash_worker_job_runs_total{job="anydash-api",worker_job="retention",outcome="failure"}
+        values: "1+0x10"
+      # Initialized shape: 0 until the first failure, then 1.
+      - series: anydash_worker_job_runs_total{job="anydash-api",worker_job="deletion",outcome="failure"}
+        values: "0 0 1+0x10"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AnyDashWorkerJobFailed
+        exp_alerts:
+          [
+            {
+              exp_labels:
+                { job: anydash-api, worker_job: deletion, severity: critical },
+            },
+          ]
+  - name: deletion pending 20 hours puts the 24-hour deadline at risk
+    interval: 30s
+    input_series:
+      - series: anydash_deletion_oldest_pending_age_seconds{job="anydash-api",instance="a"}
+        values: "72000 72030"
+      - series: anydash_deletion_oldest_pending_age_seconds{job="anydash-api",instance="b"}
+        values: "72000 72030"
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: AnyDashDeletionDeadlineAtRisk
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: AnyDashDeletionDeadlineAtRisk
+        exp_alerts: [{ exp_labels: { job: anydash-api, severity: critical } }]
+  - name: price sync stale after 48 hours and validation failures
+    interval: 1h
+    input_series:
+      # The last success is at time zero.
+      - series: anydash_price_sync_last_success_timestamp_seconds{job="anydash-api"}
+        values: "0x60"
+    alert_rule_test:
+      - eval_time: 48h
+        alertname: AnyDashPriceSyncStale
+        exp_alerts: []
+      - eval_time: 49h
+        alertname: AnyDashPriceSyncStale
+        exp_alerts: [{ exp_labels: { job: anydash-api, severity: warning } }]
+  - name: a rejected price document fires for an hour
+    interval: 1m
+    input_series:
+      - series: anydash_price_sync_validation_failures_total{job="anydash-api"}
+        values: "0 0 1+0x120"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: AnyDashPriceValidationFailed
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: AnyDashPriceValidationFailed
+        exp_alerts: [{ exp_labels: { job: anydash-api, severity: warning } }]
+      - eval_time: 63m
+        alertname: AnyDashPriceValidationFailed
+        exp_alerts: []
+  - name: provider failure rate counts FAILED and RATE_LIMITED but not AUTH_EXPIRED
+    interval: 1m
+    input_series:
+      # Codex: 10 succeeded, 2 failed and 1 rate limited per minute (23%).
+      - series: anydash_collection_snapshots_total{job="anydash-api",provider="codex",status="succeeded"}
+        values: "0+10x70"
+      - series: anydash_collection_snapshots_total{job="anydash-api",provider="codex",status="failed"}
+        values: "0+2x70"
+      - series: anydash_collection_snapshots_total{job="anydash-api",provider="codex",status="rate_limited"}
+        values: "0+1x70"
+      # Vercel: 10 succeeded and 10 auth expired per minute.
+      - series: anydash_collection_snapshots_total{job="anydash-api",provider="vercel",status="succeeded"}
+        values: "0+10x70"
+      - series: anydash_collection_snapshots_total{job="anydash-api",provider="vercel",status="auth_expired"}
+        values: "0+10x70"
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: AnyDashProviderCollectionFailures
+        exp_alerts:
+          [
+            {
+              exp_labels:
+                { job: anydash-api, provider: codex, severity: warning },
+            },
+          ]
+  - name: partial aggregation at 5% of uploading devices fires; replicas are not double counted
+    interval: 30s
+    input_series:
+      - series: anydash_parser_devices{job="anydash-api",instance="a",tool="codex",state="ok"}
+        values: "95"
+      - series: anydash_parser_devices{job="anydash-api",instance="a",tool="codex",state="partial"}
+        values: "5"
+      - series: anydash_parser_devices{job="anydash-api",instance="b",tool="codex",state="ok"}
+        values: "95"
+      - series: anydash_parser_devices{job="anydash-api",instance="b",tool="codex",state="partial"}
+        values: "5"
+      - series: anydash_parser_devices{job="anydash-api",instance="a",tool="claude_code",state="ok"}
+        values: "99"
+      - series: anydash_parser_devices{job="anydash-api",instance="a",tool="claude_code",state="partial"}
+        values: "1"
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: AnyDashPartialAggregation
+        exp_alerts:
+          [{ exp_labels: { job: anydash-api, tool: codex, severity: warning } }]

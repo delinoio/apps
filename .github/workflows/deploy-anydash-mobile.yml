@@ -1,0 +1,230 @@
+name: Release AnyDash Mobile
+
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      version:
+        description: Release version MAJOR.MINOR.PATCH from the committed release plan
+        required: true
+        type: string
+      platform:
+        description: Mobile platform to build
+        type: string
+        default: all
+      build_number:
+        description: Build number from 1 to 9999, greater than previous store uploads
+        required: true
+        type: string
+      publish:
+        description: Upload to Google Play internal testing and TestFlight
+        type: boolean
+        default: false
+
+env:
+  RELEASE_REVISION: ${{ inputs.revision }}
+  ANYDASH_RELEASE_VERSION: ${{ inputs.version }}
+  ANYDASH_BUILD_NUMBER: ${{ inputs.build_number }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-anydash-mobile
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          {
+            ref: "${{ inputs.revision }}",
+            persist-credentials: false,
+            lfs: true,
+          }
+      - uses: ./.github/actions/setup-ci-node
+      - name: Validate release identity
+        run: |
+          node --input-type=module -e 'import { releaseIdentity } from "./apps/anydash/scripts/release-config.mjs"; releaseIdentity()'
+          echo "Source revision: $RELEASE_REVISION; version $ANYDASH_RELEASE_VERSION; build $ANYDASH_BUILD_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @apps/anydash test
+      - if: always()
+        run: rm -rf "apps/anydash/dist"
+
+  android:
+    needs: preflight
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'android' }}
+    runs-on: ubuntu-24.04
+    environment: release-signing
+    env:
+      ANYDASH_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANYDASH_ANDROID_KEYSTORE_PASSWORD }}
+      ANYDASH_ANDROID_KEY_ALIAS: ${{ secrets.ANYDASH_ANDROID_KEY_ALIAS }}
+      ANYDASH_ANDROID_KEY_PASSWORD: ${{ secrets.ANYDASH_ANDROID_KEY_PASSWORD }}
+      ANYDASH_ANDROID_CERTIFICATE_SHA256: ${{ vars.ANYDASH_ANDROID_CERTIFICATE_SHA256 }}
+      PUBLIC_LOGTO_ENDPOINT: ${{ vars.PUBLIC_LOGTO_ENDPOINT }}
+      PUBLIC_ANYDASH_NATIVE_APP_ID: ${{ vars.PUBLIC_ANYDASH_NATIVE_APP_ID }}
+      PUBLIC_ANYDASH_API_URL: ${{ vars.PUBLIC_ANYDASH_API_URL }}
+      PUBLIC_ANYDASH_RESOURCE: ${{ vars.PUBLIC_ANYDASH_RESOURCE }}
+      PUBLIC_DELCORE_RESOURCE: ${{ vars.PUBLIC_DELCORE_RESOURCE }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          {
+            ref: "${{ inputs.revision }}",
+            persist-credentials: false,
+            lfs: true,
+          }
+      - uses: ./.github/actions/setup-ci-node
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with: { distribution: temurin, java-version: "17" }
+      - name: Install pinned Android SDK packages
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @apps/anydash build
+      - name: Restore upload keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANYDASH_ANDROID_KEYSTORE_B64 }}
+        run: |
+          node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["KEYSTORE_B64", "ANYDASH_ANDROID_KEYSTORE_PASSWORD", "ANYDASH_ANDROID_KEY_ALIAS", "ANYDASH_ANDROID_KEY_PASSWORD"]) { if (!process.env[key]) throw new Error("Missing " + key); } writeFileSync(process.env.RUNNER_TEMP + "/anydash-upload.jks", Buffer.from(process.env.KEYSTORE_B64, "base64"), { mode: 0o600 });'
+          echo "ANYDASH_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/anydash-upload.jks" >> "$GITHUB_ENV"
+      - run: node "apps/anydash/scripts/native.mjs" android release
+      - name: Collect and verify the signed bundle
+        run: |
+          set -euo pipefail
+          mkdir -p mobile-artifacts
+          mapfile -t bundles < <(find "apps/anydash/native/android/app/build/outputs/bundle/release" -name '*.aab' -type f)
+          test "${#bundles[@]}" -eq 1
+          cp "${bundles[0]}" "mobile-artifacts/anydash-android.aab"
+          jarsigner -verify "mobile-artifacts/anydash-android.aab"
+          node "apps/anydash/scripts/store.mjs" verify-android "mobile-artifacts/anydash-android.aab"
+          cp LICENSE NOTICE mobile-artifacts/
+          printf 'revision=%s\nversion=%s\nbuild_number=%s\nplatform=android\n' "$RELEASE_REVISION" "$ANYDASH_RELEASE_VERSION" "$ANYDASH_BUILD_NUMBER" > "mobile-artifacts/build.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: anydash-android-${{ inputs.build_number }}-${{ inputs.revision }}
+          path: mobile-artifacts/
+          if-no-files-found: error
+      - name: Remove signing material and generated output
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/anydash-upload.jks" "apps/anydash/dist" "apps/anydash/native/android/app/build"
+
+  ios:
+    needs: preflight
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'ios' }}
+    runs-on: macos-15
+    environment: release-signing
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      ANYDASH_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+      PUBLIC_LOGTO_ENDPOINT: ${{ vars.PUBLIC_LOGTO_ENDPOINT }}
+      PUBLIC_ANYDASH_NATIVE_APP_ID: ${{ vars.PUBLIC_ANYDASH_NATIVE_APP_ID }}
+      PUBLIC_ANYDASH_API_URL: ${{ vars.PUBLIC_ANYDASH_API_URL }}
+      PUBLIC_ANYDASH_RESOURCE: ${{ vars.PUBLIC_ANYDASH_RESOURCE }}
+      PUBLIC_DELCORE_RESOURCE: ${{ vars.PUBLIC_DELCORE_RESOURCE }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          {
+            ref: "${{ inputs.revision }}",
+            persist-credentials: false,
+            lfs: true,
+          }
+      - uses: ./.github/actions/setup-ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify selected Xcode and iOS SDK
+        run: |
+          set -euo pipefail
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          [[ "$sdk" == 26.* ]]
+          brew install xcodegen
+      - name: Restore App Store Connect API key
+        env:
+          PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+        run: |
+          node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["PRIVATE_KEY_B64", "ANYDASH_APPLE_TEAM_ID", "APPLE_API_ISSUER", "APPLE_API_KEY"]) { if (!process.env[key]) throw new Error("Missing " + key); } writeFileSync(process.env.RUNNER_TEMP + "/anydash-auth.p8", Buffer.from(process.env.PRIVATE_KEY_B64, "base64"), { mode: 0o600 });'
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/anydash-auth.p8" >> "$GITHUB_ENV"
+      - run: pnpm --filter @apps/anydash mobile:ios:init
+      - run: node "apps/anydash/scripts/native.mjs" ios release
+      - name: Collect and verify the signed IPA
+        run: |
+          set -euo pipefail
+          mkdir -p mobile-artifacts
+          node --input-type=module -e 'import { globSync, copyFileSync } from "node:fs"; const files = globSync("apps/anydash/native/ios/build/release/export/*.ipa"); if (files.length !== 1) throw new Error("Expected exactly one IPA"); copyFileSync(files[0], "mobile-artifacts/anydash-ios.ipa");'
+          unzip -q "mobile-artifacts/anydash-ios.ipa" -d "$RUNNER_TEMP/anydash-ipa"
+          codesign --verify --deep --strict "$RUNNER_TEMP/anydash-ipa/Payload/"*.app
+          test -d "$RUNNER_TEMP/anydash-ipa/Payload/AnyDash.app/PlugIns/AnyDashWidgets.appex"
+          # App Store Connect rejects an app without an app icon; fail before upload.
+          test -f "$RUNNER_TEMP/anydash-ipa/Payload/AnyDash.app/Assets.car"
+          [[ "$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconName raw "$RUNNER_TEMP/anydash-ipa/Payload/AnyDash.app/Info.plist")" == AppIcon ]]
+          cp LICENSE NOTICE mobile-artifacts/
+          printf 'revision=%s\nversion=%s\nbuild_number=%s\nplatform=ios\n' "$RELEASE_REVISION" "$ANYDASH_RELEASE_VERSION" "$ANYDASH_BUILD_NUMBER" > "mobile-artifacts/build.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: anydash-ios-${{ inputs.build_number }}-${{ inputs.revision }}
+          path: mobile-artifacts/
+          if-no-files-found: error
+      - name: Remove signing material and generated output
+        if: ${{ always() }}
+        run: |
+          rm -f "$RUNNER_TEMP/anydash-auth.p8"
+          rm -rf "$RUNNER_TEMP/anydash-ipa" "apps/anydash/dist" "apps/anydash/native/ios/build"
+
+  android-publish:
+    needs: android
+    if: ${{ inputs.publish && (inputs.platform == 'all' || inputs.platform == 'android') }}
+    runs-on: ubuntu-latest
+    environment: release-publish
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { ref: "${{ inputs.revision }}", persist-credentials: false }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: anydash-android-${{ inputs.build_number }}-${{ inputs.revision }}
+          path: mobile-artifacts/
+      - name: Upload to Google Play internal testing
+        env:
+          ANYDASH_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.ANYDASH_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: node "apps/anydash/scripts/store.mjs" publish-android "mobile-artifacts/anydash-android.aab"
+
+  ios-publish:
+    needs: ios
+    if: ${{ inputs.publish && (inputs.platform == 'all' || inputs.platform == 'ios') }}
+    runs-on: macos-15
+    environment: release-publish
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: anydash-ios-${{ inputs.build_number }}-${{ inputs.revision }}
+          path: mobile-artifacts/
+      - name: Upload to TestFlight
+        env:
+          PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/anydash-keys"
+          test -n "$APPLE_API_ISSUER"
+          test -n "$APPLE_API_KEY"
+          printf '%s' "$PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/anydash-keys/AuthKey_$APPLE_API_KEY.p8"
+          test -s "$RUNNER_TEMP/anydash-keys/AuthKey_$APPLE_API_KEY.p8"
+          API_PRIVATE_KEYS_DIR="$RUNNER_TEMP/anydash-keys" xcrun altool --upload-app --type ios --file "mobile-artifacts/anydash-ios.ipa" --apiKey "$APPLE_API_KEY" --apiIssuer "$APPLE_API_ISSUER"
+      - name: Remove publishing material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/anydash-keys"

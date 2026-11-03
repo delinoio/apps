@@ -78,19 +78,35 @@ export function formatBytes(bytes: bigint): string {
     value /= 1024;
     unit += 1;
   }
-  return `${value.toFixed(value >= 100 ? 0 : 1)} ${byteUnits[unit]}`;
+  // Round to the display precision first: one decimal below 100, none from
+  // 100. A value such as 1023.99 KiB rounds to 1024, which belongs to the
+  // next unit, so promote it instead of printing "1024 KiB".
+  const round = (amount: number) => {
+    const tenths = Number(amount.toFixed(1));
+    return tenths >= 100 ? Number(amount.toFixed(0)) : tenths;
+  };
+  while (round(value) >= 1024 && unit < byteUnits.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const rounded = round(value);
+  return `${rounded >= 100 ? rounded.toFixed(0) : rounded.toFixed(1)} ${byteUnits[unit]}`;
 }
 
 export function formatCount(value: bigint): string {
   return group(value.toString());
 }
 
+/** Server limit pattern: up to 12 integer digits and 6 fraction digits. */
+const USD_INPUT = /^\s*\$?\s*(\d{1,12})(?:\.(\d{0,6}))?\s*$/;
+
 /**
  * Normalizes a USD amount typed by a person into the canonical decimal form
- * the API expects ("10.50" → "10.5"). Returns undefined when it is invalid.
+ * the API expects ("10.50" → "10.5"). Accepts up to 12 integer and 6 fraction
+ * digits like the API. Returns undefined when it is invalid.
  */
 export function normalizeUsdInput(input: string): string | undefined {
-  const match = /^\s*\$?\s*(\d+)(?:\.(\d{0,2}))?\s*$/.exec(input);
+  const match = USD_INPUT.exec(input);
   if (!match) return undefined;
   const whole = match[1].replace(/^0+(?=\d)/, "");
   const fraction = (match[2] ?? "").replace(/0+$/, "");

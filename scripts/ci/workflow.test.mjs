@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -38,6 +39,8 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["lane-cli", "lane_cli"],
     ["mcpa-frontend", "mcpa"],
     ["mcpa-api", "mcpa_api"],
+    ["anydash-cli", "anydash_cli"],
+    ["anydash-frontend", "anydash"],
     ["protocol", "protocol"],
     ["tooling", "tooling"],
     ["shared-ui", "shared_ui"],
@@ -69,7 +72,7 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
     const protoc = steps.find((step) => step.id === "protoc");
     assert.equal(
       protoc.if,
-      "contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane')",
+      "contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane') || contains(fromJSON(env.RUST_PACKAGES), 'anydash')",
     );
     assert.match(protoc.run, /protobuf-compiler libprotobuf-dev/u);
     assert.ok(
@@ -323,6 +326,8 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "lane-cli",
     "mcpa-frontend",
     "mcpa-api",
+    "anydash-cli",
+    "anydash-frontend",
     "rust-clippy",
     "protocol",
   ]) {
@@ -370,6 +375,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     lane_cli: "true",
     mcpa: "true",
     mcpa_api: "true",
+    anydash_cli: "true",
+    anydash: "true",
     tooling: "true",
     shared_ui: "true",
     workflows: "true",
@@ -406,6 +413,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     lane_cli: "false",
     mcpa: "false",
     mcpa_api: "false",
+    anydash_cli: "false",
+    anydash: "false",
     tooling: "true",
     shared_ui: "true",
     workflows: "true",
@@ -424,6 +433,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     "lane-cli",
     "mcpa-frontend",
     "mcpa-api",
+    "anydash-cli",
+    "anydash-frontend",
     "rust-clippy",
     "rust-test",
   ])
@@ -668,6 +679,8 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "lane-cli": "lane_cli",
       "mcpa-frontend": "mcpa",
       "mcpa-api": "mcpa_api",
+      "anydash-cli": "anydash_cli",
+      "anydash-frontend": "anydash",
       "perfine-profiles": "perfine_fixtures",
       "perfine-adapters": "perfine_fixtures",
       protocol: "protocol",
@@ -755,6 +768,18 @@ test("Perfine jobs use owned package contracts and real fixture interfaces", () 
     ).run,
     /node scripts\/ci\/perfine-acceptance\.mjs/u,
   );
+});
+
+test("AnyDash server validation checks its monitoring rules on Linux", () => {
+  const job = workflow.jobs["rust-servers"];
+  const step = job.steps.find((step) => step.id === "anydash-monitoring");
+  assert.equal(step.if, "matrix.service == 'anydash-api'");
+  assert.equal(step.run, "servers/anydash-api/ops/check.sh");
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  const unit = job.steps.findIndex((step) => step.id === "unit");
+  const database = job.steps.findIndex((step) => step.id === "postgres");
+  const index = job.steps.indexOf(step);
+  assert.ok(unit < index && index < database);
 });
 
 test("Lane integration owns a pinned disposable loopback S3 fixture", () => {
@@ -926,4 +951,65 @@ test("Managed CPA image builds a non-root Go server with license notices", () =>
     /ghcr\.io\/\$\{OWNER\}\/\$\{SERVER\}:sha-\$\{REVISION\}/u,
   );
   assert.match(publish, /org\.opencontainers\.image\.licenses=FSL-1\.1-ALv2/u);
+});
+
+test("macOS runners stay in the owning main-only release workflows", () => {
+  const directory = new URL("../../.github/workflows/", import.meta.url);
+  // Reusable distribution gates called only through the unified release.
+  const allowed = {
+    "deploy-lane.yml": ["build"],
+    "deploy-perfine.yml": ["build"],
+    "deploy-delitools-mobile.yml": ["ios", "ios-publish"],
+    "deploy-anydash.yml": ["native"],
+    "deploy-anydash-mobile.yml": ["ios", "ios-publish"],
+  };
+  const callers = {};
+  for (const file of readdirSync(directory).filter((name) =>
+    /\.ya?ml$/u.test(name),
+  )) {
+    const parsed = yaml.load(readFileSync(new URL(file, directory), "utf8"));
+    for (const [id, job] of Object.entries(parsed.jobs)) {
+      if (job.uses) (callers[job.uses] ??= []).push(file);
+      const runners = [
+        job["runs-on"],
+        ...[job.strategy?.matrix?.include].flat().map((entry) => entry?.runner),
+      ].filter((runner) => typeof runner === "string");
+      if (runners.some((runner) => /macos/iu.test(runner)))
+        assert.ok(
+          allowed[file]?.includes(id),
+          `${file} job ${id} must not use macOS runners`,
+        );
+    }
+  }
+  for (const file of Object.keys(allowed)) {
+    const parsed = yaml.load(readFileSync(new URL(file, directory), "utf8"));
+    assert.deepEqual(Object.keys(parsed.on), ["workflow_call"], file);
+    assert.deepEqual(
+      callers[`./.github/workflows/${file}`],
+      ["deploy-component.yml"],
+      `${file} runs only from component publication`,
+    );
+  }
+  assert.deepEqual(callers["./.github/workflows/deploy-component.yml"], [
+    "release.yml",
+  ]);
+  const release = yaml.load(
+    readFileSync(new URL("release.yml", directory), "utf8"),
+  );
+  assert.deepEqual(Object.keys(release.on), ["repository_dispatch"]);
+  assert.match(release.jobs["publish-plan"].if, /refs\/heads\/main/u);
+});
+
+test("AnyDash CLI validation packages and smoke-checks the Linux x64 target on Ubuntu", () => {
+  const job = workflow.jobs["anydash-cli"];
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  assert.equal(job.if, "needs.changes.outputs.anydash_cli == 'true'");
+  assert.equal(
+    job.steps.find((step) => step.id === "cli").run.trim(),
+    "pnpm --filter @delinoio/anydash test\npnpm --filter @delinoio/anydash build --platform linux-x64\npnpm --filter @delinoio/anydash smoke",
+  );
+  assert.equal(
+    job.steps.find((step) => step.name === "Remove generated output").run,
+    'rm -rf "packages/anydash/dist"',
+  );
 });

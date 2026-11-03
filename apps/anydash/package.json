@@ -1,0 +1,53 @@
+{
+  "name": "@apps/anydash",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name anydash --app-port 46330 rspeedy dev",
+    "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- pnpm desktop:start",
+    "build": "rspeedy build",
+    "build:frontend": "pnpm build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
+    "test": "pnpm typecheck && rstest && node --experimental-transform-types --no-warnings --test native/desktop/desktop.test.mjs scripts/icons.test.mjs scripts/widget-fixtures.test.mjs scripts/release-config.test.mjs scripts/store.test.mjs && pnpm build && node --test scripts/web-output.test.mjs",
+    "test:browser": "pnpm build && node tests/browser.mjs",
+    "build:desktop": "pnpm build && node scripts/desktop.mjs build",
+    "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run",
+    "test:widgets": "node scripts/widgets-test.mjs",
+    "fixtures:widgets": "node --experimental-transform-types --no-warnings scripts/widget-fixtures.ts --write",
+    "mobile:ios:init": "pnpm build && node scripts/native.mjs ios init",
+    "build:ios": "pnpm mobile:ios:init && node scripts/native.mjs ios build",
+    "build:android": "pnpm build && node scripts/native.mjs android build",
+    "build:macos-widgets": "node scripts/native.mjs macos-widgets build",
+    "build:windows-widgets": "node scripts/native.mjs windows-widgets build"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.16.0",
+    "@connectrpc/connect": "2.2.0",
+    "@connectrpc/connect-query": "2.3.1",
+    "@logto/browser": "3.1.1",
+    "@lynx-js/react": "0.129.0",
+    "@lynx-js/web-core": "0.26.5",
+    "@packages/lynx-ui": "workspace:*",
+    "@repo/protos": "workspace:*",
+    "@tanstack/react-query": "5.101.4",
+    "text-encoding-utf-8": "1.0.2"
+  },
+  "devDependencies": {
+    "@lynx-js/lynxtron": "0.0.30",
+    "@lynx-js/react-rsbuild-plugin": "0.22.0",
+    "@lynx-js/rspeedy": "0.18.3",
+    "@lynx-js/testing-environment": "0.4.0",
+    "@lynx-js/types": "4.3.0",
+    "@lynx-js/web-elements": "0.12.15",
+    "@rstest/core": "0.12.4",
+    "@types/node": "24.19.2",
+    "@types/react": "19.2.14",
+    "axe-core": "4.11.0",
+    "esbuild": "0.28.2",
+    "jsdom": "20.0.3",
+    "playwright": "1.62.0",
+    "typescript": "5.9.3"
+  }
+}

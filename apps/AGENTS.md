@@ -33,6 +33,8 @@
 
 - Lane ownership: [project](../docs/project-lane.md); [application foundation](../docs/apps-lane-foundation.md).
 
+- `apps/anydash` owns the AnyDash ReactLynx client, web host and desktop, mobile and native widget hosts. Read the [AnyDash project](../docs/project-anydash.md) and [application foundation](../docs/apps-anydash-foundation.md).
+
 - `apps/lane-chrome-extension` owns the RealQA Chrome companion and store materials. Read the [RealQA contract](../docs/apps-lane-realqa-contract.md); native installation and messaging integration remain in the existing Lane desktop host.
 
 - Managed CPA ownership: [project](../docs/project-mcpa.md); [web console](../docs/apps-mcpa-web-contract.md).

@@ -35,9 +35,15 @@ type Logto struct {
 	clientSecret string
 	httpClient   *http.Client
 
-	mu       sync.Mutex
+	mu sync.Mutex
+	// inflight is the running discovery attempt, nil when none runs.
+	inflight *discoverCall
 	provider *oidc.Provider
 	meta     providerMetadata
+	// accessVerifier and idVerifier share one cached JWKS key set. They are
+	// built once after a successful discovery.
+	accessVerifier *oidc.IDTokenVerifier
+	idVerifier     *oidc.IDTokenVerifier
 }
 
 type providerMetadata struct {
@@ -45,6 +51,28 @@ type providerMetadata struct {
 	TokenEndpoint         string `json:"token_endpoint"`
 	EndSessionEndpoint    string `json:"end_session_endpoint"`
 	RevocationEndpoint    string `json:"revocation_endpoint"`
+	JWKSURI               string `json:"jwks_uri"`
+	// IDTokenSigningAlgs restricts accepted token algorithms the same way
+	// oidc.Provider.Verifier does.
+	IDTokenSigningAlgs []string `json:"id_token_signing_alg_values_supported"`
+}
+
+// supportedSigningAlgs lists the algorithms go-oidc accepts from discovery.
+var supportedSigningAlgs = map[string]bool{
+	"RS256": true, "RS384": true, "RS512": true,
+	"ES256": true, "ES384": true, "ES512": true,
+	"PS256": true, "PS384": true, "PS512": true,
+	"EdDSA": true,
+}
+
+func (m providerMetadata) signingAlgs() []string {
+	var algs []string
+	for _, a := range m.IDTokenSigningAlgs {
+		if supportedSigningAlgs[a] {
+			algs = append(algs, a)
+		}
+	}
+	return algs
 }
 
 // NewLogto configures the provider. clientID and clientSecret identify the
@@ -60,23 +88,98 @@ func NewLogto(issuer, clientID, clientSecret string, httpClient *http.Client) *L
 // ClientID returns the Logto application client ID.
 func (l *Logto) ClientID() string { return l.clientID }
 
+// defaultDiscoveryTimeout bounds one discovery attempt when the HTTP client
+// has no timeout of its own.
+const defaultDiscoveryTimeout = 10 * time.Second
+
+// discoverCall is one in-flight discovery attempt shared by every caller that
+// arrives while it runs.
+type discoverCall struct {
+	done chan struct{}
+	// err is written before done is closed and read only after it.
+	err error
+}
+
+// discover returns the discovered provider, running at most one discovery
+// attempt at a time. Concurrent callers during an outage share the single
+// attempt and fail together after at most one discovery timeout instead of
+// queueing one full attempt each. The attempt is detached from the caller that
+// started it, so a cancelled caller neither aborts it for the others nor
+// leaves the mutex held. Only success is cached; a failed attempt is dropped
+// when it completes and the next call starts a new one.
 func (l *Logto) discover(ctx context.Context) (*oidc.Provider, providerMetadata, error) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	if l.provider != nil {
-		return l.provider, l.meta, nil
+		p, meta := l.provider, l.meta
+		l.mu.Unlock()
+		return p, meta, nil
 	}
+	call := l.inflight
+	if call == nil {
+		call = &discoverCall{done: make(chan struct{})}
+		l.inflight = call
+		go l.runDiscovery(context.WithoutCancel(ctx), call)
+	}
+	l.mu.Unlock()
+
+	select {
+	case <-call.done:
+	case <-ctx.Done():
+		return nil, providerMetadata{}, fmt.Errorf("logto: discovery: %w", ctx.Err())
+	}
+	if call.err != nil {
+		return nil, providerMetadata{}, call.err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.provider, l.meta, nil
+}
+
+// runDiscovery performs the shared discovery attempt and publishes its
+// outcome. ctx must not be cancelled by the starting caller.
+func (l *Logto) runDiscovery(ctx context.Context, call *discoverCall) {
+	timeout := l.httpClient.Timeout
+	if timeout <= 0 {
+		timeout = defaultDiscoveryTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	err := l.fetchDiscovery(ctx)
+	call.err = err
+	l.mu.Lock()
+	l.inflight = nil
+	l.mu.Unlock()
+	close(call.done)
+}
+
+// fetchDiscovery fetches the provider metadata and, on success, stores the
+// provider and verifiers.
+func (l *Logto) fetchDiscovery(ctx context.Context) error {
 	p, err := oidc.NewProvider(oidc.ClientContext(ctx, l.httpClient), l.issuer)
 	if err != nil {
-		return nil, providerMetadata{}, fmt.Errorf("%w: discovery: %v", ErrLogtoUnavailable, err)
+		return fmt.Errorf("%w: discovery: %v", ErrLogtoUnavailable, err)
 	}
 	var meta providerMetadata
 	if err := p.Claims(&meta); err != nil || meta.AuthorizationEndpoint == "" || meta.TokenEndpoint == "" {
-		return nil, providerMetadata{}, fmt.Errorf("%w: discovery metadata is incomplete", ErrLogtoUnavailable)
+		return fmt.Errorf("%w: discovery metadata is incomplete", ErrLogtoUnavailable)
 	}
+	if meta.JWKSURI == "" {
+		return fmt.Errorf("%w: discovery metadata has no jwks_uri", ErrLogtoUnavailable)
+	}
+	// One key set serves every verification: keys are cached and refetched
+	// only for an unknown key ID.
+	keys := newJWKSKeySet(meta.JWKSURI, l.httpClient)
+	algs := meta.signingAlgs()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	// Access tokens are not ID tokens: the audience is the API resource, not
+	// the client ID, so the client check is replaced by an explicit audience
+	// check in VerifyAccessToken.
+	l.accessVerifier = oidc.NewVerifier(l.issuer, keys, &oidc.Config{SkipClientIDCheck: true, SupportedSigningAlgs: algs})
+	l.idVerifier = oidc.NewVerifier(l.issuer, keys, &oidc.Config{ClientID: l.clientID, SupportedSigningAlgs: algs})
 	l.provider = p
 	l.meta = meta
-	return p, meta, nil
+	return nil
 }
 
 // Endpoints returns the discovered authorization, token and end-session
@@ -106,17 +209,22 @@ type VerifiedToken struct {
 
 // VerifyAccessToken verifies the signature, issuer and expiry of a Logto
 // access token and requires audience among its aud values.
+//
+// Failures to obtain Logto signing keys wrap ErrLogtoUnavailable. Every other
+// failure is a token failure and does not.
 func (l *Logto) VerifyAccessToken(ctx context.Context, raw, audience string) (*VerifiedToken, error) {
-	p, _, err := l.discover(ctx)
-	if err != nil {
+	if _, _, err := l.discover(ctx); err != nil {
 		return nil, err
 	}
-	// Access tokens are not ID tokens: the audience is the API resource, not
-	// the client ID, so the client check is replaced by an explicit audience
-	// check below.
-	v := p.VerifierContext(oidc.ClientContext(ctx, l.httpClient), &oidc.Config{SkipClientIDCheck: true})
+	l.mu.Lock()
+	v := l.accessVerifier
+	l.mu.Unlock()
+	ctx, outage := withJWKSOutage(ctx)
 	tok, err := v.Verify(ctx, raw)
 	if err != nil {
+		if outage.err != nil {
+			return nil, fmt.Errorf("%w: signing keys: %v", ErrLogtoUnavailable, outage.err)
+		}
 		return nil, fmt.Errorf("verify access token: %w", err)
 	}
 	if !slices.Contains(tok.Audience, audience) {
@@ -131,14 +239,20 @@ func (l *Logto) VerifyAccessToken(ctx context.Context, raw, audience string) (*V
 }
 
 // VerifyIDToken verifies an ID token for the configured client and nonce.
+// Failures to obtain Logto signing keys wrap ErrLogtoUnavailable.
 func (l *Logto) VerifyIDToken(ctx context.Context, raw, nonce string) (*VerifiedToken, error) {
-	p, _, err := l.discover(ctx)
-	if err != nil {
+	if _, _, err := l.discover(ctx); err != nil {
 		return nil, err
 	}
-	v := p.VerifierContext(oidc.ClientContext(ctx, l.httpClient), &oidc.Config{ClientID: l.clientID})
+	l.mu.Lock()
+	v := l.idVerifier
+	l.mu.Unlock()
+	ctx, outage := withJWKSOutage(ctx)
 	tok, err := v.Verify(ctx, raw)
 	if err != nil {
+		if outage.err != nil {
+			return nil, fmt.Errorf("%w: signing keys: %v", ErrLogtoUnavailable, outage.err)
+		}
 		return nil, fmt.Errorf("verify id token: %w", err)
 	}
 	if tok.Nonce != nonce {
@@ -227,7 +341,9 @@ func (l *Logto) token(ctx context.Context, form url.Values) (*TokenResponse, err
 		if te.Error == "invalid_grant" {
 			return nil, ErrInvalidGrant
 		}
-		if resp.StatusCode >= 500 {
+		// 429 is Logto rate limiting: a retryable outage, not a rejected
+		// grant, so callers keep the credential usable.
+		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
 			return nil, fmt.Errorf("%w: token endpoint status %d", ErrLogtoUnavailable, resp.StatusCode)
 		}
 		return nil, fmt.Errorf("logto: token endpoint status %d error %q", resp.StatusCode, te.Error)

@@ -15,8 +15,8 @@ pub use catalog::*;
 pub use period::*;
 pub use rating::*;
 
-pub const SCHEMA_VERSION: i32 = 14;
-const MIGRATIONS: [&str; 14] = [
+pub const SCHEMA_VERSION: i32 = 15;
+const MIGRATIONS: [&str; 15] = [
     include_str!("../../migrations/00001_foundation.sql"),
     include_str!("../../migrations/00002_payment_history.sql"),
     include_str!("../../migrations/00003_retention.sql"),
@@ -31,6 +31,7 @@ const MIGRATIONS: [&str; 14] = [
     include_str!("../../migrations/00012_api_keys.sql"),
     include_str!("../../migrations/00013_entitlement_window_index.sql"),
     include_str!("../../migrations/00014_deferrable_group_names.sql"),
+    include_str!("../../migrations/00015_member_since.sql"),
 ];
 #[derive(Clone)]
 pub struct Store {
@@ -329,6 +330,70 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(latest, SCHEMA_VERSION + 1);
+        db.pool.close().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL pointing to disposable PostgreSQL"]
+    async fn schema_14_members_receive_a_membership_start_on_upgrade() {
+        let db = Database::new().await;
+        // Install schema 14 exactly as an earlier `migrate` recorded it.
+        sqlx::query("CREATE TABLE delcore_schema(version integer PRIMARY KEY,digest text NOT NULL,applied_at timestamptz NOT NULL)")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        for (index, sql) in MIGRATIONS[..14].iter().enumerate() {
+            sqlx::raw_sql(sql).execute(&db.pool).await.unwrap();
+            sqlx::query("INSERT INTO delcore_schema VALUES($1,$2,now())")
+                .bind(index as i32 + 1)
+                .bind(hex::encode(Sha256::digest(sql.as_bytes())))
+                .execute(&db.pool)
+                .await
+                .unwrap();
+        }
+        let (user, plan, tenant) = (
+            uuid::Uuid::now_v7(),
+            uuid::Uuid::now_v7(),
+            uuid::Uuid::now_v7(),
+        );
+        sqlx::query(
+            "INSERT INTO users(id,issuer,subject_hash,email) VALUES($1,'issuer','subject','')",
+        )
+        .bind(user)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO plans(id,name,rank,free,postpaid) VALUES($1,'Free',1,true,false)")
+            .bind(plan)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO tenants(id,name,personal,owner_id,plan_id,period_start,period_end) VALUES($1,'Acme',false,$2,$3,now(),now()+interval '1 month')")
+            .bind(tenant)
+            .bind(user)
+            .bind(plan)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO members(tenant_id,user_id,roles) VALUES($1,$2,ARRAY[1])")
+            .bind(tenant)
+            .bind(user)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let before = chrono::Utc::now();
+        migrate(&db.pool).await.unwrap();
+        check_schema(&db.pool).await.unwrap();
+        // The existing membership receives the migration time as its start.
+        let since: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+            "SELECT member_since FROM members WHERE tenant_id=$1 AND user_id=$2",
+        )
+        .bind(tenant)
+        .bind(user)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert!(since >= before - chrono::Duration::seconds(5) && since <= chrono::Utc::now());
         db.pool.close().await;
     }
 

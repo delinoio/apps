@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,6 +35,7 @@ import (
 
 	delcorev1 "github.com/delinoio/apps/protos/delcore/v1"
 	mcpav1 "github.com/delinoio/apps/protos/mcpa/v1"
+	"github.com/delinoio/apps/servers/mcpa-api/internal/delcore"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/pricing"
 	"github.com/delinoio/apps/servers/mcpa-api/internal/store"
 )
@@ -110,6 +112,13 @@ func TestIntegrationHappyPath(t *testing.T) {
 	if s.GetCallCount() != int64(len(calls)) || s.GetTotalBytes() != total || s.GetRequestBytes() != reqBytes ||
 		s.GetTotalGib() != pricing.GiB(total) || s.GetEstimatedUsd() != pricing.EstimateUSD(total) {
 		t.Fatalf("summary %+v, want %d bytes", s, total)
+	}
+	// The summary strings are exact decimals, not rounded to six places.
+	if gib, ok := new(big.Rat).SetString(s.GetTotalGib()); !ok || gib.Cmp(new(big.Rat).SetFrac64(total, 1<<30)) != 0 {
+		t.Fatalf("total_gib %q is not exactly %d / 2^30", s.GetTotalGib(), total)
+	}
+	if usd, ok := new(big.Rat).SetString(s.GetEstimatedUsd()); !ok || usd.Cmp(pricing.SpendUSD(total)) != 0 {
+		t.Fatalf("estimated_usd %q is not exactly the spend of %d bytes", s.GetEstimatedUsd(), total)
 	}
 	var rowBytes, rowCalls int64
 	for _, r := range usage.GetRows() {
@@ -668,6 +677,178 @@ func TestIntegrationBudgets(t *testing.T) {
 	}
 }
 
+// The model allowlist is applied before the budget gate: a disallowed model is
+// reported as model_not_allowed and is not counted as a budget rejection.
+func TestIntegrationBudgetGateRunsAfterAllowlist(t *testing.T) {
+	e := newEnv(t, func(v map[string]string) { v["MCPA_AUTHORIZE_CACHE_TTL"] = "200ms" })
+	id := e.resource("budget-allowlist")
+	key, _ := e.callKey("owner", id)
+	mustDo(e, "owner", e.rpc.UpdateRouting, &mcpav1.UpdateRoutingRequest{ResourceId: id, Routing: &mcpav1.RoutingSettings{ModelAllowlist: []string{"compat-model"}}})
+	mustDo(e, "owner", e.rpc.SetResourceBudget, &mcpav1.SetResourceBudgetRequest{ResourceId: id, LimitUsd: "0"})
+	disallowed := strings.Replace(chatBody(false), "compat-model", "other-model", 1)
+	hits := e.up.hits.Load()
+
+	rej := e.call(e.srv.URL, id, key, "/v1/chat/completions", disallowed, nil)
+	if rej.status != http.StatusForbidden || gjson.GetBytes(rej.body, "error.type").String() != "model_not_allowed" {
+		t.Fatalf("disallowed model, exhausted budget: %d %s", rej.status, rej.body)
+	}
+	if rec := e.waitFinal(rej.callID); rec.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_MODEL_NOT_ALLOWED {
+		t.Fatalf("disallowed record %+v", rec)
+	}
+	if got := metricValue(t, e, "mcpa_budget_rejections_total", "scope", "resource"); got != 0 {
+		t.Fatalf("disallowed model counted as a budget rejection: %v", got)
+	}
+
+	rej = e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if rej.status != http.StatusTooManyRequests || gjson.GetBytes(rej.body, "error.type").String() != "budget_exhausted" {
+		t.Fatalf("allowed model, exhausted budget: %d %s", rej.status, rej.body)
+	}
+	if rec := e.waitFinal(rej.callID); rec.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_BUDGET {
+		t.Fatalf("budget record %+v", rec)
+	}
+	if got := metricValue(t, e, "mcpa_budget_rejections_total", "scope", "resource"); got != 1 {
+		t.Fatalf("resource budget rejections %v", got)
+	}
+
+	// An unreadable billing period fails closed only where the budget gate
+	// is reached.
+	mustDo(e, "owner", e.rpc.SetResourceBudget, &mcpav1.SetResourceBudgetRequest{ResourceId: id, LimitUsd: "10"})
+	e.dc.set(func(f *fakeDelcore) { f.periodDown = true })
+	time.Sleep(300 * time.Millisecond) // period cache
+	rej = e.call(e.srv.URL, id, key, "/v1/chat/completions", disallowed, nil)
+	if rej.status != http.StatusForbidden || gjson.GetBytes(rej.body, "error.type").String() != "model_not_allowed" {
+		t.Fatalf("disallowed model, unreadable period: %d %s", rej.status, rej.body)
+	}
+	rej = e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if rej.status != http.StatusServiceUnavailable || gjson.GetBytes(rej.body, "error.type").String() != "dependency_unavailable" {
+		t.Fatalf("allowed model, unreadable period: %d %s", rej.status, rej.body)
+	}
+	if got := e.up.hits.Load(); got != hits {
+		t.Fatalf("rejected calls reached the provider: %d hits", got-hits)
+	}
+	if got := metricValue(t, e, "mcpa_budget_rejections_total", "scope", "resource"); got != 1 {
+		t.Fatalf("resource budget rejections after dependency failure %v", got)
+	}
+	e.dc.set(func(f *fakeDelcore) { f.periodDown = false })
+}
+
+// Budget limits keep their full precision end to end: they are stored and
+// returned unrounded and the exhaustion check compares exactly.
+func TestIntegrationBudgetLimitPrecision(t *testing.T) {
+	e := newEnv(t, func(v map[string]string) { v["MCPA_AUTHORIZE_CACHE_TTL"] = "200ms" })
+	id := e.resource("precision")
+	key, keyID := e.callKey("owner", id)
+	setResource := func(limit string) (*mcpav1.Budget, error) {
+		resp, err := do(e, "owner", e.rpc.SetResourceBudget, &mcpav1.SetResourceBudgetRequest{ResourceId: id, LimitUsd: limit})
+		if err != nil {
+			return nil, err
+		}
+		return resp.GetBudget(), nil
+	}
+
+	// Limits below a millionth of a dollar and above 12 integer digits are
+	// accepted and returned exactly, with trailing fraction zeros removed.
+	for in, want := range map[string]string{
+		"0.0000001":     "0.0000001",
+		"0.10":          "0.1",
+		"1000000000000": "1000000000000",
+		"1234567890123": "1234567890123",
+	} {
+		b, err := setResource(in)
+		if err != nil || b.GetLimitUsd() != want {
+			t.Fatalf("SetResourceBudget(%q) => %+v, %v; want %q", in, b, err, want)
+		}
+		got := mustDo(e, "owner", e.rpc.GetResourceBudget, &mcpav1.GetResourceBudgetRequest{ResourceId: id}).GetBudget()
+		if got.GetLimitUsd() != want {
+			t.Fatalf("GetResourceBudget after %q => %q, want %q", in, got.GetLimitUsd(), want)
+		}
+	}
+	tenantLimit := "1000000000000"
+	if b := mustDo(e, "owner", e.rpc.SetTenantBudget, &mcpav1.SetTenantBudgetRequest{TenantId: e.tenant, LimitUsd: tenantLimit}).GetBudget(); b.GetLimitUsd() != tenantLimit {
+		t.Fatalf("tenant budget %+v, want limit %s", b, tenantLimit)
+	}
+	if b := mustDo(e, "owner", e.rpc.GetTenantBudget, &mcpav1.GetTenantBudgetRequest{TenantId: e.tenant}).GetBudget(); b.GetLimitUsd() != tenantLimit || b.GetExhausted() {
+		t.Fatalf("tenant budget read %+v", b)
+	}
+	mustDo(e, "owner", e.rpc.SetTenantBudget, &mcpav1.SetTenantBudgetRequest{TenantId: e.tenant, LimitUsd: ""})
+
+	// A 64-character canonical decimal is accepted; 65 characters and
+	// non-canonical forms are rejected as invalid input.
+	long64 := "0." + strings.Repeat("0", 61) + "1"
+	if b, err := setResource(long64); err != nil || b.GetLimitUsd() != long64 {
+		t.Fatalf("64-character limit => %+v, %v", b, err)
+	}
+	for _, in := range []string{long64 + "0", "01", "1.", ".5", "-1", "1e3", " 1", "NaN"} {
+		if _, err := setResource(in); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatalf("SetResourceBudget(%q) error %v, want invalid_argument", in, err)
+		}
+	}
+	if _, err := do(e, "owner", e.rpc.SetTenantBudget, &mcpav1.SetTenantBudgetRequest{TenantId: e.tenant, LimitUsd: long64 + "0"}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("65-character tenant limit error %v, want invalid_argument", err)
+	}
+
+	// Spend exactly 2 GiB (USD 0.14) in the current billing period.
+	var period delcore.Period
+	e.dc.set(func(f *fakeDelcore) { period = f.period })
+	rid := uuid.MustParse(id)
+	if _, err := e.db.ApplyCheckpoint(e.ctx, store.Checkpoint{
+		CallID: store.NewID(), TenantID: e.tenant, ResourceID: rid, CallKeyID: uuid.MustParse(keyID),
+		Provider: mcpav1.Provider_PROVIDER_OPENAI_COMPATIBLE, Model: "compat-model", Format: mcpav1.EndpointFormat_ENDPOINT_FORMAT_OPENAI,
+		StartTime: period.Start.Add(time.Hour), Seq: 1, Final: true, Status: mcpav1.CallStatus_CALL_STATUS_SUCCEEDED,
+		DeltaRequestBytes: 2 << 30, RequestBytes: 2 << 30, OutboxID: store.NewID(), RequestKey: store.NewID(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	attempt := func(limit string) callResult {
+		t.Helper()
+		if _, err := setResource(limit); err != nil {
+			t.Fatalf("SetResourceBudget(%q): %v", limit, err)
+		}
+		time.Sleep(300 * time.Millisecond) // authorization and spend caches
+		return e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	}
+	// A limit one quintillionth of a dollar above the spend still lets a call
+	// through: the comparison is exact and the limit is not rounded to
+	// six places. This runs first because every call adds billed bytes.
+	if ok := attempt("0.1400000000000000001"); ok.status != http.StatusOK {
+		t.Fatalf("limit just above the spend: %d %s", ok.status, ok.body)
+	}
+	// The call above adds its own bytes, so the spend now exceeds 0.14. A
+	// limit of 0.1 is far below it and rejects.
+	if rej := attempt("0.1"); rej.status != http.StatusTooManyRequests || gjson.GetBytes(rej.body, "error.type").String() != "budget_exhausted" {
+		t.Fatalf("limit 0.1 with 2 GiB spend: %d %s", rej.status, rej.body)
+	}
+	b := mustDo(e, "owner", e.rpc.GetResourceBudget, &mcpav1.GetResourceBudgetRequest{ResourceId: id}).GetBudget()
+	if b.GetLimitUsd() != "0.1" || !b.GetExhausted() {
+		t.Fatalf("budget %+v", b)
+	}
+}
+
+// proxyHTTPRequests reads mcpa_http_requests_total for the proxy surface.
+func proxyHTTPRequests(t *testing.T, e *itEnv, codeClass string) float64 {
+	t.Helper()
+	families, err := e.app.Metrics.Registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var total float64
+	for _, f := range families {
+		if f.GetName() != "mcpa_http_requests_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+			if labels["surface"] == "proxy" && labels["code_class"] == codeClass {
+				total += m.GetCounter().GetValue()
+			}
+		}
+	}
+	return total
+}
+
 // metricValue reads one counter sample from the server registry.
 func metricValue(t *testing.T, e *itEnv, name, label, value string) float64 {
 	t.Helper()
@@ -743,16 +924,51 @@ func TestIntegrationKeyInvalidation(t *testing.T) {
 		f.denied[e.tenant+"/"+e.users["invoker"]+"/invoke_models"] = []delcorev1.BlockReason{delcorev1.BlockReason_BLOCK_REASON_PERMISSION}
 	})
 	time.Sleep(250 * time.Millisecond)
-	if got := status(key, id); got != http.StatusUnauthorized {
-		t.Fatalf("after leaving the tenant: %d", got)
+	// This 401 is raised after the call state exists. Like the earlier 401s
+	// it must leave no call record, outbox row, aggregate change or call
+	// sample, and the response still carries the request ID.
+	usageState := func() [4]int64 {
+		return [4]int64{
+			e.scalar(`SELECT count(*) FROM call_records`),
+			e.scalar(`SELECT count(*) FROM usage_outbox`),
+			e.scalar(`SELECT COALESCE(sum(request_bytes + response_bytes), 0)::bigint FROM usage_daily`),
+			e.scalar(`SELECT count(*) FROM usage_daily`),
+		}
+	}
+	before := usageState()
+	proxy4xx := proxyHTTPRequests(t, e, "4xx")
+	denied := e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if denied.status != http.StatusUnauthorized || gjson.GetBytes(denied.body, "error.type").String() != "invalid_call_key" {
+		t.Fatalf("after leaving the tenant: %d %s", denied.status, denied.body)
+	}
+	if denied.callID == "" {
+		t.Fatal("permission denial has no request ID")
+	}
+	// The HTTP request metric is the last step of the handler, after any
+	// metering commit, so waiting for it makes the checks below conclusive.
+	for deadline := time.Now().Add(5 * time.Second); proxyHTTPRequests(t, e, "4xx") == proxy4xx; {
+		if time.Now().After(deadline) {
+			t.Fatal("the permission denial was not counted as an HTTP request")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if after := usageState(); after != before {
+		t.Fatalf("permission denial changed usage state: before %v, after %v", before, after)
+	}
+	if e.scalar(`SELECT count(*) FROM call_records WHERE id = $1`, denied.callID) != 0 {
+		t.Fatal("permission denial was recorded")
 	}
 	e.dc.set(func(f *fakeDelcore) { delete(f.denied, e.tenant+"/"+e.users["invoker"]+"/invoke_models") })
 	// Inactive tenants cannot call; Delcore errors after cache expiry fail
-	// closed.
+	// closed. Both are rejections after a valid key and stay recorded.
 	e.dc.set(func(f *fakeDelcore) { f.states[e.tenant] = delcorev1.TenantState_TENANT_STATE_BLOCKED })
 	time.Sleep(250 * time.Millisecond)
-	if got := status(key, id); got != http.StatusForbidden {
-		t.Fatalf("blocked tenant: %d", got)
+	blocked := e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if blocked.status != http.StatusForbidden {
+		t.Fatalf("blocked tenant: %d", blocked.status)
+	}
+	if rec := e.waitFinal(blocked.callID); rec.Status != mcpav1.CallStatus_CALL_STATUS_REJECTED_TENANT {
+		t.Fatalf("blocked tenant record %+v", rec)
 	}
 	e.dc.set(func(f *fakeDelcore) { delete(f.states, e.tenant); f.down = true })
 	time.Sleep(250 * time.Millisecond)
@@ -790,6 +1006,10 @@ func TestIntegrationKeyInvalidation(t *testing.T) {
 	if got := status(ownerKey, id); got != http.StatusUnauthorized {
 		t.Fatalf("deleted resource: %d", got)
 	}
+	// No invalid-key rejection reaches the call metric.
+	if got := metricValue(t, e, "mcpa_calls_total", "status", "unspecified"); got != 0 {
+		t.Fatalf("mcpa_calls_total has an unspecified sample: %v", got)
+	}
 	// Removing a credential takes effect for the next call.
 	otherKey, _ := e.callKey("owner", other)
 	creds := mustDo(e, "owner", e.rpc.ListCredentials, &mcpav1.ListCredentialsRequest{ResourceId: other}).GetCredentials()
@@ -797,6 +1017,61 @@ func TestIntegrationKeyInvalidation(t *testing.T) {
 	if res := e.call(e.srv.URL, other, otherKey, "/v1/chat/completions", chatBody(false), nil); res.status != http.StatusBadRequest ||
 		gjson.GetBytes(res.body, "error.type").String() != "no_credential" {
 		t.Fatalf("removed credential: %d %s", res.status, res.body)
+	}
+}
+
+// TestIntegrationPersonalKeyManagementInDeletingTenant covers the management
+// tenant state rule: a personal key of a DELETING tenant keeps managing
+// records and credentials, but model calls are denied. Delcore authorizes
+// keys with a strict lifecycle, so it denies the unpaid management check with
+// the single reason BLOCK_REASON_DELETING; a PERMISSION reason stays denied.
+func TestIntegrationPersonalKeyManagementInDeletingTenant(t *testing.T) {
+	e := newEnv(t, func(v map[string]string) { v["MCPA_AUTHORIZE_CACHE_TTL"] = "200ms" })
+	id := e.resource("deleting")
+	key, _ := e.callKey("owner", id)
+	if got := e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil).status; got != http.StatusOK {
+		t.Fatalf("model call before deletion: %d", got)
+	}
+
+	deny := func(reasons ...delcorev1.BlockReason) {
+		e.dc.set(func(f *fakeDelcore) {
+			f.denied[e.tenant+"/"+e.users["owner"]+"/access_resources"] = reasons
+			f.denied[e.tenant+"/"+e.users["owner"]+"/create_resources"] = reasons
+		})
+	}
+	deleting := delcorev1.BlockReason_BLOCK_REASON_DELETING
+	permission := delcorev1.BlockReason_BLOCK_REASON_PERMISSION
+
+	deny(deleting)
+	e.dc.set(func(f *fakeDelcore) { f.states[e.tenant] = delcorev1.TenantState_TENANT_STATE_DELETING })
+	time.Sleep(250 * time.Millisecond)
+
+	if got := mustDo(e, "owner", e.rpc.GetResource, &mcpav1.GetResourceRequest{ResourceId: id}).GetResource().GetId(); got != id {
+		t.Fatalf("GetResource id %q", got)
+	}
+	if got := mustDo(e, "owner", e.rpc.ListResources, &mcpav1.ListResourcesRequest{TenantId: e.tenant}).GetResources(); len(got) != 1 {
+		t.Fatalf("ListResources: %d resources", len(got))
+	}
+	creds := mustDo(e, "owner", e.rpc.ListCredentials, &mcpav1.ListCredentialsRequest{ResourceId: id}).GetCredentials()
+	if len(creds) != 1 {
+		t.Fatalf("ListCredentials: %d credentials", len(creds))
+	}
+	mustDo(e, "owner", e.rpc.RemoveCredential, &mcpav1.RemoveCredentialRequest{ResourceId: id, CredentialId: creds[0].GetId()})
+
+	// Model calls stay denied for the deleting tenant.
+	res := e.call(e.srv.URL, id, key, "/v1/chat/completions", chatBody(false), nil)
+	if res.status != http.StatusForbidden || gjson.GetBytes(res.body, "error.type").String() != "tenant_inactive" {
+		t.Fatalf("model call in a deleting tenant: %d %s", res.status, res.body)
+	}
+
+	// A PERMISSION reason, alone or next to DELETING, keeps the denial.
+	for _, reasons := range [][]delcorev1.BlockReason{{permission}, {deleting, permission}} {
+		deny(reasons...)
+		time.Sleep(250 * time.Millisecond)
+		_, err := do(e, "owner", e.rpc.GetResource, &mcpav1.GetResourceRequest{ResourceId: id})
+		if connect.CodeOf(err) != connect.CodePermissionDenied {
+			t.Fatalf("reasons %v: %v", reasons, err)
+		}
 	}
 }
 
@@ -1262,7 +1537,7 @@ func TestIntegrationBudgetSpendOutlivesCallRecords(t *testing.T) {
 // Migration 0003 backfills spend entries from retained call records.
 func TestIntegrationUsageSpendMigrationBackfill(t *testing.T) {
 	dbURL := testDatabase(t)
-	db, err := store.Open(t.Context(), dbURL, 10*time.Second)
+	db, err := store.Open(t.Context(), dbURL, 10*time.Second, store.ModeMaintenance)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1325,7 +1600,7 @@ func startReplica(e *itEnv) (*DataPlane, *httptest.Server) {
 	t := e.t
 	t.Helper()
 	appName := "mcpa-replica-" + store.NewID().String()
-	db, err := store.Open(e.ctx, e.dbURL+"&application_name="+appName, 5*time.Second)
+	db, err := store.Open(e.ctx, e.dbURL+"&application_name="+appName, 5*time.Second, store.ModeServe)
 	if err != nil {
 		t.Fatal(err)
 	}

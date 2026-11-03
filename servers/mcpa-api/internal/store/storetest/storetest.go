@@ -28,7 +28,7 @@ func Open(t testing.TB) *store.Store {
 	}
 	ctx := context.Background()
 	schema := "it_" + strings.ReplaceAll(store.NewID().String(), "-", "")
-	admin, err := store.Open(ctx, raw, 10*time.Second)
+	admin, err := store.Open(ctx, raw, 10*time.Second, store.ModeMaintenance)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func Open(t testing.TB) *store.Store {
 	q := u.Query()
 	q.Set("search_path", schema)
 	u.RawQuery = q.Encode()
-	s, err := store.Open(ctx, u.String(), 10*time.Second)
+	s, err := store.Open(ctx, u.String(), 10*time.Second, store.ModeServe)
 	if err != nil {
 		t.Fatal(err)
 	}

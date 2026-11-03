@@ -1,0 +1,39 @@
+{
+  "name": "@delinoio/anydash",
+  "version": "0.1.0",
+  "description": "AnyDash CLI and local usage collector launcher",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "anydash": "bin/anydash.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "manifest.json",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test scripts/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/delinoio/apps.git",
+    "directory": "packages/anydash"
+  },
+  "homepage": "https://anydash.delino.io",
+  "optionalDependencies": {
+    "@delinoio/anydash-darwin-arm64": "0.1.0",
+    "@delinoio/anydash-darwin-x64": "0.1.0",
+    "@delinoio/anydash-linux-arm64": "0.1.0",
+    "@delinoio/anydash-linux-x64": "0.1.0",
+    "@delinoio/anydash-windows-arm64": "0.1.0",
+    "@delinoio/anydash-windows-x64": "0.1.0"
+  }
+}

@@ -59,6 +59,7 @@ type Sessions struct {
 	apiResource string
 	delcoreRes  string
 	mfaClaim    string
+	reauthURL   string
 	log         *slog.Logger
 	now         func() time.Time
 }
@@ -71,14 +72,17 @@ type SessionsConfig struct {
 	APIResource     string
 	DelcoreResource string
 	MFAClaim        string
-	Log             *slog.Logger
+	// ReauthURL is the MFA enrollment or reauthentication URL reported when a
+	// refresh inside a request finds that the session lost MFA evidence.
+	ReauthURL string
+	Log       *slog.Logger
 }
 
 // NewSessions builds the console session manager.
 func NewSessions(cfg SessionsConfig) *Sessions {
 	return &Sessions{
 		db: cfg.Store, keys: cfg.Keys, logto: cfg.Logto, apiResource: cfg.APIResource,
-		delcoreRes: cfg.DelcoreResource, mfaClaim: cfg.MFAClaim, log: cfg.Log, now: time.Now,
+		delcoreRes: cfg.DelcoreResource, mfaClaim: cfg.MFAClaim, reauthURL: cfg.ReauthURL, log: cfg.Log, now: time.Now,
 	}
 }
 
@@ -210,7 +214,10 @@ func (s *Sessions) Refresh(ctx context.Context, id uuid.UUID) (*SessionState, er
 	// because a rotated refresh token or a session deletion must be stored
 	// despite the failure.
 	var refreshErr error
-	err := s.db.InTx(ctx, func(tx pgx.Tx) error {
+	// detached is set once the upstream refresh starts.
+	detached := false
+	err := s.db.InTxDetached(ctx, func(tx pgx.Tx, detach func() context.Context) error {
+		// The lock wait and the checks stay under the request context.
 		sess, err := store.LockSession(ctx, tx, id)
 		if errors.Is(err, store.ErrNotFound) {
 			return apperr.Unauthenticated("the session expired; sign in again")
@@ -231,6 +238,13 @@ func (s *Sessions) Refresh(ctx context.Context, id uuid.UUID) (*SessionState, er
 			out = &SessionState{Session: sess, Tokens: tokens}
 			return nil
 		}
+		// From here on Logto may rotate the refresh token, which makes the
+		// stored one unusable. Run the upstream calls, the writes and the
+		// commit detached from the request, so a canceled request cannot
+		// lose the rotated token. The work is bounded by the store's detach
+		// bound.
+		ctx := detach()
+		detached = true
 		refreshed, mfa, expiry, err := s.refreshTokens(ctx, sess.Subject, tokens)
 		if err != nil {
 			if errors.Is(err, ErrInvalidGrant) {
@@ -286,6 +300,13 @@ func (s *Sessions) Refresh(ctx context.Context, id uuid.UUID) (*SessionState, er
 		}
 		return nil
 	})
+	if detached && ctx.Err() != nil {
+		// The refresh ran to completion although the request was canceled, so
+		// a rotated refresh token was stored as for a live request. Log
+		// without token material.
+		s.log.WarnContext(ctx, "console session refresh finished after the request was canceled",
+			"session_id", id, "request_cancelled", true, "ok", err == nil && refreshErr == nil)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +396,11 @@ func (s *Sessions) principalFromSession(st *SessionState) *Principal {
 			return "", err
 		}
 		if !fresh.Session.MFA {
-			return "", ErrNoUserToken
+			// The refresh stored the downgrade, so later requests are rejected
+			// by cookie authentication. Report the same MFA error to this
+			// request instead of an unauthenticated one, so the console shows
+			// the reauthentication prompt and no data is served.
+			return "", apperr.MFARequired(s.reauthURL)
 		}
 		return fresh.Tokens.DelcoreAccessToken, nil
 	})

@@ -102,6 +102,22 @@ services:
       timeout: 5s
       retries: 30
       start_period: 10s
+  anydash-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: anydash
+      POSTGRES_PASSWORD: local-anydash
+      POSTGRES_DB: anydash
+    ports:
+      - "127.0.0.1:${ANYDASH_POSTGRES_PORT:-55439}:5432"
+    volumes:
+      - anydash-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U anydash -d anydash"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
 
   mcpa-postgres:
     image: postgres:17
@@ -128,3 +144,4 @@ volumes:
   perfine-postgres-data:
   lane-postgres-data:
   mcpa-postgres-data:
+  anydash-postgres-data:

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- packages/lynx-ui light tokens: lui-bg, lui-fg, lui-muted and lui-surface. -->
+<resources>
+    <color name="anydash_bg">#FFFFFF</color>
+    <color name="anydash_fg">#202124</color>
+    <color name="anydash_muted">#626975</color>
+    <color name="anydash_surface">#F3F4F5</color>
+    <color name="anydash_tile">#98B8FF</color>
+</resources>

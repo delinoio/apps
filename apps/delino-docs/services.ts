@@ -8,12 +8,16 @@ export enum ServiceId {
   DeliTools = "delitools",
   Perfine = "perfine",
   Lane = "lane",
+  AnyDash = "anydash",
 }
 
 // Pages after a service overview. `slug` is the route segment below
 // `/services/<service-id>/` and `message` is the navigation text key in the
 // language catalogs under `i18n/messages`.
 export enum ServicePage {
+  GettingStarted = "getting-started",
+  Providers = "providers",
+  Data = "data",
   Installation = "installation",
   Mcp = "mcp",
   UserGuide = "user-guide",
@@ -63,6 +67,17 @@ export const services: readonly Service[] = [
       { slug: ServicePage.Hosting, message: "perfineHosting" },
       { slug: ServicePage.Publication, message: "perfinePublication" },
       { slug: ServicePage.GithubActions, message: "perfineGithubActions" },
+      { slug: ServicePage.Troubleshooting, message: "troubleshooting" },
+    ],
+  },
+  {
+    id: ServiceId.AnyDash,
+    name: "AnyDash",
+    pages: [
+      { slug: ServicePage.GettingStarted, message: "anydashGettingStarted" },
+      { slug: ServicePage.Cli, message: "anydashCli" },
+      { slug: ServicePage.Providers, message: "anydashProviders" },
+      { slug: ServicePage.Data, message: "anydashData" },
       { slug: ServicePage.Troubleshooting, message: "troubleshooting" },
     ],
   },

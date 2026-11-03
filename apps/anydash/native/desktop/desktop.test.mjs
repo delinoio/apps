@@ -1,0 +1,797 @@
+// SPDX-License-Identifier: Apache-2.0
+import assert from "node:assert/strict";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { NativeAuth, pkcePair, subject } from "./auth.mjs";
+import { Collector, dataDirectory, ipcCall, socketPath } from "./collector.mjs";
+import { DesktopHost, withDelcoreToken } from "./host.mjs";
+import { memoryStore } from "./secure-store.mjs";
+import {
+  compareVersions,
+  expectedDigest,
+  platformKey,
+  selectRelease,
+  verifyCodeSignature,
+  verifySums,
+} from "./updater.mjs";
+
+async function socketServer(handler) {
+  const dir = await mkdtemp(join(tmpdir(), "anydash-ipc-"));
+  // Windows local IPC is a named pipe, as the collector uses there; a
+  // filesystem path is only a valid listen address for Unix domain sockets.
+  const path =
+    process.platform === "win32"
+      ? `\\\\.\\pipe\\anydash-ipc-test-${process.pid}-${Date.now()}`
+      : join(dir, "collector.sock");
+  const server = createServer(handler);
+  await new Promise((resolve) => server.listen(path, resolve));
+  return {
+    path,
+    close: () =>
+      new Promise((resolve) =>
+        server.close(() =>
+          rm(dir, { recursive: true, force: true }).then(resolve),
+        ),
+      ),
+  };
+}
+
+test("speaks Connect binary over the collector socket", async () => {
+  const seen = [];
+  const server = await socketServer((request, response) => {
+    seen.push({
+      url: request.url,
+      type: request.headers["content-type"],
+      version: request.headers["connect-protocol-version"],
+    });
+    request.resume();
+    request.on("end", () => {
+      response.writeHead(200, { "content-type": "application/proto" });
+      response.end(Buffer.from([8, 1]));
+    });
+  });
+  try {
+    const reply = await ipcCall(
+      server.path,
+      "GetCollectorStatus",
+      Buffer.alloc(0),
+    );
+    assert.equal(reply.status, 200);
+    assert.deepEqual([...reply.body], [8, 1]);
+    assert.deepEqual(seen[0], {
+      url: "/anydash.v1.LocalCollectorService/GetCollectorStatus",
+      type: "application/proto",
+      version: "1",
+    });
+  } finally {
+    await server.close();
+  }
+});
+
+test("connects to a running collector and stops only one it started", async () => {
+  const calls = [];
+  const running = new Collector({
+    resources: "/missing",
+    path: "/sock",
+    call: async (_path, method) => {
+      calls.push(method);
+      return { status: 200, body: Buffer.alloc(0) };
+    },
+  });
+  assert.equal(await running.ensure(), true);
+  assert.equal(running.started, false);
+  assert.deepEqual(await running.quit(), { stopped: false });
+  assert.deepEqual(calls, ["GetCollectorStatus"]);
+
+  let up = false;
+  const launched = [];
+  const embedded = await mkdtemp(join(tmpdir(), "anydash-bin-"));
+  process.env.ANYDASH_COLLECTOR = process.execPath;
+  try {
+    const started = new Collector({
+      resources: embedded,
+      path: "/sock",
+      call: async (_path, method) => {
+        if (!up) throw new Error("ENOENT");
+        calls.push(method);
+        return { status: 200, body: Buffer.alloc(0) };
+      },
+      launch: (command, args) => {
+        launched.push([command, args]);
+        up = true;
+        return { on() {} };
+      },
+    });
+    assert.equal(await started.ensure({ interval: 1 }), true);
+    assert.deepEqual(launched[0][1], ["run", "--owner", "desktop"]);
+    assert.deepEqual(await started.quit(), { stopped: true });
+    assert.equal(calls.at(-1), "Quit");
+  } finally {
+    delete process.env.ANYDASH_COLLECTOR;
+    await rm(embedded, { recursive: true, force: true });
+  }
+});
+
+test("uses the contract socket and pipe names", () => {
+  // Paths follow the target platform's separators on every host, so the
+  // expectations hold when the suite runs on the Windows release runner.
+  assert.match(
+    socketPath("darwin", {}),
+    /Library\/Application Support\/io\.delino\.anydash\/collector\.sock$/,
+  );
+  assert.equal(
+    socketPath("darwin", { ANYDASH_HOME: "/home/u/.anydash" }),
+    "/home/u/.anydash/data/collector.sock",
+  );
+  assert.equal(
+    socketPath("linux", { XDG_RUNTIME_DIR: "/run/user/1000" }),
+    "/run/user/1000/anydash/collector.sock",
+  );
+  assert.equal(
+    dataDirectory("win32", { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }),
+    "C:\\Users\\u\\AppData\\Local\\Delino\\AnyDash\\Data",
+  );
+  assert.equal(
+    socketPath("win32", {}, "S-1-5-21-1"),
+    "\\\\.\\pipe\\io.delino.anydash.collector.S-1-5-21-1",
+  );
+});
+
+function host(overrides = {}) {
+  const requests = [];
+  const forwarded = [];
+  const cacheDirectory = join(
+    tmpdir(),
+    `anydash-cache-${process.pid}-${Math.random()}`,
+  );
+  const value = new DesktopHost({
+    config: {
+      version: "0.1.0",
+      api: "https://anydash.api.delino.io",
+      anydashResource: "https://anydash.api.delino.io",
+      delcoreResource: "https://delcore.api.delino.io",
+    },
+    auth: {
+      signedIn: async () => true,
+      userKey: async () => "key",
+      accessToken: async (resource) => `token:${resource}`,
+      signIn: async () => {},
+      signOut: async () => {},
+    },
+    collector: {
+      forward: async (method, body) => {
+        forwarded.push([method, body]);
+        return {
+          status: 200,
+          body: Buffer.from([1]),
+          contentType: "application/proto",
+        };
+      },
+    },
+    fetcher: async (url, init) => {
+      requests.push({ url, init });
+      return new Response(new Uint8Array([2]), {
+        status: 200,
+        headers: { "x-anydash-correlation-id": "c1" },
+      });
+    },
+    clipboard: { writeText() {} },
+    openExternal: async () => {},
+    loginItems: {
+      value: false,
+      get() {
+        return this.value;
+      },
+      set(enabled) {
+        this.value = enabled;
+      },
+    },
+    updater: { act: async () => ({ phase: "unavailable" }) },
+    cacheDirectory,
+    platformLabel: "macOS arm64",
+    ...overrides,
+  });
+  return { value, requests, forwarded, cacheDirectory };
+}
+
+test("routes API and collector requests with the right credentials", async () => {
+  const { value, requests, forwarded } = host();
+  const api = JSON.parse(
+    await value.reply(
+      "rpc",
+      JSON.stringify({
+        target: "api",
+        service: "anydash.v1.DashboardService",
+        method: "ListSpaces",
+        body: "AQ==",
+        headers: { "X-AnyDash-Client-Kind": "CLIENT_KIND_DESKTOP", Host: "x" },
+      }),
+    ),
+  );
+  assert.equal(api.ok, true);
+  assert.equal(api.value.correlationId, "c1");
+  assert.equal(
+    requests[0].url,
+    "https://anydash.api.delino.io/anydash.v1.DashboardService/ListSpaces",
+  );
+  assert.equal(
+    requests[0].init.headers.authorization,
+    "Bearer token:https://anydash.api.delino.io",
+  );
+  assert.equal(requests[0].init.headers.Host, undefined);
+  const local = JSON.parse(
+    await value.reply(
+      "rpc",
+      JSON.stringify({
+        target: "collector",
+        service: "anydash.v1.LocalCollectorService",
+        method: "PutNativeWidgetSnapshots",
+        body: "AQ==",
+      }),
+    ),
+  );
+  assert.equal(local.ok, true);
+  assert.equal(forwarded[0][0], "PutNativeWidgetSnapshots");
+  // The renderer cannot stop the shared collector or reach other services.
+  assert.equal(
+    JSON.parse(
+      await value.reply(
+        "rpc",
+        JSON.stringify({
+          target: "collector",
+          service: "anydash.v1.LocalCollectorService",
+          method: "Quit",
+        }),
+      ),
+    ).ok,
+    false,
+  );
+  assert.equal(
+    JSON.parse(
+      await value.reply(
+        "rpc",
+        JSON.stringify({
+          target: "api",
+          service: "anydash.v1.LocalCollectorService",
+          method: "Quit",
+        }),
+      ),
+    ).ok,
+    false,
+  );
+  assert.equal(
+    JSON.parse(
+      await value.reply(
+        "openURL",
+        JSON.stringify({ url: "file:///etc/passwd" }),
+      ),
+    ).ok,
+    false,
+  );
+});
+
+test("injects the Delcore token in the host instead of returning it", async () => {
+  const { value, requests } = host();
+  assert.equal(
+    JSON.parse(await value.reply("delcoreToken", "{}")).error.code,
+    "UNSUPPORTED",
+  );
+  for (const [service, method] of [
+    ["anydash.v1.AccountService", "ConnectAccount"],
+    ["anydash.v1.DashboardService", "ListSpaces"],
+    ["anydash.v1.AccountService", "GetAccount"],
+  ])
+    await value.call("rpc", {
+      target: "api",
+      service,
+      method,
+      body: "",
+      headers: {},
+    });
+  const token = Buffer.from("token:https://delcore.api.delino.io");
+  const expected = Buffer.concat([Buffer.from([0x0a, token.length]), token]);
+  assert.deepEqual(requests[0].init.body, expected);
+  assert.deepEqual(requests[1].init.body, expected);
+  assert.equal(requests[2].init.body.length, 0);
+  // JWT-length tokens use a multi-byte varint length.
+  const long = withDelcoreToken(Buffer.from([0x0a, 0]), "j".repeat(300));
+  assert.deepEqual([...long.subarray(0, 5)], [0x0a, 0, 0x0a, 0xac, 0x02]);
+  assert.equal(long.length, 5 + 300);
+});
+
+test("keeps the widget cache by user key and purges by prefix", async () => {
+  const { value, cacheDirectory } = host();
+  try {
+    await value.call("cacheWrite", {
+      key: "anydash.v1/u/widget/a",
+      value: "A",
+    });
+    await value.call("cacheWrite", {
+      key: "anydash.v1/u/widget/b",
+      value: "B",
+    });
+    assert.deepEqual(
+      await value.call("cacheRead", { key: "anydash.v1/u/widget/a" }),
+      { value: "A" },
+    );
+    await value.call("cacheRemove", { prefix: "anydash.v1/u/widget/a" });
+    assert.deepEqual(
+      await value.call("cacheRead", { key: "anydash.v1/u/widget/a" }),
+      {},
+    );
+    assert.deepEqual(
+      await value.call("cacheRead", { key: "anydash.v1/u/widget/b" }),
+      { value: "B" },
+    );
+    await value.call("signOut", {});
+    assert.deepEqual(
+      await value.call("cacheRead", { key: "anydash.v1/u/widget/b" }),
+      {},
+    );
+  } finally {
+    await rm(cacheDirectory, { recursive: true, force: true });
+  }
+});
+
+test("keeps every concurrent cache write in the index", async () => {
+  const { value, cacheDirectory } = host();
+  try {
+    const keys = Array.from(
+      { length: 20 },
+      (_, index) => `anydash.v1/u/widget/${index}`,
+    );
+    await Promise.all(
+      keys.map((key) => value.call("cacheWrite", { key, value: key })),
+    );
+    await Promise.all([
+      value.call("cacheRemove", { prefix: "anydash.v1/u/" }),
+      value.call("cacheWrite", { key: "anydash.v1/v/widget/x", value: "X" }),
+    ]);
+    for (const key of keys)
+      assert.deepEqual(await value.call("cacheRead", { key }), {});
+    assert.deepEqual(
+      await value.call("cacheRead", { key: "anydash.v1/v/widget/x" }),
+      { value: "X" },
+    );
+  } finally {
+    await rm(cacheDirectory, { recursive: true, force: true });
+  }
+});
+
+test("toggles start at login on request", async () => {
+  const { value } = host();
+  assert.deepEqual(await value.call("autostart", {}), { enabled: false });
+  assert.deepEqual(await value.call("autostart", { enabled: true }), {
+    enabled: true,
+  });
+});
+
+test("selects the newest stable signed release for this platform", () => {
+  const asset = (tag, name, size = 10) => ({
+    name,
+    size,
+    browser_download_url: `https://github.com/delinoio/apps/releases/download/${tag}/${name}`,
+  });
+  const release = (tag, extra = {}) => ({
+    tag_name: tag,
+    assets: [
+      asset(tag, `anydash-desktop-darwin-arm64-${tag.slice(9)}.tar.gz`),
+      asset(tag, "SHA256SUMS"),
+      asset(tag, "SHA256SUMS.sig"),
+    ],
+    ...extra,
+  });
+  const releases = [
+    release("anydash@v1.2.0"),
+    release("anydash@v1.10.0"),
+    release("anydash@v2.0.0", { prerelease: true }),
+    release("lane@v9.0.0"),
+  ];
+  const selected = selectRelease(releases, "1.2.0", "darwin-arm64");
+  assert.equal(selected.version, "1.10.0");
+  assert.equal(selectRelease(releases, "1.10.0", "darwin-arm64"), undefined);
+  assert.throws(() =>
+    selectRelease(
+      [release("anydash@v3.0.0", { assets: [] })],
+      "1.0.0",
+      "darwin-arm64",
+    ),
+  );
+  assert.equal(compareVersions("anydash@v1.10.0", "1.9.9"), 1);
+  assert.equal(platformKey("win32", "arm64"), undefined);
+  assert.equal(platformKey("darwin", "x64"), "darwin-x64");
+});
+
+test("checks the Authenticode signature of the packaged Windows executable", async () => {
+  // scripts/desktop.mjs copies the Lynxtron runtime without renaming it.
+  const packaging = await readFile(
+    new URL("../../scripts/desktop.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(packaging, /join\(app, "lynxtron\.exe"\)/);
+  const calls = [];
+  const app = join("C:", "Users", "u", "AnyDash");
+  const verified = await verifyCodeSignature(app, {
+    platform: "win32",
+    publisher: "CN=Delino",
+    exec: async (command, args) => {
+      calls.push({ command, args });
+      return { code: 0, output: "CN=Delino" };
+    },
+  });
+  assert.equal(verified, true);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].args.at(-1).includes(join(app, "lynxtron.exe")));
+  assert.ok(!calls[0].args.at(-1).includes("AnyDash.exe"));
+});
+
+test("verifies the Ed25519 signature and checksum before installing", () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const archive = Buffer.from("archive");
+  const name = "anydash-desktop-darwin-arm64-1.0.0.tar.gz";
+  const sums = Buffer.from(
+    `${createHash("sha256").update(archive).digest("hex")}  ${name}\n`,
+  );
+  const signature = Buffer.from(
+    sign(null, sums, privateKey).toString("base64"),
+  );
+  const key = publicKey
+    .export({ format: "der", type: "spki" })
+    .toString("base64");
+  assert.equal(verifySums(sums, signature, key), true);
+  assert.equal(verifySums(Buffer.from(`${sums}x`), signature, key), false);
+  assert.equal(
+    expectedDigest(sums, name),
+    createHash("sha256").update(archive).digest("hex"),
+  );
+  assert.throws(() => expectedDigest(sums, "other.tar.gz"));
+});
+
+test("signs in with PKCE and requests per-resource tokens", async () => {
+  const store = memoryStore();
+  const bodies = [];
+  let opened;
+  const idToken = `x.${Buffer.from(JSON.stringify({ sub: "user-1" })).toString("base64url")}.y`;
+  const auth = new NativeAuth({
+    endpoint: "https://auth.example",
+    appId: "native-app",
+    resources: [
+      "https://anydash.api.delino.io",
+      "https://delcore.api.delino.io",
+    ],
+    store,
+    openBrowser: (url) => {
+      opened = new URL(url);
+    },
+    fetcher: async (_url, init) => {
+      const body = new URLSearchParams(init.body);
+      bodies.push(body);
+      return new Response(
+        JSON.stringify(
+          body.get("grant_type") === "authorization_code"
+            ? { refresh_token: "r1", id_token: idToken }
+            : {
+                access_token: `a:${body.get("resource")}`,
+                refresh_token: "r2",
+                expires_in: 3600,
+              },
+        ),
+        { status: 200 },
+      );
+    },
+  });
+  const signing = auth.signIn();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(opened.searchParams.get("code_challenge_method"), "S256");
+  assert.deepEqual(opened.searchParams.getAll("resource"), [
+    "https://anydash.api.delino.io",
+    "https://delcore.api.delino.io",
+  ]);
+  assert.equal(
+    await auth.callback("anydash://auth/callback?code=c&state=wrong"),
+    false,
+  );
+  assert.equal(
+    await auth.callback(
+      `anydash://auth/callback?code=c&state=${opened.searchParams.get("state")}`,
+    ),
+    true,
+  );
+  await signing;
+  assert.ok(bodies[0].get("code_verifier"));
+  assert.equal(
+    await auth.accessToken("https://delcore.api.delino.io"),
+    "a:https://delcore.api.delino.io",
+  );
+  assert.equal(store.values.get("refresh-token"), "r2");
+  assert.equal(
+    store.values.get("user-key"),
+    createHash("sha256").update("anydash:user-1").digest("hex"),
+  );
+  await auth.signOut();
+  assert.equal(await auth.signedIn(), false);
+  assert.equal(subject("bad"), undefined);
+  const { verifier, challenge } = pkcePair();
+  assert.equal(
+    challenge,
+    createHash("sha256").update(verifier).digest("base64url"),
+  );
+});
+
+test("discards a token refresh that completes after sign-out", async () => {
+  const store = memoryStore();
+  await store.set("refresh-token", "r1");
+  await store.set("user-key", "key-1");
+  let release;
+  const auth = new NativeAuth({
+    endpoint: "https://auth.example",
+    appId: "native-app",
+    resources: ["https://anydash.api.delino.io"],
+    store,
+    openBrowser: () => {},
+    fetcher: async () => {
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      return new Response(
+        JSON.stringify({
+          access_token: "a1",
+          refresh_token: "r2",
+          expires_in: 3600,
+        }),
+        { status: 200 },
+      );
+    },
+  });
+  const refreshing = auth.accessToken("https://anydash.api.delino.io");
+  while (!release) await new Promise((resolve) => setImmediate(resolve));
+  await auth.signOut();
+  release();
+  await assert.rejects(refreshing, { code: "SIGNED_OUT" });
+  assert.equal(await auth.signedIn(), false);
+  assert.equal(store.values.has("refresh-token"), false);
+  assert.equal(store.values.has("user-key"), false);
+  await assert.rejects(auth.accessToken("https://anydash.api.delino.io"), {
+    code: "SIGNED_OUT",
+  });
+});
+
+test("refreshes stored native widget snapshots while no window is open", async () => {
+  const { create, fromBinary, toBinary } = await import("@bufbuild/protobuf");
+  const pb = await import("@repo/protos/anydash/v1/anydash_pb");
+  const { WidgetRefresher, dashboardOutcome, DashboardOutcome } =
+    await import("./widgets.mjs");
+  const snapshot = (dashboardId, widgetId, title) =>
+    create(pb.NativeWidgetSnapshotSchema, {
+      dashboardId,
+      widgetId,
+      spaceId: "space",
+      sharingState: pb.SharingState.PRIVATE,
+      summary: { title },
+    });
+  let stored = [
+    snapshot("live", "kept", "old"),
+    snapshot("live", "removed", "old"),
+    snapshot("live", "ended", "old"),
+    snapshot("deleted", "gone", "old"),
+    snapshot("left", "revoked", "old"),
+  ];
+  const writes = [];
+  const collector = {
+    async forward(method, body) {
+      if (method === "ListNativeWidgetSnapshots")
+        return {
+          status: 200,
+          body: Buffer.from(
+            toBinary(
+              pb.ListNativeWidgetSnapshotsResponseSchema,
+              create(pb.ListNativeWidgetSnapshotsResponseSchema, {
+                snapshots: stored,
+              }),
+            ),
+          ),
+        };
+      const request = fromBinary(
+        pb.PutNativeWidgetSnapshotsRequestSchema,
+        body,
+      );
+      writes.push(request);
+      stored = request.snapshots;
+      return { status: 200, body: Buffer.alloc(0) };
+    },
+  };
+  const queried = [];
+  let gate;
+  const host = {
+    async apiCall(service, method, body, headers) {
+      const { dashboardId } = fromBinary(
+        pb.QueryDashboardDataRequestSchema,
+        body,
+      );
+      queried.push({ service, method, dashboardId, headers });
+      if (gate) await gate;
+      if (dashboardId === "deleted")
+        return { status: 404, body: Buffer.alloc(0) };
+      if (dashboardId === "left") return { status: 403, body: Buffer.alloc(0) };
+      return {
+        status: 200,
+        body: Buffer.from(
+          toBinary(
+            pb.QueryDashboardDataResponseSchema,
+            create(pb.QueryDashboardDataResponseSchema, {
+              widgets: [
+                {
+                  widgetId: "kept",
+                  sharingState: pb.SharingState.PRIVATE,
+                  summary: { title: "new" },
+                },
+                { widgetId: "ended", sharingState: pb.SharingState.ENDED },
+              ],
+            }),
+          ),
+        ),
+      };
+    },
+  };
+  let signedIn = true;
+  const refresher = new WidgetRefresher({
+    host,
+    collector,
+    auth: { signedIn: async () => signedIn },
+    clientVersion: "1.2.3",
+  });
+  await refresher.refresh();
+  assert.deepEqual(
+    queried.map((entry) => entry.dashboardId),
+    ["live", "deleted", "left"],
+  );
+  assert.equal(queried[0].service, "anydash.v1.WidgetDataService");
+  assert.equal(queried[0].method, "QueryDashboardData");
+  assert.equal(
+    queried[0].headers["x-anydash-client-kind"],
+    "CLIENT_KIND_DESKTOP",
+  );
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].replaceAll, true);
+  assert.deepEqual(
+    stored.map((entry) => [
+      entry.widgetId,
+      entry.sharingState,
+      entry.summary?.title,
+    ]),
+    [
+      ["kept", pb.SharingState.PRIVATE, "new"],
+      ["ended", pb.SharingState.ENDED, undefined],
+      ["revoked", pb.SharingState.ENDED, undefined],
+    ],
+  );
+  assert.ok(stored[0].refreshedAt);
+
+  // A window that opens mid-refresh owns publication; the stale result is
+  // discarded, and nothing is written after sign-out.
+  let release;
+  gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const pending = refresher.refresh();
+  await new Promise((resolve) => setImmediate(resolve));
+  refresher.stop();
+  release();
+  await pending;
+  gate = undefined;
+  assert.equal(writes.length, 1);
+  signedIn = false;
+  await refresher.refresh();
+  assert.equal(writes.length, 1);
+  assert.equal(dashboardOutcome(500), DashboardOutcome.Failed);
+  assert.equal(dashboardOutcome(401), DashboardOutcome.SignedOut);
+});
+
+test("replaces more stored widget snapshots than one write accepts", async () => {
+  const { create, fromBinary, toBinary } = await import("@bufbuild/protobuf");
+  const pb = await import("@repo/protos/anydash/v1/anydash_pb");
+  const { WidgetRefresher, MAX_SNAPSHOTS_PER_WRITE, replacementBatches } =
+    await import("./widgets.mjs");
+  assert.deepEqual(replacementBatches([]), [
+    { snapshots: [], replaceAll: true },
+  ]);
+  // Two 60-widget dashboards merged one at a time hold 120 snapshots.
+  const ids = (dashboardId) =>
+    Array.from({ length: 60 }, (_, index) => `${dashboardId}-${index}`);
+  let stored = ["first", "second"].flatMap((dashboardId) =>
+    ids(dashboardId).map((widgetId) =>
+      create(pb.NativeWidgetSnapshotSchema, {
+        dashboardId,
+        widgetId,
+        spaceId: "space",
+        sharingState: pb.SharingState.PRIVATE,
+        summary: { title: "old" },
+      }),
+    ),
+  );
+  const order = stored.map((entry) => entry.widgetId);
+  const writes = [];
+  // Mirrors the collector store: at most 100 snapshots per request, a
+  // replacement clears the set and a merge appends new widgets in order.
+  const collector = {
+    async forward(method, body) {
+      if (method === "ListNativeWidgetSnapshots")
+        return {
+          status: 200,
+          body: Buffer.from(
+            toBinary(
+              pb.ListNativeWidgetSnapshotsResponseSchema,
+              create(pb.ListNativeWidgetSnapshotsResponseSchema, {
+                snapshots: stored,
+              }),
+            ),
+          ),
+        };
+      const request = fromBinary(
+        pb.PutNativeWidgetSnapshotsRequestSchema,
+        body,
+      );
+      writes.push(request);
+      if (request.snapshots.length > MAX_SNAPSHOTS_PER_WRITE)
+        return { status: 400, body: Buffer.alloc(0) };
+      const next = request.replaceAll ? [] : [...stored];
+      for (const snapshot of request.snapshots) {
+        const index = next.findIndex(
+          (entry) => entry.widgetId === snapshot.widgetId,
+        );
+        if (index === -1) next.push(snapshot);
+        else next[index] = snapshot;
+      }
+      stored = next;
+      return { status: 200, body: Buffer.alloc(0) };
+    },
+  };
+  const host = {
+    async apiCall(_service, _method, body) {
+      const { dashboardId } = fromBinary(
+        pb.QueryDashboardDataRequestSchema,
+        body,
+      );
+      return {
+        status: 200,
+        body: Buffer.from(
+          toBinary(
+            pb.QueryDashboardDataResponseSchema,
+            create(pb.QueryDashboardDataResponseSchema, {
+              widgets: ids(dashboardId).map((widgetId) => ({
+                widgetId,
+                sharingState: pb.SharingState.PRIVATE,
+                summary: { title: "new" },
+              })),
+            }),
+          ),
+        ),
+      };
+    },
+  };
+  const logs = [];
+  await new WidgetRefresher({
+    host,
+    collector,
+    auth: { signedIn: async () => true },
+    clientVersion: "1.2.3",
+    log: (entry) => logs.push(entry),
+  }).refresh();
+  assert.deepEqual(
+    writes.map((request) => [request.snapshots.length, request.replaceAll]),
+    [
+      [100, true],
+      [20, false],
+    ],
+  );
+  assert.deepEqual(
+    stored.map((entry) => entry.widgetId),
+    order,
+  );
+  assert.ok(stored.every((entry) => entry.summary?.title === "new"));
+  assert.equal(logs.at(-1).event, "anydash_widget_refresh_written");
+});

@@ -162,7 +162,7 @@ func (h *handler) challenge(w http.ResponseWriter, code, description string) {
 
 func (h *handler) reject(w http.ResponseWriter, r *http.Request, err error) {
 	e := apperr.As(err)
-	attrs := []any{"reason", e.Reason.String(), "trace_id", apperr.TraceID(r.Context())}
+	attrs := []any{"reason", e.Reason.String()}
 	switch e.Reason {
 	case mcpav1.ErrorReason_ERROR_REASON_UNAUTHENTICATED:
 		h.cfg.Log.InfoContext(r.Context(), "mcp request rejected", attrs...)

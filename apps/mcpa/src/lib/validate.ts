@@ -4,6 +4,7 @@
 export const NAME_MAX_BYTES = 100;
 export const DESCRIPTION_MAX_BYTES = 1000;
 export const ALLOWLIST_MAX_ENTRIES = 200;
+export const MODEL_NAME_MAX_BYTES = 200;
 
 export const byteLength = (value: string) =>
   new TextEncoder().encode(value).length;
@@ -22,10 +23,21 @@ export function descriptionError(value: string): string | undefined {
     : undefined;
 }
 
-export function isHttpUrl(value: string): boolean {
+/** Validates one model name like the server: 1-200 bytes, no spaces or controls. */
+export function modelNameError(value: string): string | undefined {
+  const model = value.trim();
+  if (!model) return "Enter a model name.";
+  if (byteLength(model) > MODEL_NAME_MAX_BYTES)
+    return "Use a shorter model name (up to 200 bytes).";
+  if (/[\s\u0000-\u001f\u007f-\u009f]/u.test(model))
+    return "A model name can't contain spaces or control characters.";
+  return undefined;
+}
+
+/** Requires an https URL: the server rejects plain http upstream URLs. */
+export function isHttpsUrl(value: string): boolean {
   try {
-    const url = new URL(value.trim());
-    return url.protocol === "https:" || url.protocol === "http:";
+    return new URL(value.trim()).protocol === "https:";
   } catch {
     return false;
   }

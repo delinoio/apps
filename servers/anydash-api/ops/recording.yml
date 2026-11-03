@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Thresholds, windows and durations are operator-configurable. Initial values are operational triggers, not SLOs.
+groups:
+  - name: anydash-recording
+    interval: 30s
+    rules:
+      # A request that exceeds the server deadline returns 504 without a request sample, because the
+      # handler that records it is dropped. anydash_api_timeouts_total is its only sample, so the
+      # timeouts count as requests and as server errors. The name matcher keeps the sum defined when
+      # either series is missing; the timeout counter has no outcome label, so it matches the
+      # error filter below.
+      - record: anydash:api_samples:5m
+        expr: sum by (job) (increase({__name__=~"anydash_api_requests_total|anydash_api_timeouts_total"}[5m]))
+      - record: anydash:api_server_errors:ratio5m
+        expr: sum by (job) (increase({__name__=~"anydash_api_requests_total|anydash_api_timeouts_total",outcome!~"success|client_error"}[5m])) / anydash:api_samples:5m
+      - record: anydash:collection_snapshots:1h
+        expr: sum by (job, provider) (increase(anydash_collection_snapshots_total[1h]))
+      - record: anydash:collection_failures:ratio1h
+        expr: sum by (job, provider) (increase(anydash_collection_snapshots_total{status=~"failed|rate_limited"}[1h])) / anydash:collection_snapshots:1h
+      - record: anydash:parser_devices:uploaded1h
+        expr: sum by (job, tool) (max by (job, tool, state) (anydash_parser_devices{tool=~"codex|claude_code"}))
+      - record: anydash:parser_partial:ratio1h
+        expr: sum by (job, tool) (max by (job, tool, state) (anydash_parser_devices{tool=~"codex|claude_code",state="partial"})) / anydash:parser_devices:uploaded1h

@@ -64,7 +64,7 @@ func New(ctx context.Context, cfg *config.Serve, log *slog.Logger, metrics *obs.
 	if err != nil {
 		return nil, fmt.Errorf("master keys: %w", err)
 	}
-	db, err := store.Open(ctx, cfg.URL, cfg.DependencyTimeout)
+	db, err := store.Open(ctx, cfg.URL, cfg.DependencyTimeout, store.ModeServe)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +95,7 @@ func New(ctx context.Context, cfg *config.Serve, log *slog.Logger, metrics *obs.
 		APIResource:     cfg.APIResource,
 		DelcoreResource: cfg.DelcoreResource,
 		MFAClaim:        cfg.MFAClaim,
+		ReauthURL:       cfg.MFAReauthURL,
 		Log:             log,
 	})
 	authenticator := auth.NewAuthenticator(auth.AuthenticatorConfig{
@@ -108,7 +109,7 @@ func New(ctx context.Context, cfg *config.Serve, log *slog.Logger, metrics *obs.
 	})
 	// Group snapshots refresh at most once per authorization cache TTL, so
 	// group changes reach call keys on the same cadence as Delcore results.
-	authorizer := authz.New(db, dc, cfg.AuthorizeCacheTTL, log)
+	authorizer := authz.New(db, dc, cfg.AuthorizeCacheTTL, log).WithRefreshTimeout(cfg.DependencyTimeout)
 	svc := service.New(service.Config{
 		Store:      db,
 		Keys:       keys,

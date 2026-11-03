@@ -639,7 +639,7 @@ pub async fn serve(
             _ = &mut shutdown => break,
             Some(_) = connections.join_next(), if !connections.is_empty() => {},
             accepted = listener.accept() => {
-                let (socket, _) = accepted?;
+                let (socket, peer) = accepted?;
                 let app = app.clone();
                 let mut stopped = stop.subscribe();
                 connections.spawn(async move {
@@ -647,8 +647,10 @@ pub async fn serve(
                     let received = first_request.clone();
                     let control = Arc::new(IdleControl::default());
                     let tracking = control.clone();
-                    let service = hyper::service::service_fn(move |request| {
+                    let service = hyper::service::service_fn(move |mut request: hyper::Request<hyper::body::Incoming>| {
                         received.notify_one();
+                        // Handlers that key limits by client address read the socket peer here.
+                        request.extensions_mut().insert(axum::extract::ConnectInfo(peer));
                         let (request, exchange) = track_request(request, &tracking);
                         let app = app.clone();
                         async move {

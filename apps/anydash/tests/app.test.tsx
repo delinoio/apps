@@ -1,0 +1,687 @@
+// SPDX-License-Identifier: Apache-2.0
+import { afterEach, describe, expect, it } from "@rstest/core";
+import { act, cleanup, waitFor } from "@lynx-js/react/testing-library";
+import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
+import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
+import {
+  CollectorRunState,
+  EnrollmentState,
+  ErrorReason,
+  NativeWidgetSnapshotSchema,
+  OnboardingState,
+  SharingState,
+  SpacePermission,
+  WidgetDataSchema,
+} from "@repo/protos/anydash/v1/anydash_pb";
+import { Copy, ExtraCopy } from "../src/copy";
+import { HostPlatform } from "../src/host";
+import { widgetKey } from "../src/model/cache";
+import * as fixtures from "./fixtures/scenarios";
+import { renderApp, type Rendered } from "./harness";
+
+let app: Rendered | undefined;
+afterEach(() => {
+  app?.unmount();
+  app = undefined;
+  cleanup();
+});
+const dashboardPath = `/spaces/${fixtures.ids.personal}/dashboards/${fixtures.ids.overview}`;
+const teamPath = `/spaces/${fixtures.ids.team}/dashboards/${fixtures.ids.teamBoard}`;
+
+describe("onboarding", () => {
+  it("blocks the personal space until a collector device is connected", async () => {
+    app = await renderApp({
+      onboarding: OnboardingState.DEVICE_REQUIRED,
+      team: true,
+    });
+    await app.see(Copy.connectDevice);
+    expect(app.text()).toContain(Copy.connectDeviceDetail);
+    expect(app.text()).toContain(Copy.downloadApp);
+    expect(app.text()).toContain(Copy.installCli);
+    expect(app.text()).toContain(Copy.teamWithoutDevice);
+    expect(
+      app.host.api.calls.some(
+        (call) =>
+          call.method === "ListDashboards" &&
+          (call.request as { spaceId: string }).spaceId ===
+            fixtures.ids.personal,
+      ),
+    ).toBe(false);
+    await app.tap(Copy.installCli);
+    await app.see("curl -fsSL https://anydash.delino.io/install.sh | sh");
+  });
+
+  it("opens team dashboards without a personal device", async () => {
+    app = await renderApp({
+      onboarding: OnboardingState.DEVICE_REQUIRED,
+      team: true,
+      path: teamPath,
+    });
+    await app.see("Codex · 5-hour limit");
+    await app.see("62% left");
+    expect(app.text()).not.toContain(Copy.connectDevice);
+  });
+
+  it("enrolls this computer through the collector on desktop", async () => {
+    app = await renderApp({
+      onboarding: OnboardingState.DEVICE_REQUIRED,
+      platform: HostPlatform.Desktop,
+    });
+    await app.see(ExtraCopy.connectThisComputer);
+    expect(app.text()).not.toContain(Copy.downloadApp);
+  });
+});
+
+describe("session", () => {
+  it("leaves the Delcore token to the host", async () => {
+    app = await renderApp({ team: true });
+    await app.see("62% left");
+    expect(app.host.calls.some((call) => call.method === "delcoreToken")).toBe(
+      false,
+    );
+    const carriers = app.host.api.calls.filter(
+      (call) =>
+        call.method === "ConnectAccount" || call.method === "ListSpaces",
+    );
+    expect(carriers.map((call) => call.method)).toEqual([
+      "ConnectAccount",
+      "ListSpaces",
+    ]);
+    for (const call of carriers)
+      expect(
+        (call.request as { delcoreAccessToken: string }).delcoreAccessToken,
+      ).toBe("");
+  });
+});
+
+describe("dashboard states", () => {
+  it("renders every metric state, the duplicate notice and the header", async () => {
+    app = await renderApp({ path: dashboardPath });
+    await app.see("62% left");
+    for (const value of [
+      "Not provided",
+      "Couldn’t refresh",
+      "Authentication expired",
+      "Partial aggregation · 12 records skipped",
+      "Can’t be calculated",
+      "Sharing ended",
+      "$41.80",
+      Copy.duplicateDevices(3),
+      Copy.loading,
+      "Asia/Seoul · Updated",
+      Copy.refresh,
+      Copy.edit,
+    ])
+      expect(app.text()).toContain(value);
+    const groups = app.find("[accessibility-role-description='group']");
+    expect(groups.length).toBe(9);
+    expect(groups[0].getAttribute("accessibility-label")).toBe(
+      "Codex · 5-hour limit",
+    );
+  });
+
+  it("hides Edit when the space does not grant it", async () => {
+    app = await renderApp({
+      team: true,
+      teamPermissions: [SpacePermission.VIEW_DASHBOARDS],
+      path: teamPath,
+    });
+    await app.see("62% left");
+    expect(app.text()).not.toContain(Copy.edit);
+  });
+
+  it("shows the update-required banner and blocks server features", async () => {
+    app = await renderApp({ updateRequired: true, path: dashboardPath });
+    await app.see(Copy.updateRequiredDetail);
+    expect(app.text()).not.toContain("62% left");
+  });
+
+  it("shows access denied for dashboards outside the caller's roles", async () => {
+    app = await renderApp({
+      dashboardError: ErrorReason.PERMISSION_DENIED,
+      path: dashboardPath,
+    });
+    await app.see(Copy.accessDenied);
+    expect(app.text()).toContain(Copy.accessDeniedDetail);
+    expect(app.text()).toContain(Copy.goToDashboards);
+  });
+
+  it("shows access denied for dashboard links to spaces the caller left", async () => {
+    const leftSpace = "0192f000-0000-7000-8000-0000000000b9";
+    app = await renderApp({
+      path: `/spaces/${leftSpace}/dashboards/${fixtures.ids.teamBoard}`,
+    });
+    await app.see(Copy.accessDenied);
+    expect(app.text()).toContain(Copy.accessDeniedDetail);
+    // The spaces are reloaded once in case the caller joined after sign-in.
+    const listSpaces = () =>
+      app!.host.api.calls.filter((call) => call.method === "ListSpaces").length;
+    expect(listSpaces()).toBe(2);
+    await app.tap(Copy.goToDashboards);
+    await app.see("62% left");
+    expect(app.text()).not.toContain(Copy.accessDenied);
+  });
+
+  it("shows the error screen with copyable correlation IDs", async () => {
+    app = await renderApp({
+      dashboardError: ErrorReason.INTERNAL,
+      path: dashboardPath,
+    });
+    // Unexpected server failures retry twice before the error screen.
+    await app.see(Copy.somethingWrong, 10_000);
+    await app.see(`${Copy.correlationId} 0192f9aa-`);
+    await app.tap(Copy.copyDetails);
+    expect(app.host.copied.at(-1)).toMatch(/^Correlation ID 0192f9aa-/);
+  }, 15_000);
+
+  it("shows the loading skeleton while data is pending", async () => {
+    app = await renderApp({ pendingData: true, path: dashboardPath });
+    await app.see(Copy.loadingDashboard);
+    expect(app.find(".ad-sk").length).toBeGreaterThan(0);
+  });
+
+  it("shows the empty state and the dashboard quota guidance", async () => {
+    app = await renderApp({ personalDashboards: false, quotaOnCreate: true });
+    await app.see(Copy.noDashboards);
+    expect(app.text()).toContain(Copy.dashboardLimit);
+    await app.tap(Copy.createDashboard);
+    await app.see(ExtraCopy.dashboardName);
+  });
+
+  it("limits manual refresh to once per minute and shows the wait", async () => {
+    app = await renderApp({ path: dashboardPath });
+    await app.see("62% left");
+    await app.tap(Copy.refresh);
+    await app.see("Refresh available in");
+    const refresh = app
+      .find(".ad-small-button")
+      .find((element) => element.textContent === Copy.refresh)!;
+    expect(refresh.classList.contains("lui-disabled")).toBe(true);
+    expect(refresh.getAttribute("accessibility-label")).toMatch(
+      /^Refresh\. Refresh available in \d+s$/,
+    );
+    expect(
+      app.host.api.calls.filter(
+        (call) => call.method === "RequestConnectionRefresh",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe("layouts", () => {
+  it.each([
+    [1440, ".ad-cell"],
+    [900, ".ad-flow-half"],
+    [390, ".ad-flow-full"],
+  ])("lays out widgets for width %i", async (width, selector) => {
+    app = await renderApp({ path: dashboardPath, width });
+    await app.see("62% left");
+    expect(app.find(selector).length).toBe(9);
+  });
+});
+
+describe("dialogs", () => {
+  const focused = () =>
+    (
+      (
+        globalThis as {
+          __anydashUiCalls?: { method: string; element?: Element | null }[];
+        }
+      ).__anydashUiCalls ?? []
+    ).filter((call) => call.method === "setFocus" || call.method === "focus");
+  const label = (element?: Element | null) =>
+    element?.querySelector(".lui-button-label")?.textContent?.trim() ??
+    element?.getAttribute("accessibility-label");
+
+  it("moves Tab focus through the modal body controls on native hosts", async () => {
+    app = await renderApp({ path: dashboardPath });
+    await app.see("62% left");
+    await app.tap(`${ExtraCopy.chooseDashboard}: Overview`);
+    await app.see(ExtraCopy.renameDashboard);
+    await waitFor(() =>
+      expect(label(focused().at(-1)?.element)).toBe(Copy.cancel),
+    );
+    const backdrop = app.find(".lui-dialog-backdrop")[0];
+    const press = async (shiftKey = false) => {
+      const before = focused().length;
+      await app!.key(backdrop, "Tab", shiftKey);
+      await waitFor(() => expect(focused().length).toBe(before + 1));
+      return label(focused().at(-1)?.element);
+    };
+    // Cancel is last, so Tab wraps to the first choice in the body.
+    expect(await press()).toBe("✓ Overview");
+    expect(await press()).toBe(Copy.createDashboard);
+    expect(await press()).toBe(ExtraCopy.renameDashboard);
+    expect(await press(true)).toBe(Copy.createDashboard);
+    expect(await press(true)).toBe("✓ Overview");
+    expect(await press(true)).toBe(Copy.cancel);
+    await app.key(backdrop, "Escape");
+    await waitFor(() =>
+      expect(app!.find(".lui-dialog-backdrop").length).toBe(0),
+    );
+  });
+});
+
+describe("phone layout", () => {
+  it("keeps the dashboard picker on phones", async () => {
+    app = await renderApp({
+      path: dashboardPath,
+      width: 390,
+      platform: HostPlatform.Ios,
+    });
+    await app.see("62% left");
+    await app.tap(`${ExtraCopy.chooseDashboard}: Overview`);
+    await app.see(ExtraCopy.chooseDashboard);
+    await app.see("✓ Overview");
+  });
+});
+
+describe("editor", () => {
+  it("recovers from a version conflict by loading the latest dashboard", async () => {
+    app = await renderApp({ path: dashboardPath, conflictOnLayout: true });
+    await app.see("62% left");
+    await app.tap(Copy.edit);
+    await app.see(ExtraCopy.editorHint);
+    const card = app.find(".ad-widget")[0];
+    await app.tap(card.getAttribute("accessibility-label")!);
+    await app.key(card, "ArrowRight");
+    await app.see("column 2, row 1, 4 columns wide, 2 rows tall.");
+    await app.key(card, "ArrowDown", true);
+    await app.see("column 2, row 1, 4 columns wide, 3 rows tall.");
+    await app.tap(Copy.done);
+    await app.see(Copy.dashboardChanged);
+    expect(app.text()).toContain(Copy.dashboardChangedDetail);
+    const saves = () =>
+      app!.host.api.calls.filter(
+        (call) => call.method === "UpdateWidgetLayout",
+      );
+    expect(saves().length).toBe(1);
+    await app.tap(Copy.continueEditing);
+    await app.see(ExtraCopy.editorHint);
+    // The draft restarts from the latest version; nothing is merged silently.
+    const fresh = app.find(".ad-widget")[0];
+    expect(fresh.getAttribute("accessibility-label")).toContain(
+      "column 1, row 1",
+    );
+    await app.tap(fresh.getAttribute("accessibility-label")!);
+    await app.tap(ExtraCopy.moveRight);
+    await app.tap(Copy.done);
+    await app.see("62% left");
+    expect(saves().length).toBe(2);
+    expect(
+      (saves()[1].request as { expectedVersion: bigint }).expectedVersion,
+    ).toBe(8n);
+  });
+
+  it("keeps unsaved moves when a widget is added or removed while editing", async () => {
+    app = await renderApp({ path: dashboardPath });
+    await app.see("62% left");
+    await app.tap(Copy.edit);
+    await app.see(ExtraCopy.editorHint);
+    const card = app.find(".ad-widget")[0];
+    const label = card.getAttribute("accessibility-label")!;
+    await app.tap(label);
+    await app.key(card, "ArrowRight");
+    await app.see("column 2, row 1, 4 columns wide, 2 rows tall.");
+    const position = () =>
+      app!.find(".ad-widget")[0].getAttribute("accessibility-label")!;
+    const calls = (method: string) =>
+      app!.host.api.calls.filter((call) => call.method === method);
+    await app.tap(ExtraCopy.addWidget);
+    await app.tap("Codex · Codex", ".lui-dialog");
+    await app.tap(ExtraCopy.addWidget, ".lui-dialog");
+    await waitFor(() => expect(calls("AddWidget").length).toBe(1));
+    await waitFor(() =>
+      expect(app!.find(".ad-widget").length).toBe(
+        fixtures.makeDashboard().widgets.length + 1,
+      ),
+    );
+    expect(position()).toContain("column 2, row 1");
+    const added = app.find(".ad-widget").at(-1)!;
+    await app.tap(added.getAttribute("accessibility-label")!);
+    await app.tap(Copy.removeWidget);
+    await waitFor(() => expect(calls("RemoveWidget").length).toBe(1));
+    await waitFor(() =>
+      expect(app!.find(".ad-widget").length).toBe(
+        fixtures.makeDashboard().widgets.length,
+      ),
+    );
+    expect(position()).toContain("column 2, row 1");
+    await app.tap(Copy.done);
+    await waitFor(() => expect(calls("UpdateWidgetLayout").length).toBe(1));
+    const save = calls("UpdateWidgetLayout")[0].request as {
+      expectedVersion: bigint;
+      updates: { widgetId: string; layout: { x: number; y: number } }[];
+    };
+    const moved = save.updates.find(
+      (update) => update.widgetId === fixtures.ids.widget(1),
+    );
+    expect(moved?.layout.x).toBe(1);
+  });
+
+  it("renames a dashboard after widget edits with the latest version", async () => {
+    app = await renderApp({ path: dashboardPath });
+    await app.see("62% left");
+    const calls = (method: string) =>
+      app!.host.api.calls.filter((call) => call.method === method);
+    await app.tap(Copy.edit);
+    await app.see(ExtraCopy.editorHint);
+    const last = app.find(".ad-widget").at(-1)!;
+    await app.tap(last.getAttribute("accessibility-label")!);
+    await app.tap(Copy.removeWidget);
+    await waitFor(() => expect(calls("RemoveWidget").length).toBe(1));
+    const card = app.find(".ad-widget")[0];
+    await app.tap(card.getAttribute("accessibility-label")!);
+    await app.key(card, "ArrowRight");
+    await app.see("column 2, row 1, 4 columns wide, 2 rows tall.");
+    await app.tap(Copy.done);
+    await waitFor(() => expect(calls("UpdateWidgetLayout").length).toBe(1));
+    await app.see(Copy.edit);
+    await app.tap(`${ExtraCopy.chooseDashboard}: Overview`);
+    await app.tap(ExtraCopy.renameDashboard, ".lui-dialog");
+    await app.tap(ExtraCopy.save, ".lui-dialog");
+    await waitFor(() => expect(calls("RenameDashboard").length).toBe(1));
+    // RemoveWidget and UpdateWidgetLayout each advanced the version from 7.
+    expect(
+      (calls("RenameDashboard")[0].request as { expectedVersion: bigint })
+        .expectedVersion,
+    ).toBe(9n);
+    await waitFor(() =>
+      expect(app!.text()).not.toContain(Copy.dashboardChangedDetail),
+    );
+  });
+
+  it("confirms the shared scope before adding a widget to a team dashboard", async () => {
+    app = await renderApp({ team: true, path: teamPath });
+    await app.see("62% left");
+    await app.tap(Copy.edit);
+    await app.tap(ExtraCopy.addWidget);
+    await app.tap("Codex · Codex", ".lui-dialog");
+    await app.tap(ExtraCopy.addWidget, ".lui-dialog");
+    await app.see(Copy.shareTitle("Team Acme"));
+    expect(app.text()).toContain("Codex subscription limits");
+    expect(app.text()).toContain(
+      "They can’t see your connection, credentials or any other data.",
+    );
+    await app.key(app.find(".lui-dialog-backdrop")[0], "Escape");
+    expect(app.text()).not.toContain(Copy.shareTitle("Team Acme"));
+    expect(app.host.api.calls.some((call) => call.method === "AddWidget")).toBe(
+      false,
+    );
+  });
+});
+
+describe("sharing ended", () => {
+  it("purges the cached data and native snapshot of an ended widget", async () => {
+    const ended = fixtures.ids.widget(1);
+    const cached = fixtures
+      .makeWidgetData()
+      .find((entry) => entry.widgetId === ended)!;
+    const cache = new Map([
+      [
+        widgetKey("user-key", ended),
+        base64Encode(toBinary(WidgetDataSchema, cached)),
+      ],
+    ]);
+    app = await renderApp({
+      path: dashboardPath,
+      cache,
+      endedWidgetIds: [ended],
+      platform: HostPlatform.Desktop,
+    });
+    await app.see("Couldn’t refresh");
+    await app.see(Copy.sharingEndedDetail);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.host.cache.has(widgetKey("user-key", ended))).toBe(false);
+    expect(app.text()).not.toContain("62% left");
+    const snapshot = app.host.api.snapshots.get(ended);
+    expect(snapshot?.sharingState).toBe(SharingState.ENDED);
+    expect(snapshot?.summary).toBeUndefined();
+    // Other widgets keep their cached copy for offline launches.
+    expect(
+      app.host.cache.has(widgetKey("user-key", fixtures.ids.widget(2))),
+    ).toBe(true);
+    // The purge settles: stripping ended data must not re-trigger itself.
+    const writes = () =>
+      app!.host.api.calls.filter(
+        (call) => call.method === "PutNativeWidgetSnapshots",
+      ).length;
+    const settled = writes();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(writes()).toBe(settled);
+    expect(settled).toBeLessThanOrEqual(2);
+  });
+
+  it("removes the desktop native snapshots of removed widgets and deleted dashboards", async () => {
+    app = await renderApp({
+      path: dashboardPath,
+      platform: HostPlatform.Desktop,
+    });
+    await app.see("62% left");
+    const snapshots = app.host.api.snapshots;
+    const removed = fixtures.ids.widget(2);
+    await waitFor(() => expect(snapshots.has(removed)).toBe(true));
+    await app.tap(Copy.edit);
+    const card = app
+      .find(".ad-widget")
+      .find((element) =>
+        element
+          .getAttribute("accessibility-label")
+          ?.includes("Absolute remaining"),
+      )!;
+    await app.tap(card.getAttribute("accessibility-label")!);
+    await app.tap(Copy.removeWidget);
+    await waitFor(() => expect(snapshots.has(removed)).toBe(false));
+    expect(snapshots.has(fixtures.ids.widget(1))).toBe(true);
+    await app.tap(Copy.done);
+    await app.tap(`${ExtraCopy.chooseDashboard}: Overview`);
+    await app.tap(Copy.deleteDashboard, ".lui-dialog");
+    await app.tap(Copy.deleteDashboard, ".lui-dialog");
+    await waitFor(() => expect(snapshots.size).toBe(0));
+  });
+
+  it("writes ENDED snapshots for mobile widget extensions", async () => {
+    app = await renderApp({
+      path: dashboardPath,
+      endedWidgetIds: [fixtures.ids.widget(1)],
+      platform: HostPlatform.Ios,
+    });
+    await app.see(Copy.sharingEndedDetail);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const snapshots = app.host.mobileSnapshots.map((raw) =>
+      fromBinary(NativeWidgetSnapshotSchema, base64Decode(raw)),
+    );
+    const ended = snapshots.find(
+      (entry) => entry.widgetId === fixtures.ids.widget(1),
+    );
+    expect(ended?.sharingState).toBe(SharingState.ENDED);
+    expect(ended?.summary).toBeUndefined();
+    // Mobile apps are viewers: no editing controls.
+    expect(app.text()).not.toContain(Copy.edit);
+  });
+});
+
+describe("device approval", () => {
+  const path = `/connect/${fixtures.ids.enrollment}`;
+  it("shows the device, expiry and attempts, then approves the code", async () => {
+    app = await renderApp({ path, codeMismatch: true });
+    await app.see(Copy.approveDevice);
+    expect(app.text()).toContain("studio-mac · macOS arm64 · Collector 1.0.3");
+    expect(app.text()).toContain(Copy.enterCode);
+    await app.see("attempts left");
+    expect(app.text()).toMatch(/Expires in \d+:\d\d · 4 attempts left/);
+    const input = app.find("input.ad-code-input")[0];
+    expect(input.getAttribute("accessibility-label")).toBe(Copy.enterCode);
+    // The single critical input receives focus on load.
+    const ui =
+      (globalThis as { __anydashUiCalls?: { method: string }[] })
+        .__anydashUiCalls ?? [];
+    expect(ui.some((call) => call.method === "focus")).toBe(true);
+    const type = async (value: string) => {
+      await act(async () => {
+        input.dispatchEvent(
+          new CustomEvent("bindEvent:input", { detail: { value } }),
+        );
+      });
+    };
+    await type("bcdf-ghjk");
+    await app.tap(Copy.approve);
+    await app.see(ExtraCopy.codeMismatch);
+    await app.see("3 attempts left");
+    await app.tap(Copy.approve);
+    await app.see(ExtraCopy.deviceApproved);
+  });
+
+  it("reloads spaces after approving the first device", async () => {
+    app = await renderApp({
+      path,
+      onboarding: OnboardingState.DEVICE_REQUIRED,
+    });
+    await app.see(Copy.approveDevice);
+    const input = app.find("input.ad-code-input")[0];
+    await act(async () => {
+      input.dispatchEvent(
+        new CustomEvent("bindEvent:input", { detail: { value: "bcdf-ghjk" } }),
+      );
+    });
+    await app.tap(Copy.approve);
+    await app.see(ExtraCopy.deviceApproved);
+    expect(
+      app.host.api.calls.filter((call) => call.method === "ListSpaces").length,
+    ).toBe(2);
+    await app.tap(Copy.goToDashboards);
+    await app.see(Copy.noDashboards);
+    expect(app.text()).not.toContain(Copy.connectDevice);
+  });
+
+  it("explains invalid codes", async () => {
+    app = await renderApp({ path, enrollmentState: 6 });
+    await app.see(Copy.codeInvalid);
+    expect(app.text()).toContain(
+      "The code expired, was already used, or was entered wrong 5 times. Run anydash login again, or restart sign-in in the app, to get a new code.",
+    );
+  });
+});
+
+describe("settings", () => {
+  it("lists devices and connections and confirms AnyDash data deletion", async () => {
+    app = await renderApp({ path: "/settings" });
+    await app.see("studio-mac");
+    await app.see("Grok · Grok");
+    await app.tap(Copy.deleteData);
+    await app.see(Copy.deleteDataTitle);
+    expect(app.text()).toContain(Copy.deleteDataLink);
+    await app.tap(Copy.deleteDataLink);
+    expect(app.host.opened.at(-1)).toBe("https://delino.io/account");
+    await app.key(app.find(".lui-dialog-backdrop")[0], "Escape");
+    expect(app.text()).not.toContain(Copy.deleteDataTitle);
+  });
+
+  it("clears the collector's native widget snapshots on desktop sign-out", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+    });
+    await app.see(ExtraCopy.signOut);
+    const widgetId = fixtures.ids.widget(1);
+    app.host.api.snapshots.set(
+      widgetId,
+      create(NativeWidgetSnapshotSchema, { widgetId }),
+    );
+    await app.tap(ExtraCopy.signOut);
+    await waitFor(() => expect(app!.host.api.snapshots.size).toBe(0));
+    const methods = app.host.api.calls.map((call) => call.method);
+    expect(methods.lastIndexOf("PutNativeWidgetSnapshots")).toBeGreaterThan(
+      methods.indexOf("Logout"),
+    );
+    expect(methods.indexOf("Logout")).toBeGreaterThanOrEqual(0);
+  });
+
+  it("reloads the collector status after changing local credentials", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+    });
+    await app.see(ExtraCopy.removeFromComputer);
+    const count = (label: string) =>
+      app!
+        .find(".lui-button-label")
+        .filter((element) => element.textContent?.trim() === label).length;
+    const using = count(ExtraCopy.useOnComputer);
+    await app.tap(ExtraCopy.removeFromComputer);
+    await waitFor(() => expect(count(ExtraCopy.removeFromComputer)).toBe(0));
+    expect(count(ExtraCopy.useOnComputer)).toBe(using + 1);
+    const claude = app.host.api.calls.filter(
+      (call) => call.method === "RemoveConnectionCredential",
+    );
+    expect(claude.length).toBe(1);
+    await app.tap(ExtraCopy.useOnComputer);
+    await app.tap(Copy.connect, ".lui-dialog");
+    await waitFor(() => expect(count(ExtraCopy.removeFromComputer)).toBe(1));
+  });
+
+  it("enrolls this computer from Settings when the collector is not signed in", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+      collectorRunState: CollectorRunState.NOT_LOGGED_IN,
+    });
+    await app.see(ExtraCopy.collectorNotLoggedIn);
+    await app.tap(ExtraCopy.connectThisComputer);
+    await app.see(ExtraCopy.approveInBrowser);
+    await app.see("WDJB-MJHT");
+    const api = app.host.api;
+    expect(
+      api.calls.filter((call) => call.method === "StartLogin").length,
+    ).toBe(1);
+    expect(app.host.opened.at(-1)).toBe(api.collectorLogin?.verificationUrl);
+    const spaceLoads = api.calls.filter(
+      (call) => call.method === "ListSpaces",
+    ).length;
+    // The collector finishes the enrollment after browser approval.
+    api.collectorLogin!.state = EnrollmentState.CONSUMED;
+    api.collectorRunState = CollectorRunState.RUNNING;
+    await app.see(ExtraCopy.collectorRunning, 6_000);
+    expect(app.text()).not.toContain(ExtraCopy.approveInBrowser);
+    expect(app.text()).not.toContain(ExtraCopy.connectThisComputer);
+    await waitFor(() =>
+      expect(
+        api.calls.filter((call) => call.method === "ListSpaces").length,
+      ).toBeGreaterThan(spaceLoads),
+    );
+  }, 15_000);
+
+  it("offers enrolling again when the collector's credentials are inactive", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+      collectorRunState: CollectorRunState.CREDENTIALS_INACTIVE,
+    });
+    await app.see(ExtraCopy.collectorInactive);
+    await app.tap(ExtraCopy.connectThisComputer);
+    await app.see(ExtraCopy.approveInBrowser);
+    await app.key(app.find(".lui-dialog-backdrop")[0], "Escape");
+    expect(app.text()).not.toContain(ExtraCopy.approveInBrowser);
+  });
+
+  it("offers no enrollment while the collector is signed in", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+    });
+    await app.see(ExtraCopy.collectorRunning);
+    expect(app.text()).not.toContain(ExtraCopy.connectThisComputer);
+  });
+
+  it("shows the Vercel write warning before connecting on desktop", async () => {
+    app = await renderApp({
+      path: "/settings",
+      platform: HostPlatform.Desktop,
+    });
+    await app.see(ExtraCopy.thisComputer);
+    await app.tap(ExtraCopy.addConnection);
+    await app.tap("Vercel");
+    await app.see(Copy.vercelWarning);
+    expect(app.text()).toContain(Copy.teamScopedToken);
+  });
+});

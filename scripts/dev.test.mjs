@@ -28,6 +28,8 @@ import {
 
 const urls = {
   [Api.Mcpa]: "postgres://mcpa:fixture@127.0.0.1:15438/mcpa?sslmode=disable",
+  [Api.AnyDash]:
+    "postgres://anydash:fixture@127.0.0.1:15438/anydash?sslmode=disable",
   [Api.Lane]: "postgres://lane:fixture@127.0.0.1:15437/lane?sslmode=disable",
   [Api.Perfine]:
     "postgres://perfine:fixture@127.0.0.1:15436/perfine?sslmode=disable",
@@ -42,6 +44,7 @@ const urls = {
 };
 const listeners = {
   [Api.Mcpa]: "127.0.0.1:46329",
+  [Api.AnyDash]: "127.0.0.1:46331",
   [Api.Lane]: "127.0.0.1:46326",
   [Api.Perfine]: "127.0.0.1:46323",
   [Api.Delcore]: "127.0.0.1:8080",
@@ -564,6 +567,7 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
     [Api.Perfine, "perfine-api"],
     [Api.Lane, "lane-api"],
     [Api.Mcpa, "mcpa-api"],
+    [Api.AnyDash, "anydash-api"],
   ]) {
     const [command, args] = apiCommand(api, { CARGO_TARGET_DIR: target });
     assert.equal(
@@ -593,6 +597,7 @@ test("root, service-local and Portless Delcore development share the catalog-app
     ["apps/delino-site", "delino-site", 46314],
     ["apps/delino-docs", "delino-docs", 46315],
     ["apps/git-tracker", "git-tracker", 46320],
+    ["apps/anydash", "anydash", 46330],
     ["servers/delcore-api", "delcore-api", 8080],
     ["servers/delitools-api", "delitools-api", 46322],
     ["servers/devbase-api", "devbase-api", 46317],
@@ -784,6 +789,56 @@ test("Managed CPA development keeps its database and Go build API-local", async 
   assert.equal(prepared.env.LISTEN, "127.0.0.1:46329");
   assert.equal(prepared.env.DATABASE_URL, urls[Api.Mcpa]);
   assert.equal(prepared.env.MCPA_ACTIVE_KEY_ID, "fixture-key");
+  assert.equal(prepared.env[databaseHandoff], undefined);
+});
+
+test("AnyDash development keeps its database and configuration API-local", async () => {
+  const yaml = (await import("js-yaml")).default;
+  const compose = yaml.load(
+    readFileSync(new URL("../compose.yaml", import.meta.url), "utf8"),
+  );
+  const service = compose.services["anydash-postgres"];
+  assert.equal(service.image, "postgres:17");
+  assert.deepEqual(service.environment, {
+    POSTGRES_USER: "anydash",
+    POSTGRES_PASSWORD: "local-anydash",
+    POSTGRES_DB: "anydash",
+  });
+  assert.deepEqual(service.ports, [
+    "127.0.0.1:${ANYDASH_POSTGRES_PORT:-55439}:5432",
+  ]);
+  assert.deepEqual(service.volumes, [
+    "anydash-postgres-data:/var/lib/postgresql/data",
+  ]);
+  assert.ok(service.healthcheck.test.join(" ").includes("-h 127.0.0.1"));
+  assert.ok("anydash-postgres-data" in compose.volumes);
+  const config = JSON.parse(
+    readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
+  );
+  const task = config.tasks["@servers/anydash-api#dev"];
+  assert.deepEqual(task.dependsOn, ["//#server-build"]);
+  for (const key of [databaseHandoff, "ANYDASH_*", "CARGO_TARGET_DIR"]) {
+    assert.ok(task.passThroughEnv.includes(key), key);
+    assert.ok(!config.globalPassThroughEnv.includes(key), key);
+    assert.ok(!config.globalEnv.includes(key), key);
+  }
+  const manifest = JSON.parse(
+    readFileSync(
+      new URL("../servers/anydash-api/package.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    manifest.scripts.dev,
+    "infisical run --env=dev --project-config-dir=../.. --path=/anydash-api -- portless run --name anydash-api --app-port 46331 node ../scripts/dev-api.mjs anydash",
+  );
+  const prepared = prepareApiEnvironment(Api.AnyDash, {
+    ...handoff,
+    LISTEN: "0.0.0.0:9999",
+    DATABASE_URL: "postgres://remote.invalid/anydash",
+  });
+  assert.equal(prepared.env.LISTEN, "127.0.0.1:46331");
+  assert.equal(prepared.env.DATABASE_URL, urls[Api.AnyDash]);
   assert.equal(prepared.env[databaseHandoff], undefined);
 });
 

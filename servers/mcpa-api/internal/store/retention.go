@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -84,6 +85,16 @@ type TenantDeletion struct {
 func (s *Store) DeleteTenantData(ctx context.Context, tenantID string, deleted func(tx pgx.Tx, resourceIDs []uuid.UUID) error) (TenantDeletion, error) {
 	var d TenantDeletion
 	err := s.InTx(ctx, func(tx pgx.Tx) error {
+		if s.timeout > 0 {
+			// One deletion runs several statements and cascades, so it keeps
+			// the 4*DependencyTimeout bound of the caller instead of the
+			// per-statement dependency timeout that serve mode sets for
+			// every other call. The setting ends with the transaction.
+			ms := strconv.FormatInt(timeoutMillis(4*s.timeout), 10)
+			if _, err := tx.Exec(ctx, `SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $1, true)`, ms); err != nil {
+				return err
+			}
+		}
 		count := func(dst *int64, sql string) error {
 			tag, err := tx.Exec(ctx, sql, tenantID)
 			if dst != nil {

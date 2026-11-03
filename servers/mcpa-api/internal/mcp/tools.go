@@ -272,7 +272,7 @@ func toolHandler(name string, call rpcCall, h mcpav1connect.McpaServiceHandler, 
 			err = apperr.Internal(merr)
 		}
 		e := apperr.As(err)
-		attrs := []any{"tool", name, "code", e.Code.String(), "reason", e.Reason.String(), "trace_id", apperr.TraceID(ctx), "duration_ms", time.Since(start).Milliseconds()}
+		attrs := []any{"tool", name, "code", e.Code.String(), "reason", e.Reason.String(), "duration_ms", time.Since(start).Milliseconds()}
 		if p != nil {
 			attrs = append(attrs, "actor_kind", p.Kind.String())
 		}

@@ -652,6 +652,28 @@ message GetTenantStatesResponse {
   // One entry per requested tenant ID, in request order.
   repeated TenantStateEntry states = 2;
 }
+// Service-scoped role reads expose only the fixed roles of the requested
+// users in one tenant, never names or other personal data.
+message GetTenantMemberRolesRequest {
+  string tenant_id = 1;
+  repeated string user_ids = 2;
+}
+message TenantMemberRoles {
+  string user_id = 1;
+  // False for a user who is not a current member, is withdrawing, or belongs
+  // to a deleted or unknown tenant; roles are then empty.
+  bool member = 2;
+  repeated Role roles = 3;
+  // Start of the user's current membership. A user who leaves and rejoins
+  // the tenant receives a new value; role changes keep it. Unset when
+  // member is false.
+  google.protobuf.Timestamp member_since = 4;
+}
+message GetTenantMemberRolesResponse {
+  Metadata metadata = 1;
+  // One entry per requested user ID, in request order.
+  repeated TenantMemberRoles members = 2;
+}
 // IngestEvent durably accepts one event. A response promises durable storage
 // and queued aggregation, not updated aggregates.
 message IngestEventRequest {
@@ -940,4 +962,5 @@ service DelcoreService {
   rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
   rpc RetryJob(RetryJobRequest) returns (RetryJobResponse);
   rpc ListAudit(ListAuditRequest) returns (ListAuditResponse);
+  rpc GetTenantMemberRoles(GetTenantMemberRolesRequest) returns (GetTenantMemberRolesResponse);
 }

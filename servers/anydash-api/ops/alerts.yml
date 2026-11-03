@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Thresholds, windows and durations are operator-configurable. Initial values are operational triggers, not SLOs.
+groups:
+  - name: anydash-alerts
+    interval: 30s
+    rules:
+      # API 5xx (server error and dependency unavailable) responses above 2% for 5 minutes,
+      # with at least 20 requests in the window so that low traffic cannot fire.
+      - alert: AnyDashApiServerErrors
+        expr: (anydash:api_server_errors:ratio5m > 0.02) and (anydash:api_samples:5m >= 20)
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          severity: critical
+      # A retention or deletion worker job failed in the last hour.
+      - alert: AnyDashWorkerJobFailed
+        expr: sum by (job, worker_job) (increase(anydash_worker_job_runs_total{worker_job=~"retention|deletion",outcome="failure"}[1h])) > 0
+        labels:
+          severity: critical
+      # The 24-hour deletion deadline is at risk: a job is still pending 20 hours after its request.
+      - alert: AnyDashDeletionDeadlineAtRisk
+        expr: max by (job) (anydash_deletion_oldest_pending_age_seconds) > 72000
+        labels:
+          severity: critical
+      # The LiteLLM price sync has not succeeded for 48 consecutive hours.
+      - alert: AnyDashPriceSyncStale
+        expr: time() - max by (job) (anydash_price_sync_last_success_timestamp_seconds) > 172800
+        labels:
+          severity: warning
+      # A fetched LiteLLM document failed validation; the previous price version stays in use.
+      - alert: AnyDashPriceValidationFailed
+        expr: sum by (job) (increase(anydash_price_sync_validation_failures_total[1h])) > 0
+        labels:
+          severity: warning
+      # A provider's collection failure rate exceeds 20% in 1 hour (FAILED or RATE_LIMITED;
+      # AUTH_EXPIRED and NOT_PROVIDED are user or provider states), with at least 20 snapshots.
+      - alert: AnyDashProviderCollectionFailures
+        expr: (anydash:collection_failures:ratio1h > 0.2) and (anydash:collection_snapshots:1h >= 20)
+        labels:
+          severity: warning
+      # 5% or more of the Codex or Claude Code devices that uploaded in 1 hour report partial
+      # aggregation, which signals a session format change.
+      - alert: AnyDashPartialAggregation
+        expr: anydash:parser_partial:ratio1h >= 0.05
+        labels:
+          severity: warning

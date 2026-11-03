@@ -25,7 +25,12 @@ import {
   oauthReducer,
   OAuthStep,
 } from "../lib/oauth";
-import { isHttpUrl, nameError, parseList } from "../lib/validate";
+import {
+  isHttpsUrl,
+  modelNameError,
+  nameError,
+  parseList,
+} from "../lib/validate";
 import { EmptyState, ErrorState, QueryView } from "../components/states";
 import { Modal, useFocusOnMount } from "../components/modal";
 import { Field } from "../components/field";
@@ -469,13 +474,15 @@ function ApiKeyDialog({
       baseUrl:
         compatible && !baseUrl.trim()
           ? "Enter the service's base URL."
-          : allowsBaseUrl && baseUrl.trim() && !isHttpUrl(baseUrl)
+          : allowsBaseUrl && baseUrl.trim() && !isHttpsUrl(baseUrl)
             ? "Enter a URL starting with https://."
             : undefined,
       models:
         compatible && !modelList.length
           ? "List at least one model name."
-          : undefined,
+          : compatible
+            ? modelList.map(modelNameError).find(Boolean)
+            : undefined,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;

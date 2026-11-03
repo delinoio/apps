@@ -5,7 +5,7 @@ import { Button } from "@packages/ui/components/button";
 import { Input } from "@packages/ui/components/input";
 import { LoadBalancing, type Resource } from "@repo/protos/mcpa/v1/mcpa_pb";
 import { rpc, useInvalidate } from "../lib/hooks";
-import { ALLOWLIST_MAX_ENTRIES } from "../lib/validate";
+import { ALLOWLIST_MAX_ENTRIES, modelNameError } from "../lib/validate";
 import { ErrorState } from "../components/states";
 import { Field } from "../components/field";
 
@@ -28,7 +28,8 @@ export function RoutingView({ resource }: { resource: Resource }) {
   const add = (event: FormEvent) => {
     event.preventDefault();
     const model = draft.trim();
-    if (!model) return setDraftError("Enter a model name.");
+    const invalid = modelNameError(model);
+    if (invalid) return setDraftError(invalid);
     if (models.includes(model))
       return setDraftError("This model is already on the list.");
     if (models.length >= ALLOWLIST_MAX_ENTRIES)

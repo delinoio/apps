@@ -175,20 +175,21 @@ func serve(ctx context.Context, lookup config.Lookup, log *slog.Logger) error {
 func installMCP(a *app.App) error {
 	cfg := a.Config
 	broker := oauth.New(oauth.Config{
-		Store:           store.NewMCPOAuth(a.Store),
-		Keys:            a.Keys,
-		Logto:           a.Logto,
-		Delcore:         a.Delcore,
-		Groups:          a.Authorizer,
-		Clients:         cfg.OAuthClients,
-		PublicURL:       cfg.PublicURL,
-		WebOrigin:       cfg.WebOrigin,
-		MCPResource:     cfg.MCPResource,
-		DelcoreResource: cfg.DelcoreResource,
-		MFAClaim:        cfg.MFAClaim,
-		ReauthURL:       cfg.MFAReauthURL,
-		InsecureCookies: cfg.InsecureCookies(),
-		Log:             a.Log,
+		Store:             store.NewMCPOAuth(a.Store),
+		Keys:              a.Keys,
+		Logto:             a.Logto,
+		Delcore:           a.Delcore,
+		Groups:            a.Authorizer,
+		Clients:           cfg.OAuthClients,
+		PublicURL:         cfg.PublicURL,
+		WebOrigin:         cfg.WebOrigin,
+		MCPResource:       cfg.MCPResource,
+		DelcoreResource:   cfg.DelcoreResource,
+		MFAClaim:          cfg.MFAClaim,
+		ReauthURL:         cfg.MFAReauthURL,
+		InsecureCookies:   cfg.InsecureCookies(),
+		Log:               a.Log,
+		DependencyTimeout: cfg.DependencyTimeout,
 	})
 	a.Authenticator.SetGrantResolver(broker)
 	mcpMount, err := mcp.Mount(mcp.Config{
@@ -212,7 +213,7 @@ func migrate(ctx context.Context, lookup config.Lookup, log *slog.Logger) error 
 	if err != nil {
 		return err
 	}
-	db, err := store.Open(ctx, cfg.URL, cfg.DependencyTimeout)
+	db, err := store.Open(ctx, cfg.URL, cfg.DependencyTimeout, store.ModeMaintenance)
 	if err != nil {
 		return err
 	}
@@ -234,7 +235,7 @@ func checkSchema(ctx context.Context, lookup config.Lookup, log *slog.Logger) er
 	if err != nil {
 		return err
 	}
-	db, err := store.Open(ctx, cfg.URL, cfg.DependencyTimeout)
+	db, err := store.Open(ctx, cfg.URL, cfg.DependencyTimeout, store.ModeMaintenance)
 	if err != nil {
 		return err
 	}
@@ -259,7 +260,7 @@ func rotateMasterKey(ctx context.Context, lookup config.Lookup, log *slog.Logger
 	if err != nil {
 		return fmt.Errorf("master keys: %w", err)
 	}
-	db, err := store.Open(ctx, dbCfg.URL, dbCfg.DependencyTimeout)
+	db, err := store.Open(ctx, dbCfg.URL, dbCfg.DependencyTimeout, store.ModeMaintenance)
 	if err != nil {
 		return err
 	}
