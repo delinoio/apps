@@ -40,7 +40,14 @@ const sections = new Set<string>(Object.values(Section));
 const tenantTabs = new Set<string>(Object.values(TenantTab));
 
 export function parseRoute(pathname: string): Route {
-  const parts = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  let parts: string[];
+  try {
+    parts = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    // Malformed percent-encoding (for example "%" or "%E0%A4%A") throws a
+    // URIError; the URL is user-controlled, so show the not-found page.
+    return { name: RouteName.NotFound };
+  }
   if (parts.length === 0) return { name: RouteName.Home };
   if (parts[0] !== "tenants" || !parts[1]) return { name: RouteName.NotFound };
   const tenantId = parts[1];
