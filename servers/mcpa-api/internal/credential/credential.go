@@ -159,8 +159,10 @@ func ValidateUpstreamURL(raw string) error {
 	if len(raw) > MaxBaseURLBytes {
 		return fmt.Errorf("base_url must contain at most %d bytes", MaxBaseURLBytes)
 	}
+	// url.Parse drops an empty fragment and keeps an empty query only in
+	// ForceQuery, so a trailing "?" or "#" must be rejected on the raw text.
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" {
+	if err != nil || strings.ContainsAny(raw, "?#") || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" {
 		return errors.New("base_url must be an https URL without credentials, query or fragment")
 	}
 	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")

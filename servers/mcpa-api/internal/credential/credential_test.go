@@ -45,7 +45,7 @@ func TestValidation(t *testing.T) {
 	if _, err := NormalizeModels([]string{"a b"}, "models"); err == nil {
 		t.Fatal("space accepted")
 	}
-	for _, ok := range []string{"https://api.example.com/v1", "https://8.8.8.8/v1"} {
+	for _, ok := range []string{"https://api.example.com/v1", "https://8.8.8.8/v1", "https://x.example/v1", "https://x.example/v1/"} {
 		if err := ValidateUpstreamURL(ok); err != nil {
 			t.Errorf("%s: %v", ok, err)
 		}
@@ -54,6 +54,7 @@ func TestValidation(t *testing.T) {
 		"http://api.example.com", "https://localhost/v1", "https://127.0.0.1", "https://10.0.0.1", "https://169.254.169.254/latest",
 		"https://[::1]/", "https://user:pw@example.com", "https://example.com/?a=b", "https://metadata.google.internal", "https://intranet",
 		"https://100.64.1.1", "https://[fd00::1]/",
+		"https://x.example/v1?", "https://x.example/v1#", "https://x.example/v1?#",
 	} {
 		if err := ValidateUpstreamURL(bad); err == nil {
 			t.Errorf("accepted %s", bad)
