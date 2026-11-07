@@ -144,6 +144,22 @@ func TestIntegrationHappyPath(t *testing.T) {
 			t.Fatalf("filter %v matched %+v", f, got.GetSummary())
 		}
 	}
+	// Invalid models and undefined enum numbers are rejected by both RPCs
+	// instead of reaching PostgreSQL or wrapping to a defined provider/status.
+	for _, f := range []*mcpav1.CallFilter{
+		{ResourceIds: []string{id}, Models: []string{"a\x00b"}},
+		{ResourceIds: []string{id}, Models: []string{strings.Repeat("m", 201)}},
+		{ResourceIds: []string{id}, Providers: []mcpav1.Provider{65537}},
+		{ResourceIds: []string{id}, Statuses: []mcpav1.CallStatus{65537}},
+	} {
+		_, usageErr := do(e, "owner", e.rpc.GetUsage, &mcpav1.GetUsageRequest{TenantId: e.tenant, Filter: f})
+		_, listErr := do(e, "owner", e.rpc.ListCallRecords, &mcpav1.ListCallRecordsRequest{TenantId: e.tenant, Filter: f})
+		for _, err := range []error{usageErr, listErr} {
+			if connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Fatalf("filter %v: got %v, want INVALID_INPUT", f, err)
+			}
+		}
+	}
 	matched := mustDo(e, "owner", e.rpc.GetUsage, &mcpav1.GetUsageRequest{TenantId: e.tenant, Filter: &mcpav1.CallFilter{
 		Models: []string{"compat-model"}, Providers: []mcpav1.Provider{mcpav1.Provider_PROVIDER_OPENAI_COMPATIBLE},
 		Statuses: []mcpav1.CallStatus{mcpav1.CallStatus_CALL_STATUS_SUCCEEDED}, CallKeyIds: []string{keyID},

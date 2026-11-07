@@ -4,7 +4,10 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"unicode"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -59,9 +62,30 @@ func (s *Service) readableResources(ctx context.Context, p *auth.Principal, tena
 	return out, nil
 }
 
+const (
+	maxFilterModels   = 100
+	maxFilterModelLen = 200
+)
+
+// validateFilter rejects filters the store cannot represent. Models must fit
+// the call_records.model constraint and PostgreSQL text rules, and enum values
+// must be defined members because the store narrows them to int16.
 func validateFilter(f *mcpav1.CallFilter) error {
 	if f == nil {
 		return nil
+	}
+	if err := validateFilterModels(f.GetModels()); err != nil {
+		return err
+	}
+	for _, p := range f.GetProviders() {
+		if _, ok := mcpav1.Provider_name[int32(p)]; !ok {
+			return apperr.InvalidInput(fmt.Sprintf("filter.providers contains an unknown provider %d", int32(p)))
+		}
+	}
+	for _, st := range f.GetStatuses() {
+		if _, ok := mcpav1.CallStatus_name[int32(st)]; !ok {
+			return apperr.InvalidInput(fmt.Sprintf("filter.statuses contains an unknown status %d", int32(st)))
+		}
 	}
 	for _, id := range f.GetCallKeyIds() {
 		if _, err := parseID(id, "filter.call_key_ids"); err != nil {
@@ -76,6 +100,26 @@ func validateFilter(f *mcpav1.CallFilter) error {
 	}
 	if f.GetStartTime() != nil && f.GetEndTime() != nil && !f.GetStartTime().AsTime().Before(f.GetEndTime().AsTime()) {
 		return apperr.InvalidInput("filter.start_time must be before filter.end_time")
+	}
+	return nil
+}
+
+func validateFilterModels(models []string) error {
+	if len(models) > maxFilterModels {
+		return apperr.InvalidInput(fmt.Sprintf("filter.models has at most %d entries", maxFilterModels))
+	}
+	for _, m := range models {
+		if len(m) == 0 || len(m) > maxFilterModelLen {
+			return apperr.InvalidInput(fmt.Sprintf("filter.models entries must be 1 to %d bytes", maxFilterModelLen))
+		}
+		if !utf8.ValidString(m) {
+			return apperr.InvalidInput("filter.models entries must be valid UTF-8")
+		}
+		for _, r := range m {
+			if unicode.IsControl(r) {
+				return apperr.InvalidInput("filter.models entries must not contain control characters")
+			}
+		}
 	}
 	return nil
 }

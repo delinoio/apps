@@ -242,6 +242,9 @@ type UsageFilter struct {
 	End   *time.Time
 }
 
+// int16s narrows enum numbers without a range check: callers must validate
+// that every value is a defined enum member first (the service does in
+// validateFilter), or 65537 would wrap to 1.
 func int16s[T ~int32](values []T) []int16 {
 	out := make([]int16, 0, len(values))
 	for _, v := range values {
