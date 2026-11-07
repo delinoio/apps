@@ -139,6 +139,20 @@ describe("session states", () => {
     expect(window.location.pathname).toBe(`/tenants/${TENANT_ID}`);
   });
 
+  it("shows the tenant picker when the brand link is clicked after a deep link load", async () => {
+    localStorage.setItem("mcpa.activeTenant", TENANT_ID);
+    renderApp({ path: `/tenants/${TENANT_ID}/usage` });
+    fireEvent.click(await screen.findByRole("link", { name: "Managed CPA" }));
+    expect(
+      await screen.findByRole("link", { name: /Ada \(personal\)/ }),
+    ).toBeTruthy();
+    expect(window.location.pathname).toBe("/");
+    window.history.back();
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(`/tenants/${TENANT_ID}/usage`),
+    );
+  });
+
   it("routes an MFA_REQUIRED Connect error to the MFA screen", async () => {
     const opened: string[] = [];
     const { sessionClient } = renderApp({

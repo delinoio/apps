@@ -44,8 +44,12 @@ export function ConsoleShell() {
     if (tenantId) writeActiveTenant(tenantId);
   }, [tenantId]);
 
-  // Open the remembered tenant when the user returns to the console root.
-  const [checkedHome, setCheckedHome] = useState(false);
+  // Open the remembered tenant only when the console itself loads at the root.
+  // A load on any other route (for example a tenant deep link) arms the guard
+  // immediately so a later in-app click on the brand link reaches the picker.
+  const [checkedHome, setCheckedHome] = useState(
+    () => route.name !== RouteName.Home,
+  );
   useEffect(() => {
     if (route.name !== RouteName.Home || checkedHome || !viewer.data) return;
     setCheckedHome(true);
