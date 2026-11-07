@@ -46,6 +46,16 @@ const reasonError = (code: Code, reason: ErrorReason, url = "") =>
     },
   ]);
 
+describe("malformed URLs", () => {
+  it.each(["/tenants/%", "/tenants/%E0%A4%A"])(
+    "renders Page not found for %s",
+    async (path) => {
+      renderApp({ path });
+      expect(await screen.findByText("Page not found")).toBeTruthy();
+    },
+  );
+});
+
 describe("session states", () => {
   it("shows sign-in with the exact console return URL when signed out", async () => {
     renderApp({
