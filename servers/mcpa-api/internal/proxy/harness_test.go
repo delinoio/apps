@@ -103,6 +103,12 @@ func (u *upstream) authsSeen() []string {
 	return append([]string(nil), u.auths...)
 }
 
+func (u *upstream) pathsSeen() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]string(nil), u.paths...)
+}
+
 func (u *upstream) headersSeen() []http.Header {
 	u.mu.Lock()
 	defer u.mu.Unlock()

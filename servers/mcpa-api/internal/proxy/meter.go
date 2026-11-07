@@ -523,13 +523,19 @@ func withTraceMetering(ctx context.Context, call *callState, fallbackURI string)
 }
 
 // requestURIFor joins a base URL path with an executor path such as
-// "/v1/messages?beta=true".
+// "/v1/messages?beta=true". The SDK Claude executor concatenates the stored
+// base URL and the path verbatim, so a trailing slash in the base URL stays in
+// the request line ("https://gw/" gives "//v1/messages?beta=true"); the base
+// URL is therefore not trimmed here.
 func requestURIFor(baseURL, suffix string) string {
-	parsed, err := url.Parse(strings.TrimRight(baseURL, "/"))
-	if err != nil || parsed.Path == "" {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL) + suffix)
+	if err != nil {
 		return suffix
 	}
-	return strings.TrimRight(parsed.EscapedPath(), "/") + suffix
+	if uri := parsed.RequestURI(); uri != "" && uri != "/" {
+		return uri
+	}
+	return suffix
 }
 
 // countingResponseWriter counts customer-bound bytes of a call.

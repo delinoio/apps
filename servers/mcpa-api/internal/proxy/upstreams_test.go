@@ -199,3 +199,28 @@ func TestCompressedUpstreamResponse(t *testing.T) {
 	h.addCredential(compatCredential(resourceID, up.URL(), "sk-gzip", "gz-model"))
 	runFormatCases(t, h, up, resourceID, key, "gz-model", "hello gzip", clientFormatCases("gz-model")[:1])
 }
+
+// TestClaudeBaseURLTrailingSlashRequestLine checks that the HTTP/1.1 fallback
+// request line matches the SDK executor's verbatim base URL concatenation, so
+// billed request bytes equal the bytes the upstream received.
+func TestClaudeBaseURLTrailingSlashRequestLine(t *testing.T) {
+	for _, tc := range []struct{ name, suffix, wantURI string }{
+		{"host", "", "/v1/messages?beta=true"},
+		{"host trailing slash", "/", "//v1/messages?beta=true"},
+		{"path", "/gw", "/gw/v1/messages?beta=true"},
+		{"path trailing slash", "/gw/", "/gw//v1/messages?beta=true"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			up := claudeUpstream(t, "hello claude")
+			resourceID := newResourceID()
+			key := h.addKey(resourceID)
+			h.addCredential(apiKeyCredential(resourceID, mcpav1.Provider_PROVIDER_CLAUDE, up.URL()+tc.suffix, "sk-ant-test", "claude-test"))
+			runFormatCases(t, h, up, resourceID, key, "claude-test", "claude", []formatCase{clientFormatCases("claude-test")[4]})
+			paths := up.pathsSeen()
+			if len(paths) != 1 || paths[0] != tc.wantURI {
+				t.Fatalf("upstream request URIs %q, want %q", paths, tc.wantURI)
+			}
+		})
+	}
+}

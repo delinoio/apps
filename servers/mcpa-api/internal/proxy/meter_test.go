@@ -249,11 +249,24 @@ func TestCountingResponseWriterHandComputed(t *testing.T) {
 }
 
 func TestRequestURIFor(t *testing.T) {
-	if got := requestURIFor("https://api.anthropic.com", claudeMessagesURI); got != "/v1/messages?beta=true" {
-		t.Fatal(got)
+	// The SDK Claude executor concatenates the base URL verbatim, so the
+	// request line keeps every slash of the stored base URL.
+	cases := []struct{ name, base, want string }{
+		{"host only", "https://gw", "/v1/messages?beta=true"},
+		{"host trailing slash", "https://gw/", "//v1/messages?beta=true"},
+		{"path", "https://gw/path", "/path/v1/messages?beta=true"},
+		{"path trailing slash", "https://gw/path/", "/path//v1/messages?beta=true"},
+		{"kimi trailing slash", "https://api.kimi.com/coding/", "/coding//v1/messages?beta=true"},
+		{"escaped segment", "https://gw/a%2Fb", "/a%2Fb/v1/messages?beta=true"},
+		{"unparseable", "http://[::1", claudeMessagesURI},
+		{"surrounding space", " https://gw/path ", "/path/v1/messages?beta=true"},
 	}
-	if got := requestURIFor("https://api.kimi.com/coding/", claudeMessagesURI); got != "/coding/v1/messages?beta=true" {
-		t.Fatal(got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := requestURIFor(tc.base, claudeMessagesURI); got != tc.want {
+				t.Fatalf("requestURIFor(%q) = %q, want %q", tc.base, got, tc.want)
+			}
+		})
 	}
 }
 
