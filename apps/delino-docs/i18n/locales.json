@@ -45,11 +45,6 @@
       "services/perfine/publication.md",
       "services/perfine/setup.md",
       "services/perfine/troubleshooting.md",
-      "services/lane/index.md",
-      "services/lane/installation.md",
-      "services/lane/mcp.md",
-      "services/lane/user-guide.md",
-      "services/lane/troubleshooting.md",
       "services/anydash/index.md",
       "services/anydash/getting-started.md",
       "services/anydash/cli.md",
@@ -65,16 +60,13 @@
       "perfineHosting",
       "perfinePublication",
       "perfineGithubActions",
-      "laneInstallation",
-      "laneMcp",
-      "laneUserGuide",
       "anydashGettingStarted",
       "anydashCli",
       "anydashProviders",
       "anydashData"
     ],
     "sections": {
-      "services/index.md": ["perfine", "lane", "anydash"]
+      "services/index.md": ["perfine", "anydash"]
     }
   }
 }

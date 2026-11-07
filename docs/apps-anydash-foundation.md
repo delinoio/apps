@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Use Node.js 24, TypeScript, ReactLynx and Rspeedy, pinned to the versions used by the Lane application when implementation begins. Mobile hosts use the Lynx SDKs (Kotlin/Gradle on Android, Swift or Objective-C on iOS). Desktop hosts use pinned `@lynx-js/lynxtron` on macOS and Windows. The web host uses Lynx for Web, built with the Rstack toolchain, and deploys to Cloudflare Pages. Native widget hosts use the platform language the OS requires: Swift (WidgetKit) on macOS and iOS, C# in an MSIX package for the Windows Widgets Board, Kotlin on Android. TypeScript/ReactLynx and these platform languages are the UI exception to the repository language defaults. Clients use Connect RPC through `@connectrpc/connect-query` with React Query and the `@repo/protos` TypeScript bindings. Shared UI primitives come from `packages/lynx-ui` when they fit.
+Use Node.js 24, TypeScript, ReactLynx and Rspeedy, pinned to exact versions. Mobile hosts use the Lynx SDKs (Kotlin/Gradle on Android, Swift or Objective-C on iOS). Desktop hosts use pinned `@lynx-js/lynxtron` on macOS and Windows. The web host uses Lynx for Web, built with the Rstack toolchain, and deploys to Cloudflare Pages. Native widget hosts use the platform language the OS requires: Swift (WidgetKit) on macOS and iOS, C# in an MSIX package for the Windows Widgets Board, Kotlin on Android. TypeScript/ReactLynx and these platform languages are the UI exception to the repository language defaults. Clients use Connect RPC through `@connectrpc/connect-query` with React Query and the `@repo/protos` TypeScript bindings. Shared UI primitives come from `packages/lynx-ui` when they fit.
 
 ## Users and Operators
 
@@ -144,5 +144,4 @@ Change the protocol, server, CLI and distribution contracts together for behavio
 - [Server](servers-anydash-api-contract.md)
 - [CLI and collector](cmds-anydash-cli-contract.md)
 - [Distribution](packages-anydash-distribution-contract.md)
-- [Lane application](apps-lane-foundation.md)
 - [Lynx UI](project-lynx-ui.md)

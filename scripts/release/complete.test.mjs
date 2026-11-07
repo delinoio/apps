@@ -22,7 +22,7 @@ function fixture(t, refs = []) {
     join(root, ".release/plan.json"),
     JSON.stringify({
       components: [
-        { component: "lane", tag: "lane@v1.0.0", binaries: true },
+        { component: "perfine", tag: "perfine@v1.0.0", binaries: true },
         { component: "devbase", tag: "devbase@v1.0.0", binaries: false },
       ],
     }),
@@ -66,7 +66,7 @@ fs.writeFileSync('state.json', JSON.stringify(state));
             ...process.env,
             PATH: `${join(root, "bin")}${delimiter}${process.env.PATH}`,
             RELEASE_REVISION: revision,
-            RELEASE_COMPONENT: "lane",
+            RELEASE_COMPONENT: "perfine",
             GITHUB_OUTPUT: join(root, "output"),
           },
         },
@@ -80,7 +80,7 @@ test("completion tags only its component at the release SHA and completes a stag
   const result = f.invoke();
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(f.state().refs, [
-    { ref: "refs/tags/lane@v1.0.0", object: { sha: revision } },
+    { ref: "refs/tags/perfine@v1.0.0", object: { sha: revision } },
   ]);
   assert.equal(f.state().draft, false);
   assert.equal(f.invoke().status, 0);
@@ -88,14 +88,14 @@ test("completion tags only its component at the release SHA and completes a stag
 });
 test("status is read-only and conflicting tags cannot be moved or published", (t) => {
   const f = fixture(t, [
-    { ref: "refs/tags/lane@v1.0.0", object: { sha: revision } },
+    { ref: "refs/tags/perfine@v1.0.0", object: { sha: revision } },
   ]);
   assert.equal(f.invoke("status").status, 0);
   assert.equal(f.output(), "tagged=true\n");
   assert.equal(f.state().draft, true);
   assert.equal(f.state().calls.length, 1);
   const conflict = fixture(t, [
-    { ref: "refs/tags/lane@v1.0.0", object: { sha: "b".repeat(40) } },
+    { ref: "refs/tags/perfine@v1.0.0", object: { sha: "b".repeat(40) } },
   ]);
   assert.notEqual(conflict.invoke().status, 0);
   assert.equal(conflict.state().calls.length, 1);

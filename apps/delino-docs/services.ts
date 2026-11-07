@@ -7,7 +7,6 @@ export enum ServiceId {
   GitTracker = "git-tracker",
   DeliTools = "delitools",
   Perfine = "perfine",
-  Lane = "lane",
   AnyDash = "anydash",
 }
 
@@ -18,9 +17,6 @@ export enum ServicePage {
   GettingStarted = "getting-started",
   Providers = "providers",
   Data = "data",
-  Installation = "installation",
-  Mcp = "mcp",
-  UserGuide = "user-guide",
   Setup = "setup",
   Cli = "cli",
   Adapters = "adapters",
@@ -46,16 +42,6 @@ export interface Service {
 }
 
 export const services: readonly Service[] = [
-  {
-    id: ServiceId.Lane,
-    name: "Lane",
-    pages: [
-      { slug: ServicePage.Installation, message: "laneInstallation" },
-      { slug: ServicePage.Mcp, message: "laneMcp" },
-      { slug: ServicePage.UserGuide, message: "laneUserGuide" },
-      { slug: ServicePage.Troubleshooting, message: "troubleshooting" },
-    ],
-  },
   {
     id: ServiceId.Perfine,
     name: "Perfine",

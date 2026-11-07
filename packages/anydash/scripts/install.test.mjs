@@ -112,7 +112,7 @@ async function fixture(t, versions = ["1.2.0", "1.10.0"]) {
   );
   const server = await serveReleases({
     releases: [
-      release("lane@v9.0.0"),
+      release("perfine@v9.0.0"),
       ...versions.map((version) => release(`anydash@v${version}`)),
     ],
     directories,
@@ -129,7 +129,7 @@ async function paginatedFixture(t) {
   const f = await fixture(t);
   const others = (count, from = 0) =>
     Array.from({ length: count }, (_, index) =>
-      release(`lane@v0.0.${from + index}`),
+      release(`perfine@v0.0.${from + index}`),
     );
   const server = await serveReleases({
     releases: [
@@ -370,7 +370,7 @@ for (const interpreter of shells) {
         assert.match(result.stderr, message);
       }
       const empty = await serveReleases({
-        releases: [release("lane@v1.0.0")],
+        releases: [release("perfine@v1.0.0")],
         directories: {},
       });
       t.after(empty.close);

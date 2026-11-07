@@ -114,6 +114,5 @@ Update this index, the affected domain contracts and the [documentation catalog]
 - [Changeset contract](repository-changeset-contract.md)
 - [Server Rust workspace](servers-rust-workspace-contract.md)
 - [Delcore project](project-delcore.md)
-- [Lane project](project-lane.md)
 - [Lynx UI](project-lynx-ui.md)
 - [Delino Docs](project-delino-docs.md)

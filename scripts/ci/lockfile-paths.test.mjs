@@ -127,7 +127,7 @@ test("Lynx UI importer edits select shared checks and the Lynx consumers", () =>
     Object.entries(select(["pnpm-lock.yaml"], lockfiles))
       .filter(([, selected]) => selected)
       .map(([owner]) => owner),
-    ["lane", "anydash"],
+    ["anydash"],
   );
   assert.deepEqual(selectChecks(["pnpm-lock.yaml"], lockfiles), {
     tooling: false,

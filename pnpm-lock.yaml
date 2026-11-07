@@ -502,69 +502,6 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  apps/lane:
-    dependencies:
-      '@bufbuild/protobuf':
-        specifier: 2.16.0
-        version: 2.16.0
-      '@connectrpc/connect':
-        specifier: 2.2.0
-        version: 2.2.0(@bufbuild/protobuf@2.16.0)
-      '@connectrpc/connect-web':
-        specifier: 2.2.0
-        version: 2.2.0(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))
-      '@lynx-js/react':
-        specifier: 0.129.0
-        version: 0.129.0(@lynx-js/types@4.3.0)(@types/react@19.2.14)
-      '@lynx-js/web-core':
-        specifier: 0.26.5
-        version: 0.26.5(tslib@2.8.1)
-      '@repo/protos':
-        specifier: workspace:*
-        version: link:../../protos
-      markdown-it:
-        specifier: 14.3.3
-        version: 14.3.3
-      text-encoding-utf-8:
-        specifier: 1.0.2
-        version: 1.0.2
-    devDependencies:
-      '@lynx-js/lynxtron':
-        specifier: 0.0.31
-        version: 0.0.31(supports-color@8.1.1)
-      '@lynx-js/react-rsbuild-plugin':
-        specifier: 0.22.0
-        version: 0.22.0(@lynx-js/react@0.129.0(@lynx-js/types@4.3.0)(@types/react@19.2.14))(@lynx-js/rspeedy@0.18.3(@rspack/core@2.2.9(@swc/helpers@0.5.23))(@types/node@24.19.2)(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(tslib@2.8.1)(typescript@5.9.3)(webpack@5.112.2(cssnano@7.1.9(postcss@8.5.30))(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(postcss@8.5.30)(svgo@4.1.0)))(@rsbuild/core@2.2.9)(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(tslib@2.8.1)(webpack@5.112.2(cssnano@7.1.9(postcss@8.5.30))(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(postcss@8.5.30)(svgo@4.1.0))
-      '@lynx-js/rspeedy':
-        specifier: 0.18.3
-        version: 0.18.3(@rspack/core@2.2.9(@swc/helpers@0.5.23))(@types/node@24.19.2)(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(tslib@2.8.1)(typescript@5.9.3)(webpack@5.112.2(cssnano@7.1.9(postcss@8.5.30))(csso@5.0.5)(esbuild@0.28.2)(lightningcss@1.32.0)(postcss@8.5.30)(svgo@4.1.0))
-      '@lynx-js/types':
-        specifier: 4.3.0
-        version: 4.3.0
-      '@types/markdown-it':
-        specifier: 14.1.2
-        version: 14.1.2
-      '@types/node':
-        specifier: 24.19.2
-        version: 24.19.2
-      '@types/react':
-        specifier: 19.2.14
-        version: 19.2.14
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
-      node-api-headers:
-        specifier: 1.9.0
-        version: 1.9.0
-      playwright:
-        specifier: 1.62.0
-        version: 1.62.0
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
-  apps/lane-chrome-extension: {}
-
   apps/mcpa:
     dependencies:
       '@bufbuild/protobuf':
@@ -646,8 +583,6 @@ importers:
         version: 5.9.3
 
   packages/anydash: {}
-
-  packages/lane: {}
 
   packages/lynx-ui:
     devDependencies:
@@ -769,8 +704,6 @@ importers:
   servers/devbase-api: {}
 
   servers/git-tracker-api: {}
-
-  servers/lane-api: {}
 
   servers/mcpa-api: {}
 
@@ -1221,18 +1154,8 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
-  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.31':
-    resolution: {integrity: sha512-zFJOEZsWZkeSSNEgjOFsKUFkt4qA68S2Bs3Lg3fnv5rmDQcuefaCzwufs5t2MVK26I/mLKAWQDq5aPnfSVs7aw==}
-    cpu: [arm64]
-    os: [darwin]
-
   '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.30':
     resolution: {integrity: sha512-JZGjTw6xrQvmWEbSjv0Fpxut2UsQ8YZpAknhBsyreoKZL3g+akMMmGNwXcMvf3gOZS07hSpL6PfglZH3lxGLtA==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.31':
-    resolution: {integrity: sha512-5v/wlStubqYcY2QqoWOpyHcKooSM8rmDgc8E0Uvgt7q9FrrVVzMfV5PsEzYlfoc2T366YqgG6TlkS4wV9ONQmA==}
     cpu: [x64]
     os: [darwin]
 
@@ -1241,28 +1164,13 @@ packages:
     cpu: [x64]
     os: [linux]
 
-  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.31':
-    resolution: {integrity: sha512-HLwK9qa5kRcyHqEcXJ/OYEmjOx5sOewMzVoyTBvoxf6/SDQOGlaCClfXM7PyF232pOdDdAyLlEMNF8YfaZNY0Q==}
-    cpu: [x64]
-    os: [linux]
-
   '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.30':
     resolution: {integrity: sha512-j7Vs/MR2V95yvEsionYKzsV6hQ2Fq2+9LzEfjlZXArToTPoYLZMn+hF3xNt3AH4GM5wkJ1HblFxgG42Vz8xgHA==}
     cpu: [x64]
     os: [win32]
 
-  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.31':
-    resolution: {integrity: sha512-xMzfFRWbQu8XdUZtuidWlAdUzM0bjNpYfyxm+n+Nd2TfAuvmPXy+1UJE54CPXEWjv3o2bk6OvGPgcvYfUVBc5Q==}
-    cpu: [x64]
-    os: [win32]
-
   '@lynx-js/lynxtron@0.0.30':
     resolution: {integrity: sha512-homMpV75s2tp7fsWyCl5xR1KxfCoGtA5ms1kqubQFb/7ybTXhBSBOJJd/8J53TNpBhZ5OZ1tGKivh/x7mfi/2Q==}
-    engines: {node: ^22.18.0 || ^24.0.0 || ^26.0.0}
-    hasBin: true
-
-  '@lynx-js/lynxtron@0.0.31':
-    resolution: {integrity: sha512-LvJYGzlopIlUhAsOHrkFD4kYjBJbaWRniNORewF5bK1DFqjZcbaknyxK/aV0s9qshEaiVAVvlnCzQD+DYqXFZQ==}
     engines: {node: ^22.18.0 || ^24.0.0 || ^26.0.0}
     hasBin: true
 
@@ -2960,17 +2868,8 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
-  '@types/linkify-it@5.0.0':
-    resolution: {integrity: sha512-sVDA58zAw4eWAffKOaQH5/5j3XeayukzDk+ewSsnv3p4yJEZHCCzMDiZM8e0OUrRvmpGZ85jf4yDHkHsgBNr9Q==}
-
-  '@types/markdown-it@14.1.2':
-    resolution: {integrity: sha512-promo4eFwuiW+TfGxhi+0x3czqTYJkG8qB17ZUJiVF10Xm7NLVRSLUsfRTU/6h1e24VvRnXCx+hG7li58lkzog==}
-
   '@types/mdast@4.0.4':
     resolution: {integrity: sha512-kGaNbPh1k7AFzgpud/gMdvIm5xuECykRR+JnWKQno9TAXVa6WIVCGTPvYGekIDL4uwCZQSYbUxNBSb1aUo79oA==}
-
-  '@types/mdurl@2.0.0':
-    resolution: {integrity: sha512-RGdgjQUZba5p6QEFAVx2OGb8rQDL/cPRG7GiedRzMcJ1tYnUANBncjbSB1NRGwbvjcPeikRABz2nshyPk1bhWg==}
 
   '@types/mdx@2.0.14':
     resolution: {integrity: sha512-T48PeuJtvLosNTPVhfnIp3i/n3a4g4Bad7YCq5k64D4u7NwDrAotikQ+5+sjtUvBmxCMlbo3dVL+C2dP0rWHzg==}
@@ -4163,9 +4062,6 @@ packages:
     resolution: {integrity: sha512-zJZyBmQhArDRefuWTypZxwDpFDIYmrj8ypSBvwGD5P13Y95s6DjzKgu4DVdGbeQa5PDEsAOCAPNk4X+QOR006w==}
     engines: {node: '>=14'}
 
-  linkify-it@5.0.2:
-    resolution: {integrity: sha512-ONTm2jCMAVZjgQa/Fy1kScXsuOoF5NPTsoFBdE1KVIZ2vAh/r9+Bqo+0jINCBYnavTPQZz38QzFTme79ENoN3Q==}
-
   linkify-it@6.1.0:
     resolution: {integrity: sha512-wJ/TwpSDTLepCrQoYWYIExIKg5Zchex2Nn5yk2mFnB+6PtdkHtyLx742md9csRjjOnGkKIS/RrbY7l8D6gT9Vw==}
 
@@ -4209,10 +4105,6 @@ packages:
   markdown-extensions@2.0.0:
     resolution: {integrity: sha512-o5vL7aDWatOTX8LzaS1WMoaoxIiLRQJuIKKe2wAw6IeULDHaqbiqiggmx+pKvZDb1Sj+pE46Sn1T7lCqfFtg1Q==}
     engines: {node: '>=16'}
-
-  markdown-it@14.3.3:
-    resolution: {integrity: sha512-L//tDAkjTjJCU6pBUSBTgs3Kg4InVaZuUZog/b6V12UKhcDQ7S78877ibbCanRExwPuYP1CZD7Gd2dxSy1GXRg==}
-    hasBin: true
 
   markdown-it@15.0.3:
     resolution: {integrity: sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ==}
@@ -4561,9 +4453,6 @@ packages:
   negotiator@1.1.0:
     resolution: {integrity: sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg==}
     engines: {node: '>=18'}
-
-  node-api-headers@1.9.0:
-    resolution: {integrity: sha512-2oNILP4jXwRB4ywnYKjVk1YyJ96n2D4EOVJO6S3oYZ5PtbJrw3Yt9TpAuX3nBLMuzn74rnfGQrv13pS9vC+YiA==}
 
   node-domexception@1.0.0:
     resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
@@ -5408,9 +5297,6 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  uc.micro@2.1.0:
-    resolution: {integrity: sha512-ARDJmphmdvUk6Glw7y9DQ2bFkKBHwQHLi2lsaH6PPmz/Ka9sFOBsBluozhDltWmnv9u/cF6Rt87znRTPV+yp/A==}
-
   uc.micro@3.0.0:
     resolution: {integrity: sha512-U3PppEkleoTnIfi8BozMx3yju3qc/L6SwqWo2Sw+54PX+PX0q9I+r1Um5HCmqD7n9VDX5/v3vQH/AjA6deDdtw==}
 
@@ -5958,25 +5844,13 @@ snapshots:
   '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.30':
     optional: true
 
-  '@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.31':
-    optional: true
-
   '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.30':
-    optional: true
-
-  '@lynx-js/lynxtron-runtime-darwin-x64-devtool@0.0.31':
     optional: true
 
   '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.30':
     optional: true
 
-  '@lynx-js/lynxtron-runtime-linux-x64-devtool@0.0.31':
-    optional: true
-
   '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.30':
-    optional: true
-
-  '@lynx-js/lynxtron-runtime-win32-x64-devtool@0.0.31':
     optional: true
 
   '@lynx-js/lynxtron@0.0.30(supports-color@8.1.1)':
@@ -5991,21 +5865,6 @@ snapshots:
       '@lynx-js/lynxtron-runtime-darwin-x64-devtool': 0.0.30
       '@lynx-js/lynxtron-runtime-linux-x64-devtool': 0.0.30
       '@lynx-js/lynxtron-runtime-win32-x64-devtool': 0.0.30
-    transitivePeerDependencies:
-      - supports-color
-
-  '@lynx-js/lynxtron@0.0.31(supports-color@8.1.1)':
-    dependencies:
-      '@npmcli/config': 10.14.0
-      node-fetch: 3.3.2
-      pacote: 21.5.1(supports-color@8.1.1)
-      proper-lockfile: 4.1.2
-      zip-lib: 1.4.0
-    optionalDependencies:
-      '@lynx-js/lynxtron-runtime-darwin-arm64-devtool': 0.0.31
-      '@lynx-js/lynxtron-runtime-darwin-x64-devtool': 0.0.31
-      '@lynx-js/lynxtron-runtime-linux-x64-devtool': 0.0.31
-      '@lynx-js/lynxtron-runtime-win32-x64-devtool': 0.0.31
     transitivePeerDependencies:
       - supports-color
 
@@ -7748,18 +7607,9 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
-  '@types/linkify-it@5.0.0': {}
-
-  '@types/markdown-it@14.1.2':
-    dependencies:
-      '@types/linkify-it': 5.0.0
-      '@types/mdurl': 2.0.0
-
   '@types/mdast@4.0.4':
     dependencies:
       '@types/unist': 3.0.3
-
-  '@types/mdurl@2.0.0': {}
 
   '@types/mdx@2.0.14': {}
 
@@ -9133,10 +8983,6 @@ snapshots:
 
   lilconfig@3.1.4: {}
 
-  linkify-it@5.0.2:
-    dependencies:
-      uc.micro: 2.1.0
-
   linkify-it@6.1.0:
     dependencies:
       uc.micro: 3.0.0
@@ -9181,15 +9027,6 @@ snapshots:
   map-obj@5.0.0: {}
 
   markdown-extensions@2.0.0: {}
-
-  markdown-it@14.3.3:
-    dependencies:
-      argparse: 2.0.1
-      entities: 4.5.0
-      linkify-it: 5.0.2
-      mdurl: 2.1.0
-      punycode.js: 2.3.1
-      uc.micro: 2.1.0
 
   markdown-it@15.0.3:
     dependencies:
@@ -9773,8 +9610,6 @@ snapshots:
   negotiator@1.1.0:
     dependencies:
       content-type: 2.1.0
-
-  node-api-headers@1.9.0: {}
 
   node-domexception@1.0.0: {}
 
@@ -10818,8 +10653,6 @@ snapshots:
   typescript@5.4.5: {}
 
   typescript@5.9.3: {}
-
-  uc.micro@2.1.0: {}
 
   uc.micro@3.0.0: {}
 

@@ -18,8 +18,6 @@ jobs:
       head: ${{ steps.plan.outputs.head }}
       delidev: ${{ steps.plan.outputs.delidev }}
       delitools: ${{ steps.plan.outputs.delitools }}
-      lane: ${{ steps.plan.outputs.lane }}
-      lane_cli: ${{ steps.plan.outputs.lane_cli }}
       mcpa: ${{ steps.plan.outputs.mcpa }}
       mcpa_api: ${{ steps.plan.outputs.mcpa_api }}
       anydash_cli: ${{ steps.plan.outputs.anydash_cli }}
@@ -113,7 +111,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   tooling:
     needs: changes
     if: needs.changes.outputs.tooling == 'true'
@@ -156,7 +154,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   shared-ui:
     needs: changes
     if: needs.changes.outputs.shared_ui == 'true'
@@ -201,7 +199,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist" "packages/lynx-ui/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist" "packages/lynx-ui/dist"
   workflows:
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
@@ -247,7 +245,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   delidev-frontend:
     needs: changes
     if: needs.changes.outputs.delidev == 'true'
@@ -290,7 +288,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   delitools-frontend:
     needs: changes
     if: needs.changes.outputs.delitools == 'true'
@@ -333,53 +331,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
-  lane-frontend:
-    needs: changes
-    if: needs.changes.outputs.lane == 'true'
-    runs-on: ubuntu-latest
-    env:
-      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          lfs: true
-      - uses: ./.github/actions/setup-ci-node
-        id: node
-      - id: dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - id: frontend
-        run: |
-          pnpm --filter @apps/lane test
-          pnpm --filter @apps/lane-chrome-extension test
-          node --test apps/lane/native/desktop/realqa*.test.mjs
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
-        with:
-          path: ${{ steps.node.outputs.cache-path }}
-          key: ${{ steps.node.outputs.cache-key }}
-      - name: Record validation
-        if: ${{ always() }}
-        env:
-          VALIDATION_JOB: lane-frontend
-          VALIDATION_RESULT: ${{ job.status }}
-          VALIDATION_STEPS: ${{ toJSON(steps) }}
-        run: node scripts/ci/record-validation.mjs
-      - name: Preserve validation evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: validation-lane-frontend-${{ github.run_attempt }}
-          path: .ci-evidence/
-          include-hidden-files: true
-          if-no-files-found: error
-      - name: Remove generated output
-        if: ${{ always() }}
-        run: rm -rf "apps/lane/dist" "apps/lane-chrome-extension/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   anydash-frontend:
     needs: changes
     if: needs.changes.outputs.anydash == 'true'
@@ -425,59 +377,6 @@ jobs:
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "apps/anydash/dist"
-  lane-cli:
-    needs: changes
-    if: needs.changes.outputs.lane_cli == 'true'
-    runs-on: ubuntu-latest
-    env:
-      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          lfs: true
-      - uses: ./.github/actions/setup-ci-node
-        id: node
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
-        with:
-          toolchain: nightly-2026-09-28
-      - name: Install protocol compiler
-        id: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - id: dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - id: cli
-        run: |
-          cargo test --locked -p lane
-          pnpm --filter @delinoio/lane test
-          pnpm --filter @delinoio/lane build --platform linux-amd64
-          pnpm --filter @delinoio/lane smoke
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
-        with:
-          path: ${{ steps.node.outputs.cache-path }}
-          key: ${{ steps.node.outputs.cache-key }}
-      - name: Record validation
-        if: ${{ always() }}
-        env:
-          VALIDATION_JOB: lane-cli
-          VALIDATION_RESULT: ${{ job.status }}
-          VALIDATION_STEPS: ${{ toJSON(steps) }}
-        run: node scripts/ci/record-validation.mjs
-      - name: Preserve validation evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: validation-lane-cli-${{ github.run_attempt }}
-          path: .ci-evidence/
-          include-hidden-files: true
-          if-no-files-found: error
-      - name: Remove generated output
-        if: ${{ always() }}
-        run: rm -rf "packages/lane/dist"
   anydash-cli:
     needs: changes
     if: needs.changes.outputs.anydash_cli == 'true'
@@ -579,7 +478,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   devbase-frontend:
     needs: changes
     if: needs.changes.outputs.devbase == 'true'
@@ -622,7 +521,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   delino-site-frontend:
     needs: changes
     if: needs.changes.outputs.delino_site == 'true'
@@ -665,7 +564,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   delino-docs-frontend:
     needs: changes
     if: needs.changes.outputs.delino_docs == 'true'
@@ -708,7 +607,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   mcpa-frontend:
     needs: changes
     if: needs.changes.outputs.mcpa == 'true'
@@ -793,7 +692,7 @@ jobs:
           sudo apt-get install -y "${packages[@]}"
       - name: Install CLI protocol compiler
         id: protoc
-        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane') || contains(fromJSON(env.RUST_PACKAGES), 'anydash')
+        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'anydash')
         run: |-
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -833,7 +732,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   rust-test:
     name: Rust Test (${{ matrix.package }})
     needs: changes
@@ -866,7 +765,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Install CLI protocol compiler
         id: protoc
-        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane') || contains(fromJSON(env.RUST_PACKAGES), 'anydash')
+        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'anydash')
         run: |-
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -891,7 +790,7 @@ jobs:
           key: ${{ steps.node.outputs.cache-key }}
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/lane/dist" "apps/anydash/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/anydash/dist"
   rust-servers-clippy:
     name: Rust server Clippy (${{ matrix.service }})
     needs: changes
@@ -981,15 +880,10 @@ jobs:
         id: protoc
         run: |
           sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
-          if [ "$SERVICE" = lane-api ]; then sudo apt-get install -y python3-venv; fi
       - name: Validate Rust server with local protocol packages
         run: |
           cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE"
         id: unit
-      - name: Validate Lane monitoring rules and routes
-        if: matrix.service == 'lane-api'
-        id: monitoring
-        run: servers/lane-api/ops/check.sh
       - name: Validate AnyDash monitoring rules and routes
         if: matrix.service == 'anydash-api'
         id: anydash-monitoring
@@ -1010,12 +904,7 @@ jobs:
         timeout-minutes: 10
         env:
           TEST_DATABASE_URL: ${{ format('postgres://{0}:{0}@127.0.0.1:{1}/{2}?sslmode=disable', matrix.user, matrix.port, matrix.database) }}
-        run: |
-          if [ "$SERVICE" = lane-api ]; then
-            python3 "servers/lane-api/tests/integration_fixture.py"
-          else
-            cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE" -- --ignored --nocapture
-          fi
+        run: cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE" -- --ignored --nocapture
         id: integration
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
@@ -1251,8 +1140,6 @@ jobs:
       - check-formatting
       - delidev-frontend
       - delitools-frontend
-      - lane-frontend
-      - lane-cli
       - anydash-cli
       - anydash-frontend
       - devbase-frontend
@@ -1278,7 +1165,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'lane-cli': selection.lane_cli === 'true', 'anydash-cli': selection.anydash_cli === 'true', 'lane-frontend': selection.lane === 'true', 'anydash-frontend': selection.anydash === 'true', 'perfine-profiles': selection.perfine_fixtures === 'true', 'perfine-adapters': selection.perfine_fixtures === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'mcpa-frontend': selection.mcpa === 'true', 'mcpa-api': selection.mcpa_api === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'anydash-cli': selection.anydash_cli === 'true', 'anydash-frontend': selection.anydash === 'true', 'perfine-profiles': selection.perfine_fixtures === 'true', 'perfine-adapters': selection.perfine_fixtures === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'mcpa-frontend': selection.mcpa === 'true', 'mcpa-api': selection.mcpa_api === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);

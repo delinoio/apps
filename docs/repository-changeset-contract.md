@@ -21,7 +21,7 @@ Each `.changeset/<id>.md` has this shape:
 
 ```markdown
 ---
-"@delinoio/lane": patch
+"@delinoio/anydash": patch
 ---
 
 Internal engineering explanation in Markdown.
@@ -93,7 +93,7 @@ Run from the repository root with the Go version selected by `go.mod`:
 
 ```sh
 pnpm changeset packages
-pnpm changeset add --id improve-search --package '@delinoio/lane:patch' --summary 'Reduce redundant search requests.' --public 'Search results load faster.'
+pnpm changeset add --id improve-search --package '@delinoio/anydash:patch' --summary 'Reduce redundant search requests.' --public 'Search results load faster.'
 pnpm changeset check
 pnpm changeset status
 pnpm changeset changelog

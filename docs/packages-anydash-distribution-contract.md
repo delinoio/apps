@@ -54,7 +54,7 @@ Users install the CLI by install script or npm, desktop apps by direct download,
 
 ### CI runner rule
 
-Root `AGENTS.md` allows macOS runners only for the Perfine and Lane binary workflows and the AnyDash binary/desktop (`deploy-anydash.yml` `native`) and mobile iOS (`deploy-anydash-mobile.yml` `ios` and `ios-publish`) jobs called by the main-only unified release. `scripts/ci/workflow.test.mjs` enforces that no other job uses a macOS runner and that these workflows run only from component publication. Ordinary CI validates AnyDash on Ubuntu: `anydash-frontend` and `anydash-cli` (launcher and install-script tests, Linux x64 packaging and packed smoke).
+Root `AGENTS.md` allows macOS runners only for the Perfine binary workflow and the AnyDash binary/desktop (`deploy-anydash.yml` `native`) and mobile iOS (`deploy-anydash-mobile.yml` `ios` and `ios-publish`) jobs called by the main-only unified release. `scripts/ci/workflow.test.mjs` enforces that no other job uses a macOS runner and that these workflows run only from component publication. Ordinary CI validates AnyDash on Ubuntu: `anydash-frontend` and `anydash-cli` (launcher and install-script tests, Linux x64 packaging and packed smoke).
 
 ### Server image and web
 

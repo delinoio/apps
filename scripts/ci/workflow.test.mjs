@@ -35,8 +35,6 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["delino-docs-frontend", "delino_docs"],
     ["delidev-frontend", "delidev"],
     ["delitools-frontend", "delitools"],
-    ["lane-frontend", "lane"],
-    ["lane-cli", "lane_cli"],
     ["mcpa-frontend", "mcpa"],
     ["mcpa-api", "mcpa_api"],
     ["anydash-cli", "anydash_cli"],
@@ -72,7 +70,7 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
     const protoc = steps.find((step) => step.id === "protoc");
     assert.equal(
       protoc.if,
-      "contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane') || contains(fromJSON(env.RUST_PACKAGES), 'anydash')",
+      "contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'anydash')",
     );
     assert.match(protoc.run, /protobuf-compiler libprotobuf-dev/u);
     assert.ok(
@@ -322,8 +320,6 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "delino-docs-frontend",
     "delidev-frontend",
     "delitools-frontend",
-    "lane-frontend",
-    "lane-cli",
     "mcpa-frontend",
     "mcpa-api",
     "anydash-cli",
@@ -371,8 +367,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "true",
     delidev: "true",
     delitools: "true",
-    lane: "true",
-    lane_cli: "true",
     mcpa: "true",
     mcpa_api: "true",
     anydash_cli: "true",
@@ -409,8 +403,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "false",
     delidev: "false",
     delitools: "false",
-    lane: "false",
-    lane_cli: "false",
     mcpa: "false",
     mcpa_api: "false",
     anydash_cli: "false",
@@ -429,8 +421,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     "delino-docs-frontend",
     "delidev-frontend",
     "delitools-frontend",
-    "lane-frontend",
-    "lane-cli",
     "mcpa-frontend",
     "mcpa-api",
     "anydash-cli",
@@ -652,12 +642,15 @@ test("shared checks allocate independent jobs from planner outputs", () => {
     .join("\n");
   for (const paths of [
     ["AGENTS.md", "servers/AGENTS.md"],
-    ["docs/servers-delcore-api-contract.md", "servers/lane-api/ops/README.md"],
+    [
+      "docs/servers-delcore-api-contract.md",
+      "servers/anydash-api/ops/README.md",
+    ],
     ["packages/ui/src/components/button.tsx"],
     ["scripts/localization/catalog.mjs"],
     ["go.mod"],
     ["apps/devbase/src/main.tsx"],
-    ["apps/lane/src/App.tsx"],
+    ["apps/anydash/src/App.tsx"],
     ["servers/mcpa-api/main.go"],
     ["apps/mcpa/src/main.tsx"],
   ]) {
@@ -675,8 +668,6 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "delino-docs-frontend": "delino_docs",
       "delidev-frontend": "delidev",
       "delitools-frontend": "delitools",
-      "lane-frontend": "lane",
-      "lane-cli": "lane_cli",
       "mcpa-frontend": "mcpa",
       "mcpa-api": "mcpa_api",
       "anydash-cli": "anydash_cli",
@@ -780,59 +771,6 @@ test("AnyDash server validation checks its monitoring rules on Linux", () => {
   const database = job.steps.findIndex((step) => step.id === "postgres");
   const index = job.steps.indexOf(step);
   assert.ok(unit < index && index < database);
-});
-
-test("Lane integration owns a pinned disposable loopback S3 fixture", () => {
-  const job = workflow.jobs["rust-servers"];
-  const step = job.steps.find((step) => step.id === "integration");
-  assert.match(
-    step.run,
-    /if \[ "\$SERVICE" = lane-api \]; then\s+python3 "servers\/lane-api\/tests\/integration_fixture\.py"\s+else\s+cargo test/u,
-  );
-  assert.equal(job["runs-on"], "ubuntu-latest");
-  assert.equal(step["timeout-minutes"], 10);
-  assert.match(
-    job.steps.find((step) => step.id === "protoc").run,
-    /if \[ "\$SERVICE" = lane-api \]; then sudo apt-get install -y python3-venv; fi/u,
-  );
-  const helper = readFileSync(
-    new URL(
-      "../../servers/lane-api/tests/integration_fixture.py",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-  assert.match(helper, /MOTO_VERSION = "5\.1\.22"/u);
-  assert.match(helper, /moto\[server\]==\{MOTO_VERSION\}/u);
-  assert.match(
-    helper,
-    /ThreadedMotoServer\(ip_address="127\.0\.0\.1", port=0/u,
-  );
-  assert.match(helper, /client\.create_bucket/u);
-  assert.match(helper, /client\.head_bucket/u);
-  assert.match(helper, /TemporaryDirectory/u);
-  assert.match(helper, /finally:\s+stop\(mock\)/u);
-  assert.match(helper, /SIGINT, signal\.SIGTERM/u);
-  assert.match(helper, /"--ignored", "--nocapture"/u);
-  assert.doesNotMatch(step.run, /docker build|ci:oci/u);
-});
-
-test("Lane Ubuntu validation includes extension and desktop RealQA fixtures", () => {
-  const job = workflow.jobs["lane-frontend"];
-  assert.equal(job["runs-on"], "ubuntu-latest");
-  assert.equal(job.if, "needs.changes.outputs.lane == 'true'");
-  assert.equal(
-    job.steps.find((step) => step.id === "frontend").run.trim(),
-    "pnpm --filter @apps/lane test\npnpm --filter @apps/lane-chrome-extension test\nnode --test apps/lane/native/desktop/realqa*.test.mjs",
-  );
-  const cleanup = job.steps.find(
-    (step) => step.name === "Remove generated output",
-  );
-  assert.equal(cleanup.if, "${{ always() }}");
-  assert.equal(
-    cleanup.run,
-    'rm -rf "apps/lane/dist" "apps/lane-chrome-extension/dist"',
-  );
 });
 
 test("Managed CPA Go server validates on Linux with disposable PostgreSQL", () => {
@@ -957,7 +895,6 @@ test("macOS runners stay in the owning main-only release workflows", () => {
   const directory = new URL("../../.github/workflows/", import.meta.url);
   // Reusable distribution gates called only through the unified release.
   const allowed = {
-    "deploy-lane.yml": ["build"],
     "deploy-perfine.yml": ["build"],
     "deploy-delitools-mobile.yml": ["ios", "ios-publish"],
     "deploy-anydash.yml": ["native"],

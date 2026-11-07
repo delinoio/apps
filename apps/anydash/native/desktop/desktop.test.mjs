@@ -389,7 +389,7 @@ test("selects the newest stable signed release for this platform", () => {
     release("anydash@v1.2.0"),
     release("anydash@v1.10.0"),
     release("anydash@v2.0.0", { prerelease: true }),
-    release("lane@v9.0.0"),
+    release("perfine@v9.0.0"),
   ];
   const selected = selectRelease(releases, "1.2.0", "darwin-arm64");
   assert.equal(selected.version, "1.10.0");

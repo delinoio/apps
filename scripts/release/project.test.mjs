@@ -63,11 +63,11 @@ test("Docs and site versions are independent despite their shared delino tag", (
   );
 });
 test("Server-only and none releases do not bump or deploy frontends", () => {
-  const result = plan({ "@servers/lane-api": "none" });
+  const result = plan({ "@servers/perfine-api": "none" });
   assert.deepEqual(result.changes, {});
   assert.deepEqual(result.components[0].apps, []);
   assert.equal(result.components[0].binaries, false);
-  assert.deepEqual(result.servers, ["delcore-api", "lane-api"]);
+  assert.deepEqual(result.servers, ["delcore-api", "perfine-api"]);
 });
 test("Shared dependencies redeploy consuming apps without version inflation", () => {
   const result = plan({ "@packages/ui": "patch" });
@@ -105,7 +105,7 @@ test("Highest bump wins once per package and consumes all records", () => {
   assert.deepEqual(result.records, ["one", "two"]);
 });
 test("Native mirrors and independent frontend versions remain consistent", () => {
-  for (const name of ["@apps/delitools", "@delinoio/lane", "perfine"]) {
+  for (const name of ["@apps/delitools", "perfine"]) {
     const result = plan({ [name]: "minor" });
     synchronizeVersions(result.changes, read, result.components);
     assert.ok(result.changes["Cargo.lock"]);
@@ -115,8 +115,6 @@ test("Native mirrors and independent frontend versions remain consistent", () =>
           .version,
         JSON.parse(result.changes["apps/delitools/package.json"]).version,
       );
-    if (name === "@delinoio/lane")
-      assert.equal(result.changes["apps/lane/package.json"], undefined);
     if (name === "perfine")
       assert.equal(
         JSON.parse(result.changes["packages/perfine/package.json"]).version,
@@ -180,7 +178,6 @@ test("Release graph separates image preparation from authorized component public
   assert.deepEqual(component.jobs.complete.needs, [
     "status",
     "web",
-    "lane",
     "perfine",
     "anydash",
     "mobile",
@@ -207,7 +204,6 @@ test("Release graph separates image preparation from authorized component public
     "deploy-component",
     "deploy-web",
     "deploy-images",
-    "deploy-lane",
     "deploy-perfine",
     "deploy-delitools-mobile",
     "deploy-anydash",
@@ -232,7 +228,6 @@ test("shared protocol records include Rust and Go server consumers outside the n
     "delitools-api",
     "devbase-api",
     "git-tracker-api",
-    "lane-api",
     "mcpa-api",
     "perfine-api",
   ]);

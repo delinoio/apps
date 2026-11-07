@@ -9,7 +9,7 @@ function fixture() {
     schema: 1,
     base: "b".repeat(40),
     runId: "123",
-    components: [{ component: "lane" }],
+    components: [{ component: "perfine" }],
   };
   const run = {
     id: 123,
