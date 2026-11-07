@@ -366,6 +366,45 @@ async fn enrollment_logout_keeps_registration_and_relogin_reattaches() {
     );
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn logout_without_a_login_creates_no_key() {
+    let home = tempfile::tempdir().unwrap();
+    let mock = Mock::start(api(Arc::new(Mutex::new(Api::default())))).await;
+    let core = support::core(home.path(), &mock, Owner::Direct, &[]);
+    assert_eq!(
+        core.logout().await.unwrap_err().reason,
+        ErrorReason::NotLoggedIn
+    );
+    let config = support::settings(home.path(), &[]).dirs().config;
+    let keys: Vec<_> = std::fs::read_dir(&config)
+        .into_iter()
+        .flatten()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("encryption.key"))
+        .collect();
+    assert!(keys.is_empty(), "logout created key files: {keys:?}");
+    assert_eq!(
+        core.status(false).unwrap().key_source,
+        pb::KeySource::Unspecified as i32
+    );
+    assert!(mock.recorded().is_empty(), "logout made an API call");
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn logout_without_a_login_does_not_need_the_environment_key() {
+    let home = tempfile::tempdir().unwrap();
+    let mock = Mock::start(api(Arc::new(Mutex::new(Api::default())))).await;
+    // `ANYDASH_KEY_SOURCE=env` with no `ANYDASH_ENCRYPTION_KEY` cannot load a key.
+    let core = support::core(
+        home.path(),
+        &mock,
+        Owner::Direct,
+        &[("ANYDASH_KEY_SOURCE", "env")],
+    );
+    assert_eq!(
+        core.logout().await.unwrap_err().reason,
+        ErrorReason::NotLoggedIn
+    );
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn access_token_is_refreshed_before_expiry_and_stored_first() {
     let home = tempfile::tempdir().unwrap();
     let state = Arc::new(Mutex::new(Api {

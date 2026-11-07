@@ -609,7 +609,9 @@ impl Core {
     /// Revoke and delete the device credentials and release leases. The device ID, the local
     /// buffer and provider credentials remain for reattachment.
     pub async fn logout(&self) -> Result<()> {
-        if self.credentials()?.is_none() {
+        // Check for stored credentials without the data key: loading the key can create and
+        // persist one, which a logout of a device that was never logged in must not do.
+        if !self.store().has_secret(CREDENTIALS)? {
             return Err(Failure::local(
                 ErrorReason::NotLoggedIn,
                 "This device is not logged in.",
