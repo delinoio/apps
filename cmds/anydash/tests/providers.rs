@@ -294,6 +294,30 @@ async fn claude_usage_mapping() {
     assert_eq!(mock.recorded()[0].route(), "/api/oauth/usage");
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn claude_api_login_reports_every_extra_usage_kind_not_provided() {
+    let home = tempfile::tempdir().unwrap();
+    support::write(&home.path().join(".claude/.credentials.json"), "{}");
+    let mock = Mock::start(move |_| Reply::json(200, &json!({}))).await;
+    let o = providers::poll(
+        &support::ctx(home.path(), &mock, "grok"),
+        &row(Provider::ClaudeCode),
+        None,
+        NOW,
+    )
+    .await;
+    let s = &o.snapshot;
+    assert_eq!(s.status, CollectionStatus::NotProvided as i32);
+    for kind in [
+        MetricKind::SubscriptionExtraUsageEnabled,
+        MetricKind::SubscriptionExtraUsageUsedPercent,
+        MetricKind::SubscriptionExtraUsageUsedAmount,
+        MetricKind::SubscriptionExtraUsageLimitAmount,
+    ] {
+        assert!(not_provided(s, kind, ""), "{kind:?}");
+    }
+    assert!(mock.recorded().is_empty());
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn rate_limits_transient_failures_and_timeouts() {
     let home = tempfile::tempdir().unwrap();
     support::write(

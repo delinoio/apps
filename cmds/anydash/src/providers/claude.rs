@@ -164,6 +164,9 @@ fn not_provided(now: i64) -> Snapshot {
     }
     for kind in [
         MetricKind::SubscriptionExtraUsageEnabled,
+        MetricKind::SubscriptionExtraUsageUsedPercent,
+        MetricKind::SubscriptionExtraUsageUsedAmount,
+        MetricKind::SubscriptionExtraUsageLimitAmount,
         MetricKind::SubscriptionPlan,
         MetricKind::SubscriptionRemainingAmount,
         MetricKind::PlanDocumentedQuota,
