@@ -9,7 +9,8 @@ use tokio::sync::{Mutex, RwLock};
 
 /// Keys are refreshed after this age and on an unknown key ID.
 const KEY_TTL: Duration = Duration::from_secs(3600);
-/// Unknown key IDs refresh the set at most this often so invalid tokens cannot flood Logto.
+/// Unknown key IDs refresh the set, and failed fetches are retried, at most this often so neither
+/// invalid tokens nor an unhealthy Logto can be flooded.
 const UNKNOWN_KID_REFRESH: Duration = Duration::from_secs(30);
 const ALGORITHMS: [Algorithm; 9] = [
     Algorithm::ES256,
@@ -28,7 +29,8 @@ pub struct Verifier {
     issuer: String,
     jwks_url: String,
     keys: RwLock<Option<(JwkSet, Instant)>>,
-    refresh: Mutex<()>,
+    /// Serializes refreshes and records when the last upstream fetch was attempted, successful or not.
+    refresh: Mutex<Option<Instant>>,
 }
 
 #[derive(Clone, Debug)]
@@ -45,7 +47,7 @@ impl Verifier {
             http,
             issuer,
             keys: RwLock::new(None),
-            refresh: Mutex::new(()),
+            refresh: Mutex::new(None),
         }
     }
 
@@ -79,13 +81,18 @@ impl Verifier {
             Some((None, age)) if age < UNKNOWN_KID_REFRESH => return Ok(None),
             _ => {}
         }
-        let _guard = self.refresh.lock().await;
+        let mut last_attempt = self.refresh.lock().await;
         let cached = lookup(&*self.keys.read().await);
         match cached {
             Some((Some(key), age)) if age < KEY_TTL => return Ok(Some(key)),
             Some((None, age)) if age < UNKNOWN_KID_REFRESH => return Ok(None),
             _ => {}
         }
+        // A failed fetch leaves the cache untouched, so the attempt time is what limits retries.
+        if last_attempt.is_some_and(|at| at.elapsed() < UNKNOWN_KID_REFRESH) {
+            return Err(ApiError::dependency());
+        }
+        *last_attempt = Some(Instant::now());
         let set = self.fetch().await?;
         let key = set.find(kid).cloned();
         *self.keys.write().await = Some((set, Instant::now()));
@@ -176,7 +183,7 @@ pub fn secret(prefix: &str) -> String {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use axum::{Json, Router, routing::get};
+    use axum::{Json, Router, response::IntoResponse, routing::get};
     use serde_json::json;
 
     // Public test fixture only; this key never signs production credentials.
@@ -240,6 +247,63 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
             e.reason,
             delino_protocol::anydash::v1::ErrorReason::DependencyUnavailable
         );
+    }
+
+    #[tokio::test]
+    async fn failed_jwks_fetches_are_rate_limited_and_recover() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let healthy = Arc::new(AtomicBool::new(false));
+        let (c, h) = (calls.clone(), healthy.clone());
+        let app = Router::new().route(
+            "/oidc/jwks",
+            get(move || {
+                let (c, h) = (c.clone(), h.clone());
+                async move {
+                    c.fetch_add(1, Ordering::SeqCst);
+                    if h.load(Ordering::SeqCst) {
+                        Json(jwks()).into_response()
+                    } else {
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let issuer = format!("http://{}/oidc", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let verifier = Arc::new(Verifier::new(reqwest::Client::new(), &issuer));
+        let now = chrono::Utc::now().timestamp();
+        let token = sign(json!({"iss":issuer,"aud":"api","sub":"u","exp":now+600}));
+        let dependency = delino_protocol::anydash::v1::ErrorReason::DependencyUnavailable;
+
+        let tasks: Vec<_> = (0..20)
+            .map(|_| {
+                let (v, t) = (verifier.clone(), token.clone());
+                tokio::spawn(async move { v.verify(&t, "api").await })
+            })
+            .collect();
+        for task in tasks {
+            assert_eq!(task.await.unwrap().unwrap_err().reason, dependency);
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        // Still inside the 30-second window: no new upstream request.
+        assert_eq!(
+            verifier.verify(&token, "api").await.unwrap_err().reason,
+            dependency
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        // After the window the next call retries; the endpoint is healthy again.
+        *verifier.refresh.lock().await = Instant::now().checked_sub(UNKNOWN_KID_REFRESH * 2);
+        healthy.store(true, Ordering::SeqCst);
+        assert_eq!(verifier.verify(&token, "api").await.unwrap().subject, "u");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        // Known key is served from the cache afterwards.
+        verifier.verify(&token, "api").await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     #[test]
