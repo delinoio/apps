@@ -280,39 +280,74 @@ func (s *CredentialSync) notify(ctx context.Context, db store.DB, resourceID uui
 // while it was not listening are unknown; calls then reload from
 // PostgreSQL.
 func (s *CredentialSync) Listen(ctx context.Context) error {
-	backoff := time.Second
+	return runListenLoop(ctx, s.log, s.listenOnce, sleepContext)
+}
+
+// listenBackoffInitial and listenBackoffMax bound the reconnect delay.
+const (
+	listenBackoffInitial = time.Second
+	listenBackoffMax     = time.Minute
+)
+
+// runListenLoop calls listen until ctx ends. listen reports whether it
+// reached LISTEN before returning its error. A connection that reached LISTEN
+// resets the reconnect delay to listenBackoffInitial, so a healthy connection
+// that drops is not treated as another consecutive failure; consecutive
+// failures before LISTEN double the delay up to listenBackoffMax. wait blocks
+// for the delay and returns false when ctx ended first.
+func runListenLoop(
+	ctx context.Context,
+	log *slog.Logger,
+	listen func(context.Context) (bool, error),
+	wait func(context.Context, time.Duration) bool,
+) error {
+	backoff := listenBackoffInitial
 	for ctx.Err() == nil {
-		err := s.listenOnce(ctx)
+		connected, err := listen(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
-		s.log.Warn("credential change listener disconnected", "error", err, "retry_in", backoff.String())
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(backoff):
+		if connected {
+			backoff = listenBackoffInitial
 		}
-		backoff = min(backoff*2, time.Minute)
+		log.Warn("credential change listener disconnected", "error", err, "connected", connected, "retry_in", backoff.String())
+		if !wait(ctx, backoff) {
+			return nil
+		}
+		backoff = min(backoff*2, listenBackoffMax)
 	}
 	return nil
 }
 
-func (s *CredentialSync) listenOnce(ctx context.Context) error {
+func sleepContext(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// listenOnce runs one listener connection. The first result reports whether
+// LISTEN succeeded.
+func (s *CredentialSync) listenOnce(ctx context.Context) (bool, error) {
 	conn, err := s.db.Pool.Acquire(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// The connection carries LISTEN state; never return it to the pool.
 	raw := conn.Hijack()
 	defer func() { _ = raw.Close(context.Background()) }()
 	if _, err := raw.Exec(ctx, "LISTEN "+pgx.Identifier{credentialChannel}.Sanitize()); err != nil {
-		return err
+		return false, err
 	}
 	s.invalidateAll()
 	for {
 		n, err := raw.WaitForNotification(ctx)
 		if err != nil {
-			return err
+			return true, err
 		}
 		instance, resourceID, ok := strings.Cut(n.Payload, ":")
 		if !ok || instance == s.instance {
