@@ -8,7 +8,6 @@ export const App = Object.freeze({
   Site: "delino-site",
   Docs: "delino-docs",
   GitTracker: "git-tracker",
-  Lane: "lane",
   DevBase: "devbase",
   DeliTools: "delitools",
   Mcpa: "mcpa",

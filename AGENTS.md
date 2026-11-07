@@ -28,7 +28,7 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
-- CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Allow the Perfine and Lane binary reusable workflows, and the AnyDash binary/desktop and mobile iOS reusable workflows, called by the main-only unified release to use macOS runners only for their owning distribution gates. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
+- CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Allow the Perfine binary reusable workflow, and the AnyDash binary/desktop and mobile iOS reusable workflows, called by the main-only unified release to use macOS runners only for their owning distribution gates. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
 - Application and API development `dev` and `dev:*` scripts must inject Infisical development variables through the local root project configuration. Root `dev:db:*` commands manage local Compose databases directly without Infisical; follow the [development Compose procedure](docs/repository-workflow-contract.md#local-development-databases). Follow [environment ownership](docs/repository-environment-contract.md) for CLI setup and secret boundaries.
 - Run root `pnpm dev` to expose the frontends and Rust APIs through Portless named local URLs, with Turborepo running workspace development. Each frontend and API `dev` script owns its Portless route; the root launcher must start `pnpm exec turbo run dev` directly after database preparation. For one app, run `pnpm dev` from the owning app to serve its frontend or `pnpm dev:desktop` to launch its native shell. Keep the documented fixed loopback ports and fail on conflicts. Follow the [repository workflow](docs/repository-workflow-contract.md) and owning application contracts.
 - Root `pnpm dev` must wait for the local Compose databases and pass their resolved URLs only to API development launchers, which apply them after Infisical injection. Keep service-local environment files unchanged. Follow the [development Compose procedure](docs/repository-workflow-contract.md#local-development-databases), keep schema migrations explicit and run application development commands on the host.
@@ -204,12 +204,6 @@ Read [Git Tracker contracts](docs/project-git-tracker.md) before changing these 
 ## Perfine ownership
 
 Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfine-core`, `cmds/perfine`, `servers/perfine-api`, `protos/perfine/v1`, `actions/perfine`, or `packages/perfine`. These paths own the shared engine, CLI/MCP, hosted API, schemas, Action source, and npm distribution respectively. Follow the scoped instructions for each affected domain.
-
-## Lane ownership
-
-- `apps/lane` owns the shared ReactLynx client and native/browser hosts.
-- Planned Lane protocol, Rust CLI/local MCP, Rust server/remote MCP and npm distribution paths are routed through the [Lane project index](docs/project-lane.md) and their parent scoped instructions.
-- Read [Lane project](docs/project-lane.md) and [application foundation](docs/apps-lane-foundation.md) before changing these paths.
 
 ## AnyDash ownership
 

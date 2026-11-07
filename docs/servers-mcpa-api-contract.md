@@ -70,7 +70,7 @@ Every response carries `X-Mcpa-Request-Id`, including the 404 and 405 responses 
 
 ### Console session and CSRF
 
-The console uses a BFF cookie session that follows the Lane browser-session pattern.
+The console uses a BFF cookie session.
 
 - `/auth/login` accepts `return_to`, which must exactly equal one entry of `MCPA_WEB_RETURN_URLS`, with no query or fragment. Any other value fails before an authentication flow starts. The server redirects to Logto with S256 PKCE and a one-use state value. It requests the `MCPA_API_RESOURCE` audience and the Delcore resource (`DELCORE_RESOURCE`), using the Logto web application `MCPA_LOGTO_CLIENT_ID`.
 - `/auth/callback` validates state and PKCE, revalidates `return_to` by equality and exchanges the code. It verifies the MFA evidence of the `MCPA_API_RESOURCE` access token and stores the Logto tokens encrypted server-side. It then sets the session cookie and redirects to `return_to`.
@@ -94,7 +94,7 @@ Console and interactive MCP access require Logto MFA evidence in the access toke
 
 ### MCP and the OAuth broker
 
-`/mcp` serves Streamable HTTP MCP and follows the Lane remote MCP pattern.
+`/mcp` serves Streamable HTTP MCP.
 
 - `/.well-known/oauth-protected-resource` names `MCPA_MCP_RESOURCE` as the resource and the API origin as its authorization server. `/.well-known/oauth-authorization-server` publishes the broker endpoints, `S256` as the only PKCE method, the `authorization_code` and `refresh_token` grants and token revocation. An unauthenticated `/mcp` request returns 401 with a `WWW-Authenticate` header that points to the protected-resource metadata.
 - `MCPA_OAUTH_CLIENTS` is the operator-approved registry of MCP clients. Each entry binds a client ID to a display name and its exact redirect URIs. There is no dynamic client registration.
@@ -415,7 +415,7 @@ The data plane uses no object storage, so the Cloudflare R2 default does not app
 - **Traces.** OpenTelemetry traces are exported through OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set and are disabled otherwise. They use the standard `OTEL_*` variables. Spans carry no secrets, bodies or high-cardinality customer identifiers beyond the request ID.
 - **Database call bound.** In `serve`, every request-path database call (call authentication and gates, management and session reads and writes, MCP and console sign-in state) ends within `DEPENDENCY_TIMEOUT`. The store opens the pool with the PostgreSQL `statement_timeout` and `lock_timeout` set to that duration (rounded up to whole milliseconds), so a blocked lock or a slow statement ends on the server even inside a transaction, which bounds each statement rather than the whole transaction. Calls outside a transaction and every wait for a pooled connection also carry a context deadline of the same length, so a saturated pool fails instead of queueing until the request ends. These failures are `ERROR_REASON_DEPENDENCY_UNAVAILABLE` for management (including PostgreSQL SQLSTATE `57014` and `55P03`), the MCP and OAuth equivalents, and a `dependency_unavailable` rejection (`CALL_STATUS_REJECTED_DEPENDENCY`) on the call surface. `mcpa-api migrate`, `check-schema` and `rotate-master-key` run without these bounds so long statements keep working. Tenant data deletion keeps its own bound of four times `DEPENDENCY_TIMEOUT` (transaction-local `statement_timeout` and `lock_timeout`), and retention batches keep their per-batch `DEPENDENCY_TIMEOUT`. The connection used for credential-change `LISTEN` is bounded only while it waits for a pooled connection. A connection pooler that rejects startup parameters must be configured to accept `statement_timeout` and `lock_timeout`.
 - **Health.** `/healthz` reports that the process is alive. `/readyz` reports ready only when the database is reachable and the schema is current.
-- **Operator assets.** `servers/mcpa-api/ops/` follows the layout of `servers/lane-api/ops/`. It holds Prometheus alert and recording rules, a dashboard, rule tests and a README runbook. Alerts cover call errors, provider failures, Delcore authorization failures, outbox backlog and age, poisoned rows, metering checkpoint failures and budget rejections. Thresholds come from operator configuration and are operational triggers, not SLOs. The assets contain no secrets or request bodies.
+- **Operator assets.** `servers/mcpa-api/ops/` holds Prometheus alert and recording rules, a dashboard, rule tests and a README runbook. Alerts cover call errors, provider failures, Delcore authorization failures, outbox backlog and age, poisoned rows, metering checkpoint failures and budget rejections. Thresholds come from operator configuration and are operational triggers, not SLOs. The assets contain no secrets or request bodies.
 
 ## Build and Test
 
@@ -536,5 +536,4 @@ This repository publishes the OCI image only. Runtime rollout, migrations in dep
 - [License contract](repository-license-contract.md)
 - [Environment contract](repository-environment-contract.md)
 - [Workflow contract](repository-workflow-contract.md)
-- [Lane API contract](servers-lane-api-contract.md)
 - [DeliTools API contract](servers-delitools-api-contract.md)

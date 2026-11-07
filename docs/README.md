@@ -123,18 +123,6 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Protocol contract](protos-perfine-v1-contract.md)
 - [Distribution contract](packages-perfine-distribution-contract.md)
 
-### lane
-
-- [Project index](project-lane.md)
-- [Application foundation and Lynxtron desktop build](apps-lane-foundation.md)
-- [RealQA capture, editor, attachments and Chrome integration](apps-lane-realqa-contract.md)
-
-- [Local store and native bridge](apps-lane-local-store-contract.md)
-- [Connect protocol and conformance](protos-lane-v1-contract.md)
-- [Rust CLI and local MCP](cmds-lane-cli-contract.md)
-- [API, remote MCP and operations](servers-lane-api-contract.md)
-- [Distribution and common skill](packages-lane-distribution-contract.md)
-
 ### anydash
 
 - [Project index](project-anydash.md)

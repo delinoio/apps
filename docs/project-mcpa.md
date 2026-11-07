@@ -117,5 +117,4 @@ Update `AGENTS.md` files only when development procedures, directory ownership o
 - [Dependency security contract](repository-dependency-security-contract.md)
 - [Changeset contract](repository-changeset-contract.md)
 - [Delcore project](project-delcore.md)
-- [Lane API contract](servers-lane-api-contract.md) (MCP, OAuth and browser-session pattern)
 - [DeliTools API contract](servers-delitools-api-contract.md) (Delcore usage outbox pattern)

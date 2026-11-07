@@ -74,7 +74,7 @@ const temporary = (t, prefix) => {
 test("release identity requires an anydash tag and a full revision", () => {
   assert.deepEqual(releaseIdentity(env), identity);
   for (const bad of [
-    { ...env, ANYDASH_RELEASE_TAG: "lane@v1.4.0" },
+    { ...env, ANYDASH_RELEASE_TAG: "perfine@v1.4.0" },
     { ...env, ANYDASH_RELEASE_TAG: "anydash@v1.4" },
     { ...env, ANYDASH_RELEASE_TAG: "anydash@v01.4.0" },
     { ...env, ANYDASH_SOURCE_REVISION: "main" },

@@ -7,7 +7,6 @@ fn main() {
             "../../../protos/delcore/v1/delcore.proto",
             "../../../protos/delitools/v1/delitools.proto",
             "../../../protos/perfine/v1/perfine.proto",
-            "../../../protos/lane/v1/lane.proto",
             "../../../protos/anydash/v1/anydash.proto",
         ])
         .includes(&["../../../protos"])

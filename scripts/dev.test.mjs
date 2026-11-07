@@ -30,7 +30,6 @@ const urls = {
   [Api.Mcpa]: "postgres://mcpa:fixture@127.0.0.1:15438/mcpa?sslmode=disable",
   [Api.AnyDash]:
     "postgres://anydash:fixture@127.0.0.1:15438/anydash?sslmode=disable",
-  [Api.Lane]: "postgres://lane:fixture@127.0.0.1:15437/lane?sslmode=disable",
   [Api.Perfine]:
     "postgres://perfine:fixture@127.0.0.1:15436/perfine?sslmode=disable",
   [Api.Delcore]:
@@ -45,7 +44,6 @@ const urls = {
 const listeners = {
   [Api.Mcpa]: "127.0.0.1:46329",
   [Api.AnyDash]: "127.0.0.1:46331",
-  [Api.Lane]: "127.0.0.1:46326",
   [Api.Perfine]: "127.0.0.1:46323",
   [Api.Delcore]: "127.0.0.1:8080",
   [Api.DeliTools]: "127.0.0.1:46322",
@@ -565,7 +563,6 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
     [Api.DevBase, "devbase-api"],
     [Api.GitTracker, "git-tracker-api"],
     [Api.Perfine, "perfine-api"],
-    [Api.Lane, "lane-api"],
     [Api.Mcpa, "mcpa-api"],
     [Api.AnyDash, "anydash-api"],
   ]) {
@@ -665,49 +662,6 @@ test("Perfine Compose database and Turbo handoff remain service-owned", async ()
     !config.tasks["//#server-build"].inputs.includes("crates/perfine-core/**"),
   );
   assert.ok(!config.tasks["//#server-build"].inputs.includes("Cargo.toml"));
-});
-
-test("Lane development keeps its database and provider configuration API-local", async () => {
-  const yaml = (await import("js-yaml")).default;
-  const compose = yaml.load(
-    readFileSync(new URL("../compose.yaml", import.meta.url), "utf8"),
-  );
-  const service = compose.services["lane-postgres"];
-  assert.deepEqual(service.ports, [
-    "127.0.0.1:${LANE_POSTGRES_PORT:-55437}:5432",
-  ]);
-  assert.deepEqual(service.volumes, [
-    "lane-postgres-data:/var/lib/postgresql/data",
-  ]);
-  assert.ok(service.healthcheck.test.join(" ").includes("-h 127.0.0.1"));
-  const config = JSON.parse(
-    readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
-  );
-  const task = config.tasks["@servers/lane-api#dev"];
-  assert.deepEqual(task.dependsOn, ["//#server-build"]);
-  for (const key of [
-    databaseHandoff,
-    "MAX_ITEM_BYTES",
-    "MAX_WEBHOOK_BYTES",
-    "REQUESTS_PER_MINUTE",
-    "WEBHOOK_REQUESTS_PER_MINUTE",
-    "LANE_*",
-    "APNS_*",
-    "FCM_*",
-    "WEB_PUSH_*",
-  ]) {
-    assert.ok(task.passThroughEnv.includes(key), key);
-    assert.ok(!config.globalPassThroughEnv.includes(key), key);
-    assert.ok(!config.globalEnv.includes(key), key);
-  }
-  const prepared = prepareApiEnvironment(Api.Lane, {
-    ...handoff,
-    LISTEN: "0.0.0.0:9999",
-    DATABASE_URL: "postgres://remote.invalid/lane",
-  });
-  assert.equal(prepared.env.LISTEN, "127.0.0.1:46326");
-  assert.equal(prepared.env.DATABASE_URL, urls[Api.Lane]);
-  assert.equal(prepared.env[databaseHandoff], undefined);
 });
 
 test("Managed CPA development keeps its database and Go build API-local", async () => {

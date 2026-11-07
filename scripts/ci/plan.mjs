@@ -63,7 +63,7 @@ function classifyShared(paths) {
       // Namespace metadata has no runtime consumers. Keep this list exact so
       // future Apache service code retains fallback until its CI is registered.
       !/^oss\/(?:LICENSE|NOTICE|servers\/\.gitkeep)$/u.test(path) &&
-      !/^(crates\/perfine-core\/|cmds\/(?:perfine|lane|anydash)\/|packages\/(?:perfine|lane|anydash)\/)/u.test(
+      !/^(crates\/perfine-core\/|cmds\/(?:perfine|anydash)\/|packages\/(?:perfine|anydash)\/)/u.test(
         path,
       ) &&
       !/^(apps|actions|protos|examples|docs|servers)\//u.test(path),
@@ -179,13 +179,6 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       serverShared ||
       paths.some((path) => /^(servers\/perfine-api\/|protos\/)/u.test(path)),
-    lane_api:
-      serverRust ||
-      shared.rust ||
-      repositoryShared ||
-      shared.protocol ||
-      serverShared ||
-      paths.some((path) => /^(servers\/lane-api\/|protos\/)/u.test(path)),
     anydash_api:
       serverRust ||
       shared.rust ||
@@ -193,15 +186,6 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       serverShared ||
       paths.some((path) => /^(servers\/anydash-api\/|protos\/)/u.test(path)),
-    lane_cli:
-      repositoryShared ||
-      shared.rust ||
-      shared.protocol ||
-      paths.some((path) =>
-        /^(Cargo\.(toml|lock)$|cmds\/lane\/|packages\/lane\/|apps\/lane\/native\/store\/|protos\/lane\/)/u.test(
-          path,
-        ),
-      ),
     anydash_cli:
       repositoryShared ||
       shared.rust ||
@@ -210,13 +194,6 @@ export function select(paths, lockfiles) {
         /^(Cargo\.(toml|lock)$|cmds\/anydash\/|packages\/anydash\/|protos\/anydash\/)/u.test(
           path,
         ),
-      ),
-    lane:
-      repositoryShared ||
-      shared.lynxUi ||
-      shared.protocol ||
-      paths.some((path) =>
-        /^(apps\/(?:lane|lane-chrome-extension)\/|protos\/lane\/)/u.test(path),
       ),
     mcpa_api:
       repositoryShared ||
@@ -297,13 +274,6 @@ export function selectRustServers(selected) {
       port: 55432,
       user: "delcore",
       database: "delcore_api_test",
-    },
-    {
-      service: "lane-api",
-      owner: "lane_api",
-      port: 55437,
-      user: "lane",
-      database: "lane_api_test",
     },
     {
       service: "perfine-api",

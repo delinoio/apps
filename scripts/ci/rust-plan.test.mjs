@@ -184,25 +184,6 @@ test("Perfine protocols and distribution select available core and CLI consumers
   }
 });
 
-test("Lane schemas and packages select the root Rust CLI", () => {
-  for (const path of [
-    "packages/lane/scripts/build.mjs",
-    "protos/lane/v1/lane.proto",
-    "apps/lane/native/store/schema.sql",
-  ]) {
-    const result = selectRust(base, [path], (command) =>
-      command === "list"
-        ? {
-            packages: ["lane", "perfine", "delitools-shell"].map((name) => ({
-              name,
-            })),
-          }
-        : { merge_base: base, packages: [] },
-    );
-    assert.deepEqual(result, { rust_clippy: ["lane"], rust_test: ["lane"] });
-  }
-});
-
 test("AnyDash schemas select the root Rust CLI", () => {
   const result = selectRust(
     base,
@@ -210,7 +191,7 @@ test("AnyDash schemas select the root Rust CLI", () => {
     (command) =>
       command === "list"
         ? {
-            packages: ["anydash", "lane", "delitools-shell"].map((name) => ({
+            packages: ["anydash", "perfine", "delitools-shell"].map((name) => ({
               name,
             })),
           }
@@ -225,9 +206,8 @@ test("AnyDash schemas select the root Rust CLI", () => {
 test("internal documentation skips Rust allocation without cargo-mono", () => {
   for (const path of [
     "docs/project-perfine.md",
-    "docs/cmds-lane-cli-contract.md",
-    "docs/apps-lane-local-store-contract.md",
-    "servers/lane-api/ops/README.md",
+    "docs/cmds-anydash-cli-contract.md",
+    "servers/anydash-api/ops/README.md",
     "README.md",
   ]) {
     assert.deepEqual(

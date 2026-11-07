@@ -92,7 +92,7 @@ const activeText = (page) =>
 for (const name of browsers) {
   const browser = await playwright[name].launch({
     headless: true,
-    // Chromium uses the installed Chrome channel by default, as Lane does;
+    // Chromium uses the installed Chrome channel by default;
     // set ANYDASH_BROWSER_CHANNEL=chromium for Playwright's bundled build.
     ...(name === "chromium"
       ? { channel: process.env.ANYDASH_BROWSER_CHANNEL || "chrome" }

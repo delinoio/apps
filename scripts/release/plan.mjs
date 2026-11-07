@@ -7,7 +7,6 @@ export const Component = Object.freeze({
   Delitools: "delitools",
   Devbase: "devbase",
   Perfine: "perfine",
-  Lane: "lane",
   Mcpa: "mcpa",
   AnyDash: "anydash",
 });
@@ -17,7 +16,6 @@ export const serverDependencies = Object.freeze({
   "git-tracker-api": ["delcore-api"],
   "delitools-api": ["delcore-api"],
   "perfine-api": ["delcore-api"],
-  "lane-api": ["delcore-api"],
   "mcpa-api": ["delcore-api"],
   "anydash-api": ["delcore-api"],
 });
@@ -31,8 +29,6 @@ const owners = {
   "devbase-api": "devbase",
   delitools: "delitools",
   "delitools-api": "delitools",
-  lane: "lane",
-  "lane-api": "lane",
   "perfine-api": "perfine",
   mcpa: "mcpa",
   "mcpa-api": "mcpa",
@@ -42,7 +38,6 @@ const owners = {
 const frontendServers = {
   devbase: ["devbase-api"],
   "git-tracker": ["git-tracker-api"],
-  lane: ["lane-api"],
   delitools: ["delitools-api"],
   mcpa: ["mcpa-api"],
   anydash: ["anydash-api"],
@@ -52,7 +47,6 @@ const weight = { none: 0, patch: 1, minor: 2, major: 3 };
 const distributions = {
   perfine: "perfine",
   "@actions/perfine": "perfine",
-  "@delinoio/lane": "lane",
   "@delinoio/anydash": "anydash",
 };
 const greatest = (a = "none", b = "none") => (weight[a] >= weight[b] ? a : b);
@@ -140,7 +134,7 @@ export function makePlan(records, inventory, read, priorVersions = {}) {
       for (const dependency of frontendServers[leaf] ?? [])
         selectServer(dependency);
       // The AnyDash desktop apps embed the CLI, so both publish together.
-      if (leaf === "lane" || leaf === "anydash") entry.binaries = true;
+      if (leaf === "anydash") entry.binaries = true;
       if (leaf === "delitools" || leaf === "anydash") entry.mobile = true;
     }
     if (server) selectServer(leaf);

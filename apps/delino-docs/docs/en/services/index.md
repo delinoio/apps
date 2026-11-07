@@ -11,12 +11,6 @@
 
 <!-- i18n:end -->
 
-<!-- i18n:source-only lane -->
-
-- [Lane](/services/lane/): manage tasks and prompts locally with optional account synchronization and MCP connections.
-
-<!-- i18n:end -->
-
 <!-- i18n:source-only anydash -->
 
 - [AnyDash](/services/anydash/): see AI coding subscription limits, local AI session usage from your devices, and deployment platform status and cost in one dashboard.

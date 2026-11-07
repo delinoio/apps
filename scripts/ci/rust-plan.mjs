@@ -40,23 +40,17 @@ export function selectRust(
   const perfineConsumer = paths.some((path) =>
     /^(actions\/perfine\/|packages\/perfine\/|protos\/perfine\/)/u.test(path),
   );
-  const laneConsumer = paths.some((path) =>
-    /^(packages\/lane\/|protos\/lane\/|apps\/lane\/native\/store\/)/u.test(
-      path,
-    ),
-  );
   // The AnyDash CLI generates Rust from the shared schema in its build script.
   const anydashConsumer = paths.some((path) =>
     /^protos\/anydash\//u.test(path),
   );
   const consumers =
-    !global && (perfineConsumer || laneConsumer || anydashConsumer)
+    !global && (perfineConsumer || anydashConsumer)
       ? run("list")
           .packages.map((pkg) => pkg.name)
           .filter(
             (name) =>
               (perfineConsumer && ["perfine-core", "perfine"].includes(name)) ||
-              (laneConsumer && name === "lane") ||
               (anydashConsumer && name === "anydash"),
           )
       : [];

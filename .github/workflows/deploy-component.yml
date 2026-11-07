@@ -41,16 +41,6 @@ jobs:
       version: ${{ fromJSON(inputs.component).version }}
       apps: ${{ toJSON(fromJSON(inputs.component).apps) }}
     secrets: inherit
-  lane:
-    needs: status
-    if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).component == 'lane' && fromJSON(inputs.component).binaries
-    permissions:
-      contents: write
-    uses: ./.github/workflows/deploy-lane.yml
-    with:
-      revision: ${{ inputs.revision }}
-      tag: ${{ fromJSON(inputs.component).tag }}
-    secrets: inherit
   perfine:
     needs: status
     if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).component == 'perfine' && fromJSON(inputs.component).binaries
@@ -99,12 +89,12 @@ jobs:
       publish: false
     secrets: inherit
   complete:
-    needs: [status, web, lane, perfine, anydash, mobile, anydash-mobile]
+    needs: [status, web, perfine, anydash, mobile, anydash-mobile]
     if: >-
       ${{ !cancelled() && needs.status.result == 'success' &&
       (needs.status.outputs.tagged == 'true' ||
       ((toJSON(fromJSON(inputs.component).apps) == '[]' || needs.web.result == 'success') &&
-      (!fromJSON(inputs.component).binaries || (fromJSON(inputs.component).component == 'lane' && needs.lane.result == 'success') || (fromJSON(inputs.component).component == 'perfine' && needs.perfine.result == 'success') || (fromJSON(inputs.component).component == 'anydash' && needs.anydash.result == 'success')) &&
+      (!fromJSON(inputs.component).binaries || (fromJSON(inputs.component).component == 'perfine' && needs.perfine.result == 'success') || (fromJSON(inputs.component).component == 'anydash' && needs.anydash.result == 'success')) &&
       (!fromJSON(inputs.component).mobile || (fromJSON(inputs.component).component == 'delitools' && needs.mobile.result == 'success') || (fromJSON(inputs.component).component == 'anydash' && needs['anydash-mobile'].result == 'success')))) }}
     runs-on: ubuntu-latest
     permissions:

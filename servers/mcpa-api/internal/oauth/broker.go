@@ -172,7 +172,7 @@ func (b *Broker) Mounts() []server.Mount {
 }
 
 // apiPolicy rejects a present Origin other than the console origin before
-// the handler runs, following the Lane origin rule. The token and revocation
+// the handler runs. The token and revocation
 // endpoints grant no CORS access: MCP clients call them from native or
 // server-side code.
 func (b *Broker) apiPolicy(next http.Handler) http.Handler {

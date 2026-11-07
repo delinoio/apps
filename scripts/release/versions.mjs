@@ -55,11 +55,6 @@ export function synchronizeVersions(changes, read, components) {
       version,
     );
   }
-  if (changes["packages/lane/package.json"]) {
-    const version = JSON.parse(changes["packages/lane/package.json"]).version;
-    jsonVersion("packages/lane/package.json", version, true);
-    rustVersion("cmds/lane/Cargo.toml", "lane", version);
-  }
   const perfine = components.find(
     (entry) => entry.component === "perfine" && entry.binaries,
   );

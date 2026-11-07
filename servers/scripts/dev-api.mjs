@@ -20,7 +20,6 @@ export function prepareApiEnvironment(api, source = process.env) {
       [Api.DevBase]: "127.0.0.1:46317",
       [Api.GitTracker]: "127.0.0.1:46321",
       [Api.Perfine]: "127.0.0.1:46323",
-      [Api.Lane]: "127.0.0.1:46326",
       [Api.Mcpa]: "127.0.0.1:46329",
       [Api.AnyDash]: "127.0.0.1:46331",
     }[api],
@@ -44,7 +43,6 @@ export function apiCommand(api, source = process.env) {
     [Api.DevBase]: "devbase-api",
     [Api.GitTracker]: "git-tracker-api",
     [Api.Perfine]: "perfine-api",
-    [Api.Lane]: "lane-api",
     // Built by build-go.mjs into the same target directory.
     [Api.Mcpa]: "mcpa-api",
     [Api.AnyDash]: "anydash-api",

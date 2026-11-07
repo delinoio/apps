@@ -7,7 +7,7 @@ target 'AnyDash' do
   pod 'Lynx', '4.1.0', :subspecs => ['Framework']
   pod 'XElement', '4.1.0', :subspecs => ['Input']
   pod 'PrimJS', '4.1.1', :subspecs => ['quickjs', 'napi']
-  # Lynx 4.1.0 leaves these unpinned; keep the 4.1.2 set Lane resolved instead
+  # Lynx 4.1.0 leaves these unpinned; keep the resolved 4.1.2 set instead
   # of drifting to newer releases.
   pod 'LynxBase', '4.1.2'
   pod 'LynxServiceAPI', '4.1.2'

@@ -15,11 +15,8 @@ test("isolated projects select only their validation", () => {
     delidev: false,
     delitools: true,
     perfine_api: false,
-    lane_api: false,
     anydash_api: false,
-    lane_cli: false,
     anydash_cli: false,
-    lane: false,
     mcpa_api: false,
     mcpa: false,
     anydash: false,
@@ -38,11 +35,8 @@ test("isolated projects select only their validation", () => {
     delidev: false,
     delitools: false,
     perfine_api: true,
-    lane_api: true,
     anydash_api: true,
-    lane_cli: false,
     anydash_cli: false,
-    lane: false,
     mcpa_api: true,
     mcpa: false,
     anydash: false,
@@ -61,11 +55,8 @@ test("isolated projects select only their validation", () => {
     delidev: true,
     delitools: true,
     perfine_api: true,
-    lane_api: true,
     anydash_api: true,
-    lane_cli: true,
     anydash_cli: true,
-    lane: true,
     mcpa_api: true,
     mcpa: true,
     anydash: true,
@@ -96,11 +87,8 @@ for (const [project, key] of [
         delidev: false,
         delitools: false,
         perfine_api: false,
-        lane_api: false,
         anydash_api: false,
-        lane_cli: false,
         anydash_cli: false,
-        lane: false,
         mcpa_api: false,
         mcpa: false,
         anydash: false,
@@ -124,11 +112,8 @@ test("consumer examples select protocol validation without native runners", () =
     delidev: false,
     delitools: false,
     perfine_api: false,
-    lane_api: false,
     anydash_api: false,
-    lane_cli: false,
     anydash_cli: false,
-    lane: false,
     mcpa_api: false,
     mcpa: false,
     anydash: false,
@@ -204,11 +189,8 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       delidev: true,
       delitools: true,
       perfine_api: false,
-      lane_api: false,
       anydash_api: false,
-      lane_cli: path === "Cargo.lock",
       anydash_cli: path === "Cargo.lock",
-      lane: false,
       mcpa_api: false,
       mcpa: false,
       anydash: false,
@@ -231,11 +213,8 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     delidev: false,
     delitools: false,
     perfine_api: false,
-    lane_api: false,
     anydash_api: false,
-    lane_cli: false,
     anydash_cli: false,
-    lane: false,
     mcpa_api: true,
     mcpa: false,
     anydash: false,
@@ -305,7 +284,6 @@ test("Rust server matrix selects only affected services", () => {
         "delitools-api",
         "devbase-api",
         "git-tracker-api",
-        "lane-api",
         "perfine-api",
       ],
     ],
@@ -317,7 +295,6 @@ test("Rust server matrix selects only affected services", () => {
         "delitools-api",
         "devbase-api",
         "git-tracker-api",
-        "lane-api",
         "perfine-api",
       ],
     ],
@@ -329,7 +306,6 @@ test("Rust server matrix selects only affected services", () => {
         "delitools-api",
         "devbase-api",
         "git-tracker-api",
-        "lane-api",
         "perfine-api",
       ],
     ],
@@ -369,9 +345,7 @@ for (const [paths, expected] of [
     [
       "delidev",
       "delitools",
-      ...(/^Cargo\./u.test(path)
-        ? ["lane_cli", "anydash_cli", "perfine_fixtures"]
-        : []),
+      ...(/^Cargo\./u.test(path) ? ["anydash_cli", "perfine_fixtures"] : []),
     ],
   ]),
   ...[".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml"].map(
@@ -385,9 +359,7 @@ for (const [paths, expected] of [
         "delidev",
         "delitools",
         "perfine_api",
-        "lane_api",
         "anydash_api",
-        "lane_cli",
         "anydash_cli",
         "perfine_fixtures",
       ],
@@ -403,11 +375,8 @@ for (const [paths, expected] of [
       "git_tracker_api",
       "git_tracker",
       "perfine_api",
-      "lane_api",
       "anydash_api",
-      "lane_cli",
       "anydash_cli",
-      "lane",
       "mcpa_api",
       "mcpa",
       "anydash",
@@ -423,11 +392,8 @@ for (const [paths, expected] of [
       "git_tracker_api",
       "git_tracker",
       "perfine_api",
-      "lane_api",
       "anydash_api",
-      "lane_cli",
       "anydash_cli",
-      "lane",
       "mcpa_api",
       "mcpa",
       "anydash",
@@ -479,30 +445,12 @@ test("instruction files are excluded before project and shared selection", () =>
 
 test("changeset Markdown alone selects no affected validators", () => {
   for (const path of [
-    ".changeset/lane-navigation.md",
+    ".changeset/anydash-navigation.md",
     ".changeset/README.md",
   ]) {
     assert.deepEqual(selectedJobs([path]), []);
     assert.ok(Object.values(selectChecks([path])).every((value) => !value));
   }
-});
-
-test("Lane navigation changes with a release record select only the frontend", () => {
-  const paths = [
-    ".changeset/lane-reuse-navigation-tab.md",
-    "apps/lane/src/App.tsx",
-    "apps/lane/tests/tabs-browser.mjs",
-    "apps/lane/tests/tabs.test.ts",
-    "apps/lane/tests/workspace-navigation.test.ts",
-    "docs/apps-lane-foundation.md",
-  ];
-  assert.deepEqual(selectedJobs(paths), ["lane"]);
-  assert.deepEqual(selectRustServers(select(paths)), []);
-  assert.deepEqual(selectChecks(paths), {
-    tooling: false,
-    shared_ui: false,
-    workflows: false,
-  });
 });
 
 test("release records preserve selection from other changed inputs", () => {
@@ -666,38 +614,14 @@ test("Perfine API and server evaluator changes select server validation", () => 
   );
 });
 
-for (const path of [
-  "apps/lane/src/App.tsx",
-  "apps/lane-chrome-extension/src/background.js",
-  "apps/lane-chrome-extension/manifest.json",
-  "apps/lane-chrome-extension/tests/capture.test.mjs",
-  "apps/lane/native/desktop/main.mjs",
-]) {
-  test(`Lane paths select only Lane: ${path}`, () => {
-    assert.deepEqual(selectedJobs([path]), ["lane"]);
-  });
-}
-
-test("Lane domain paths select owning validators and shared store consumers", () => {
+test("AnyDash domain paths select owning validators and shared consumers", () => {
   for (const [path, expected] of [
-    ["servers/lane-api/src/lib.rs", ["lane_api"]],
-    ["cmds/lane/src/main.rs", ["lane_cli"]],
-    ["packages/lane/package.json", ["lane_cli"]],
-    ["apps/lane/native/store/schema.sql", ["lane_cli", "lane"]],
-    ["packages/lynx-ui/src/components/input.tsx", ["lane", "anydash"]],
+    ["packages/lynx-ui/src/components/input.tsx", ["anydash"]],
     ["cmds/anydash/src/main.rs", ["anydash_cli"]],
     ["packages/anydash/bin/verify.mjs", ["anydash_cli"]],
     ["packages/anydash/install/install.sh", ["anydash_cli", "anydash"]],
   ])
     assert.deepEqual(selectedJobs([path]), expected, path);
-  assert.deepEqual(selectRustServers(select(["servers/lane-api/src/lib.rs"])), [
-    {
-      service: "lane-api",
-      port: 55437,
-      user: "lane",
-      database: "lane_api_test",
-    },
-  ]);
 });
 
 test("AnyDash server paths select only the AnyDash server validator", () => {
@@ -748,12 +672,12 @@ test("AnyDash CLI and distribution paths select only the AnyDash CLI job", () =>
 
 const recoveryPolicyPaths = [
   "AGENTS.md",
-  "docs/apps-lane-foundation.md",
+  "docs/apps-anydash-foundation.md",
   "docs/repository-workflow-contract.md",
   "docs/servers-delcore-api-contract.md",
-  "docs/servers-lane-api-contract.md",
+  "docs/servers-anydash-api-contract.md",
   "docs/servers-perfine-api-contract.md",
-  "servers/lane-api/ops/README.md",
+  "servers/anydash-api/ops/README.md",
 ];
 
 test("internal documentation changes allocate no affected jobs", () => {
@@ -761,7 +685,7 @@ test("internal documentation changes allocate no affected jobs", () => {
     ...recoveryPolicyPaths,
     "README.md",
     "docs/project-perfine.md",
-    "docs/protos-lane-v1-contract.md",
+    "docs/protos-anydash-v1-contract.md",
     "docs/packages-lynx-ui-contract.md",
     "servers/delcore-api/README.md",
   ];
@@ -770,9 +694,9 @@ test("internal documentation changes allocate no affected jobs", () => {
     assert.deepEqual(selectRustServers(select(paths)), []);
     assert.ok(Object.values(selectChecks(paths)).every((value) => !value));
     for (const runtime of [
-      "apps/lane/src/App.tsx",
-      "servers/lane-api/src/lib.rs",
-      "protos/lane/v1/lane.proto",
+      "apps/anydash/src/App.tsx",
+      "servers/anydash-api/src/lib.rs",
+      "protos/anydash/v1/anydash.proto",
       "scripts/ci/plan.mjs",
       "oss/servers/example/src/main.rs",
     ]) {
@@ -789,9 +713,9 @@ test("application documentation and non-Markdown inputs keep owning validation",
   for (const [path, owner] of [
     ["apps/delino-docs/docs/en/index.md", "delino_docs"],
     ["apps/delino-site/docs/services/index.md", "delino_site"],
-    ["servers/lane-api/ops/alerts.yml", "lane_api"],
-    ["servers/lane-api/ops/check.sh", "lane_api"],
-    ["servers/lane-api/ops/README.md.rs", "lane_api"],
+    ["servers/anydash-api/ops/alerts.yml", "anydash_api"],
+    ["servers/anydash-api/ops/check.sh", "anydash_api"],
+    ["servers/anydash-api/ops/README.md.rs", "anydash_api"],
   ])
     assert.equal(select([path])[owner], true, path);
 });
@@ -834,7 +758,7 @@ test("Managed CPA paths select the Go server and console validators", () => {
     ["protos/mcpa/v1/mcpa.pb.go", true, true],
     ["protos/delcore/v1/delcore.proto", true, false],
     ["protos/package.json", true, true],
-    ["protos/lane/v1/lane.proto", false, false],
+    ["protos/perfine/v1/perfine.proto", false, false],
     ["protos/devbase/v1/devbase.proto", false, false],
   ]) {
     assert.equal(select([path]).mcpa_api, server, path);

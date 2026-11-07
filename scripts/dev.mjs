@@ -10,7 +10,6 @@ export const Api = Object.freeze({
   DevBase: "devbase",
   GitTracker: "git-tracker",
   Perfine: "perfine",
-  Lane: "lane",
   Mcpa: "mcpa",
   AnyDash: "anydash",
 });
