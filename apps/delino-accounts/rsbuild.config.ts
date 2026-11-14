@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { defineConfig } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
-import { resolveAccountsApiOrigin } from "./src/config.ts";
+import { readAccountsApiOrigin } from "./src/config.ts";
 
 // Fail the build and the dev server early when the API origin is not valid.
 // The Rsbuild CLI loads `.env*` files into `process.env` before this file.
-resolveAccountsApiOrigin(process.env.PUBLIC_API_ORIGIN);
+// `src/api-origin.ts` inlines the same validated value into the client bundle.
+readAccountsApiOrigin(process.env);
 
 export default defineConfig({
   plugins: [pluginReact()],

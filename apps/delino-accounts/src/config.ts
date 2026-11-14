@@ -3,6 +3,20 @@
 /** Production origin of accounts-api. */
 export const DEFAULT_ACCOUNTS_API_ORIGIN = "https://accounts.api.delino.io";
 
+/** Build-time environment that carries `PUBLIC_API_ORIGIN`. */
+export interface AccountsBuildEnv {
+  readonly PUBLIC_API_ORIGIN?: string;
+}
+
+/**
+ * Reads and validates the API server origin from a build-time environment.
+ * This is the only place that reads `PUBLIC_API_ORIGIN`: the Rsbuild config
+ * passes `process.env` and the client bundle passes `import.meta.env`.
+ */
+export function readAccountsApiOrigin(env: AccountsBuildEnv): string {
+  return resolveAccountsApiOrigin(env.PUBLIC_API_ORIGIN);
+}
+
 /**
  * Resolves the API server origin from a build-time value. An unset or empty
  * value selects the production origin. Values with credentials, a path, a
