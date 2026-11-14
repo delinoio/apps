@@ -71,16 +71,53 @@ export function allFormatFiles(cwd) {
     });
 }
 
+function rstackEntry() {
+  const manifestPath = require.resolve("rstack/package.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  return resolve(dirname(manifestPath), manifest.bin.rs);
+}
+
+// Content that every supported extension formats to an empty file but that an
+// excluded path leaves untouched (verified for each entry of `extensions`).
+const ExclusionProbe = "\n\n\n";
+
+// Whether the shared Rstack configuration (`rstack.config.ts` ignorePatterns
+// and Rstack's own ignore handling) excludes the path from formatting. Rstack
+// is the single owner of those exclusions and only evaluates them for paths it
+// is given, so ask it through `--stdin-filepath`, which applies the same
+// matching to a path that does not exist on disk. A probe that cannot run
+// reports "not excluded", which keeps the missing-file failure in force.
+function excludedByRstack(cwd, name) {
+  try {
+    const output = execFileSync(
+      process.execPath,
+      [rstackEntry(), "fmt", "--stdin-filepath", `./${name}`],
+      {
+        cwd,
+        input: ExclusionProbe,
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    return output === ExclusionProbe;
+  } catch {
+    return false;
+  }
+}
+
 // Staged deletions are excluded by --diff-filter, so every selected path is a
 // staged addition, modification, rename or type change. Such a path that is
 // missing from the working tree (removed after `git add`, or outside a sparse
 // checkout) has a staged blob that `--write` would never format. Fail naming the
 // path instead of silently skipping it, so the commit cannot bypass formatting.
+// A path that the shared exclusions skip is never formatted even when present,
+// so its absence is irrelevant and, like the unstaged selectors, it is skipped.
 function stagedRegularFile(cwd, name) {
   try {
     return isRegularFile(cwd, name, false);
   } catch (error) {
     if (!goneCodes.has(error.code)) throw error;
+    if (excludedByRstack(cwd, name)) return false;
     throw new Error(
       `Staged path is missing from the working tree (${error.code}) and cannot be formatted: ${name}. Restore the file, or unstage it with "git restore --staged -- <path>" (or "git rm --cached -- <path>" to commit its deletion), then commit again.`,
       { cause: error },
@@ -118,8 +155,10 @@ function stagedNonSymlinkPaths(cwd) {
 export function stagedFormatFiles(cwd) {
   return stagedNonSymlinkPaths(cwd)
     .filter((name) => {
-      // A staged symlink never reaches the worktree check, so a missing
-      // placeholder does not fail the selection; only regular files do.
+      // Every exemption runs before the worktree is consulted, so none of them
+      // can hit the missing-file failure: a staged symlink (filtered above by
+      // its index mode), an unsupported extension, and, inside
+      // stagedRegularFile, a path excluded by the shared Rstack configuration.
       if (!extensions.has(extname(name))) return false;
       return stagedRegularFile(cwd, name);
     })
@@ -229,9 +268,7 @@ export async function runFormatter(cwd, paths, mode = Mode.Check) {
   if (!Object.values(Mode).includes(mode))
     throw new Error("Unknown formatting mode");
   if (!paths.length) return 0;
-  const manifestPath = require.resolve("rstack/package.json");
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const entry = resolve(dirname(manifestPath), manifest.bin.rs);
+  const entry = rstackEntry();
   let status = 0;
   // Bound argv size and prefix paths so leading dashes and negation characters
   // cannot become CLI flags or exclusion patterns. Rstack resolves files first.
