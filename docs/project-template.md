@@ -41,7 +41,7 @@ Document any project-level deviations from `docs/repository-defaults.md`.
 
 ## Change Policy
 
-Document which contracts must be updated together when contracts, ownership or interfaces change. Update `AGENTS.md` only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](README.md#instruction-update-policy). Record new implementation status, validation results and unresolved limits in pull requests, issues and CI logs/artifacts.
+Document which contracts must be updated together when contracts, ownership or interfaces change. Update `AGENTS.md` only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](README.md#instruction-update-policy). Record new implementation status, validation results and unresolved limits in pull requests, Linear issues and CI logs/artifacts.
 
 ## References
 
