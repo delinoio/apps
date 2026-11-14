@@ -29,10 +29,30 @@ import {
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const require = createRequire(import.meta.url);
 const lefthook = require("lefthook/get-exe.js").getExePath();
-function fixture(t, initialCommit = true) {
+
+// A developer's global or system Git configuration (core.hooksPath,
+// commit.gpgsign, ...) and the GIT_* variables of an enclosing Git hook
+// invocation (GIT_DIR, GIT_INDEX_FILE, ...) must not change how the fixture
+// repositories behave. Mutates and returns `env`.
+function isolateGitEnvironment(env) {
+  for (const name of Object.keys(env)) {
+    if (name.startsWith("GIT_") || name === "LEFTHOOK_CONFIG") {
+      delete env[name];
+    }
+  }
+  env.GIT_CONFIG_GLOBAL = process.platform === "win32" ? "NUL" : "/dev/null";
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  return env;
+}
+
+// The exported selectors run git without an explicit environment, so they
+// inherit this process's environment; isolate it before any test runs.
+isolateGitEnvironment(process.env);
+
+function fixture(t, initialCommit = true, parentEnv = process.env) {
   const cwd = mkdtempSync(join(tmpdir(), "rstack-format-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
-  const env = { ...process.env, LEFTHOOK_BIN: lefthook };
+  const env = isolateGitEnvironment({ ...parentEnv, LEFTHOOK_BIN: lefthook });
   delete env.CI;
   delete env.TURBO_SCM_BASE;
   delete env.TURBO_SCM_HEAD;
@@ -83,6 +103,35 @@ function fixture(t, initialCommit = true) {
     base: initialCommit ? commit() : null,
   };
 }
+
+test("fixture ignores hostile global Git configuration and GIT_* variables", (t) => {
+  const hostile = mkdtempSync(join(tmpdir(), "rstack-hostile-"));
+  t.after(() => rmSync(hostile, { recursive: true, force: true }));
+  const globalConfig = join(hostile, "gitconfig");
+  writeFileSync(
+    globalConfig,
+    `[core]\n\thooksPath = ${join(hostile, "hooks")}\n[commit]\n\tgpgsign = true\n`,
+  );
+  const bare = join(hostile, "bare.git");
+  execFileSync("git", ["init", "--quiet", "--bare", bare], {
+    env: isolateGitEnvironment({ PATH: process.env.PATH }),
+  });
+  const f = fixture(t, true, {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: globalConfig,
+    GIT_DIR: bare,
+    GIT_INDEX_FILE: join(hostile, "index"),
+    GIT_WORK_TREE: hostile,
+  });
+  f.installHook();
+  f.write("hostile.ts", "const value={answer:42}\n");
+  f.git("add", "hostile.ts");
+  f.git("commit", "--quiet", "-m", "hostile environment");
+  assert.equal(
+    f.git("show", "HEAD:hostile.ts"),
+    "const value = { answer: 42 };",
+  );
+});
 
 test("pre-commit formats and stages initial-commit files with literal paths", (t) => {
   const f = fixture(t, false);
