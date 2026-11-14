@@ -21,5 +21,7 @@
 
 - [Repository defaults](../docs/repository-defaults.md)
 - [Repository workflow](../docs/repository-workflow-contract.md)
+- [Authentication](../docs/repository-auth-contract.md)
+- [Billing currency and precision](../docs/repository-billing-contract.md)
 - [Repository licensing](../docs/repository-license-contract.md)
 - Register each new project and its domain contracts in [the documentation catalog](../docs/README.md) before implementation.
