@@ -2,14 +2,18 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
@@ -65,7 +69,26 @@ function fixture(t) {
     existsSync(hooksDirectory)
       ? readdirSync(hooksDirectory).filter((name) => !name.endsWith(".sample"))
       : [];
-  return { base, git, initRepository, copyProject, install, installedHooks };
+  // Create a hook-like file with exact bytes and an executable mode.
+  const writeHook = (path, content) => {
+    writeFileSync(path, content, { mode: 0o755 });
+    chmodSync(path, 0o755);
+  };
+  // Capture bytes and permission bits so a test can prove a file was untouched.
+  const snapshot = (path) => ({
+    content: readFileSync(path, "utf8"),
+    mode: statSync(path).mode & 0o777,
+  });
+  return {
+    base,
+    git,
+    initRepository,
+    copyProject,
+    install,
+    installedHooks,
+    writeHook,
+    snapshot,
+  };
 }
 
 test("installs hooks in a normal clone", (t) => {
@@ -200,3 +223,168 @@ test("skips an archive without any Git metadata", (t) => {
   assert.match(result.stdout, skipMessage);
   assert.equal(existsSync(join(archive, ".git")), false);
 });
+
+// Lefthook's --force skips its "<hook>.old" overwrite guard, so the installer
+// must refuse these shared-hooks-directory conflicts itself. These cases are
+// POSIX-only because they depend on executable hook files.
+const posixOnly = { skip: process.platform === "win32" };
+
+function sharedHooksFixture(t) {
+  const context = fixture(t);
+  const main = join(context.base, "main");
+  context.initRepository(main);
+  const linked = join(context.base, "linked");
+  context.git(main, "worktree", "add", "--quiet", "-b", "linked", linked);
+  context.copyProject(linked);
+  const sharedHooks = join(main, ".git/hooks");
+  context.git(main, "config", "core.hooksPath", sharedHooks);
+  return { ...context, main, linked, sharedHooks };
+}
+
+test(
+  "refuses to overwrite an existing backup of a custom hook in the shared hooks directory",
+  posixOnly,
+  (t) => {
+    const { linked, sharedHooks, install, writeHook, snapshot } =
+      sharedHooksFixture(t);
+    const hook = join(sharedHooks, "pre-commit");
+    const backup = join(sharedHooks, "pre-commit.old");
+    writeHook(hook, "#!/bin/sh\n# CUSTOM hook\n");
+    writeHook(backup, "#!/bin/sh\n# ORIGINAL backup\n");
+    const before = { hook: snapshot(hook), backup: snapshot(backup) };
+
+    const result = install(linked);
+
+    assert.equal(result.status, 1, result.stdout);
+    assert.ok(result.stderr.includes(hook), result.stderr);
+    assert.ok(result.stderr.includes(backup), result.stderr);
+    assert.doesNotMatch(result.stdout, /overwriting/);
+    assert.deepEqual(snapshot(hook), before.hook);
+    assert.deepEqual(snapshot(backup), before.backup);
+  },
+);
+
+test(
+  "refuses the backup conflict when core.hooksPath is a relative path to the shared directory",
+  posixOnly,
+  (t) => {
+    const {
+      base,
+      git,
+      initRepository,
+      copyProject,
+      install,
+      writeHook,
+      snapshot,
+    } = fixture(t);
+    const clone = join(base, "clone");
+    initRepository(clone);
+    copyProject(clone);
+    git(clone, "config", "core.hooksPath", ".git/../.git/hooks");
+    const hook = join(clone, ".git/hooks/pre-commit");
+    const backup = join(clone, ".git/hooks/pre-commit.old");
+    writeHook(hook, "#!/bin/sh\n# CUSTOM hook\n");
+    writeHook(backup, "#!/bin/sh\n# ORIGINAL backup\n");
+    const before = { hook: snapshot(hook), backup: snapshot(backup) };
+
+    const result = install(clone);
+
+    assert.equal(result.status, 1, result.stdout);
+    assert.ok(result.stderr.includes(backup), result.stderr);
+    assert.deepEqual(snapshot(hook), before.hook);
+    assert.deepEqual(snapshot(backup), before.backup);
+  },
+);
+
+test(
+  "backs up a custom hook in the shared hooks directory when no backup exists",
+  posixOnly,
+  (t) => {
+    const { linked, sharedHooks, install, writeHook, snapshot } =
+      sharedHooksFixture(t);
+    const hook = join(sharedHooks, "pre-commit");
+    writeHook(hook, "#!/bin/sh\n# CUSTOM hook\n");
+    const before = snapshot(hook);
+
+    const result = install(linked);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(snapshot(join(sharedHooks, "pre-commit.old")), before);
+    assert.match(readFileSync(hook, "utf8"), /LEFTHOOK/);
+  },
+);
+
+test(
+  "keeps an existing backup when Lefthook already manages the shared hook",
+  posixOnly,
+  (t) => {
+    const { linked, sharedHooks, install, writeHook, snapshot } =
+      sharedHooksFixture(t);
+    const hook = join(sharedHooks, "pre-commit");
+    const backup = join(sharedHooks, "pre-commit.old");
+    const first = install(linked);
+    assert.equal(first.status, 0, first.stderr);
+    writeHook(backup, "#!/bin/sh\n# ORIGINAL backup\n");
+    const before = snapshot(backup);
+
+    const result = install(linked);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(snapshot(backup), before);
+    assert.match(readFileSync(hook, "utf8"), /LEFTHOOK/);
+  },
+);
+
+test(
+  "installs Lefthook beside a backup when the shared hooks directory has no current hook",
+  posixOnly,
+  (t) => {
+    const { linked, sharedHooks, install, writeHook, snapshot } =
+      sharedHooksFixture(t);
+    const backup = join(sharedHooks, "pre-commit.old");
+    writeHook(backup, "#!/bin/sh\n# ORIGINAL backup\n");
+    const before = snapshot(backup);
+
+    const result = install(linked);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(snapshot(backup), before);
+    assert.match(
+      readFileSync(join(sharedHooks, "pre-commit"), "utf8"),
+      /LEFTHOOK/,
+    );
+  },
+);
+
+test(
+  "keeps the unrelated custom hooks path protection when backup files exist there",
+  posixOnly,
+  (t) => {
+    const {
+      base,
+      git,
+      initRepository,
+      copyProject,
+      install,
+      writeHook,
+      snapshot,
+    } = fixture(t);
+    const clone = join(base, "clone");
+    initRepository(clone);
+    copyProject(clone);
+    const customHooks = join(base, "custom-hooks");
+    mkdirSync(customHooks);
+    git(clone, "config", "core.hooksPath", customHooks);
+    const hook = join(customHooks, "pre-commit");
+    const backup = join(customHooks, "pre-commit.old");
+    writeHook(hook, "#!/bin/sh\n# CUSTOM hook\n");
+    writeHook(backup, "#!/bin/sh\n# ORIGINAL backup\n");
+    const before = { hook: snapshot(hook), backup: snapshot(backup) };
+
+    const result = install(clone);
+
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(snapshot(hook), before.hook);
+    assert.deepEqual(snapshot(backup), before.backup);
+  },
+);
