@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
@@ -537,3 +538,100 @@ test("explicit false CI behaves exactly like unset CI for non-staged runs", (t) 
   );
   assert.equal(comparison.status, 0, comparison.stderr);
 });
+
+// Parent-path breakage: a tracked `a/b.ts` whose parent `a` became a regular
+// file (ENOTDIR) or a self-referencing symlink (ELOOP). Git accepts both.
+const brokenParents = [
+  {
+    name: "ENOTDIR",
+    skip: false,
+    breakParent: (f) => {
+      rmSync(join(f.cwd, "a"), { recursive: true });
+      f.write("a", "not a directory\n");
+    },
+  },
+  {
+    name: "ELOOP",
+    skip: process.platform === "win32",
+    breakParent: (f) => {
+      rmSync(join(f.cwd, "a"), { recursive: true });
+      symlinkSync("a", join(f.cwd, "a"));
+    },
+  },
+];
+
+for (const { name, skip, breakParent } of brokenParents) {
+  const setup = (t) => {
+    const f = fixture(t);
+    f.write("a/b.ts", "const value = 1;\n");
+    const head = f.commit();
+    f.write("a/b.ts", "const value = 2;\n");
+    f.git("add", "a/b.ts");
+    breakParent(f);
+    return { f, head };
+  };
+
+  test(
+    `selectors skip tracked paths whose parent raises ${name}`,
+    { skip },
+    (t) => {
+      const { f, head } = setup(t);
+      assert.doesNotMatch(allFormatFiles(f.cwd).join("\n"), /^a\/b\.ts$/mu);
+      assert.deepEqual(stagedFormatFiles(f.cwd), []);
+      assert.deepEqual(changedFormatFiles(f.cwd, f.base, head, true), []);
+    },
+  );
+
+  test(
+    `non-local comparison still throws when a parent raises ${name}`,
+    { skip },
+    (t) => {
+      const { f, head } = setup(t);
+      assert.throws(
+        () => changedFormatFiles(f.cwd, f.base, head),
+        new RegExp(name),
+      );
+    },
+  );
+
+  test(
+    `--staged --write and --all exit 0 when a parent raises ${name}`,
+    { skip },
+    (t) => {
+      const { f } = setup(t);
+      const script = join(root, "scripts/ci/format-changed.mjs");
+      for (const args of [["--staged", "--write"], ["--all"]]) {
+        const result = spawnSync(process.execPath, [script, ...args], {
+          cwd: f.cwd,
+          env: f.env,
+          encoding: "utf8",
+        });
+        // `--all` may exit 1 for unrelated fixture files; 2 is the crash code.
+        const output = `${args.join(" ")}: ${result.stdout}${result.stderr}`;
+        assert.notEqual(result.status, 2, output);
+        assert.doesNotMatch(output, /ci_format_error/u);
+      }
+    },
+  );
+}
+
+test(
+  "selectors keep unrelated lstat errors fatal",
+  { skip: process.platform === "win32" || process.getuid?.() === 0 },
+  (t) => {
+    const f = fixture(t);
+    f.write("a/b.ts", "const value = 1;\n");
+    const head = f.commit();
+    f.git("add", "a/b.ts");
+    chmodSync(join(f.cwd, "a"), 0o000);
+    try {
+      assert.throws(() => allFormatFiles(f.cwd), /EACCES/);
+      assert.throws(
+        () => changedFormatFiles(f.cwd, f.base, head, true),
+        /EACCES/,
+      );
+    } finally {
+      chmodSync(join(f.cwd, "a"), 0o755);
+    }
+  },
+);
