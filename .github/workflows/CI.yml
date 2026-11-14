@@ -188,6 +188,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-results
+          # The runner writes its output under the hidden `.e2e/` directory, and
+          # upload-artifact skips hidden paths unless this input is true.
+          include-hidden-files: true
           path: |
             apps/*/.e2e/report.json
             apps/*/.e2e/junit.xml

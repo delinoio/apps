@@ -67,7 +67,7 @@ The root `test:e2e` Turbo task is uncached because results depend on a browser, 
 - The CI planner selects the `e2e` job when a path inside an `apps/<app>/` package changes, or when `.github/workflows/CI.yml`, `.nvmrc`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or `turbo.json` changes. The job runs every app suite on Ubuntu.
 - The job installs Chromium with system dependencies and runs `pnpm test:e2e -- --reporter list,junit`.
 - The model key comes from the `AI_GATEWAY_API_KEY` repository secret. Pull requests from forks do not receive secrets; when the key is empty, the job excludes tests tagged `agent` and records that in the job summary.
-- The job uploads `apps/*/.e2e/` reports, results and logs as the `e2e-results` artifact for seven days.
+- The job uploads `apps/*/.e2e/` reports, results and logs as the `e2e-results` artifact for seven days. The upload sets `include-hidden-files: true`, because `.e2e/` is a hidden directory. The replay cache is not uploaded.
 - The job sets `E2E_TELEMETRY_DISABLED=1`.
 - See the [workflow contract](repository-workflow-contract.md#validation) for the planner and the aggregate `ci-result` check.
 
