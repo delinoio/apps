@@ -62,11 +62,36 @@ function isRegularFile(cwd, name, skipGone = true) {
   }
 }
 
+// Git index mode of a tracked symbolic link.
+const SymlinkMode = "120000";
+
+// Paths recorded as symbolic links in the current index. A checkout without
+// symlink support (Windows without privileges, `core.symlinks=false`) writes
+// such a path as a regular file holding the link target, so the worktree file
+// type alone cannot identify it; formatting would rewrite the placeholder and
+// change what Git records. `git ls-files --stage` reads the index that Git
+// resolves from the environment (honoring GIT_INDEX_FILE inside hooks), so it
+// is the validation index, works before the first commit and never consults the
+// comparison head. Each entry is `<mode> <object> <stage>\t<path>`; the path
+// follows the first tab and may itself contain tabs or newlines.
+function recordedSymlinks(cwd) {
+  const symlinks = new Set();
+  for (const entry of git(cwd, "ls-files", "--stage", "-z").split("\0")) {
+    const tab = entry.indexOf("\t");
+    if (tab === -1) continue;
+    if (entry.slice(0, tab).split(" ")[0] === SymlinkMode) {
+      symlinks.add(entry.slice(tab + 1));
+    }
+  }
+  return symlinks;
+}
+
 export function allFormatFiles(cwd) {
+  const symlinks = recordedSymlinks(cwd);
   return git(cwd, "ls-files", "-z")
     .split("\0")
     .filter((name) => {
-      if (!extensions.has(extname(name))) return false;
+      if (!extensions.has(extname(name)) || symlinks.has(name)) return false;
       return isRegularFile(cwd, name);
     });
 }
@@ -125,41 +150,25 @@ function stagedRegularFile(cwd, name) {
   }
 }
 
-// Index mode of a staged symbolic link.
-const SymlinkMode = "120000";
-
-// Staged paths whose index entry is not a symlink. `--raw -z` prints
-// `:<old mode> <new mode> <old blob> <new blob> <status>` and the path as
-// separate NUL-terminated fields; the new mode is the staged entry's mode.
-function stagedNonSymlinkPaths(cwd) {
-  const fields = git(
+export function stagedFormatFiles(cwd) {
+  const symlinks = recordedSymlinks(cwd);
+  return git(
     cwd,
     "diff",
     "--cached",
-    "--raw",
-    "--no-abbrev",
+    "--name-only",
     "--no-renames",
     "--diff-filter=ACMRT",
     "-z",
     "--",
-  ).split("\0");
-  const names = [];
-  for (let index = 0; index + 1 < fields.length; index += 2) {
-    if (fields[index].split(" ")[1] !== SymlinkMode) {
-      names.push(fields[index + 1]);
-    }
-  }
-  return names;
-}
-
-export function stagedFormatFiles(cwd) {
-  return stagedNonSymlinkPaths(cwd)
+  )
+    .split("\0")
     .filter((name) => {
       // Every exemption runs before the worktree is consulted, so none of them
-      // can hit the missing-file failure: a staged symlink (filtered above by
-      // its index mode), an unsupported extension, and, inside
-      // stagedRegularFile, a path excluded by the shared Rstack configuration.
-      if (!extensions.has(extname(name))) return false;
+      // can hit the missing-file failure: an unsupported extension, a path the
+      // index records as a symlink, and, inside stagedRegularFile, a path
+      // excluded by the shared Rstack configuration.
+      if (!extensions.has(extname(name)) || symlinks.has(name)) return false;
       return stagedRegularFile(cwd, name);
     })
     .sort();
@@ -207,10 +216,14 @@ export function changedFormatFiles(cwd, base, head, local = false) {
       "-z",
     ).split("\0"),
   );
+  // The validation index decides which paths are symlinks, not the comparison
+  // head: the checkout may be a merge commit that differs from `head`.
+  const symlinks = recordedSymlinks(cwd);
   return [...new Set(names)]
     .filter((name) => {
       if (!name || !extensions.has(extname(name)) || !present.has(name))
         return false;
+      if (symlinks.has(name)) return false;
       return isRegularFile(cwd, name, local);
     })
     .sort();

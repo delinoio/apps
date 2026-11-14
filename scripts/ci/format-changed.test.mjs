@@ -790,6 +790,223 @@ test("CLI default local run selects an index-only path and format:check fails on
   assert.match(unformatted.stdout, /"candidates":1/u, unformatted.stdout);
 });
 
+// A checkout without symlink support (Windows without privileges, or
+// `core.symlinks=false`) materializes a symlink the index records with mode
+// 120000 as a regular file holding the link target. Build exactly that state
+// without a native symlink, so the fixtures also run where symlinks need
+// privileges. The placeholder is a parse error as TypeScript, so a selector that
+// let it reach Rstack would fail the check and the write flow.
+const SymlinkPlaceholder = "../target.ts";
+
+function recordSymlink(f, name, placeholder = SymlinkPlaceholder) {
+  f.git("config", "core.symlinks", "false");
+  const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+    cwd: f.cwd,
+    env: f.env,
+    encoding: "utf8",
+    input: placeholder,
+  }).trim();
+  f.git("update-index", "--add", "--cacheinfo", `120000,${blob},${name}`);
+  f.write(name, placeholder);
+}
+
+const indexMode = (f, name) =>
+  f.git("ls-files", "--stage", "--", name).split(" ")[0];
+
+test("every selector skips an index-recorded symlink checked out as a regular file", (t) => {
+  const f = fixture(t);
+  f.write("regular.ts", "const regular = 1;\n");
+  recordSymlink(f, "linked.ts");
+  recordSymlink(f, "dir/linked.md", "../README.md");
+  recordSymlink(f, "tab\tname.json", "../x.json");
+  const head = f.commit();
+  assert.equal(indexMode(f, "linked.ts"), "120000");
+  assert.equal(indexMode(f, "regular.ts"), "100644");
+  // Local edits and an explicit range that both cover the placeholders.
+  f.write("regular.ts", "const regular = 2;\n");
+  f.write("untracked.ts", "const untracked = 1;\n");
+  const all = allFormatFiles(f.cwd);
+  assert.ok(all.includes("regular.ts"), all.join(","));
+  assert.ok(
+    !all.some((name) => /linked|tab/u.test(name)),
+    `all selection kept a symlink: ${all.join(",")}`,
+  );
+  assert.deepEqual(changedFormatFiles(f.cwd, f.base, head), ["regular.ts"]);
+  assert.deepEqual(changedFormatFiles(f.cwd, f.base, head, true), [
+    "regular.ts",
+    "untracked.ts",
+  ]);
+  // Git keeps the recorded symlink type when `core.symlinks=false` re-adds the
+  // placeholder, so the selection stays correct after `git add`.
+  f.write("linked.ts", "../other.ts");
+  f.git("add", "linked.ts");
+  assert.equal(indexMode(f, "linked.ts"), "120000");
+  assert.ok(!allFormatFiles(f.cwd).includes("linked.ts"));
+});
+
+test("--staged selection skips a recorded symlink, including before the first commit", (t) => {
+  const f = fixture(t, false);
+  f.write("regular.ts", "const   regular = 1;\n");
+  recordSymlink(f, "linked.ts");
+  recordSymlink(f, "gone.ts");
+  rmSync(join(f.cwd, "gone.ts"));
+  f.git("add", "regular.ts");
+  // HEAD is unborn, and the missing placeholder of a recorded symlink does not
+  // fail the selection that rejects other missing staged paths.
+  assert.deepEqual(stagedFormatFiles(f.cwd), ["regular.ts"]);
+});
+
+test("--staged selection skips a path whose type changed to a recorded symlink", (t) => {
+  const f = fixture(t);
+  f.write("changed.ts", "const changed = 1;\n");
+  f.write("kept.ts", "const kept = 1;\n");
+  f.commit();
+  recordSymlink(f, "changed.ts");
+  f.write("kept.ts", "const   kept = 2;\n");
+  f.git("add", "kept.ts");
+  assert.match(
+    f.git("diff", "--cached", "--raw", "--", "changed.ts"),
+    /\sT\tchanged\.ts$/u,
+  );
+  assert.deepEqual(stagedFormatFiles(f.cwd), ["kept.ts"]);
+});
+
+test("explicit comparisons use the validation index, not the comparison head", (t) => {
+  const f = fixture(t);
+  f.write("was-link.ts", "const was = 1;\n");
+  f.write("now-link.ts", "const now = 1;\n");
+  f.write("other.ts", "const other = 1;\n");
+  const base = f.commit();
+  // The comparison head records `was-link.ts` as a symlink and `now-link.ts`
+  // as a regular file; the checked-out validation tree records the reverse.
+  recordSymlink(f, "was-link.ts");
+  f.write("now-link.ts", "const now = 2;\n");
+  f.write("other.ts", "const other = 2;\n");
+  f.git("add", "-A", ".");
+  f.git("commit", "--quiet", "-m", "head");
+  const head = f.git("rev-parse", "HEAD");
+  assert.deepEqual(changedFormatFiles(f.cwd, base, head), [
+    "now-link.ts",
+    "other.ts",
+  ]);
+  // Validation tree: swap the recorded types in the index only.
+  f.git("rm", "--cached", "--quiet", "was-link.ts");
+  f.write("was-link.ts", "const was = 3;\n");
+  f.git("add", "was-link.ts");
+  recordSymlink(f, "now-link.ts");
+  assert.equal(indexMode(f, "was-link.ts"), "100644");
+  assert.equal(indexMode(f, "now-link.ts"), "120000");
+  assert.deepEqual(changedFormatFiles(f.cwd, base, head), [
+    "other.ts",
+    "was-link.ts",
+  ]);
+});
+
+test("local selection keeps untracked regular files and skips native symlinks", (t) => {
+  const f = fixture(t);
+  f.write("tracked.ts", "const tracked = 1;\n");
+  const head = f.commit();
+  recordSymlink(f, "linked.ts");
+  f.write("untracked.ts", "const untracked = 1;\n");
+  assert.deepEqual(changedFormatFiles(f.cwd, head, head, true), [
+    "untracked.ts",
+  ]);
+  if (process.platform !== "win32") {
+    symlinkSync("tracked.ts", join(f.cwd, "native.ts"));
+    assert.deepEqual(changedFormatFiles(f.cwd, head, head, true), [
+      "untracked.ts",
+    ]);
+    f.git("add", "native.ts");
+    assert.equal(indexMode(f, "native.ts"), "120000");
+    assert.deepEqual(stagedFormatFiles(f.cwd), []);
+  }
+});
+
+test("CLI selectors never hand a recorded symlink to Rstack and keep its bytes and mode", async (t) => {
+  const f = fixture(t);
+  f.write("regular.ts", "const regular = 1;\n");
+  const head = f.commit();
+  f.git("update-ref", "refs/remotes/origin/main", head);
+  recordSymlink(f, "linked.ts");
+  f.write("regular.ts", "const   regular = 2;\n");
+  f.git("add", "regular.ts");
+  const script = join(root, "scripts/ci/format-changed.mjs");
+  const run = (args, env = f.env) =>
+    spawnSync(process.execPath, [script, ...args], {
+      cwd: f.cwd,
+      env,
+      encoding: "utf8",
+    });
+  const stageBefore = f.git("ls-files", "--stage");
+  // The placeholder would be a parse error (status 2) if Rstack received it.
+  const candidates = {
+    "": 1,
+    "--all": allFormatFiles(f.cwd).length,
+    "--staged": 1,
+  };
+  assert.ok(!allFormatFiles(f.cwd).includes("linked.ts"));
+  for (const args of [[], ["--all"], ["--staged"]]) {
+    const result = run(args);
+    const output = `${args.join(" ")}: ${result.stdout}${result.stderr}`;
+    assert.match(
+      result.stdout,
+      new RegExp(`"candidates":${candidates[args.join(" ")]}[,}]`, "u"),
+      output,
+    );
+    assert.equal(result.status, 1, output);
+  }
+  for (const args of [[], ["--all"], ["--staged"]]) {
+    const result = run([...args, "--write"]);
+    assert.equal(
+      result.status,
+      0,
+      `${args.join(" ")}: ${result.stdout}${result.stderr}`,
+    );
+  }
+  assert.equal(
+    readFileSync(join(f.cwd, "linked.ts"), "utf8"),
+    SymlinkPlaceholder,
+  );
+  assert.equal(
+    readFileSync(join(f.cwd, "regular.ts"), "utf8"),
+    "const regular = 2;\n",
+  );
+  assert.equal(indexMode(f, "linked.ts"), "120000");
+  assert.equal(
+    f.git("ls-files", "--stage", "--", "linked.ts"),
+    stageBefore.split("\n").find((line) => line.endsWith("\tlinked.ts")),
+  );
+});
+
+test("pre-commit leaves a recorded symlink placeholder and its index mode untouched", (t) => {
+  const f = fixture(t, false);
+  f.installHook();
+  f.write("regular.ts", "const   regular = {answer:42}\n");
+  recordSymlink(f, "linked.ts");
+  f.git("add", "regular.ts");
+  const linkedEntry = f.git("ls-files", "--stage", "--", "linked.ts");
+  const result = spawnSync("git", ["commit", "--quiet", "-m", "initial"], {
+    cwd: f.cwd,
+    env: f.env,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /"candidates":1/u);
+  assert.equal(
+    f.git("show", "HEAD:regular.ts"),
+    "const regular = { answer: 42 };",
+  );
+  assert.equal(
+    f.git("ls-tree", "HEAD", "--", "linked.ts").split(" ")[0],
+    "120000",
+  );
+  assert.equal(f.git("ls-files", "--stage", "--", "linked.ts"), linkedEntry);
+  assert.equal(
+    readFileSync(join(f.cwd, "linked.ts"), "utf8"),
+    SymlinkPlaceholder,
+  );
+});
+
 test("all-file selection skips unstaged deletions and retains existing files", async (t) => {
   const f = fixture(t);
   f.write("deleted.ts", "const deleted = 1;\n");
