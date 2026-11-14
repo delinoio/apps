@@ -35,6 +35,7 @@ The project has two deployables. The web app is a static single-page application
 - Authentication follows the [repository authentication contract](repository-auth-contract.md). The web app is a Logto single-page application. The API server is a Logto API resource with the indicator `https://accounts.api.delino.io` and validates Logto access tokens. The Logto user ID (`sub`) is the owner key of all account and billing records.
 - Billing amounts follow the [repository billing contract](repository-billing-contract.md): USD only, signed 64-bit integers in micro-USD with a `_usd_micros` suffix.
 - New persisted entities use UUID v7 identifiers.
+- `delino-accounts` is the shared account management and billing system for every Delino service, according to the [authentication](repository-auth-contract.md#account-management) and [billing](repository-billing-contract.md#billing-ownership) contracts. Other services link users to `https://accounts.delino.io` and call `https://accounts.api.delino.io`. They do not keep their own account management, payment-provider integration or balances.
 - Deviation from repository defaults: the web app uses Rsbuild instead of Rspress because it is an authenticated application, not a documentation or marketing site. It still deploys to Cloudflare Pages as static output.
 - Open decisions: the API server deployment target, the persistent database and the payment provider are not selected yet. Record each decision in the API server contract before the implementation that depends on it.
 

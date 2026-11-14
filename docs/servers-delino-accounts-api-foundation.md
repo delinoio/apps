@@ -22,7 +22,7 @@ The API server is the system of record for account and billing information. It i
 ## Users and Operators
 
 - The [`delino-accounts-web`](apps-delino-accounts-foundation.md) app, which calls the API on behalf of signed-in users.
-- Other Delino services that need account or billing information (`planned`). Each consumer must be recorded here before it uses the API.
+- Other Delino services. The repository rules require every service to use this API for shared account data and for billing, including billable usage or charge reports (`planned`). Record each consuming service and the RPCs that it uses here before it calls the API.
 - Operators who deploy and monitor the server.
 
 ## Interfaces and Contracts
