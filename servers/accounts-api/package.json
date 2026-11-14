@@ -5,8 +5,8 @@
   "license": "FSL-1.1-ALv2",
   "scripts": {
     "build": "go build -buildvcs=false -o dist/accounts-api ./cmd/accounts-api",
-    "dev": "go run ./cmd/accounts-api",
+    "dev": "node scripts/dev.mjs",
     "lint": "go vet ./...",
-    "test": "go test ./..."
+    "test": "go test ./... && node --test \"scripts/*.test.mjs\""
   }
 }
