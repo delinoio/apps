@@ -88,19 +88,38 @@ function stagedRegularFile(cwd, name) {
   }
 }
 
-export function stagedFormatFiles(cwd) {
-  return git(
+// Index mode of a staged symbolic link.
+const SymlinkMode = "120000";
+
+// Staged paths whose index entry is not a symlink. `--raw -z` prints
+// `:<old mode> <new mode> <old blob> <new blob> <status>` and the path as
+// separate NUL-terminated fields; the new mode is the staged entry's mode.
+function stagedNonSymlinkPaths(cwd) {
+  const fields = git(
     cwd,
     "diff",
     "--cached",
-    "--name-only",
+    "--raw",
+    "--no-abbrev",
     "--no-renames",
     "--diff-filter=ACMRT",
     "-z",
     "--",
-  )
-    .split("\0")
+  ).split("\0");
+  const names = [];
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    if (fields[index].split(" ")[1] !== SymlinkMode) {
+      names.push(fields[index + 1]);
+    }
+  }
+  return names;
+}
+
+export function stagedFormatFiles(cwd) {
+  return stagedNonSymlinkPaths(cwd)
     .filter((name) => {
+      // A staged symlink never reaches the worktree check, so a missing
+      // placeholder does not fail the selection; only regular files do.
       if (!extensions.has(extname(name))) return false;
       return stagedRegularFile(cwd, name);
     })

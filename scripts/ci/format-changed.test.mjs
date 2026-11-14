@@ -320,6 +320,39 @@ test(
   },
 );
 
+test(
+  "staged symlinks stay exempt when their worktree entry is missing, and a staged type change is judged by its new mode",
+  { skip: process.platform === "win32" },
+  (t) => {
+    const f = fixture(t);
+    f.write("target.ts", "const value = 1;\n");
+    f.write("retyped.ts", "const value = 2;\n");
+    f.commit();
+    symlinkSync("target.ts", join(f.cwd, "linked.ts"));
+    // Replace a tracked regular file with a symlink: a staged type change.
+    rmSync(join(f.cwd, "retyped.ts"));
+    symlinkSync("target.ts", join(f.cwd, "retyped.ts"));
+    f.git("add", "linked.ts", "retyped.ts");
+    assert.deepEqual(stagedFormatFiles(f.cwd), []);
+    // Remove the placeholders, as a sparse checkout or `rm` after `git add`
+    // would: a staged symlink is never formatted, so it needs no worktree file.
+    rmSync(join(f.cwd, "linked.ts"));
+    rmSync(join(f.cwd, "retyped.ts"));
+    assert.deepEqual(stagedFormatFiles(f.cwd), []);
+    // A missing regular file is still reported next to the exempt symlinks.
+    f.write("added.ts", "const   value = 3;\n");
+    f.git("add", "added.ts");
+    rmSync(join(f.cwd, "added.ts"));
+    assert.throws(() => stagedFormatFiles(f.cwd), /added\.ts/u);
+    // A staged type change from a symlink back to a regular file is formatted.
+    f.git("rm", "--cached", "--quiet", "--", "added.ts");
+    f.git("commit", "--quiet", "-m", "symlinks");
+    f.write("retyped.ts", "const   value = 4;\n");
+    f.git("add", "retyped.ts");
+    assert.deepEqual(stagedFormatFiles(f.cwd), ["retyped.ts"]);
+  },
+);
+
 test("staged selection fails naming each kind of staged path missing from the worktree", (t) => {
   const f = fixture(t);
   f.write("modified.ts", "const value = 1;\n");
