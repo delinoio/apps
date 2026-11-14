@@ -19,7 +19,16 @@ export function resolveAccountsApiOrigin(value: string | undefined): string {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error(`PUBLIC_API_ORIGIN must use http or https: ${raw}`);
   }
-  if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
+  // `url.search` and `url.hash` are empty both when a component is absent and
+  // when it is present but empty (`https://host?`, `https://host#`), so the
+  // raw value is checked for the delimiters. A valid origin never contains them.
+  if (
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    raw.includes("?") ||
+    raw.includes("#")
+  ) {
     throw new Error(
       `PUBLIC_API_ORIGIN must be an origin without a path, query or fragment: ${raw}`,
     );
