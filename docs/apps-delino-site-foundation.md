@@ -54,7 +54,7 @@ Run from the repository root:
 - `pnpm install --frozen-lockfile`
 - `pnpm --filter delino-site dev`: local development server.
 - `pnpm exec turbo run build --filter=delino-site`: production build into `apps/delino-site/dist/`.
-- `pnpm exec turbo run typecheck --filter=delino-site`: TypeScript and MDX type check.
+- `pnpm exec turbo run typecheck --filter=delino-site`: TypeScript type check.
 - `pnpm --filter delino-site preview`: serve the production build locally.
 
 Remove `apps/delino-site/dist/` after validation. CI does not build or deploy this site yet; add the build check to the workflow and its planner when the site enters CI.
