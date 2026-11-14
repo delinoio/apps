@@ -110,7 +110,7 @@ jobs:
           echo "Planned: format=$FORMAT_PLANNED; fixtures=$FIXTURES_PLANNED" >> "$GITHUB_STEP_SUMMARY"
           echo 'Commands (when planned): pnpm install --frozen-lockfile --ignore-scripts; pnpm format:check; pnpm test' >> "$GITHUB_STEP_SUMMARY"
           echo "Result: $RESULT" >> "$GITHUB_STEP_SUMMARY"
-          echo 'Runtime, account, native platform and release acceptance: not applicable; no projects are included.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Runtime, account, native platform and release acceptance: not performed; CI does not build or deploy app projects yet.' >> "$GITHUB_STEP_SUMMARY"
   ci-result:
     if: always()
     needs: [changes, quality]
