@@ -8,7 +8,6 @@ define.fmt({
     "**/dist/**",
     "**/node_modules/**",
     "**/vendor/**",
-    ".agents/skills/**",
     "**/third-party/**",
     "**/testdata/**",
     "**/fixtures/**",

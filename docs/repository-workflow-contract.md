@@ -2,11 +2,7 @@
 
 ## Scope
 
-The repository contains shared instructions, skills, documentation templates, formatting infrastructure, two static Rspress sites ([`delino-site`](project-delino-site.md) and [`delino-docs`](project-delino-docs.md)) and the [`delino-accounts`](project-delino-accounts.md) project with an Rsbuild web app and a Go API server. It has no native build workspace, generated protocol bindings, deployment workflows or release credentials.
-
-## Agent skills
-
-`.agents/skills/` owns the shared workspace-local agent skills. `.claude/skills` is a tracked relative symlink to `../.agents/skills` so that Claude Code discovers the same skills as Codex. Add, edit and remove skills only in `.agents/skills/`; do not replace the symlink with a copy or add Claude-only skill directories. Checkouts on platforms without symlink support (for example, Windows without `core.symlinks`) get a plain file instead and do not expose the skills to Claude Code.
+The repository contains shared instructions, documentation templates, formatting infrastructure, two static Rspress sites ([`delino-site`](project-delino-site.md) and [`delino-docs`](project-delino-docs.md)) and the [`delino-accounts`](project-delino-accounts.md) project with an Rsbuild web app and a Go API server. It has no native build workspace, generated protocol bindings, deployment workflows or release credentials.
 
 ## Installation
 
