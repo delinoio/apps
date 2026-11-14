@@ -54,6 +54,7 @@ The API server is the system of record for account and billing information. It i
 | `LOG_LEVEL` | no       | `info`           | `debug`, `info`, `warn`, `error` |
 
 - The server validates the configuration at startup and exits with a non-zero status when a value is not valid.
+- Root `pnpm dev` and `pnpm exec turbo run dev --filter=accounts-api` pass `ADDR` and `LOG_LEVEL` from the shell to the server through Turbo `passThroughEnv` in `servers/accounts-api/turbo.json`. Add every new configuration variable to that list in the change that makes the server read it.
 - Production must set `ADDR` explicitly for its deployment target. The default listens on loopback only.
 - Logto settings (`planned`): the tenant endpoint and the API resource indicator. Add them to this table and to `.env.example` in the same change that adds token validation.
 
@@ -68,11 +69,17 @@ The scaffold has no persistent storage. The database is not selected. Before the
 - The server never logs tokens, authorization codes, application secrets or payment details.
 - Secrets, such as Logto Management API credentials and payment provider keys, follow the [environment contract](repository-environment-contract.md). They never appear in `.env.example`.
 
+## Graceful Shutdown
+
+- `SIGINT` or `SIGTERM` stops the listener from accepting new connections and starts a drain that waits at most 10 seconds (`shutdownTimeout`) for in-flight requests.
+- The signal does not cancel request contexts. Request contexts derive from a server-lifetime context, so handlers that honour `r.Context()` finish their work normally while the server drains.
+- The server cancels the server-lifetime context only after the drain ends. A handler that outlives the 10-second drain observes a cancelled request context at that point, the shutdown is reported as failed, and the process exits with a non-zero status.
+
 ## Logging
 
 - The server writes structured JSON logs to standard output with `log/slog`. These are service logs for log aggregation, not interactive CLI output, so they do not use ANSI color.
-- Startup logs the listen address and log level. Shutdown logs the signal-driven start and the result.
-- Every HTTP request produces one `http_request` log with `method`, `path`, `status`, `duration_ms` and `bytes` fields.
+- Startup logs the listen address and log level. Shutdown logs the signal-driven start and the result. A listener failure is never discarded, even when it races with the shutdown signal: the process exits with a non-zero status and logs the error.
+- Every HTTP request produces one `http_request` log with `method`, `path`, `status`, `duration_ms` and `bytes` fields. `status` is the first committed response status (the one the client receives), `200` for an implicit body write, and informational `1xx` responses other than `101` do not count as committed. A request whose handler panics is logged too: `status` is `500` when no response status was committed before the panic and the committed status otherwise. The panic is not recovered by the logger, so `net/http` still aborts the connection.
 - Authentication logs (`planned`) include the Logto user ID, the API resource and the rejection reason, according to the authentication contract.
 
 ## Build and Test

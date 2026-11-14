@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { changedFormatFiles } from "./format-changed.mjs";
 
 const fixtureInputs = new Set([
@@ -31,6 +29,12 @@ export function isE2eInput(path) {
   return e2eInputs.has(path) || /^apps\/[^/]+\//.test(path);
 }
 
+// The root and every workspace `turbo.json` configure the tasks that the
+// Turbo fixtures inspect.
+export function isTurboConfigInput(path) {
+  return path === "turbo.json" || path.endsWith("/turbo.json");
+}
+
 // Go sources and module files select the repository Go checks.
 export function isGoInput(path) {
   return path.endsWith(".go") || /(^|\/)go\.(mod|sum)$/.test(path);
@@ -42,10 +46,14 @@ export function plan(cwd, base, head) {
   const paths = execFileSync(
     "git",
     ["diff", "--name-only", "--no-renames", "-z", base, head, "--"],
-    { cwd, encoding: "utf8" },
+    // Match the formatter's limit so large comparisons do not hit ENOBUFS.
+    { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
   ).split("\0");
   const fixtures = paths.some(
-    (path) => fixtureInputs.has(path) || path.startsWith("scripts/ci/"),
+    (path) =>
+      fixtureInputs.has(path) ||
+      path.startsWith("scripts/ci/") ||
+      isTurboConfigInput(path),
   );
   const go = paths.some(isGoInput);
   const e2e = paths.some(isE2eInput);
@@ -77,9 +85,7 @@ export function main(env = process.env, cwd = process.cwd()) {
   );
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+// import.meta.main needs Node 24.2+; it also holds for symlinked script paths.
+if (import.meta.main) {
   main();
 }

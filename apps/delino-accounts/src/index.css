@@ -4,6 +4,9 @@
   --color-background: #f2f4f6;
   --color-surface: #ffffff;
   --color-accent: #3182f6;
+  /* Badge text must stay at least 4.5:1 on the accent surface (WCAG 2.1 SC 1.4.3):
+     #1b64da on #e8f3ff measures 4.82:1; --color-accent alone only reaches 3.31:1. */
+  --color-accent-text: #1b64da;
   --color-accent-surface: #e8f3ff;
 
   color-scheme: light dark;
@@ -23,6 +26,8 @@
     --color-background: #101013;
     --color-surface: #1e1e24;
     --color-accent: #4593fc;
+    /* #4593fc on #1b2a40 measures 4.71:1. */
+    --color-accent-text: #4593fc;
     --color-accent-surface: #1b2a40;
   }
 }
@@ -48,6 +53,8 @@ body {
   color: var(--color-text-muted);
 }
 
+/* WebKit drops list semantics from a list with `list-style: none`, so the
+   element in App.tsx keeps an explicit role="list". Keep both together. */
 .sections {
   display: grid;
   gap: 12px;
@@ -77,6 +84,6 @@ body {
   padding: 4px 8px;
   border-radius: 6px;
   font-size: 13px;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   background: var(--color-accent-surface);
 }

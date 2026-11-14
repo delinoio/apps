@@ -2,6 +2,9 @@
   "$schema": "https://turborepo.com/schema.json",
   "extends": ["//"],
   "tasks": {
+    "dev": {
+      "passThroughEnv": ["PUBLIC_API_ORIGIN"]
+    },
     "build": {
       "env": ["PUBLIC_API_ORIGIN"],
       "inputs": ["$TURBO_DEFAULT$", ".env", ".env.*"]

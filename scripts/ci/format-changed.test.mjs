@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -271,7 +271,7 @@ test(
   },
 );
 
-test("real Rstack checks whole changed files without rewriting, then fixes them", (t) => {
+test("real Rstack checks whole changed files without rewriting, then fixes them", async (t) => {
   const f = fixture(t);
   const names = ["space name.ts", "한글[1].ts", "-flag.ts", "!negation.ts"];
   if (process.platform !== "win32") names.push("line\nname.ts", "star*.ts");
@@ -281,19 +281,19 @@ test("real Rstack checks whole changed files without rewriting, then fixes them"
   const paths = changedFormatFiles(f.cwd, f.base, head);
   assert.deepEqual(paths, names.sort());
   const before = paths.map((name) => readFileSync(join(f.cwd, name), "utf8"));
-  assert.equal(runFormatter(f.cwd, paths), 1);
+  assert.equal(await runFormatter(f.cwd, paths), 1);
   assert.deepEqual(
     paths.map((name) => readFileSync(join(f.cwd, name), "utf8")),
     before,
   );
-  assert.equal(runFormatter(f.cwd, paths, "write"), 0);
-  assert.equal(runFormatter(f.cwd, paths), 0);
+  assert.equal(await runFormatter(f.cwd, paths, "write"), 0);
+  assert.equal(await runFormatter(f.cwd, paths), 0);
   // Validation checks merge/worktree bytes, not the selected head blob.
   f.write(names[0], "const broken = ;\n");
-  assert.equal(runFormatter(f.cwd, paths), 2);
+  assert.equal(await runFormatter(f.cwd, paths), 2);
 });
 
-test("deletions, renames, empty ranges, local edits and invalid comparisons", (t) => {
+test("deletions, renames, empty ranges, local edits and invalid comparisons", async (t) => {
   const f = fixture(t);
   f.write("old.ts", "const old = 1;\n");
   f.write("deleted.ts", "const deleted = 1;\n");
@@ -303,7 +303,7 @@ test("deletions, renames, empty ranges, local edits and invalid comparisons", (t
   const head = f.commit();
   assert.deepEqual(changedFormatFiles(f.cwd, base, head), ["new.ts"]);
   assert.deepEqual(changedFormatFiles(f.cwd, head, head), []);
-  assert.equal(runFormatter(f.cwd, []), 0);
+  assert.equal(await runFormatter(f.cwd, []), 0);
   f.write("local.md", "# Local\n");
   f.write("new.ts", "const changed=2\n");
   assert.deepEqual(changedFormatFiles(f.cwd, head, head, true), [
@@ -314,7 +314,7 @@ test("deletions, renames, empty ranges, local edits and invalid comparisons", (t
   assert.throws(() => changedFormatFiles(f.cwd, "a".repeat(40), head));
 });
 
-test("all-file selection skips unstaged deletions and retains existing files", (t) => {
+test("all-file selection skips unstaged deletions and retains existing files", async (t) => {
   const f = fixture(t);
   f.write("deleted.ts", "const deleted = 1;\n");
   f.write("retained.ts", "const retained = 1;\n");
@@ -323,12 +323,12 @@ test("all-file selection skips unstaged deletions and retains existing files", (
   const paths = allFormatFiles(f.cwd);
   assert.ok(!paths.includes("deleted.ts"));
   assert.ok(paths.includes("retained.ts"));
-  assert.equal(runFormatter(f.cwd, paths, "write"), 0);
-  assert.equal(runFormatter(f.cwd, paths), 0);
+  assert.equal(await runFormatter(f.cwd, paths, "write"), 0);
+  assert.equal(await runFormatter(f.cwd, paths), 0);
   assert.ok(f.git("status", "--porcelain").includes("D deleted.ts"));
 });
 
-test("Rstack owns exclusions and retains Markdown prose and embedded code", (t) => {
+test("Rstack owns exclusions and retains Markdown prose and embedded code", async (t) => {
   const f = fixture(t);
   const ignored = [
     "packages/example/src/gen/client.ts",
@@ -341,7 +341,7 @@ test("Rstack owns exclusions and retains Markdown prose and embedded code", (t) 
   ];
   for (const name of ignored) f.write(name, "deliberately invalid {{{\n");
   f.commit();
-  assert.equal(runFormatter(f.cwd, ignored), 0);
+  assert.equal(await runFormatter(f.cwd, ignored), 0);
   assert.ok(
     ignored.every(
       (name) =>
@@ -352,11 +352,11 @@ test("Rstack owns exclusions and retains Markdown prose and embedded code", (t) 
   const md =
     "# Guide\n\nA long prose line that stays on this line without being wrapped by formatting.\n\n```js\nconst x={a:1}\n```\n";
   f.write("guide.md", md);
-  assert.equal(runFormatter(f.cwd, ["guide.md"]), 0);
+  assert.equal(await runFormatter(f.cwd, ["guide.md"]), 0);
   assert.equal(readFileSync(join(f.cwd, "guide.md"), "utf8"), md);
 });
 
-test("authored localization JSON remains eligible for formatting", (t) => {
+test("authored localization JSON remains eligible for formatting", async (t) => {
   const f = fixture(t);
   const name = "apps/example-chrome-extension/public/_locales/en/messages.json";
   const source = '{"title":{"message":"Browser context"}}\n';
@@ -364,14 +364,14 @@ test("authored localization JSON remains eligible for formatting", (t) => {
   const head = f.commit();
   const paths = changedFormatFiles(f.cwd, f.base, head);
   assert.deepEqual(paths, [name]);
-  assert.equal(runFormatter(f.cwd, paths), 1);
+  assert.equal(await runFormatter(f.cwd, paths), 1);
   assert.equal(readFileSync(join(f.cwd, name), "utf8"), source);
-  assert.equal(runFormatter(f.cwd, paths, "write"), 0);
+  assert.equal(await runFormatter(f.cwd, paths, "write"), 0);
   assert.deepEqual(
     JSON.parse(readFileSync(join(f.cwd, name), "utf8")),
     JSON.parse(source),
   );
-  assert.equal(runFormatter(f.cwd, paths), 0);
+  assert.equal(await runFormatter(f.cwd, paths), 0);
 });
 
 test("CLI rejects incomplete comparisons and CI-wide formatting", (t) => {
@@ -635,3 +635,171 @@ test(
     }
   },
 );
+
+test("root package.json declares the ES module type used by rstack.config.ts", () => {
+  // The fixtures write their own package.json, so they cannot show the Node
+  // MODULE_TYPELESS_PACKAGE_JSON warning that a typeless root package causes.
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.equal(manifest.type, "module");
+});
+
+test("formatter CLI runs main through a symlinked script path", (t) => {
+  const f = fixture(t);
+  f.write("unformatted.ts", "const value={answer:42}\n");
+  f.git("add", "unformatted.ts");
+  const links = mkdtempSync(join(tmpdir(), "rstack-format-link-"));
+  t.after(() => rmSync(links, { recursive: true, force: true }));
+  symlinkSync(
+    join(root, "scripts/ci"),
+    join(links, "ci"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  for (const script of [
+    join(root, "scripts/ci/format-changed.mjs"),
+    join(links, "ci/format-changed.mjs"),
+  ]) {
+    const result = spawnSync(process.execPath, [script, "--staged"], {
+      cwd: f.cwd,
+      env: f.env,
+      encoding: "utf8",
+    });
+    assert.match(result.stderr + result.stdout, /"event":"ci_format/, script);
+  }
+});
+
+// Stand-in Rstack for process-boundary tests: records its pid per batch and
+// every termination signal it receives, then either exits with STANDIN_EXIT or
+// sleeps long enough for the test to signal the parent.
+const standIn = `// Test stand-in for the Rstack entry point.
+const fs = require("node:fs");
+const dir = process.env.STANDIN_DIR;
+fs.appendFileSync(dir + "/batches.log", process.pid + "\\n");
+if (process.env.STANDIN_EXIT) process.exit(Number(process.env.STANDIN_EXIT));
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"])
+  process.on(signal, () => {
+    fs.appendFileSync(dir + "/signals.log", process.pid + " " + signal + "\\n");
+    process.exit(0);
+  });
+setTimeout(() => {
+  fs.appendFileSync(dir + "/marker", process.pid + "\\n");
+  process.exit(0);
+}, 5000);
+`;
+
+// An isolated repository with its own copy of the script and a stand-in
+// node_modules/rstack; the standard fixture symlinks the real node_modules.
+function standInFixture(t, fileCount) {
+  const f = fixture(t, false);
+  rmSync(join(f.cwd, "node_modules"), { recursive: true });
+  f.write(
+    "node_modules/rstack/package.json",
+    '{"name":"rstack","version":"0.0.0","bin":{"rs":"./bin/rs.js"}}\n',
+  );
+  f.write("node_modules/rstack/bin/rs.js", standIn);
+  f.write(
+    "scripts/ci/format-changed.mjs",
+    readFileSync(join(root, "scripts/ci/format-changed.mjs"), "utf8"),
+  );
+  for (let index = 0; index < fileCount; index += 1)
+    f.write(`files/f${index}.ts`, `export const value${index} = 1;\n`);
+  f.commit();
+  const state = join(f.cwd, "state");
+  mkdirSync(state);
+  const lines = (name) => {
+    try {
+      return readFileSync(join(state, name), "utf8")
+        .split("\n")
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+  return { f, state, lines };
+}
+
+async function waitFor(predicate, what) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((done) => setTimeout(done, 50));
+  }
+  assert.fail(`Timed out waiting for ${what}`);
+}
+
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== "ESRCH";
+  }
+}
+
+const signalCases = [
+  { signal: "SIGTERM", exitCode: 143 },
+  { signal: "SIGINT", exitCode: 130 },
+  { signal: "SIGHUP", exitCode: 129 },
+];
+
+for (const { signal, exitCode } of signalCases) {
+  test(
+    `${signal} to the formatter is forwarded to the Rstack child and stops further batches`,
+    { skip: process.platform === "win32" },
+    async (t) => {
+      // 120 tracked files plus the fixture files are more than two 50-path batches.
+      const { f, state, lines } = standInFixture(t, 120);
+      const parent = spawn(
+        process.execPath,
+        [join(f.cwd, "scripts/ci/format-changed.mjs"), "--all"],
+        {
+          cwd: f.cwd,
+          env: { ...f.env, STANDIN_DIR: state },
+          stdio: ["ignore", "ignore", "pipe"],
+        },
+      );
+      t.after(() => parent.kill("SIGKILL"));
+      let stderr = "";
+      parent.stderr.on("data", (chunk) => (stderr += chunk));
+      const closed = new Promise((done) =>
+        parent.once("close", (code, closeSignal) =>
+          done({ code, closeSignal }),
+        ),
+      );
+      await waitFor(() => lines("batches.log").length > 0, "the first batch");
+      const child = Number(lines("batches.log")[0]);
+      parent.kill(signal);
+      const { code, closeSignal } = await closed;
+      assert.equal(closeSignal, null, "the parent must exit by itself");
+      assert.equal(code, exitCode);
+      assert.deepEqual(lines("signals.log"), [`${child} ${signal}`]);
+      assert.equal(isAlive(child), false, "the child must be dead");
+      assert.equal(lines("batches.log").length, 1, "no further batch starts");
+      assert.deepEqual(
+        lines("marker"),
+        [],
+        "the child must not run to the end",
+      );
+      assert.match(
+        stderr,
+        new RegExp(`"event":"ci_format_signal","signal":"${signal}"`),
+      );
+    },
+  );
+}
+
+for (const status of [0, 1, 2]) {
+  test(`formatter exits ${status} when every Rstack batch exits ${status}`, async (t) => {
+    const { f, state, lines } = standInFixture(t, 60);
+    const result = spawnSync(
+      process.execPath,
+      [join(f.cwd, "scripts/ci/format-changed.mjs"), "--all"],
+      {
+        cwd: f.cwd,
+        env: { ...f.env, STANDIN_DIR: state, STANDIN_EXIT: String(status) },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(result.status, status, result.stderr);
+    assert.ok(lines("batches.log").length > 1, "every batch runs");
+    assert.match(result.stdout, new RegExp(`"status":${status}`));
+  });
+}

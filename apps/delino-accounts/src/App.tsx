@@ -20,7 +20,7 @@ export function App() {
         <h1>Delino Accounts</h1>
         <p>Manage your Delino account and billing information.</p>
       </header>
-      <ul className="sections">
+      <ul className="sections" role="list">
         {sections.map((section) => (
           <li key={section.id} className="section">
             <h2>{section.title}</h2>
