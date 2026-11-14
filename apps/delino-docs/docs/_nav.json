@@ -1,0 +1,11 @@
+[
+  {
+    "text": "Guide",
+    "link": "/guide/introduction",
+    "activeMatch": "/guide/"
+  },
+  {
+    "text": "delino.io",
+    "link": "https://delino.io"
+  }
+]
