@@ -46,13 +46,29 @@ func run() error {
 		return err
 	}
 
-	srv := &http.Server{
-		Handler:           server.NewHandler(logger),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	srv := newServer(server.NewHandler(logger), logger)
 
 	logger.Info("server_started", slog.String("addr", listener.Addr().String()), slog.String("log_level", string(cfg.LogLevel)))
 	return serve(ctx, srv, listener, logger, shutdownTimeout)
+}
+
+// newServer is the single production construction point of the http.Server.
+//
+// net/http reports its own internal errors (a recovered handler panic with its
+// stack trace, a superfluous WriteHeader call, TLS handshake and malformed
+// request errors) through Server.ErrorLog. When ErrorLog is nil it falls back
+// to the standard library's default logger. After slog.SetDefault that logger
+// forwards to the slog default handler at INFO level, so these failures would
+// be recorded as INFO and dropped when LOG_LEVEL is warn or error; without
+// slog.SetDefault they would be plain text on stderr. Setting ErrorLog routes
+// them through logger's handler as ERROR records independent of the global
+// default, so every server log stays JSON on standard output.
+func newServer(handler http.Handler, logger *slog.Logger) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	}
 }
 
 // serve runs srv on listener until Serve fails or ctx is done, then shuts the
