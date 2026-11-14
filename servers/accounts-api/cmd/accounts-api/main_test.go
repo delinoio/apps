@@ -30,6 +30,10 @@ type failingListener struct {
 
 func (l failingListener) Accept() (net.Conn, error) { return nil, l.err }
 
+// noStop stands in for the signal-registration stop function in tests that
+// drive serve with a plain context.
+func noStop() {}
+
 func newTestListener(t *testing.T) net.Listener {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -53,7 +57,7 @@ func TestAwaitServeReturnsServeErrorWhenContextIsAlreadyCancelled(t *testing.T) 
 	for range 100 {
 		serveErr := make(chan error, 1)
 		serveErr <- acceptErr
-		err := awaitServe(ctx, &http.Server{}, serveErr, newTestLogger(), time.Second)
+		err := awaitServe(ctx, noStop, &http.Server{}, serveErr, newTestLogger(), time.Second)
 		if !errors.Is(err, acceptErr) {
 			t.Fatalf("awaitServe error = %v, want %v", err, acceptErr)
 		}
@@ -64,7 +68,7 @@ func TestAwaitServeIgnoresErrServerClosed(t *testing.T) {
 	serveErr := make(chan error, 1)
 	serveErr <- http.ErrServerClosed
 
-	if err := awaitServe(context.Background(), &http.Server{}, serveErr, newTestLogger(), time.Second); err != nil {
+	if err := awaitServe(context.Background(), noStop, &http.Server{}, serveErr, newTestLogger(), time.Second); err != nil {
 		t.Fatalf("awaitServe error = %v, want nil", err)
 	}
 }
@@ -75,7 +79,7 @@ func TestAwaitServeIgnoresErrServerClosedAfterShutdown(t *testing.T) {
 	serveErr := make(chan error, 1)
 	serveErr <- http.ErrServerClosed
 
-	if err := awaitServe(ctx, &http.Server{}, serveErr, newTestLogger(), time.Second); err != nil {
+	if err := awaitServe(ctx, noStop, &http.Server{}, serveErr, newTestLogger(), time.Second); err != nil {
 		t.Fatalf("awaitServe error = %v, want nil", err)
 	}
 }
@@ -83,7 +87,7 @@ func TestAwaitServeIgnoresErrServerClosedAfterShutdown(t *testing.T) {
 func TestServeReturnsServeErrorBeforeShutdown(t *testing.T) {
 	acceptErr := errors.New("accept failed")
 
-	err := serve(context.Background(), &http.Server{}, failingListener{Listener: newTestListener(t), err: acceptErr}, newTestLogger(), time.Second)
+	err := serve(context.Background(), noStop, &http.Server{}, failingListener{Listener: newTestListener(t), err: acceptErr}, newTestLogger(), time.Second)
 	if !errors.Is(err, acceptErr) {
 		t.Fatalf("serve error = %v, want %v", err, acceptErr)
 	}
@@ -96,7 +100,7 @@ func TestServeIgnoresErrServerClosed(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	if err := serve(context.Background(), srv, newTestListener(t), newTestLogger(), time.Second); err != nil {
+	if err := serve(context.Background(), noStop, srv, newTestListener(t), newTestLogger(), time.Second); err != nil {
 		t.Fatalf("serve error = %v, want nil", err)
 	}
 }
@@ -106,7 +110,7 @@ func TestServeCleanShutdownReturnsNil(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- serve(ctx, &http.Server{}, newTestListener(t), newTestLogger(), time.Second)
+		done <- serve(ctx, noStop, &http.Server{}, newTestListener(t), newTestLogger(), time.Second)
 	}()
 
 	cancel()
@@ -127,7 +131,7 @@ func startServe(ctx context.Context, t *testing.T, handler http.Handler, timeout
 	listener := newTestListener(t)
 	done := make(chan error, 1)
 	go func() {
-		done <- serve(ctx, &http.Server{Handler: handler}, listener, newTestLogger(), timeout)
+		done <- serve(ctx, noStop, &http.Server{Handler: handler}, listener, newTestLogger(), timeout)
 	}()
 	return listener.Addr().String(), done
 }
@@ -314,7 +318,7 @@ func startShortTimeoutServer(t *testing.T, timeout time.Duration) (string, *sync
 	listener := newTestListener(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, srv, listener, logger, time.Second) }()
+	go func() { done <- serve(ctx, noStop, srv, listener, logger, time.Second) }()
 	t.Cleanup(func() {
 		cancel()
 		<-done
@@ -497,7 +501,7 @@ func startRequestLogServer(t *testing.T) (string, *syncBuffer) {
 	listener := newTestListener(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, srv, listener, logger, time.Second) }()
+	go func() { done <- serve(ctx, noStop, srv, listener, logger, time.Second) }()
 	t.Cleanup(func() {
 		cancel()
 		<-done

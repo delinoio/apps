@@ -58,7 +58,7 @@ func run() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel.SlogLevel()}))
 	slog.SetDefault(logger)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := shutdownContext()
 	defer stop()
 
 	listener, err := net.Listen("tcp", cfg.Addr)
@@ -69,7 +69,18 @@ func run() error {
 	srv := newServer(server.NewHandler(logger), logger)
 
 	logger.Info("server_started", slog.String("addr", listener.Addr().String()), slog.String("log_level", string(cfg.LogLevel)))
-	return serve(ctx, srv, listener, logger, shutdownTimeout)
+	return serve(ctx, stop, srv, listener, logger, shutdownTimeout)
+}
+
+// shutdownContext returns a context that is cancelled by the first SIGINT or
+// SIGTERM, and the stop function that releases the signal registration.
+//
+// The registration stays installed until stop runs. While it is installed a
+// repeated signal is swallowed, so serve calls stop as soon as it observes the
+// first signal; a second signal during the drain then reaches the default
+// disposition and terminates the process instead of waiting for the drain.
+func shutdownContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
 // newServer is the single production construction point of the http.Server.
@@ -104,13 +115,19 @@ func newServer(handler http.Handler, logger *slog.Logger) *http.Server {
 // server down within timeout. It takes the shutdown trigger as a context so
 // tests can drive it without OS signals.
 //
+// stop releases the signal registration behind ctx. serve calls it, before it
+// logs server_shutdown_started and starts the drain, when ctx is done first, so
+// a second termination signal during the drain terminates the process. It is
+// not called when Serve fails first: the caller's deferred stop covers that
+// path. stop must be safe to call more than once.
+//
 // Request contexts derive from a server-lifetime context that is deliberately
 // not ctx: cancelling ctx only starts the drain, so in-flight handlers that
 // honour r.Context() can finish within timeout. The server-lifetime context is
 // cancelled once the drain has ended, which cuts off handlers that outlived
 // the timeout. serve sets srv.BaseContext and must not be called twice for the
 // same srv.
-func serve(ctx context.Context, srv *http.Server, listener net.Listener, logger *slog.Logger, timeout time.Duration) error {
+func serve(ctx context.Context, stop func(), srv *http.Server, listener net.Listener, logger *slog.Logger, timeout time.Duration) error {
 	baseCtx, cancelBase := context.WithCancel(context.Background())
 	defer cancelBase()
 	srv.BaseContext = func(net.Listener) context.Context { return baseCtx }
@@ -119,12 +136,13 @@ func serve(ctx context.Context, srv *http.Server, listener net.Listener, logger 
 	go func() {
 		serveErr <- srv.Serve(listener)
 	}()
-	return awaitServe(ctx, srv, serveErr, logger, timeout)
+	return awaitServe(ctx, stop, srv, serveErr, logger, timeout)
 }
 
 // awaitServe waits for the Serve result on serveErr or for ctx to be done. It
 // takes the result channel so tests can inject a Serve outcome deterministically.
-func awaitServe(ctx context.Context, srv *http.Server, serveErr <-chan error, logger *slog.Logger, timeout time.Duration) error {
+// When ctx is done first it calls stop before anything else; see serve.
+func awaitServe(ctx context.Context, stop func(), srv *http.Server, serveErr <-chan error, logger *slog.Logger, timeout time.Duration) error {
 	select {
 	case err := <-serveErr:
 		if errors.Is(err, http.ErrServerClosed) {
@@ -134,6 +152,10 @@ func awaitServe(ctx context.Context, srv *http.Server, serveErr <-chan error, lo
 	case <-ctx.Done():
 	}
 
+	// Call stop explicitly, and before the drain, rather than through
+	// context.AfterFunc: AfterFunc runs asynchronously, so a second signal could
+	// still arrive before the registration is released.
+	stop()
 	logger.Info("server_shutdown_started")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

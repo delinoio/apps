@@ -81,6 +81,7 @@ The scaffold has no persistent storage. The database is not selected. Before the
 
 - `SIGINT` or `SIGTERM` stops the listener from accepting new connections and starts a drain that waits at most 10 seconds (`shutdownTimeout`) for in-flight requests.
 - The signal does not cancel request contexts. Request contexts derive from a server-lifetime context, so handlers that honour `r.Context()` finish their work normally while the server drains.
+- The server releases its signal registration as soon as it observes the first signal, before it logs `server_shutdown_started` and starts the drain. A second `SIGINT` or `SIGTERM` during the drain therefore uses the default disposition and terminates the process immediately, with the signal as its exit cause, instead of waiting for the drain to finish. A single signal still drains in-flight requests and exits with status 0 once they finish.
 - The server cancels the server-lifetime context only after the drain ends. A handler that outlives the 10-second drain observes a cancelled request context at that point, the shutdown is reported as failed, and the process exits with a non-zero status.
 
 ## Logging
