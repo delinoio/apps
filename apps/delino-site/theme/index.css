@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Brand overrides. See https://rspress.rs/ui/vars for available variables. */
+:root {
+  --rp-c-brand: #3b5bfd;
+  --rp-c-brand-dark: #2c47d8;
+  --rp-c-brand-darker: #2238b3;
+  --rp-c-brand-light: #5f7bff;
+  --rp-c-brand-lighter: #8197ff;
+  --rp-c-brand-tint: rgba(59, 91, 253, 0.08);
+}

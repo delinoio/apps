@@ -1,6 +1,6 @@
 # Documentation Catalog
 
-`docs/` is the source of truth for repository contracts. This repository contains no runtime projects yet.
+`docs/` is the source of truth for repository contracts.
 
 ## Repository contracts
 
@@ -18,7 +18,17 @@
 
 ## Project catalog
 
-No projects are registered. Before implementation, add `project-<id>.md`, at least one `<domain>-<project-or-component>-<contract>.md`, and their links here. Use lowercase kebab-case IDs and domain prefixes `apps`, `cmds`, `servers`, `crates`, `protos`, or `packages`.
+### delino-site
+
+- [Project index](project-delino-site.md)
+- [Marketing site foundation](apps-delino-site-foundation.md)
+
+### delino-docs
+
+- [Project index](project-delino-docs.md)
+- [Documentation site foundation](apps-delino-docs-foundation.md)
+
+Before implementing a new project, add `project-<id>.md`, at least one `<domain>-<project-or-component>-<contract>.md`, and their links here. Use lowercase kebab-case IDs and domain prefixes `apps`, `cmds`, `servers`, `crates`, `protos`, or `packages`.
 
 ## Instruction update policy
 

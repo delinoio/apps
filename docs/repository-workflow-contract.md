@@ -2,7 +2,7 @@
 
 ## Scope
 
-The repository contains shared instructions, skills, documentation templates and formatting infrastructure. It has no runtime projects yet, and no native build workspace, generated protocol bindings, deployment targets or release credentials.
+The repository contains shared instructions, skills, documentation templates, formatting infrastructure and two static Rspress sites: [`delino-site`](project-delino-site.md) and [`delino-docs`](project-delino-docs.md). It has no native build workspace, generated protocol bindings, deployment workflows or release credentials.
 
 ## Installation
 
@@ -10,11 +10,11 @@ Use Node.js 24 from `.nvmrc` and pnpm 10.26.2 from `package.json`. Run `pnpm ins
 
 ## Task orchestration
 
-The pinned `turbo` dependency and root `turbo.json` orchestrate packages selected by `pnpm-workspace.yaml`: `apps/*`, `packages/*` and `servers/*`. There are no runtime packages yet; commands only run tasks that exist in package scripts.
+The pinned `turbo` dependency and root `turbo.json` orchestrate packages selected by `pnpm-workspace.yaml`: `apps/*`, `packages/*` and `servers/*`. The workspace packages are `apps/delino-site` and `apps/delino-docs`; commands only run tasks that exist in package scripts.
 
 Root `pnpm build`, `pnpm dev`, `pnpm lint` and `pnpm typecheck` delegate to `turbo run`. Root `pnpm test` runs workspace tests and the repository-wide `test:tooling` task. The latter runs the existing formatter and hook fixtures directly and is registered as `//#test:tooling`. It is uncached so each invocation checks the current Git and hook environment. `prepare`, `format` and `format:check` remain direct commands: hook installation has side effects, and formatting depends on Git revisions, staged changes and untracked files rather than package inputs.
 
-Root `pnpm dev` starts all workspace development servers together through the unfiltered `turbo run dev` command. Each workspace package that owns a development server exposes it through its `dev` script. Packages without a development server do not need a `dev` script. Package-specific development is available through an explicit filtered command; the root command always selects all packages. There are currently no development servers to start.
+Root `pnpm dev` starts all workspace development servers together through the unfiltered `turbo run dev` command. Each workspace package that owns a development server exposes it through its `dev` script. Packages without a development server do not need a `dev` script. Package-specific development is available through an explicit filtered command; the root command always selects all packages. It currently starts the Rspress development servers of `delino-site` and `delino-docs`.
 
 Define each workspace task in its owning `package.json`. Declare workspace dependencies so Turbo can order tasks: builds depend on dependency builds, tests depend on dependency builds, and lint and typecheck tasks depend on their corresponding dependency tasks. Build output defaults to `dist/**`; packages with other outputs must override them in a package-local `turbo.json` that extends `//`. Declare any additional test reports or incremental compiler outputs there. Development tasks are persistent and uncached.
 
@@ -36,7 +36,7 @@ Run `pnpm test` for formatter, hook and change-planning fixtures. CI plans affec
 
 The `changes` job resolves that comparison and runs `scripts/ci/plan.mjs` without installing dependencies. It publishes `base`, `head`, `format`, `fixtures` and `quality` outputs. Formatting uses the existing formatter's changed-file selection; Rstack still owns exclusions. Fixtures run for changes, deletions or renames affecting `scripts/ci/`, `scripts/install-git-hooks.sh`, `.github/workflows/CI.yml`, `.nvmrc`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `rstack.config.ts` or `lefthook.yml`. Documentation-only changes select formatting without fixtures. The `quality` job runs when either check is selected and passes the exact comparison to formatting. Empty comparisons or changes with no validation inputs skip `quality`. The planner records the checkout revision, comparison and selections in logs and the job summary. New shared validation dependencies must update the planner inputs.
 
-Each CI run records the validation revision, comparison revisions, commands and results in its logs and job summary. Runtime and platform acceptance must be added with the owning project. Passing shared fixtures does not establish runtime or release acceptance.
+Each CI run records the validation revision, comparison revisions, commands and results in its logs and job summary. Runtime and platform acceptance must be added with the owning project. CI does not build or deploy `delino-site` or `delino-docs` yet. Passing shared fixtures does not establish runtime or release acceptance.
 
 The `ci-result` job aggregates validation through `needs`, including `changes` and `quality`. It runs with `always()` so dependency failures do not skip the aggregate check. Failed or cancelled dependencies fail `ci-result`. The `changes` job must succeed; a skipped `quality` job passes only when the planner selected no validation. Successful dependencies and other skipped dependencies pass. Every new PR validation job must be included in `ci-result.needs`. The aggregate job runs on Ubuntu for the same PR, main-push and manual-dispatch events.
 

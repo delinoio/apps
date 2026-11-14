@@ -16,4 +16,6 @@
 
 - [Repository defaults](../docs/repository-defaults.md)
 - [Repository workflow](../docs/repository-workflow-contract.md)
+- `apps/delino-site/`: [project index](../docs/project-delino-site.md) and [foundation contract](../docs/apps-delino-site-foundation.md)
+- `apps/delino-docs/`: [project index](../docs/project-delino-docs.md) and [foundation contract](../docs/apps-delino-docs-foundation.md)
 - Register each new project and its domain contracts in [the documentation catalog](../docs/README.md) before implementation.
