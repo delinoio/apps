@@ -8,6 +8,8 @@ Delino-owned source and future distributions use Apache-2.0, except `servers/` a
 
 Source under `servers/` uses the Functional Source License, Version 1.1, ALv2 Future License (`FSL-1.1-ALv2`). `servers/LICENSE` contains the complete terms; it overrides the root Apache-2.0 license for that directory. Each version converts to Apache-2.0 on the second anniversary of the date it is made available. Server source headers and manifests declare `FSL-1.1-ALv2`. Keep the license file text unchanged except for the notice.
 
+Root `LICENSE-FSL` is a copy of `servers/LICENSE` that exists so that the repository license summary on GitHub lists both licenses. GitHub detects license files only at the repository root. `LICENSE-FSL` starts with a scope statement that limits its terms to `servers/`, followed by the exact text of `servers/LICENSE`. Change both files in the same change set. The root `README.md` must state the license of each directory before setup instructions.
+
 Shared code that apps, packages, crates or command tools consume must live outside `servers/` under Apache-2.0. Moving code between `servers/` and Apache-2.0 directories changes its license and requires an explicit relicensing decision.
 
 ## Imported material

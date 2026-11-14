@@ -2,4 +2,4 @@ Copyright 2026 Delino
 
 Repository-owned source is licensed under Apache License 2.0. Vendored source and bundled fonts retain their own license and copyright notices in their respective directories.
 
-Source under `servers/` is licensed under the Functional Source License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2). See `servers/LICENSE`. Each version becomes available under Apache License 2.0 on the second anniversary of the date it is made available.
+Source under `servers/` is licensed under the Functional Source License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2). See `servers/LICENSE`; `LICENSE-FSL` is a root copy that applies only to `servers/`. Each version becomes available under Apache License 2.0 on the second anniversary of the date it is made available.
