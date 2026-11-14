@@ -76,6 +76,9 @@ test("every shared fixture input selects tests", async (t) => {
     "scripts/install-git-hooks.sh",
     "scripts/ci/plan.mjs",
     "scripts/ci/format-changed.test.mjs",
+    "turbo.json",
+    "apps/delino-accounts/turbo.json",
+    "servers/accounts-api/turbo.json",
   ]) {
     await t.test(path, (t) => {
       const f = fixture(t);
@@ -85,6 +88,15 @@ test("every shared fixture input selects tests", async (t) => {
       assert.equal(result.fixtures, true);
     });
   }
+});
+
+test("only turbo.json files select Turbo configuration fixtures", (t) => {
+  const f = fixture(t);
+  f.write("apps/example/not-turbo.json");
+  f.write("apps/example/turbo.json.example");
+  f.write("apps/example/turbo.json/readme.txt");
+  const result = plan(f.cwd, f.base, f.commit());
+  assert.equal(result.fixtures, false);
 });
 
 test("Go sources and module files select Go checks", async (t) => {
