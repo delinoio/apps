@@ -14,7 +14,7 @@ The API server is the system of record for account and billing information. It i
 
 ## Runtime and Language
 
-- Language: Go, module `github.com/delinoio/mono/servers/delino-accounts-api`. The `go` directive in `go.mod` selects the toolchain version.
+- Language: Go, in the repository root module `github.com/delinoio/mono`. The import path of the server packages is `github.com/delinoio/mono/servers/delino-accounts-api/...`. The `go` directive in the root `go.mod` selects the toolchain version.
 - Runtime: one long-running HTTP server process. It uses only the Go standard library in the current scaffold.
 - Logging: `log/slog`.
 - Deployment target: not selected. Record the target, its configuration source and its TLS termination in this contract before the first deployment.
@@ -86,7 +86,7 @@ Run from the repository root:
 
 Go tasks are uncached in Turbo because the Go toolchain and module cache are not declared task inputs. Remove `servers/delino-accounts-api/dist/` after validation.
 
-CI runs the repository Go checks for every Go module under `servers/` and `cmds/` when Go sources or Go module files change: `gofmt` check, `go vet ./...` and `go test ./...`. See the [workflow contract](repository-workflow-contract.md). CI does not build container images or deploy the server.
+CI runs the repository Go checks in the root Go module when Go sources or Go module files change: `gofmt` check, `go vet ./...` and `go test ./...`. See the [workflow contract](repository-workflow-contract.md). CI does not build container images or deploy the server.
 
 ## Dependencies and Integrations
 
