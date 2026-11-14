@@ -3,12 +3,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -228,5 +232,105 @@ func TestServeCancelsRequestContextOnlyAfterShutdownDeadline(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("request context was not cancelled after the shutdown deadline")
+	}
+}
+
+// serveThroughNewServer sends one GET to handler on a real HTTP server built by
+// newServer, with the logger writing JSON to a buffer. It returns the client
+// error (nil when a response arrived), the client-observed status (0 on error)
+// and the decoded log records. Close waits for in-flight handlers, so every
+// record is complete when it returns.
+func serveThroughNewServer(t *testing.T, handler http.HandlerFunc) (clientErr error, clientStatus int, records []map[string]any) {
+	t.Helper()
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	ts := httptest.NewUnstartedServer(nil)
+	ts.Config = newServer(handler, logger)
+	ts.Start()
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/probe")
+	if err == nil {
+		clientStatus = resp.StatusCode
+		resp.Body.Close()
+	}
+	ts.Close()
+
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("log line is not JSON: %q: %v", line, err)
+		}
+		records = append(records, record)
+	}
+	return err, clientStatus, records
+}
+
+func TestNewServerSetsErrorLog(t *testing.T) {
+	srv := newServer(http.NotFoundHandler(), newTestLogger())
+	if srv.ErrorLog == nil {
+		t.Fatal("ErrorLog is nil; net/http would write plain text to stderr")
+	}
+	if srv.ReadHeaderTimeout != 10*time.Second {
+		t.Errorf("ReadHeaderTimeout = %v, want 10s", srv.ReadHeaderTimeout)
+	}
+}
+
+func TestNewServerLogsHandlerPanicAsStructuredError(t *testing.T) {
+	// The panic value must not be http.ErrAbortHandler, which net/http does not log.
+	clientErr, _, records := serveThroughNewServer(t, func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	})
+	if clientErr == nil {
+		t.Fatal("client got a response, want the aborted connection")
+	}
+	if len(records) != 1 {
+		t.Fatalf("got %d log records, want 1: %v", len(records), records)
+	}
+	record := records[0]
+	if record["level"] != "ERROR" {
+		t.Errorf("level = %v, want ERROR", record["level"])
+	}
+	msg, _ := record["msg"].(string)
+	if !strings.Contains(msg, "http: panic serving") || !strings.Contains(msg, "boom") {
+		t.Errorf("msg = %q, want the net/http panic report for boom", msg)
+	}
+}
+
+func TestNewServerLogsSuperfluousWriteHeaderAsStructuredError(t *testing.T) {
+	clientErr, status, records := serveThroughNewServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusTeapot)
+	})
+	if clientErr != nil {
+		t.Fatalf("client error = %v, want a response", clientErr)
+	}
+	if status != http.StatusOK {
+		t.Errorf("client status = %d, want the first committed status 200", status)
+	}
+	if len(records) != 1 {
+		t.Fatalf("got %d log records, want 1: %v", len(records), records)
+	}
+	if records[0]["level"] != "ERROR" {
+		t.Errorf("level = %v, want ERROR", records[0]["level"])
+	}
+	msg, _ := records[0]["msg"].(string)
+	if !strings.Contains(msg, "superfluous response.WriteHeader") {
+		t.Errorf("msg = %q, want the superfluous WriteHeader report", msg)
+	}
+}
+
+func TestNewServerKeepsErrAbortHandlerSilent(t *testing.T) {
+	clientErr, _, records := serveThroughNewServer(t, func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler)
+	})
+	if clientErr == nil {
+		t.Fatal("client got a response, want the aborted connection")
+	}
+	if len(records) != 0 {
+		t.Errorf("got log records %v, want none for http.ErrAbortHandler", records)
 	}
 }
