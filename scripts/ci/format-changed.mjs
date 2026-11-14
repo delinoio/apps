@@ -43,17 +43,31 @@ function revision(cwd, value) {
   return value;
 }
 
+// A tracked path is gone when it is missing or when a parent component was
+// replaced by a file (ENOTDIR) or a symlink loop (ELOOP); Git still accepts
+// such working trees. Every other lstat error stays fatal.
+const GoneCode = Object.freeze({
+  Missing: "ENOENT",
+  NotDirectory: "ENOTDIR",
+  SymlinkLoop: "ELOOP",
+});
+const goneCodes = new Set(Object.values(GoneCode));
+
+function isRegularFile(cwd, name, skipGone = true) {
+  try {
+    return lstatSync(resolve(cwd, name)).isFile();
+  } catch (error) {
+    if (skipGone && goneCodes.has(error.code)) return false;
+    throw error;
+  }
+}
+
 export function allFormatFiles(cwd) {
   return git(cwd, "ls-files", "-z")
     .split("\0")
     .filter((name) => {
       if (!extensions.has(extname(name))) return false;
-      try {
-        return lstatSync(resolve(cwd, name)).isFile();
-      } catch (error) {
-        if (error.code === "ENOENT") return false;
-        throw error;
-      }
+      return isRegularFile(cwd, name);
     });
 }
 
@@ -71,12 +85,7 @@ export function stagedFormatFiles(cwd) {
     .split("\0")
     .filter((name) => {
       if (!extensions.has(extname(name))) return false;
-      try {
-        return lstatSync(resolve(cwd, name)).isFile();
-      } catch (error) {
-        if (error.code === "ENOENT") return false;
-        throw error;
-      }
+      return isRegularFile(cwd, name);
     })
     .sort();
 }
@@ -128,12 +137,7 @@ export function changedFormatFiles(cwd, base, head, local = false) {
     .filter((name) => {
       if (!name || !extensions.has(extname(name)) || !present.has(name))
         return false;
-      try {
-        return lstatSync(resolve(cwd, name)).isFile();
-      } catch (error) {
-        if (error.code === "ENOENT" && local) return false;
-        throw error;
-      }
+      return isRegularFile(cwd, name, local);
     })
     .sort();
 }
