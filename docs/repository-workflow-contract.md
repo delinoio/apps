@@ -4,9 +4,13 @@
 
 The repository contains shared instructions, skills, documentation templates, formatting infrastructure, two static Rspress sites ([`delino-site`](project-delino-site.md) and [`delino-docs`](project-delino-docs.md)) and the [`delino-accounts`](project-delino-accounts.md) project with an Rsbuild web app and a Go API server. It has no native build workspace, generated protocol bindings, deployment workflows or release credentials.
 
+## Agent skills
+
+`.agents/skills/` owns the shared workspace-local agent skills. `.claude/skills` is a tracked relative symlink to `../.agents/skills` so that Claude Code discovers the same skills as Codex. Add, edit and remove skills only in `.agents/skills/`; do not replace the symlink with a copy or add Claude-only skill directories. Checkouts on platforms without symlink support (for example, Windows without `core.symlinks`) get a plain file instead and do not expose the skills to Claude Code.
+
 ## Installation
 
-Use Node.js 24 from `.nvmrc` and pnpm 10.26.2 from `package.json`. Go work also requires the Go toolchain selected by the root `go.mod`. All Go code belongs to the single root module `github.com/delinoio/mono`; nested `go.mod` and `go.work` files are not used. Run `pnpm install --frozen-lockfile`. The prepare script installs Lefthook through `scripts/install-git-hooks.sh`. Archives without Git metadata skip hook installation. Linked worktrees may use their shared Git hooks directory; unrelated custom hook paths remain protected.
+Use Node.js 24 from `.nvmrc` and pnpm 10.26.2 from `package.json`. The Go toolchain selected by the root `go.mod` (Go 1.26.1 or later) is also a prerequisite for the root `pnpm build`, `pnpm dev`, `pnpm lint` and `pnpm test` tasks, because they include `servers/accounts-api`, whose package scripts call `go`. All Go code belongs to the single root module `github.com/delinoio/mono`; nested `go.mod` and `go.work` files are not used. Run `pnpm install --frozen-lockfile`. The prepare script installs Lefthook through `scripts/install-git-hooks.sh`. Archives without Git metadata skip hook installation. Linked worktrees may use their shared Git hooks directory; unrelated custom hook paths remain protected.
 
 ## Task orchestration
 

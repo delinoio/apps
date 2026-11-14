@@ -40,7 +40,7 @@ Sidebar order for `/guide/` is owned by `docs/guide/_meta.json`.
 
 ## Storage
 
-The site has no persistent storage, user uploads or server-side cache. All content is committed source. Static assets larger than 512 KiB require Git LFS according to the repository workflow contract.
+The site has no persistent storage, user uploads or server-side cache. All content is committed source. Static assets of at least 512 KiB require Git LFS according to the repository workflow contract.
 
 ## Security
 
@@ -59,7 +59,7 @@ Run from the repository root:
 - `pnpm install --frozen-lockfile`
 - `pnpm --filter delino-docs dev`: local development server.
 - `pnpm exec turbo run build --filter=delino-docs`: production build into `apps/delino-docs/dist/`.
-- `pnpm exec turbo run typecheck --filter=delino-docs`: TypeScript and MDX type check, including the e2e config and tests.
+- `pnpm exec turbo run typecheck --filter=delino-docs`: TypeScript type check, including the e2e config and tests.
 - `pnpm exec turbo run test:e2e --filter=delino-docs`: browser end-to-end tests against the development server on a free loopback port. See the [e2e contract](repository-e2e-contract.md).
 - `pnpm --filter delino-docs preview`: serve the production build locally.
 
