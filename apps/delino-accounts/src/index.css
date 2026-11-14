@@ -48,6 +48,8 @@ body {
   color: var(--color-text-muted);
 }
 
+/* WebKit drops list semantics from a list with `list-style: none`, so the
+   element in App.tsx keeps an explicit role="list". Keep both together. */
 .sections {
   display: grid;
   gap: 12px;
