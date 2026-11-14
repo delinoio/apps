@@ -179,17 +179,16 @@ export function changedFormatFiles(cwd, base, head, local = false) {
     "--",
   ).split("\0");
   if (local) {
-    names.push(
-      ...git(
-        cwd,
-        "diff",
-        "--name-only",
-        "--no-renames",
-        "-z",
-        head,
-        "--",
-      ).split("\0"),
-    );
+    // `git diff <head>` compares the tree with the working tree, so a path whose
+    // index differs from HEAD but whose working tree equals HEAD (for example
+    // after `git add` and a later revert) is invisible to it. Add the staged
+    // delta explicitly so such paths are still selected.
+    for (const extra of [
+      ["diff", "--name-only", "--no-renames", "-z", head, "--"],
+      ["diff", "--cached", "--name-only", "--no-renames", "-z", head, "--"],
+    ]) {
+      names.push(...git(cwd, ...extra).split("\0"));
+    }
     names.push(
       ...git(cwd, "ls-files", "--others", "--exclude-standard", "-z").split(
         "\0",
