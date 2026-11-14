@@ -1,0 +1,40 @@
+{
+  "name": "delino-ui",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "exports": {
+    "./button": "./src/button.tsx",
+    "./dialog": "./src/dialog.tsx",
+    "./switch": "./src/switch.tsx",
+    "./text-field": "./src/text-field.tsx",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "test": "rstest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ui-sdk/core": "0.1.0-beta.2",
+    "@ui-sdk/react": "0.1.0-beta.2"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@rstest/core": "0.12.5",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "happy-dom": "21.0.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "6.0.3"
+  }
+}
