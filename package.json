@@ -2,6 +2,7 @@
   "name": "delinoio-mono",
   "private": true,
   "license": "Apache-2.0",
+  "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
     "prepare": "./scripts/install-git-hooks.sh",

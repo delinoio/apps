@@ -635,3 +635,10 @@ test(
     }
   },
 );
+
+test("root package.json declares the ES module type used by rstack.config.ts", () => {
+  // The fixtures write their own package.json, so they cannot show the Node
+  // MODULE_TYPELESS_PACKAGE_JSON warning that a typeless root package causes.
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.equal(manifest.type, "module");
+});
