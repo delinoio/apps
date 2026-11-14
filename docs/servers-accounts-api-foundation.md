@@ -71,7 +71,7 @@ The scaffold has no persistent storage. The database is not selected. Before the
 ## Logging
 
 - The server writes structured JSON logs to standard output with `log/slog`. These are service logs for log aggregation, not interactive CLI output, so they do not use ANSI color.
-- Startup logs the listen address and log level. Shutdown logs the signal-driven start and the result.
+- Startup logs the listen address and log level. Shutdown logs the signal-driven start and the result. A listener failure is never discarded, even when it races with the shutdown signal: the process exits with a non-zero status and logs the error.
 - Every HTTP request produces one `http_request` log with `method`, `path`, `status`, `duration_ms` and `bytes` fields. `status` is the first committed response status (the one the client receives), `200` for an implicit body write, and informational `1xx` responses other than `101` do not count as committed. A request whose handler panics is logged too: `status` is `500` when no response status was committed before the panic and the committed status otherwise. The panic is not recovered by the logger, so `net/http` still aborts the connection.
 - Authentication logs (`planned`) include the Logto user ID, the API resource and the rejection reason, according to the authentication contract.
 
