@@ -2,8 +2,29 @@
 import { describe, expect, test } from "@rstest/core";
 import {
   DEFAULT_ACCOUNTS_API_ORIGIN,
+  readAccountsApiOrigin,
   resolveAccountsApiOrigin,
 } from "./config.ts";
+
+describe("readAccountsApiOrigin", () => {
+  test("reads PUBLIC_API_ORIGIN from the given environment", () => {
+    expect(
+      readAccountsApiOrigin({ PUBLIC_API_ORIGIN: "http://127.0.0.1:8100/" }),
+    ).toBe("http://127.0.0.1:8100");
+  });
+
+  test("uses the production origin when the variable is absent", () => {
+    expect(readAccountsApiOrigin({})).toBe(DEFAULT_ACCOUNTS_API_ORIGIN);
+  });
+
+  test("rejects an invalid value with the resolver error", () => {
+    expect(() =>
+      readAccountsApiOrigin({
+        PUBLIC_API_ORIGIN: "ftp://accounts.api.delino.io",
+      }),
+    ).toThrow("PUBLIC_API_ORIGIN must use http or https");
+  });
+});
 
 describe("resolveAccountsApiOrigin", () => {
   test("uses the production origin when the value is unset or empty", () => {
