@@ -27,7 +27,8 @@ export function plan(cwd, base, head) {
   const paths = execFileSync(
     "git",
     ["diff", "--name-only", "--no-renames", "-z", base, head, "--"],
-    { cwd, encoding: "utf8" },
+    // Match the formatter's limit so large comparisons do not hit ENOBUFS.
+    { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
   ).split("\0");
   const fixtures = paths.some(
     (path) => fixtureInputs.has(path) || path.startsWith("scripts/ci/"),
