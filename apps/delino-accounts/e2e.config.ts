@@ -16,6 +16,11 @@ export default {
         command: {
           executable: "rsbuild",
           args: ["dev", "--host", "127.0.0.1", "--port", "{port}"],
+          // The runner passes only PATH, HOME and temporary-directory variables
+          // to the app command. Pass a nondefault API origin explicitly so
+          // `e2e/home.e2e.ts` can observe that the build-time variable reaches
+          // the client bundle. Keep it equal to `E2E_API_ORIGIN` in that file.
+          env: { PUBLIC_API_ORIGIN: "http://127.0.0.1:18100" },
           log: ".e2e/logs/app.log",
         },
       },

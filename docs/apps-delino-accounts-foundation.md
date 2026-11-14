@@ -67,7 +67,7 @@ Run from the repository root:
 - `pnpm exec turbo run build --filter=delino-accounts`: production build into `apps/delino-accounts/dist/`.
 - `pnpm exec turbo run typecheck --filter=delino-accounts`: TypeScript type check, including the e2e config and tests.
 - `pnpm exec turbo run test --filter=delino-accounts`: Rstest unit tests.
-- `pnpm exec turbo run test:e2e --filter=delino-accounts`: browser end-to-end tests against the development server on a free loopback port. See the [e2e contract](repository-e2e-contract.md).
+- `pnpm exec turbo run test:e2e --filter=delino-accounts`: browser end-to-end tests against the development server on a free loopback port. See the [e2e contract](repository-e2e-contract.md). `e2e.config.ts` passes `PUBLIC_API_ORIGIN=http://127.0.0.1:18100` to the app command, and `e2e/home.e2e.ts` asserts that the `data-api-origin` attribute of `<html>` equals it without a model key, so the test fails when the build-time variable does not reach the client bundle.
 - `pnpm --filter delino-accounts preview`: serve the production build locally.
 
 `turbo.json` declares `PUBLIC_API_ORIGIN` as a `build` environment variable and local `.env*` files as `build` inputs. It also declares `PUBLIC_API_ORIGIN` as a `dev` pass-through variable, so root `pnpm dev` and `pnpm exec turbo run dev --filter=delino-accounts` honor a value provided by the shell and validate it at startup, like `pnpm --filter delino-accounts dev`. Remove `apps/delino-accounts/dist/` after validation. CI runs the e2e suite in the `e2e` job. CI does not build, unit test or deploy this app yet; add those checks to the workflow and its planner when the app enters CI.
