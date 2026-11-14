@@ -35,6 +35,17 @@ export function isTurboConfigInput(path) {
   return path === "turbo.json" || path.endsWith("/turbo.json");
 }
 
+// A package manifest directly inside a workspace package selects the Turbo
+// fixtures, which resolve every workspace package. Keep these roots in sync
+// with `pnpm-workspace.yaml`; plan.test.mjs cross-checks them.
+export const workspaceRoots = ["apps", "packages", "servers"];
+
+export function isWorkspaceManifest(path) {
+  return new RegExp(
+    `^(${workspaceRoots.join("|")})/[^/]+/package\\.json$`,
+  ).test(path);
+}
+
 // Go sources and module files select the repository Go checks.
 export function isGoInput(path) {
   return path.endsWith(".go") || /(^|\/)go\.(mod|sum)$/.test(path);
@@ -53,7 +64,8 @@ export function plan(cwd, base, head) {
     (path) =>
       fixtureInputs.has(path) ||
       path.startsWith("scripts/ci/") ||
-      isTurboConfigInput(path),
+      isTurboConfigInput(path) ||
+      isWorkspaceManifest(path),
   );
   const go = paths.some(isGoInput);
   const e2e = paths.some(isE2eInput);

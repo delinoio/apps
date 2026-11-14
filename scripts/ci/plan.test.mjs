@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { main, plan } from "./plan.mjs";
+import { main, plan, workspaceRoots } from "./plan.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -104,6 +104,64 @@ test("only turbo.json files select Turbo configuration fixtures", (t) => {
   f.write("apps/example/turbo.json/readme.txt");
   const result = plan(f.cwd, f.base, f.commit());
   assert.equal(result.fixtures, false);
+});
+
+test("workspace package manifests select fixtures", async (t) => {
+  for (const path of [
+    "apps/delino-accounts/package.json",
+    "apps/delino-docs/package.json",
+    "apps/delino-site/package.json",
+    "servers/accounts-api/package.json",
+    "packages/new-lib/package.json",
+  ]) {
+    await t.test(path, (t) => {
+      const f = fixture(t);
+      f.write(path);
+      const result = plan(f.cwd, f.base, f.commit());
+      assert.equal(result.quality, true);
+      assert.equal(result.fixtures, true);
+    });
+  }
+});
+
+test("deleted and renamed workspace manifests select fixtures", (t) => {
+  const f = fixture(t);
+  f.write("packages/old-lib/package.json");
+  f.write("apps/old-app/package.json");
+  const base = f.commit();
+  f.git("rm", "--quiet", "packages/old-lib/package.json");
+  // --no-renames reports a moved manifest as a deletion plus an addition.
+  f.git("mv", "apps/old-app/package.json", "docs-only.txt");
+  const result = plan(f.cwd, base, f.commit());
+  assert.equal(result.quality, true);
+  assert.equal(result.fixtures, true);
+
+  const g = fixture(t);
+  g.write("apps/old-app/package.json");
+  const renameBase = g.commit();
+  g.write("apps/new-app/readme.txt", "kept\n");
+  g.git("mv", "apps/old-app/package.json", "apps/new-app/package.json");
+  assert.equal(plan(g.cwd, renameBase, g.commit()).fixtures, true);
+});
+
+test("only direct workspace package manifests select fixtures", (t) => {
+  const f = fixture(t);
+  f.write("apps/delino-accounts/src/package.json");
+  f.write("apps/delino-accounts/src/index.css");
+  f.write("apps/package.json");
+  f.write("apps/delino-accounts/package.json.example");
+  f.write("cmds/example/package.json");
+  f.write("docs/package.json");
+  const result = plan(f.cwd, f.base, f.commit());
+  assert.equal(result.fixtures, false);
+});
+
+test("workspace manifest roots match pnpm-workspace.yaml", () => {
+  const globs = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8")
+    .split("\n")
+    .map((line) => line.match(/^\s+-\s+(\S+?)\/\*\s*$/)?.[1])
+    .filter(Boolean);
+  assert.deepEqual([...workspaceRoots].sort(), globs.sort());
 });
 
 test("Go sources and module files select Go checks", async (t) => {
