@@ -39,7 +39,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
 - Root `pnpm install` must support linked worktrees when the effective Git hooks path resolves to the repository's shared common-directory hooks directory, without overriding an unrelated custom hooks path. Source archives and other workspaces without Git metadata skip hook installation without running project preparation.
-- The registered projects are the static sites `delino-site` and `delino-docs`, and the account and billing project `delino-accounts`. The public documentation application is `delino-docs`. The repository has no release workflows yet. New projects must define their own development, validation and publication contracts before implementation.
+- The registered projects are the static sites `delino-site` and `delino-docs`, the account and billing project `delino-accounts`, and the shared React UI component package `delino-ui`. The public documentation application is `delino-docs`. The repository has no release workflows yet. New projects must define their own development, validation and publication contracts before implementation.
 
 ## References
 
