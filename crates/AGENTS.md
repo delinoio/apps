@@ -14,7 +14,7 @@
 
 - Prefer enums over free-form strings for stable internal and external contracts.
 
-- Add new crates as explicit workspace members in root `Cargo.toml`.
+- The repository has no Rust workspace yet and no root `Cargo.toml`. The change that adds the first crate must create the root `Cargo.toml` (workspace, resolver and members) and add that crate as an explicit workspace member in the same change; later crates are added as explicit members of that workspace.
 
 - Keep crate naming aligned with project IDs when possible.
 
