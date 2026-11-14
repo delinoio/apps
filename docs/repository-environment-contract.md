@@ -10,4 +10,4 @@ Never commit `.infisical.json`, `.dev-environment/`, real `.env` files or user, 
 
 ## Process boundaries
 
-Use explicit argument arrays and `shell: false` for child processes. Document any required platform shim. Forward termination signals and wait for owned child processes to exit. Documentation servers must declare a fixed loopback port and fail on conflicts. Application development servers follow the same rule: `delino-accounts` uses `127.0.0.1:3100` and `accounts-api` uses `127.0.0.1:8100` by default.
+Use explicit argument arrays and `shell: false` for child processes. Document any required platform shim. Forward termination signals and wait for owned child processes to exit. Documentation servers must declare a fixed loopback port and fail on conflicts. Application development servers follow the same rule: `delino-accounts` uses `127.0.0.1:3100` and `accounts-api` uses `127.0.0.1:8100` by default. End-to-end suites start their own development server on a free loopback port, according to the [e2e contract](repository-e2e-contract.md#app-under-test).

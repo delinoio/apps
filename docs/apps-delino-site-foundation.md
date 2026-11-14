@@ -7,6 +7,7 @@ This contract owns the `delino-site` marketing site at `apps/delino-site/`:
 - `apps/delino-site/rspress.config.ts`: site configuration.
 - `apps/delino-site/docs/`: page content and public static assets (`docs/public/`).
 - `apps/delino-site/theme/`: theme entry and brand style overrides.
+- `apps/delino-site/e2e.config.ts` and `apps/delino-site/e2e/`: end-to-end test config and tests, according to the [e2e contract](repository-e2e-contract.md).
 
 ## Runtime and Language
 
@@ -54,14 +55,16 @@ Run from the repository root:
 - `pnpm install --frozen-lockfile`
 - `pnpm --filter delino-site dev`: local development server.
 - `pnpm exec turbo run build --filter=delino-site`: production build into `apps/delino-site/dist/`.
-- `pnpm exec turbo run typecheck --filter=delino-site`: TypeScript type check.
+- `pnpm exec turbo run typecheck --filter=delino-site`: TypeScript type check, including the e2e config and tests.
+- `pnpm exec turbo run test:e2e --filter=delino-site`: browser end-to-end tests against the development server on a free loopback port. See the [e2e contract](repository-e2e-contract.md).
 - `pnpm --filter delino-site preview`: serve the production build locally.
 
-Remove `apps/delino-site/dist/` after validation. CI does not build or deploy this site yet; add the build check to the workflow and its planner when the site enters CI.
+Remove `apps/delino-site/dist/` after validation. CI runs the e2e suite in the `e2e` job. CI does not build or deploy this site yet; add the build check to the workflow and its planner when the site enters CI.
 
 ## Dependencies and Integrations
 
 - `@rspress/core`, `react` and `react-dom`, pinned in `apps/delino-site/package.json`.
+- `e2e`, `@e2e-dev/web` and `ai` for end-to-end tests, pinned in `apps/delino-site/package.json`.
 - Cloudflare Pages: static hosting for `delino.io`. Configure the Pages project with build command `pnpm exec turbo run build --filter=delino-site` and output directory `apps/delino-site/dist`.
 - [`delino-docs`](project-delino-docs.md): linked by absolute URL `https://docs.delino.io`.
 

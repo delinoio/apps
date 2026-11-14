@@ -9,6 +9,7 @@ This contract owns the `delino-accounts-web` component of [`delino-accounts`](pr
 - `apps/delino-accounts/src/`: application source, entry point and unit tests.
 - `apps/delino-accounts/public/`: static files copied to the build root, including Cloudflare Pages `_headers` and `_redirects`.
 - `apps/delino-accounts/turbo.json`: package-local Turbo task configuration.
+- `apps/delino-accounts/e2e.config.ts` and `apps/delino-accounts/e2e/`: end-to-end test config and tests, according to the [e2e contract](repository-e2e-contract.md).
 
 ## Runtime and Language
 
@@ -64,15 +65,17 @@ Run from the repository root:
 - `pnpm install --frozen-lockfile`
 - `pnpm --filter delino-accounts dev`: development server at `http://127.0.0.1:3100`. The server fails when the port is in use.
 - `pnpm exec turbo run build --filter=delino-accounts`: production build into `apps/delino-accounts/dist/`.
-- `pnpm exec turbo run typecheck --filter=delino-accounts`: TypeScript type check.
+- `pnpm exec turbo run typecheck --filter=delino-accounts`: TypeScript type check, including the e2e config and tests.
 - `pnpm exec turbo run test --filter=delino-accounts`: Rstest unit tests.
+- `pnpm exec turbo run test:e2e --filter=delino-accounts`: browser end-to-end tests against the development server on a free loopback port. See the [e2e contract](repository-e2e-contract.md).
 - `pnpm --filter delino-accounts preview`: serve the production build locally.
 
-`turbo.json` declares `PUBLIC_API_ORIGIN` as a `build` environment variable and local `.env*` files as `build` inputs. It also declares `PUBLIC_API_ORIGIN` as a `dev` pass-through variable, so root `pnpm dev` and `pnpm exec turbo run dev --filter=delino-accounts` honor a value provided by the shell and validate it at startup, like `pnpm --filter delino-accounts dev`. Remove `apps/delino-accounts/dist/` after validation. CI does not build, test or deploy this app yet; add those checks to the workflow and its planner when the app enters CI.
+`turbo.json` declares `PUBLIC_API_ORIGIN` as a `build` environment variable and local `.env*` files as `build` inputs. It also declares `PUBLIC_API_ORIGIN` as a `dev` pass-through variable, so root `pnpm dev` and `pnpm exec turbo run dev --filter=delino-accounts` honor a value provided by the shell and validate it at startup, like `pnpm --filter delino-accounts dev`. Remove `apps/delino-accounts/dist/` after validation. CI runs the e2e suite in the `e2e` job. CI does not build, unit test or deploy this app yet; add those checks to the workflow and its planner when the app enters CI.
 
 ## Dependencies and Integrations
 
 - `@rsbuild/core`, `@rsbuild/plugin-react`, `react`, `react-dom` and `@rstest/core`, pinned in `apps/delino-accounts/package.json`.
+- `e2e`, `@e2e-dev/web` and `ai` for end-to-end tests, pinned in `apps/delino-accounts/package.json`.
 - [`accounts-api`](servers-accounts-api-foundation.md) at `https://accounts.api.delino.io`.
 - Logto shared tenant, according to the [authentication contract](repository-auth-contract.md).
 - Cloudflare Pages: static hosting for `accounts.delino.io`. Configure the Pages project with build command `pnpm exec turbo run build --filter=delino-accounts` and output directory `apps/delino-accounts/dist`.

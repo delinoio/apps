@@ -25,6 +25,7 @@ jobs:
       format: ${{ steps.plan.outputs.format }}
       fixtures: ${{ steps.plan.outputs.fixtures }}
       go: ${{ steps.plan.outputs.go }}
+      e2e: ${{ steps.plan.outputs.e2e }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -147,15 +148,79 @@ jobs:
           echo 'Commands in the root Go module: gofmt -l on tracked .go files; go vet ./...; go test ./...' >> "$GITHUB_STEP_SUMMARY"
           echo "Result: $RESULT" >> "$GITHUB_STEP_SUMMARY"
           echo 'Runtime, deployment and release acceptance: not performed.' >> "$GITHUB_STEP_SUMMARY"
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    env:
+      E2E_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install Chromium
+        run: pnpm --filter delino-accounts exec e2e-web install chromium --with-deps
+      - name: Run e2e suites
+        id: run
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pull requests from forks receive no secrets. Agent steps need the
+          # model key, so those runs exclude tests tagged `agent`.
+          if [[ -n "${AI_GATEWAY_API_KEY:-}" ]]; then
+            echo "agent=included" >> "$GITHUB_OUTPUT"
+            pnpm test:e2e -- --reporter list,junit
+          else
+            echo "agent=excluded" >> "$GITHUB_OUTPUT"
+            echo "::notice::AI_GATEWAY_API_KEY is not available; tests tagged agent are excluded."
+            pnpm test:e2e -- --reporter list,junit --exclude-tag agent
+          fi
+      - name: Upload e2e results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-results
+          # The runner writes its output under the hidden `.e2e/` directory, and
+          # upload-artifact skips hidden paths unless this input is true.
+          include-hidden-files: true
+          path: |
+            apps/*/.e2e/report.json
+            apps/*/.e2e/junit.xml
+            apps/*/.e2e/results
+            apps/*/.e2e/logs
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Record validation result
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+          AGENT_TESTS: ${{ steps.run.outputs.agent }}
+          COMPARISON_BASE: ${{ needs.changes.outputs.base }}
+          COMPARISON_HEAD: ${{ needs.changes.outputs.head }}
+        run: |
+          echo "Comparison: $COMPARISON_BASE..$COMPARISON_HEAD" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Commands: pnpm install --frozen-lockfile --ignore-scripts; e2e-web install chromium --with-deps; pnpm test:e2e -- --reporter list,junit [--exclude-tag agent]' >> "$GITHUB_STEP_SUMMARY"
+          echo "Agent-tagged tests: ${AGENT_TESTS:-not run}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Result: $RESULT" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Scope: development servers in headless Chromium. Production build, Cloudflare Pages, account and release acceptance: not performed.' >> "$GITHUB_STEP_SUMMARY"
   ci-result:
     if: always()
-    needs: [changes, quality, go]
+    needs: [changes, quality, go, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Check validation results
         env:
           QUALITY_PLANNED: ${{ needs.changes.outputs.quality }}
           GO_PLANNED: ${{ needs.changes.outputs.go }}
+          E2E_PLANNED: ${{ needs.changes.outputs.e2e }}
           NEEDS_RESULTS: ${{ toJSON(needs) }}
           VALIDATION_REVISION: ${{ github.sha }}
         shell: bash
@@ -163,7 +228,7 @@ jobs:
           set -euo pipefail
           echo "Validation revision: $VALIDATION_REVISION" >> "$GITHUB_STEP_SUMMARY"
           echo "$NEEDS_RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"' | tee -a "$GITHUB_STEP_SUMMARY"
-          if echo "$NEEDS_RESULTS" | jq -e --arg planned "$QUALITY_PLANNED" --arg go_planned "$GO_PLANNED" 'all(.[]; .result == "success" or .result == "skipped") and .changes.result == "success" and (.quality.result == "success" or (.quality.result == "skipped" and $planned == "false")) and (.go.result == "success" or (.go.result == "skipped" and $go_planned == "false"))' > /dev/null; then
+          if echo "$NEEDS_RESULTS" | jq -e --arg planned "$QUALITY_PLANNED" --arg go_planned "$GO_PLANNED" --arg e2e_planned "$E2E_PLANNED" 'all(.[]; .result == "success" or .result == "skipped") and .changes.result == "success" and (.quality.result == "success" or (.quality.result == "skipped" and $planned == "false")) and (.go.result == "success" or (.go.result == "skipped" and $go_planned == "false")) and (.e2e.result == "success" or (.e2e.result == "skipped" and $e2e_planned == "false"))' > /dev/null; then
             echo 'CI result: success' | tee -a "$GITHUB_STEP_SUMMARY"
           else
             echo 'CI result: failure' | tee -a "$GITHUB_STEP_SUMMARY"

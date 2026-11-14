@@ -14,6 +14,21 @@ const fixtureInputs = new Set([
   "scripts/install-git-hooks.sh",
 ]);
 
+// Shared runtime and workspace inputs that change every app e2e suite.
+const e2eInputs = new Set([
+  ".github/workflows/CI.yml",
+  ".nvmrc",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "turbo.json",
+]);
+
+// Paths inside an app package select the app e2e suites.
+export function isE2eInput(path) {
+  return e2eInputs.has(path) || /^apps\/[^/]+\//.test(path);
+}
+
 // The root and every workspace `turbo.json` configure the tasks that the
 // Turbo fixtures inspect.
 export function isTurboConfigInput(path) {
@@ -41,7 +56,8 @@ export function plan(cwd, base, head) {
       isTurboConfigInput(path),
   );
   const go = paths.some(isGoInput);
-  return { quality: format || fixtures, format, fixtures, go };
+  const e2e = paths.some(isE2eInput);
+  return { quality: format || fixtures, format, fixtures, go, e2e };
 }
 
 export function main(env = process.env, cwd = process.cwd()) {

@@ -73,6 +73,7 @@
 - `docs/repository-issue-tracker-contract.md`: Issue tracking and pull request references.
 - `docs/repository-auth-contract.md`: Shared Logto authentication and user identity.
 - `docs/repository-billing-contract.md`: Billing currency and monetary precision.
+- `docs/repository-e2e-contract.md`: Browser end-to-end tests for web apps.
 - `docs/project-template.md`: Project index template.
 - `docs/domain-template.md`: Domain contract template.
 

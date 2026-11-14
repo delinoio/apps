@@ -12,6 +12,7 @@
 - [Issue tracking](repository-issue-tracker-contract.md)
 - [Authentication](repository-auth-contract.md)
 - [Billing currency and precision](repository-billing-contract.md)
+- [End-to-end testing](repository-e2e-contract.md)
 
 ## Templates
 

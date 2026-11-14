@@ -9,19 +9,23 @@
     "dev": "rsbuild dev",
     "preview": "rsbuild preview",
     "test": "rstest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "e2e run"
   },
   "dependencies": {
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@e2e-dev/web": "0.16.0",
     "@rsbuild/core": "2.3.0",
     "@rsbuild/plugin-react": "2.1.1",
     "@rstest/core": "0.12.5",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "ai": "7.0.173",
+    "e2e": "0.23.1",
     "typescript": "6.0.3"
   }
 }
