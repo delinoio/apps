@@ -72,8 +72,32 @@ export function plan(cwd, base, head) {
   return { quality: format || fixtures, format, fixtures, go, e2e };
 }
 
+// Why the `go` output has its value. Logged in the ci_plan record only.
+export const GoReason = Object.freeze({
+  Diff: "diff",
+  MainPush: "main-push",
+});
+
+// Runner-provided event context that identifies a push to the main branch.
+export const MAIN_PUSH_EVENT = "push";
+export const MAIN_REF = "refs/heads/main";
+
+export function isMainPush(env) {
+  return (
+    env.GITHUB_EVENT_NAME === MAIN_PUSH_EVENT && env.GITHUB_REF === MAIN_REF
+  );
+}
+
 export function main(env = process.env, cwd = process.cwd()) {
-  const result = plan(cwd, env.CI_BASE, env.CI_HEAD);
+  const diffPlan = plan(cwd, env.CI_BASE, env.CI_HEAD);
+  // Branch-wide cancellation can cancel a main-push run before its Go job
+  // finishes, and the next push then compares only against its own parent.
+  // Every main push therefore runs the Go checks against its own head so a
+  // later documentation-only push cannot hide a cancelled predecessor's Go
+  // range. Pull request and manual comparisons keep affected selection.
+  const mainPush = isMainPush(env);
+  const result = { ...diffPlan, go: diffPlan.go || mainPush };
+  const goReason = mainPush && !diffPlan.go ? GoReason.MainPush : GoReason.Diff;
   const record = {
     event: "ci_plan",
     validationRevision: execFileSync("git", ["rev-parse", "HEAD"], {
@@ -83,6 +107,7 @@ export function main(env = process.env, cwd = process.cwd()) {
     base: env.CI_BASE,
     head: env.CI_HEAD,
     ...result,
+    goReason,
   };
   console.log(JSON.stringify(record));
   appendFileSync(
