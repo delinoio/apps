@@ -19,7 +19,7 @@ Imported skills retain their original licenses and notices. See [NOTICE](NOTICE)
 
 ## Setup
 
-Use Node.js 24 and pnpm 10.26.2.
+Use Node.js 24, pnpm 10.26.2 and the Go toolchain selected by the root `go.mod` (Go 1.26.1 or later). The root `pnpm build`, `pnpm dev`, `pnpm lint` and `pnpm test` tasks run `servers/accounts-api`, whose scripts call `go`.
 
 ```sh
 pnpm install --frozen-lockfile
