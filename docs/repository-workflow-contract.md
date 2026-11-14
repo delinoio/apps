@@ -2,7 +2,11 @@
 
 ## Scope
 
-The repository contains shared instructions, documentation templates, formatting infrastructure, two static Rspress sites ([`delino-site`](project-delino-site.md) and [`delino-docs`](project-delino-docs.md)) and the [`delino-accounts`](project-delino-accounts.md) project with an Rsbuild web app and a Go API server. It has no native build workspace, generated protocol bindings, deployment workflows or release credentials.
+The repository contains shared instructions, skills, documentation templates, formatting infrastructure, two static Rspress sites ([`delino-site`](project-delino-site.md) and [`delino-docs`](project-delino-docs.md)) and the [`delino-accounts`](project-delino-accounts.md) project with an Rsbuild web app and a Go API server. It has no native build workspace, generated protocol bindings, deployment workflows or release credentials.
+
+## Agent skills
+
+`.agents/skills/` owns the shared workspace-local agent skills. `.claude/skills` is a tracked relative symlink to `../.agents/skills` so that Claude Code discovers the same skills as Codex. Add, edit and remove skills only in `.agents/skills/`; do not replace the symlink with a copy or add Claude-only skill directories. Checkouts on platforms without symlink support (for example, Windows without `core.symlinks`) get a plain file instead and do not expose the skills to Claude Code.
 
 ## Installation
 
@@ -26,7 +30,7 @@ For a package subset, use `pnpm exec turbo run <task> --filter=<package>`. Use `
 
 Root `pnpm format` writes fixes and `pnpm format:check` checks without rewriting. Both use pinned Rstack and `rstack.config.ts`. Default local selection compares the merge base of `origin/main` and HEAD, including working changes and untracked files. Explicit `--base <sha> --head <sha>` arguments select that committed comparison. Local `--all` selects existing tracked files. Before the first commit, use `--staged`.
 
-Lefthook runs `node scripts/ci/format-changed.mjs --staged --write` with `stage_fixed: true`. It preserves unstaged edits, supports initial commits and rejects parser failures. Select files with NUL-separated Git paths, skip deletions and symlinks, and preserve generated files and lockfiles through shared exclusions.
+Lefthook runs `node scripts/ci/format-changed.mjs --staged --write` with `stage_fixed: true`. It preserves unstaged edits, supports initial commits and rejects parser failures. Select files with NUL-separated Git paths, skip deletions and symlinks, and preserve imported skills, generated files and lockfiles through shared exclusions.
 
 CI requires an explicit comparison and rejects local `--staged` and `--all` modes. An unset, empty or case-insensitive `false` CI value means local execution; every other nonempty value enables CI restrictions.
 

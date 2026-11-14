@@ -15,6 +15,8 @@ The backend services in `servers/` are source-available, not Apache-2.0. You can
 
 [LICENSE-FSL](LICENSE-FSL) is a root copy of `servers/LICENSE`. It is there so that the GitHub license summary shows both licenses. Its terms apply only to `servers/`.
 
+Imported skills retain their original licenses and notices. See [NOTICE](NOTICE).
+
 ## Setup
 
 Use Node.js 24 and pnpm 10.26.2.

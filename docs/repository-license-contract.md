@@ -14,7 +14,7 @@ Shared code that apps, packages, crates or command tools consume must live outsi
 
 ## Imported material
 
-Imported source, fonts and assets retain their upstream licenses, attribution and notices. A repository-wide default does not relicense imported material. Keep original licenses and copyright notices for any future imported source, fonts and assets.
+Imported agent skills retain their upstream licenses, attribution and notices. A repository-wide default does not relicense imported material. Keep original licenses and copyright notices for any future imported source, fonts and assets.
 
 ## Distribution
 
