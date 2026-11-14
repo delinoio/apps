@@ -43,7 +43,7 @@ This contract owns the `delino-accounts-web` component of [`delino-accounts`](pr
 
 ## Storage
 
-The app has no server-side storage. All account and billing state belongs to the [API server](servers-accounts-api-foundation.md). Browser storage is limited to the Logto SDK session data and per-user display preferences. Static assets larger than 512 KiB require Git LFS according to the repository workflow contract.
+The app has no server-side storage. All account and billing state belongs to the [API server](servers-accounts-api-foundation.md). Browser storage is limited to the Logto SDK session data and per-user display preferences. Static assets of at least 512 KiB require Git LFS according to the repository workflow contract.
 
 ## Security
 
