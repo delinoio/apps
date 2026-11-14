@@ -69,6 +69,8 @@
 - `docs/repository-license-contract.md`: Licensing and imported material.
 - `docs/repository-dependency-security-contract.md`: Dependency security validation.
 - `docs/repository-issue-tracker-contract.md`: Issue tracking and pull request references.
+- `docs/repository-auth-contract.md`: Shared Logto authentication and user identity.
+- `docs/repository-billing-contract.md`: Billing currency and monetary precision.
 - `docs/project-template.md`: Project index template.
 - `docs/domain-template.md`: Domain contract template.
 
@@ -133,6 +135,20 @@
   - `## Test Scenarios`
   - `## Out of Scope`
 - Optional `## Additional Notes` may be appended only when needed.
+
+## Authentication Rules
+
+- Logto is the only identity provider. All services share one Logto tenant per deployment environment; do not add service-local password storage, sign-up flows or another identity provider.
+- Use the Logto user ID (`sub`) as the canonical user identifier across services.
+- Backend services must validate Logto access tokens (signature, issuer, expiration, audience and required scopes) and must not accept ID tokens as API credentials.
+- Follow `docs/repository-auth-contract.md`.
+
+## Billing Rules
+
+- Charge users in USD only.
+- Store and compute prices, usage costs, credits and balances with 0.000001 USD (micro-USD) precision as signed 64-bit integers named with a `_usd_micros` suffix. Never use binary floating-point types for monetary values.
+- Document rounding at payment-provider boundaries and in sub-micro-USD calculations in the owning domain contract; round only for display.
+- Follow `docs/repository-billing-contract.md`.
 
 ## GitHub Pull Request Title Contract
 

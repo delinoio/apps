@@ -10,6 +10,8 @@
 - [Licensing](repository-license-contract.md)
 - [Dependency security](repository-dependency-security-contract.md)
 - [Issue tracking](repository-issue-tracker-contract.md)
+- [Authentication](repository-auth-contract.md)
+- [Billing currency and precision](repository-billing-contract.md)
 
 ## Templates
 

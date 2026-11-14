@@ -17,6 +17,13 @@ Repository-owned source, package metadata and future release artifacts use Apach
 - Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default. Any exception must be documented in its project contract.
 - File handling should use Cloudflare R2 for object storage plus signed URLs for upload and download access by default. Use another storage or access pattern only when the project contract documents the reason, trust boundary, and migration considerations.
 
+## Repository-Wide Rules
+
+These rules are not defaults; project and domain contracts must not deviate from them.
+
+- Authentication uses one shared Logto tenant for all services. See `docs/repository-auth-contract.md`.
+- User charges use USD with 0.000001 USD precision. See `docs/repository-billing-contract.md`.
+
 ## Documentation Requirements
 
 - Project index docs must record deviations from these defaults in `Cross-Domain Invariants` or `Change Policy`.
@@ -36,6 +43,8 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ## References
 
 - `docs/README.md`
+- `docs/repository-auth-contract.md`
+- `docs/repository-billing-contract.md`
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `AGENTS.md`
