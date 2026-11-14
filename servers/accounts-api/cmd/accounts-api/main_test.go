@@ -501,7 +501,7 @@ func startRequestLogServer(t *testing.T) (string, *syncBuffer) {
 	listener := newTestListener(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, srv, listener, logger, time.Second) }()
+	go func() { done <- serve(ctx, noStop, srv, listener, logger, time.Second) }()
 	t.Cleanup(func() {
 		cancel()
 		<-done
