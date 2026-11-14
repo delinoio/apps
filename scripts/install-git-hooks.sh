@@ -9,6 +9,20 @@ canonicalize_existing_directory() {
 	)
 }
 
+# Exit before Lefthook can overwrite "<hook>.old" with a non-Lefthook hook.
+refuse_backup_overwrite() {
+	hook_file="$canonical_hooks_path/$1"
+	backup_file="$hook_file.old"
+	if [ -f "$hook_file" ] && ! grep -q LEFTHOOK "$hook_file" &&
+		{ [ -e "$backup_file" ] || [ -L "$backup_file" ]; }; then
+		printf '%s\n' \
+			"Refusing to install Lefthook: $hook_file is not managed by Lefthook and $backup_file already exists." \
+			"Installing would overwrite $backup_file with $hook_file and lose the backup." \
+			"Move or merge one of the two files, then run this script again." >&2
+		exit 1
+	fi
+}
+
 is_inside_work_tree="$(git rev-parse --is-inside-work-tree 2>/dev/null || true)"
 if [ "$is_inside_work_tree" != "true" ]; then
 	printf '%s\n' "Git metadata is unavailable; skipping Lefthook installation."
@@ -50,9 +64,16 @@ fi
 
 if [ "$canonical_hooks_path" = "$canonical_shared_hooks_path" ]; then
 	# Lefthook rejects an existing core.hooksPath in linked worktrees even when it
-	# already targets Git's shared hooks directory. Force is safe only when both
-	# paths resolve to that repository-owned directory; remove this branch when
-	# Lefthook handles it.
+	# already targets Git's shared hooks directory. Force bypasses that check
+	# only when both paths resolve to that repository-owned directory; remove
+	# this branch when Lefthook handles it.
+	#
+	# Force also disables Lefthook's guard for an existing "<hook>.old" backup:
+	# Lefthook would rename a non-Lefthook hook over that backup and lose it.
+	# Refuse before forcing when that would happen. A Lefthook-managed hook is
+	# removed without touching its backup, and a missing hook or missing backup
+	# is safe. Check every hook that lefthook.yml defines (only pre-commit today).
+	refuse_backup_overwrite pre-commit
 	exec lefthook install --force
 fi
 
