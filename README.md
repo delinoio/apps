@@ -1,6 +1,6 @@
 # Delino
 
-Monorepo for Delino services. It contains apps, backend servers, shared packages, Rust crates, Go command tools and protocol schemas.
+Monorepo for Delino services. It currently contains the `delino-site`, `delino-docs` and `delino-accounts` web apps, the `accounts-api` Go server, and shared instructions, skills, documentation and formatting tooling. The `crates/`, `cmds/`, `protos/` and `packages/` directories are reserved: they hold only scoped `AGENTS.md` instructions today, and no Rust workspace, Go command tools, protocol schemas or shared packages exist yet.
 
 ## License
 
