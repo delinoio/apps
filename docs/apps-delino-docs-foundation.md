@@ -5,7 +5,7 @@
 This contract owns the `delino-docs` documentation site at `apps/delino-docs/`:
 
 - `apps/delino-docs/rspress.config.ts`: site configuration.
-- `apps/delino-docs/docs/`: page content and public static assets (`docs/public/`).
+- `apps/delino-docs/docs/`: page content, navbar data (`docs/_nav.json`), per-directory sidebar order (`_meta.json`) and public static assets (`docs/public/`).
 - `apps/delino-docs/theme/`: theme entry and brand style overrides.
 
 ## Runtime and Language
@@ -31,7 +31,7 @@ This contract owns the `delino-docs` documentation site at `apps/delino-docs/`:
 | `guide-introduction`    | `/guide/introduction`    | Product introduction.       |
 | `guide-getting-started` | `/guide/getting-started` | First steps for new users.  |
 
-Sidebar order for `/guide/` is owned by `docs/guide/_meta.json`.
+Sidebar order for `/guide/` is owned by `docs/guide/_meta.json`. The navbar entries (`Guide` and `delino.io`) are owned by `docs/_nav.json`. `rspress.config.ts` must not set `themeConfig.nav` or `themeConfig.sidebar`, because either one disables the automatic navbar and sidebar generation from `_nav.json` and `_meta.json`. Use a directory-level `_meta.json` for any future section that needs an explicit sidebar.
 
 - Build artifacts: `index.html` per route, `404.html`, `sitemap.xml` with absolute `https://docs.delino.io` URLs, `llms.txt` and `llms-full.txt`.
 - `docs/public/_headers` sets Cloudflare Pages response headers: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and `X-Frame-Options: DENY`.
