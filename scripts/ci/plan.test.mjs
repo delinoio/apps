@@ -175,3 +175,39 @@ test("planner publishes booleans and records exact comparison and checkout", (t)
   assert.equal(record.head, head);
   assert.equal(record.validationRevision, head);
 });
+
+test("planner accepts more than 1 MiB of changed paths", (t) => {
+  const f = fixture(t);
+  // Build the head tree directly in the object database so that no files are
+  // written to disk. The .txt names keep the formatter selection empty.
+  const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+    cwd: f.cwd,
+    encoding: "utf8",
+    input: "",
+  }).trim();
+  const entries = Array.from(
+    { length: 5300 },
+    (_, index) =>
+      `100644 ${blob}\tbulk/${String(index).padStart(5, "0")}-${"x".repeat(190)}.txt\n`,
+  ).join("");
+  f.git("read-tree", f.base);
+  execFileSync("git", ["update-index", "--index-info"], {
+    cwd: f.cwd,
+    input: entries,
+  });
+  const tree = f.git("write-tree");
+  const head = f.git("commit-tree", tree, "-p", f.base, "-m", "bulk");
+  // Guard the fixture so it cannot silently shrink below Node's 1 MiB default.
+  const listed = execFileSync(
+    "git",
+    ["diff", "--name-only", "--no-renames", "-z", f.base, head, "--"],
+    { cwd: f.cwd, maxBuffer: 32 * 1024 * 1024 },
+  );
+  assert.ok(listed.length > 1024 * 1024);
+  assert.deepEqual(plan(f.cwd, f.base, head), {
+    quality: false,
+    format: false,
+    fixtures: false,
+    go: false,
+  });
+});
