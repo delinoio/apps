@@ -72,7 +72,7 @@ The scaffold has no persistent storage. The database is not selected. Before the
 
 - The server writes structured JSON logs to standard output with `log/slog`. These are service logs for log aggregation, not interactive CLI output, so they do not use ANSI color.
 - Startup logs the listen address and log level. Shutdown logs the signal-driven start and the result.
-- Every HTTP request produces one `http_request` log with `method`, `path`, `status`, `duration_ms` and `bytes` fields.
+- Every HTTP request produces one `http_request` log with `method`, `path`, `status`, `duration_ms` and `bytes` fields. `status` is the first committed response status (the one the client receives), `200` for an implicit body write, and informational `1xx` responses other than `101` do not count as committed.
 - Authentication logs (`planned`) include the Logto user ID, the API resource and the rejection reason, according to the authentication contract.
 
 ## Build and Test
