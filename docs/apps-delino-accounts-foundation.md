@@ -5,6 +5,7 @@
 This contract owns the `delino-accounts-web` component of [`delino-accounts`](project-delino-accounts.md) at `apps/delino-accounts/`:
 
 - `apps/delino-accounts/rsbuild.config.ts`: build and development server configuration.
+- `apps/delino-accounts/index.html`: HTML document template that sets `<html lang="en">`.
 - `apps/delino-accounts/src/`: application source, entry point and unit tests.
 - `apps/delino-accounts/public/`: static files copied to the build root, including Cloudflare Pages `_headers` and `_redirects`.
 - `apps/delino-accounts/turbo.json`: package-local Turbo task configuration.

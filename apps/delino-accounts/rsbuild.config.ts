@@ -10,6 +10,9 @@ resolveAccountsApiOrigin(process.env.PUBLIC_API_ORIGIN);
 export default defineConfig({
   plugins: [pluginReact()],
   html: {
+    // Rsbuild can only set attributes on `<html>` through a custom template.
+    // The template must not carry a title; Rsbuild injects title and favicon.
+    template: "./index.html",
     title: "Delino Accounts",
     favicon: "./public/icon.svg",
   },
