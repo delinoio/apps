@@ -18,6 +18,12 @@ The API server is the system of record for account and billing information. It i
 - Language: Go, in the repository root module `github.com/delinoio/mono`. The import path of the server packages is `github.com/delinoio/mono/servers/accounts-api/...`. The `go` directive in the root `go.mod` selects the toolchain version.
 - Runtime: one long-running HTTP server process. It uses only the Go standard library in the current scaffold.
 - Logging: `log/slog`.
+- HTTP timeouts: `newServer` in `cmd/accounts-api` sets fixed constants on the `http.Server`. They are not configuration variables, so they have no `.env.example` entry and no Turbo `passThroughEnv` entry.
+  - `ReadHeaderTimeout` is 10 seconds: the time a client has to send the request headers.
+  - `ReadTimeout` is 30 seconds and covers the whole request read, headers and body. `net/http` clears the header deadline after the headers arrive, so without `ReadTimeout` a client that declares a body and then sends nothing would hold the connection open forever. `ReadTimeout` must stay greater than or equal to `ReadHeaderTimeout`.
+  - `WriteTimeout` is 30 seconds for writing a response.
+  - `IdleTimeout` is 120 seconds: a keep-alive connection that is waiting for the next request is closed after this time.
+  - `WriteTimeout` limits the lifetime of every response, so a long-lived streaming RPC must lift or extend it for that handler (`http.ResponseController.SetWriteDeadline`) in the change that adds the stream.
 - Deployment target: not selected. Record the target, its configuration source and its TLS termination in this contract before the first deployment.
 
 ## Users and Operators

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,8 +14,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/delinoio/mono/servers/accounts-api/internal/server"
 )
 
 // failingListener fails every Accept call, which makes http.Server.Serve return
@@ -276,6 +280,145 @@ func TestNewServerSetsErrorLog(t *testing.T) {
 	}
 	if srv.ReadHeaderTimeout != 10*time.Second {
 		t.Errorf("ReadHeaderTimeout = %v, want 10s", srv.ReadHeaderTimeout)
+	}
+}
+
+func TestNewServerSetsBoundedTimeouts(t *testing.T) {
+	srv := newServer(http.NotFoundHandler(), newTestLogger())
+	if srv.ReadTimeout != 30*time.Second {
+		t.Errorf("ReadTimeout = %v, want 30s", srv.ReadTimeout)
+	}
+	if srv.WriteTimeout != 30*time.Second {
+		t.Errorf("WriteTimeout = %v, want 30s", srv.WriteTimeout)
+	}
+	if srv.IdleTimeout != 120*time.Second {
+		t.Errorf("IdleTimeout = %v, want 120s", srv.IdleTimeout)
+	}
+	if srv.ReadTimeout < srv.ReadHeaderTimeout {
+		t.Errorf("ReadTimeout %v is below ReadHeaderTimeout %v", srv.ReadTimeout, srv.ReadHeaderTimeout)
+	}
+}
+
+// startShortTimeoutServer serves the real handler through newServer on a
+// loopback listener, with ReadTimeout and IdleTimeout shrunk so the tests can
+// observe the connection being closed. It returns the listen address and the
+// captured logs.
+func startShortTimeoutServer(t *testing.T, timeout time.Duration) (string, *syncBuffer) {
+	t.Helper()
+	logs := &syncBuffer{}
+	logger := slog.New(slog.NewJSONHandler(logs, nil))
+	srv := newServer(server.NewHandler(logger), logger)
+	srv.ReadTimeout = timeout
+	srv.IdleTimeout = timeout
+
+	listener := newTestListener(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, srv, listener, logger, time.Second) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	return listener.Addr().String(), logs
+}
+
+// syncBuffer is a bytes.Buffer that is safe for the concurrent writes of the
+// server goroutines and the reads of the test.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// expectClosedWithin fails unless the server closes conn (read returns EOF or a
+// reset) before limit elapses. It returns how long the close took. Data the
+// server sends before closing is drained and returned.
+func expectClosedWithin(t *testing.T, conn net.Conn, limit time.Duration) (time.Duration, string) {
+	t.Helper()
+	start := time.Now()
+	if err := conn.SetReadDeadline(start.Add(limit)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	received, err := io.ReadAll(conn)
+	elapsed := time.Since(start)
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		t.Fatalf("connection still open after %v, want it closed by the server", limit)
+	}
+	return elapsed, string(received)
+}
+
+func TestNewServerClosesConnectionWithStalledRequestBody(t *testing.T) {
+	const timeout = 300 * time.Millisecond
+	addr, _ := startShortTimeoutServer(t, timeout)
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	// Full headers with a declared body, then no body bytes.
+	if _, err := io.WriteString(conn, "POST /healthz HTTP/1.1\r\nHost: test\r\nContent-Length: 100\r\n\r\n"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	elapsed, _ := expectClosedWithin(t, conn, 10*timeout)
+	if elapsed < timeout/2 {
+		t.Errorf("connection closed after %v, want it held until about ReadTimeout %v", elapsed, timeout)
+	}
+}
+
+func TestNewServerClosesIdleKeepAliveConnection(t *testing.T) {
+	const timeout = 300 * time.Millisecond
+	addr, logs := startShortTimeoutServer(t, timeout)
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	if _, err := io.WriteString(conn, "GET /healthz HTTP/1.1\r\nHost: test\r\n\r\n"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK || strings.TrimSpace(string(body)) != `{"status":"ok"}` {
+		t.Fatalf("healthz = %d %q, want 200 {\"status\":\"ok\"}", resp.StatusCode, body)
+	}
+
+	// The connection stays open for another request, then the server closes it.
+	elapsed, _ := expectClosedWithin(t, conn, 10*timeout)
+	if elapsed < timeout/2 {
+		t.Errorf("idle connection closed after %v, want it held until about IdleTimeout %v", elapsed, timeout)
+	}
+
+	var requestLogs int
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		if strings.Contains(line, `"msg":"http_request"`) {
+			requestLogs++
+		}
+	}
+	if requestLogs != 1 {
+		t.Errorf("http_request records = %d, want 1; logs: %s", requestLogs, logs.String())
 	}
 }
 

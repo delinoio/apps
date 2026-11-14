@@ -20,6 +20,26 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
+// HTTP server timeouts. They are fixed constants rather than configuration.
+//
+// readHeaderTimeout bounds reading the request headers. net/http clears that
+// deadline once the headers are read, so without readTimeout a client could
+// declare a body and then stall forever. readTimeout bounds the whole request
+// read (headers and body) and must not be below readHeaderTimeout. writeTimeout
+// bounds writing the response. idleTimeout bounds a keep-alive connection that
+// is waiting for its next request; without it the connection stays open until
+// the client closes it.
+//
+// writeTimeout also caps the lifetime of any single response, so it must be
+// revisited (or lifted per handler through http.ResponseController) before a
+// long-lived streaming RPC is added.
+const (
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = 30 * time.Second
+	idleTimeout       = 120 * time.Second
+)
+
 func main() {
 	// Keep startup failures in the same JSON format as the server logs.
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
@@ -66,7 +86,10 @@ func run() error {
 func newServer(handler http.Handler, logger *slog.Logger) *http.Server {
 	return &http.Server{
 		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 }
