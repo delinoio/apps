@@ -1,6 +1,6 @@
 # Documentation Catalog
 
-`docs/` is the source of truth for repository contracts. This repository contains no runtime projects yet. Server-internal contracts live in the private `servers/` submodule; see [Private servers](repository-workflow-contract.md#private-servers).
+`docs/` is the source of truth for repository contracts. This repository contains no runtime projects yet.
 
 ## Repository contracts
 

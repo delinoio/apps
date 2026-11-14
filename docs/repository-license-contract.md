@@ -2,11 +2,13 @@
 
 ## Ownership
 
-Delino-owned source and future distributions use Apache-2.0. Root `LICENSE` contains the complete terms and `NOTICE` identifies the copyright holder. New repository-owned manifests must declare Apache-2.0.
+Delino-owned source and future distributions use Apache-2.0, except `servers/` as described below. Root `LICENSE` contains the complete terms and `NOTICE` identifies the copyright holder. New repository-owned manifests must declare Apache-2.0, or `FSL-1.1-ALv2` under `servers/`.
 
-## Private servers
+## Servers
 
-The `servers/` path is a Git submodule that points to the private `delinoio/servers` repository. Its contents are proprietary and are not covered by this repository's Apache-2.0 license. Public distributions must not include server source.
+Source under `servers/` uses the Functional Source License, Version 1.1, ALv2 Future License (`FSL-1.1-ALv2`). `servers/LICENSE` contains the complete terms; it overrides the root Apache-2.0 license for that directory. Each version converts to Apache-2.0 on the second anniversary of the date it is made available. Server source headers and manifests declare `FSL-1.1-ALv2`. Keep the license file text unchanged except for the notice.
+
+Shared code that apps, packages, crates or command tools consume must live outside `servers/` under Apache-2.0. Moving code between `servers/` and Apache-2.0 directories changes its license and requires an explicit relicensing decision.
 
 ## Imported material
 
