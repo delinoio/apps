@@ -477,3 +477,188 @@ func TestNewServerKeepsErrAbortHandlerSilent(t *testing.T) {
 		t.Errorf("got log records %v, want none for http.ErrAbortHandler", records)
 	}
 }
+
+func TestNewServerDisablesGeneralOptionsHandler(t *testing.T) {
+	srv := newServer(http.NotFoundHandler(), newTestLogger())
+	if !srv.DisableGeneralOptionsHandler {
+		t.Error("DisableGeneralOptionsHandler = false; net/http would answer OPTIONS * before the request logger")
+	}
+}
+
+// startRequestLogServer serves the production handler through newServer with
+// its production timeouts on a loopback listener and returns the listen
+// address and the captured logs.
+func startRequestLogServer(t *testing.T) (string, *syncBuffer) {
+	t.Helper()
+	logs := &syncBuffer{}
+	logger := slog.New(slog.NewJSONHandler(logs, nil))
+	srv := newServer(server.NewHandler(logger), logger)
+
+	listener := newTestListener(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, srv, listener, logger, time.Second) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	return listener.Addr().String(), logs
+}
+
+// requestRecords decodes the http_request records among the JSON log lines.
+func requestRecords(t *testing.T, logs *syncBuffer) []map[string]any {
+	t.Helper()
+	var records []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("log line is not JSON: %q: %v", line, err)
+		}
+		if record["msg"] == "http_request" {
+			records = append(records, record)
+		}
+	}
+	return records
+}
+
+// TestNewServerLogsEveryRequestShape sends raw HTTP/1.1 requests, which a Go
+// client cannot produce for "OPTIONS *", to a server built by newServer. Each
+// request must get the expected response and exactly one http_request record.
+func TestNewServerLogsEveryRequestShape(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		request     string
+		wantStatus  int
+		wantMethod  string
+		wantPath    string
+		wantRecordB int
+		wantBody    string
+	}{
+		{"OPTIONS *", "OPTIONS * HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n", http.StatusOK, "OPTIONS", "*", 0, ""},
+		{"OPTIONS * with small body", "OPTIONS * HTTP/1.1\r\nHost: test\r\nContent-Length: 4\r\nConnection: close\r\n\r\nbody", http.StatusOK, "OPTIONS", "*", 0, ""},
+		{"GET /healthz", "GET /healthz HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n", http.StatusOK, "GET", "/healthz", len(`{"status":"ok"}` + "\n"), `{"status":"ok"}` + "\n"},
+		{"GET /missing", "GET /missing HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n", http.StatusNotFound, "GET", "/missing", len("404 page not found\n"), "404 page not found\n"},
+		{"OPTIONS /healthz", "OPTIONS /healthz HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n", http.StatusMethodNotAllowed, "OPTIONS", "/healthz", len("Method Not Allowed\n"), "Method Not Allowed\n"},
+		{"GET *", "GET * HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n", http.StatusBadRequest, "GET", "*", -1, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr, logs := startRequestLogServer(t)
+			conn, err := net.Dial("tcp", addr)
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer conn.Close()
+			if _, err := io.WriteString(conn, tc.request); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatalf("set read deadline: %v", err)
+			}
+			resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+			if err != nil {
+				t.Fatalf("read response: %v", err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if resp.StatusCode != tc.wantStatus {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tc.wantStatus)
+			}
+			if tc.wantBody != "" || tc.wantRecordB == 0 {
+				if string(body) != tc.wantBody {
+					t.Errorf("body = %q, want %q", body, tc.wantBody)
+				}
+			}
+			if tc.wantRecordB == 0 {
+				// Only the empty OPTIONS * responses declare a zero length.
+				if got := resp.Header.Get("Content-Length"); got != "0" {
+					t.Errorf("Content-Length = %q, want 0", got)
+				}
+			}
+
+			// The record is written before the response is finished, and the
+			// server closed the connection, so it is complete here.
+			records := requestRecords(t, logs)
+			if len(records) != 1 {
+				t.Fatalf("got %d http_request records, want exactly 1: %v", len(records), records)
+			}
+			record := records[0]
+			if record["method"] != tc.wantMethod || record["path"] != tc.wantPath || record["status"] != float64(tc.wantStatus) {
+				t.Errorf("unexpected request log: %v", record)
+			}
+			if tc.wantRecordB >= 0 && record["bytes"] != float64(tc.wantRecordB) {
+				t.Errorf("logged bytes = %v, want %d", record["bytes"], tc.wantRecordB)
+			}
+			if duration, ok := record["duration_ms"].(float64); !ok || duration < 0 {
+				t.Errorf("duration_ms = %v, want a non-negative number", record["duration_ms"])
+			}
+		})
+	}
+}
+
+// TestNewServerGeneralOptionsBodyIsBounded checks that the OPTIONS * body limit
+// of net/http survives moving the request into the logged handler: a body of
+// at most 4 KiB keeps the connection reusable, a larger one closes it even
+// though the handler runs behind the request logger's response writer wrapper.
+func TestNewServerGeneralOptionsBodyIsBounded(t *testing.T) {
+	const bodyLimit = 4 << 10
+
+	t.Run("small body keeps the connection", func(t *testing.T) {
+		addr, logs := startRequestLogServer(t)
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		defer conn.Close()
+		reader := bufio.NewReader(conn)
+		for range 2 {
+			request := "OPTIONS * HTTP/1.1\r\nHost: test\r\nContent-Length: 4096\r\n\r\n" + strings.Repeat("x", bodyLimit)
+			if _, err := io.WriteString(conn, request); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatalf("set read deadline: %v", err)
+			}
+			resp, err := http.ReadResponse(reader, nil)
+			if err != nil {
+				t.Fatalf("read response on a reused connection: %v", err)
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK || resp.Close {
+				t.Fatalf("response = %d close=%v, want 200 on a kept-alive connection", resp.StatusCode, resp.Close)
+			}
+		}
+		if got := len(requestRecords(t, logs)); got != 2 {
+			t.Errorf("got %d http_request records, want 2", got)
+		}
+	})
+
+	t.Run("oversized body closes the connection", func(t *testing.T) {
+		addr, logs := startRequestLogServer(t)
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		defer conn.Close()
+		// No Connection: close, so only the body limit can end the connection.
+		request := "OPTIONS * HTTP/1.1\r\nHost: test\r\nContent-Length: 6000\r\n\r\n" + strings.Repeat("x", 6000)
+		if _, err := io.WriteString(conn, request); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		_, received := expectClosedWithin(t, conn, 5*time.Second)
+		if !strings.HasPrefix(received, "HTTP/1.1 200 OK\r\n") || !strings.Contains(received, "Connection: close\r\n") {
+			t.Errorf("response = %q, want a 200 with Connection: close", received)
+		}
+		records := requestRecords(t, logs)
+		if len(records) != 1 || records[0]["method"] != "OPTIONS" || records[0]["path"] != "*" || records[0]["status"] != float64(http.StatusOK) {
+			t.Errorf("unexpected request logs: %v", records)
+		}
+	})
+}

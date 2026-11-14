@@ -83,14 +83,20 @@ func run() error {
 // slog.SetDefault they would be plain text on stderr. Setting ErrorLog routes
 // them through logger's handler as ERROR records independent of the global
 // default, so every server log stays JSON on standard output.
+//
+// DisableGeneralOptionsHandler stops net/http from answering a server-wide
+// "OPTIONS *" request itself, which would bypass Handler and the request log.
+// server.NewHandler answers and logs that request instead; a Handler passed to
+// newServer must do the same if it needs to serve "OPTIONS *".
 func newServer(handler http.Handler, logger *slog.Logger) *http.Server {
 	return &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: readHeaderTimeout,
-		ReadTimeout:       readTimeout,
-		WriteTimeout:      writeTimeout,
-		IdleTimeout:       idleTimeout,
-		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		Handler:                      handler,
+		DisableGeneralOptionsHandler: true,
+		ReadHeaderTimeout:            readHeaderTimeout,
+		ReadTimeout:                  readTimeout,
+		WriteTimeout:                 writeTimeout,
+		IdleTimeout:                  idleTimeout,
+		ErrorLog:                     slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 }
 
