@@ -669,17 +669,20 @@ test("formatter CLI runs main through a symlinked script path", (t) => {
 
 // Stand-in Rstack for process-boundary tests: records its pid per batch and
 // every termination signal it receives, then either exits with STANDIN_EXIT or
-// sleeps long enough for the test to signal the parent.
+// sleeps long enough for the test to signal the parent. The signal handlers are
+// installed before the batch is recorded: the test signals as soon as it sees
+// batches.log, and a signal that arrived earlier would kill the stand-in by the
+// default action without a signals.log entry.
 const standIn = `// Test stand-in for the Rstack entry point.
 const fs = require("node:fs");
 const dir = process.env.STANDIN_DIR;
-fs.appendFileSync(dir + "/batches.log", process.pid + "\\n");
-if (process.env.STANDIN_EXIT) process.exit(Number(process.env.STANDIN_EXIT));
 for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"])
   process.on(signal, () => {
     fs.appendFileSync(dir + "/signals.log", process.pid + " " + signal + "\\n");
     process.exit(0);
   });
+fs.appendFileSync(dir + "/batches.log", process.pid + "\\n");
+if (process.env.STANDIN_EXIT) process.exit(Number(process.env.STANDIN_EXIT));
 setTimeout(() => {
   fs.appendFileSync(dir + "/marker", process.pid + "\\n");
   process.exit(0);
