@@ -1,0 +1,7 @@
+pre-commit:
+  parallel: true
+  commands:
+    rstack-fmt:
+      stage_fixed: true
+      glob: "*.{js,jsx,mjs,cjs,ts,tsx,mts,cts,css,json,jsonc,json5,yaml,yml,md,mdx}"
+      run: node scripts/ci/format-changed.mjs --staged --write
