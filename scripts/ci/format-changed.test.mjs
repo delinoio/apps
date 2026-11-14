@@ -683,6 +683,113 @@ test("deletions, renames, empty ranges, local edits and invalid comparisons", as
   assert.throws(() => changedFormatFiles(f.cwd, "a".repeat(40), head));
 });
 
+// A path staged with new content whose working tree was then restored to the
+// HEAD bytes ("MM" in `git status`) differs from HEAD only in the index.
+function stageThenRevert(f, name, committed, staged) {
+  f.write(name, staged);
+  f.git("add", name);
+  f.write(name, committed);
+}
+
+test("default local selection includes a path that differs from HEAD only in the index", (t) => {
+  const f = fixture(t);
+  f.write("f.ts", "const value = 1;\n");
+  f.write("kept.ts", "const kept = 1;\n");
+  f.write("gone.ts", "const gone = 1;\n");
+  const head = f.commit();
+  stageThenRevert(f, "f.ts", "const value = 1;\n", "const   value = 2;\n");
+  assert.equal(f.git("status", "--porcelain", "--", "f.ts"), "MM f.ts");
+  assert.deepEqual(changedFormatFiles(f.cwd, head, head, true), ["f.ts"]);
+  // Staged deletions, unsupported paths and unchanged files stay unselected.
+  f.git("rm", "--quiet", "gone.ts");
+  f.write("notes.txt", "plain\n");
+  f.git("add", "notes.txt");
+  assert.deepEqual(changedFormatFiles(f.cwd, head, head, true), ["f.ts"]);
+});
+
+test("default local selection still includes worktree edits and untracked paths", (t) => {
+  const f = fixture(t);
+  f.write("staged.ts", "const staged = 1;\n");
+  f.write("edited.ts", "const edited = 1;\n");
+  const head = f.commit();
+  stageThenRevert(
+    f,
+    "staged.ts",
+    "const staged = 1;\n",
+    "const   staged = 2;\n",
+  );
+  f.write("edited.ts", "const edited = 2;\n");
+  f.write("untracked.md", "# Untracked\n");
+  f.write("added.ts", "const added = 1;\n");
+  f.git("add", "added.ts");
+  assert.deepEqual(changedFormatFiles(f.cwd, head, head, true), [
+    "added.ts",
+    "edited.ts",
+    "staged.ts",
+    "untracked.md",
+  ]);
+});
+
+test("explicit comparisons exclude paths that differ from HEAD only in the index", (t) => {
+  const f = fixture(t);
+  f.write("f.ts", "const value = 1;\n");
+  const head = f.commit();
+  stageThenRevert(f, "f.ts", "const value = 1;\n", "const   value = 2;\n");
+  assert.deepEqual(changedFormatFiles(f.cwd, head, head), []);
+  assert.deepEqual(changedFormatFiles(f.cwd, head, head, false), []);
+  const script = join(root, "scripts/ci/format-changed.mjs");
+  const run = (args, env) =>
+    spawnSync(process.execPath, [script, ...args], {
+      cwd: f.cwd,
+      env,
+      encoding: "utf8",
+    });
+  for (const [args, env] of [
+    [["--base", head, "--head", head], f.env],
+    [[], { ...f.env, CI: "true", TURBO_SCM_BASE: head, TURBO_SCM_HEAD: head }],
+  ]) {
+    const result = run(args, env);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /"candidates":0/u, result.stdout);
+    assert.match(result.stdout, /"local":false/u, result.stdout);
+  }
+});
+
+test("--staged selection keeps reporting an index-only path", (t) => {
+  const f = fixture(t);
+  f.write("f.ts", "const value = 1;\n");
+  f.commit();
+  stageThenRevert(f, "f.ts", "const value = 1;\n", "const   value = 2;\n");
+  assert.deepEqual(stagedFormatFiles(f.cwd), ["f.ts"]);
+});
+
+test("CLI default local run selects an index-only path and format:check fails on unformatted bytes", (t) => {
+  const f = fixture(t);
+  f.write("f.ts", "const value = 1;\n");
+  const head = f.commit();
+  // The default local comparison needs an origin/main ref to find the merge base.
+  f.git("update-ref", "refs/remotes/origin/main", head);
+  const script = join(root, "scripts/ci/format-changed.mjs");
+  const run = () =>
+    spawnSync(process.execPath, [script], {
+      cwd: f.cwd,
+      env: f.env,
+      encoding: "utf8",
+    });
+  stageThenRevert(f, "f.ts", "const value = 1;\n", "const   value = 2;\n");
+  // The formatter checks working-tree bytes, not the staged blob, so formatted
+  // working-tree bytes pass even though the path is now selected.
+  const formatted = run();
+  assert.equal(formatted.status, 0, formatted.stdout + formatted.stderr);
+  assert.match(formatted.stdout, /"candidates":1/u, formatted.stdout);
+  assert.match(formatted.stdout, /"local":true/u, formatted.stdout);
+  // Unformatted working-tree bytes in the same MM-selected path fail the check.
+  f.write("f.ts", "const   value = 3;\n");
+  const unformatted = run();
+  assert.equal(unformatted.status, 1, unformatted.stdout + unformatted.stderr);
+  assert.match(unformatted.stdout, /"candidates":1/u, unformatted.stdout);
+});
+
 test("all-file selection skips unstaged deletions and retains existing files", async (t) => {
   const f = fixture(t);
   f.write("deleted.ts", "const deleted = 1;\n");
