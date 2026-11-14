@@ -261,3 +261,69 @@ func TestRequestLogRepanicsSamePanicValue(t *testing.T) {
 		}
 	}
 }
+
+// TestRequestLogBytesForHead checks that the logged bytes are the body bytes
+// transmitted to the client: a HEAD response carries no body, so it logs 0 with
+// the same status as the equivalent GET, while GET logs the transmitted length.
+func TestRequestLogBytesForHead(t *testing.T) {
+	for _, tc := range []struct {
+		method         string
+		path           string
+		wantStatus     int
+		wantBytes      float64
+		wantBodyLength int
+	}{
+		{http.MethodGet, "/healthz", http.StatusOK, 16, 16},
+		{http.MethodHead, "/healthz", http.StatusOK, 0, 0},
+		{http.MethodGet, "/unknown", http.StatusNotFound, 19, 19},
+		{http.MethodHead, "/unknown", http.StatusNotFound, 0, 0},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			handler, logs := newTestHandler(t)
+			ts := httptest.NewServer(handler)
+			defer ts.Close()
+
+			req, err := http.NewRequest(tc.method, ts.URL+tc.path, nil)
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("do request: %v", err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if resp.StatusCode != tc.wantStatus {
+				t.Errorf("client status = %d, want %d", resp.StatusCode, tc.wantStatus)
+			}
+			if len(body) != tc.wantBodyLength {
+				t.Errorf("client body length = %d, want %d", len(body), tc.wantBodyLength)
+			}
+			// The response headers must be unchanged for HEAD: the same
+			// Content-Length as the GET, without a body.
+			if tc.method == http.MethodHead && resp.ContentLength <= 0 {
+				t.Errorf("HEAD Content-Length = %d, want the GET body length", resp.ContentLength)
+			}
+			// Close waits for in-flight handlers, so the record is complete.
+			ts.Close()
+
+			records := decodeRecords(t, logs)
+			if len(records) != 1 {
+				t.Fatalf("got %d log records, want exactly 1: %v", len(records), records)
+			}
+			record := records[0]
+			if record["method"] != tc.method || record["path"] != tc.path {
+				t.Errorf("unexpected request log: %v", record)
+			}
+			if record["status"] != float64(tc.wantStatus) {
+				t.Errorf("logged status = %v, want %d", record["status"], tc.wantStatus)
+			}
+			if record["bytes"] != tc.wantBytes {
+				t.Errorf("logged bytes = %v, want %v", record["bytes"], tc.wantBytes)
+			}
+		})
+	}
+}

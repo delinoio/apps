@@ -80,12 +80,16 @@ func handleHealthz(logger *slog.Logger) http.HandlerFunc {
 // statusRecorder captures the status code and body size for request logs.
 // status is the first committed status, matching what net/http sends to the
 // client; wroteHeader reports whether a header has been committed, either by
-// the first WriteHeader call or by the first implicit Write.
+// the first WriteHeader call or by the first implicit Write. bytes counts the
+// response body bytes net/http transmits; noBody marks a response that has no
+// body on the wire (a HEAD response), so body bytes the handler writes are
+// discarded by net/http and must not be counted.
 type statusRecorder struct {
 	http.ResponseWriter
 	status      int
 	bytes       int
 	wroteHeader bool
+	noBody      bool
 }
 
 func (r *statusRecorder) WriteHeader(status int) {
@@ -102,7 +106,9 @@ func (r *statusRecorder) Write(body []byte) (int, error) {
 	// An implicit WriteHeader(200) commits the default status.
 	r.wroteHeader = true
 	n, err := r.ResponseWriter.Write(body)
-	r.bytes += n
+	if !r.noBody {
+		r.bytes += n
+	}
 	return n, err
 }
 
@@ -114,7 +120,13 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		recorder := &statusRecorder{
+			ResponseWriter: w,
+			status:         http.StatusOK,
+			// net/http reports a HEAD body write as successful but never sends
+			// the bytes, so the log must not count them as transmitted.
+			noBody: r.Method == http.MethodHead,
+		}
 		// The record is written from a defer so a panicking handler is logged
 		// too. The panic is deliberately not recovered here: net/http keeps its
 		// connection-level recovery (including http.ErrAbortHandler handling)
