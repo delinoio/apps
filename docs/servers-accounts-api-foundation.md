@@ -54,6 +54,7 @@ The API server is the system of record for account and billing information. It i
 | `LOG_LEVEL` | no       | `info`           | `debug`, `info`, `warn`, `error` |
 
 - The server validates the configuration at startup and exits with a non-zero status when a value is not valid.
+- Root `pnpm dev` and `pnpm exec turbo run dev --filter=accounts-api` pass `ADDR` and `LOG_LEVEL` from the shell to the server through Turbo `passThroughEnv` in `servers/accounts-api/turbo.json`. Add every new configuration variable to that list in the change that makes the server read it.
 - Production must set `ADDR` explicitly for its deployment target. The default listens on loopback only.
 - Logto settings (`planned`): the tenant endpoint and the API resource indicator. Add them to this table and to `.env.example` in the same change that adds token validation.
 

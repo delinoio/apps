@@ -68,7 +68,7 @@ Run from the repository root:
 - `pnpm exec turbo run test --filter=delino-accounts`: Rstest unit tests.
 - `pnpm --filter delino-accounts preview`: serve the production build locally.
 
-`turbo.json` declares `PUBLIC_API_ORIGIN` and local `.env*` files as build inputs. Remove `apps/delino-accounts/dist/` after validation. CI does not build, test or deploy this app yet; add those checks to the workflow and its planner when the app enters CI.
+`turbo.json` declares `PUBLIC_API_ORIGIN` as a `build` environment variable and local `.env*` files as `build` inputs. It also declares `PUBLIC_API_ORIGIN` as a `dev` pass-through variable, so root `pnpm dev` and `pnpm exec turbo run dev --filter=delino-accounts` honor a value provided by the shell and validate it at startup, like `pnpm --filter delino-accounts dev`. Remove `apps/delino-accounts/dist/` after validation. CI does not build, test or deploy this app yet; add those checks to the workflow and its planner when the app enters CI.
 
 ## Dependencies and Integrations
 

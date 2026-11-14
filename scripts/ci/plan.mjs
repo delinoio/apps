@@ -16,6 +16,12 @@ const fixtureInputs = new Set([
   "scripts/install-git-hooks.sh",
 ]);
 
+// The root and every workspace `turbo.json` configure the tasks that the
+// Turbo fixtures inspect.
+export function isTurboConfigInput(path) {
+  return path === "turbo.json" || path.endsWith("/turbo.json");
+}
+
 // Go sources and module files select the repository Go checks.
 export function isGoInput(path) {
   return path.endsWith(".go") || /(^|\/)go\.(mod|sum)$/.test(path);
@@ -31,7 +37,10 @@ export function plan(cwd, base, head) {
     { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
   ).split("\0");
   const fixtures = paths.some(
-    (path) => fixtureInputs.has(path) || path.startsWith("scripts/ci/"),
+    (path) =>
+      fixtureInputs.has(path) ||
+      path.startsWith("scripts/ci/") ||
+      isTurboConfigInput(path),
   );
   const go = paths.some(isGoInput);
   return { quality: format || fixtures, format, fixtures, go };

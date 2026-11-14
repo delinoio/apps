@@ -2,6 +2,9 @@
   "$schema": "https://turborepo.com/schema.json",
   "extends": ["//"],
   "tasks": {
+    "dev": {
+      "passThroughEnv": ["ADDR", "LOG_LEVEL"]
+    },
     "build": {
       "cache": false
     },
