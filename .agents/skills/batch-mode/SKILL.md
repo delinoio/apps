@@ -1,9 +1,11 @@
 ---
 name: batch-mode
-description: Select the Linear issues to process in a batch and apply additional CI constraints only when a human explicitly invokes $batch-mode or requests Batch Mode. Do not activate automatically for batch work or CI tasks.
+description: Use when a human explicitly invokes $batch-mode or requests Batch Mode, in which many issues are fixed in one batch run. List the Linear issues that the batch must fix and apply the batch CI constraints. Do not activate automatically for batch work or CI tasks.
 ---
 
 # Batch Mode
+
+Batch Mode is a run in which many issues are fixed in one batch. This skill tells the batch which issues to fix and adds constraints for the batch work.
 
 Apply these additional instructions to the current task only when a human explicitly invokes this skill.
 
@@ -21,6 +23,8 @@ Do not add issues from other teams or statuses, such as `Backlog`, `In Progress`
 3. If the `Todo` status cannot be resolved, run `list_issue_statuses` for the `DELI` team and use the status named `Todo`. Do not substitute another status.
 4. Report the batch as a list. For each issue, give the identifier (for example `DELI-123`), the title, the priority and the URL. If no issue matches, report that the batch is empty.
 
+This list is the work list of the batch. Fix every issue in the list. Do not fix issues that are not in the list as part of the batch.
+
 Use the issue identifiers in this list for the `Closes DELI-<number>` and `Refs DELI-<number>` lines of each PR. Follow [the issue tracker contract](../../../docs/repository-issue-tracker-contract.md).
 
 ## CI Constraints
@@ -31,4 +35,4 @@ Use the issue identifiers in this list for the `Closes DELI-<number>` and `Refs 
 - Never modify `.github/workflows/CI.yml`.
 - Prioritize issues assigned to Batch group 1 over issues assigned to Batch group 2.
 
-This skill selects the batch issues and adds instructions only. It does not start batch work or create a PR.
+This skill gives the batch issue list and adds instructions only. It does not fix issues or create PRs by itself; the batch work does that for each issue in the list.
