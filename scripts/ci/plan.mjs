@@ -16,6 +16,21 @@ const fixtureInputs = new Set([
   "scripts/install-git-hooks.sh",
 ]);
 
+// Shared runtime and workspace inputs that change every app e2e suite.
+const e2eInputs = new Set([
+  ".github/workflows/CI.yml",
+  ".nvmrc",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "turbo.json",
+]);
+
+// Paths inside an app package select the app e2e suites.
+export function isE2eInput(path) {
+  return e2eInputs.has(path) || /^apps\/[^/]+\//.test(path);
+}
+
 // Go sources and module files select the repository Go checks.
 export function isGoInput(path) {
   return path.endsWith(".go") || /(^|\/)go\.(mod|sum)$/.test(path);
@@ -33,7 +48,8 @@ export function plan(cwd, base, head) {
     (path) => fixtureInputs.has(path) || path.startsWith("scripts/ci/"),
   );
   const go = paths.some(isGoInput);
-  return { quality: format || fixtures, format, fixtures, go };
+  const e2e = paths.some(isE2eInput);
+  return { quality: format || fixtures, format, fixtures, go, e2e };
 }
 
 export function main(env = process.env, cwd = process.cwd()) {

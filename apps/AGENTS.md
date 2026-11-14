@@ -8,6 +8,8 @@
 
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
 
+- When you change an app with an e2e suite, run `pnpm exec turbo run test:e2e --filter=<app>` and update its tests in `e2e/`. Follow the [e2e contract](../docs/repository-e2e-contract.md).
+
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
 
 - Write all source and comments in English.
@@ -18,6 +20,7 @@
 - [Repository workflow](../docs/repository-workflow-contract.md)
 - [Authentication](../docs/repository-auth-contract.md)
 - [Billing currency and precision](../docs/repository-billing-contract.md)
+- [End-to-end testing](../docs/repository-e2e-contract.md)
 - `apps/delino-site/`: [project index](../docs/project-delino-site.md) and [foundation contract](../docs/apps-delino-site-foundation.md)
 - `apps/delino-docs/`: [project index](../docs/project-delino-docs.md) and [foundation contract](../docs/apps-delino-docs-foundation.md)
 - `apps/delino-accounts/`: [project index](../docs/project-delino-accounts.md) and [web app foundation contract](../docs/apps-delino-accounts-foundation.md)

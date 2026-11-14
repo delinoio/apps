@@ -43,6 +43,7 @@ test("planner skips empty comparisons and non-validation paths", (t) => {
     format: false,
     fixtures: false,
     go: false,
+    e2e: false,
   });
   f.write("assets/image.svg");
   assert.deepEqual(plan(f.cwd, f.base, f.commit()), {
@@ -50,6 +51,7 @@ test("planner skips empty comparisons and non-validation paths", (t) => {
     format: false,
     fixtures: false,
     go: false,
+    e2e: false,
   });
 });
 
@@ -61,6 +63,7 @@ test("documentation changes select formatting without fixtures", (t) => {
     format: true,
     fixtures: false,
     go: false,
+    e2e: false,
   });
 });
 
@@ -106,6 +109,31 @@ test("Go sources and module files select Go checks", async (t) => {
   assert.equal(plan(f.cwd, f.base, f.commit()).go, false);
 });
 
+test("app paths and shared workspace inputs select e2e suites", async (t) => {
+  for (const path of [
+    "apps/delino-accounts/src/App.tsx",
+    "apps/delino-docs/docs/guide/introduction.md",
+    "apps/delino-site/e2e.config.ts",
+    ".github/workflows/CI.yml",
+    ".nvmrc",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "turbo.json",
+  ]) {
+    await t.test(path, (t) => {
+      const f = fixture(t);
+      f.write(path);
+      assert.equal(plan(f.cwd, f.base, f.commit()).e2e, true);
+    });
+  }
+  const f = fixture(t);
+  f.write("apps/AGENTS.md");
+  f.write("docs/apps-delino-site-foundation.md");
+  f.write("servers/accounts-api/main.go");
+  assert.equal(plan(f.cwd, f.base, f.commit()).e2e, false);
+});
+
 test("deleted Go files still select Go checks", (t) => {
   const f = fixture(t);
   f.write("servers/example/old.go");
@@ -126,6 +154,7 @@ test("deleted inputs and renamed paths still select affected fixtures", (t) => {
     format: true,
     fixtures: true,
     go: false,
+    e2e: false,
   });
 });
 
@@ -139,6 +168,7 @@ test("deleted documentation has no remaining formatting input", (t) => {
     format: false,
     fixtures: false,
     go: false,
+    e2e: false,
   });
 });
 
@@ -166,7 +196,7 @@ test("planner publishes booleans and records exact comparison and checkout", (t)
   );
   assert.equal(
     readFileSync(output, "utf8"),
-    "quality=true\nformat=true\nfixtures=false\ngo=false\n",
+    "quality=true\nformat=true\nfixtures=false\ngo=false\ne2e=false\n",
   );
   const record = JSON.parse(
     readFileSync(summary, "utf8").slice("CI plan: ".length),

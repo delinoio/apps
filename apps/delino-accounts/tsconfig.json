@@ -18,5 +18,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src", "rsbuild.config.ts"]
+  "include": ["src", "e2e", "rsbuild.config.ts", "e2e.config.ts"]
 }

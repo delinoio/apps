@@ -18,6 +18,16 @@
     "test": {
       "dependsOn": ["^build"]
     },
+    "test:e2e": {
+      "cache": false,
+      "passThroughEnv": [
+        "AI_GATEWAY_API_KEY",
+        "VERCEL_OIDC_TOKEN",
+        "CI",
+        "E2E_*",
+        "PLAYWRIGHT_BROWSERS_PATH"
+      ]
+    },
     "//#test:tooling": {
       "cache": false
     }

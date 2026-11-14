@@ -18,7 +18,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["docs", "theme", "rspress.config.ts"],
+  "include": ["docs", "theme", "e2e", "rspress.config.ts", "e2e.config.ts"],
   "mdx": {
     "checkMdx": true
   }
