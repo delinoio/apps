@@ -2,7 +2,7 @@
 
 ## Configuration ownership
 
-The public repository has no environment selectors, secret provider integration or production credentials. Each service defines its configuration schema, validation, local defaults and credential boundaries in its domain contract. The [`accounts-api` contract](servers-accounts-api-foundation.md) owns the API server configuration, and the [`delino-accounts` web app contract](apps-delino-accounts-foundation.md) owns the web app build configuration.
+The public repository has no environment selectors, secret provider integration or production credentials. Deployment credentials exist only as secrets and variables of the two GitHub environments `static-sites` and `servers`, according to the [deployment contract](repository-deployment-contract.md). Each service defines its configuration schema, validation, local defaults and credential boundaries in its domain contract. The [`accounts-api` contract](servers-accounts-api-foundation.md) owns the API server configuration, and the [`delino-accounts` web app contract](apps-delino-accounts-foundation.md) owns the web app build configuration.
 
 ## Local state
 

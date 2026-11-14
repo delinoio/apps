@@ -17,11 +17,13 @@
 
 - Write Go code and comments in English; use `log/slog` structured logging and never log secrets or sensitive payloads.
 - Server Go code uses the root Go module `github.com/delinoio/mono`; do not add a `go.mod` under `servers/`. Each server has a workspace `package.json` whose scripts wrap the Go toolchain. Run `gofmt`, `go vet ./...` and `go test ./...` from the repository root before finishing.
+- Each deployed server owns a `Dockerfile` in its directory that builds from the repository root context. Servers deploy to Railway through the `servers` GitHub environment; follow the deployment contract.
 
 ## Owning contracts
 
 - [Repository defaults](../docs/repository-defaults.md)
 - [Repository workflow](../docs/repository-workflow-contract.md)
+- [Repository deployment](../docs/repository-deployment-contract.md)
 - [Authentication](../docs/repository-auth-contract.md)
 - [Billing currency and precision](../docs/repository-billing-contract.md)
 - [Repository licensing](../docs/repository-license-contract.md)

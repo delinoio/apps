@@ -37,7 +37,8 @@ The project has two deployables. The web app is a static single-page application
 - New persisted entities use UUID v7 identifiers.
 - `delino-accounts` is the shared account management and billing system for every Delino service, according to the [authentication](repository-auth-contract.md#account-management) and [billing](repository-billing-contract.md#billing-ownership) contracts. Other services link users to `https://accounts.delino.io` and call `https://accounts.api.delino.io`. They do not keep their own account management, payment-provider integration or balances.
 - Deviation from repository defaults: the web app uses Rsbuild instead of Rspress because it is an authenticated application, not a documentation or marketing site. It still deploys to Cloudflare Pages as static output.
-- Open decisions: the API server deployment target, the persistent database and the payment provider are not selected yet. Record each decision in the API server contract before the implementation that depends on it.
+- Deployment: `accounts-api` deploys to Railway through the `servers` GitHub environment. `delino-accounts-web` deploys to Cloudflare Pages through the `static-sites` GitHub environment and depends on `accounts-api`, so the API deploys first in each run. See the [deployment contract](repository-deployment-contract.md).
+- Open decisions: the persistent database and the payment provider are not selected yet. Record each decision in the API server contract before the implementation that depends on it.
 
 ## Change Policy
 
@@ -53,6 +54,7 @@ The project has two deployables. The web app is a static single-page application
 - [repository-auth-contract.md](repository-auth-contract.md)
 - [repository-billing-contract.md](repository-billing-contract.md)
 - [repository-workflow-contract.md](repository-workflow-contract.md)
+- [repository-deployment-contract.md](repository-deployment-contract.md)
 - [repository-environment-contract.md](repository-environment-contract.md)
 - [repository-license-contract.md](repository-license-contract.md)
 - [project-template.md](project-template.md)

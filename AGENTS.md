@@ -33,6 +33,7 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
+- Production deployment uses exactly one GitHub environment for static sites (`static-sites`, Cloudflare Pages) and exactly one for servers (`servers`, Railway). Do not add other deployment environments. Deploy components in dependency order: a component deploys only after the components it calls deployed successfully or were not selected. Follow `docs/repository-deployment-contract.md`.
 - CI changes must preserve affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Follow `docs/repository-workflow-contract.md`.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
@@ -66,6 +67,7 @@
 - `docs/README.md`: Complete documentation catalog and project onboarding navigation.
 - `docs/repository-defaults.md`: Default technology choices.
 - `docs/repository-workflow-contract.md`: Installation, formatting and CI.
+- `docs/repository-deployment-contract.md`: Production deployment, GitHub environments and deployment order.
 - `docs/repository-environment-contract.md`: Configuration and secrets.
 - `docs/repository-license-contract.md`: Licensing and imported material.
 - `docs/repository-dependency-security-contract.md`: Dependency security validation.
@@ -83,6 +85,7 @@
 - When a new project does not specify its primary language, default to Golang.
 - Prefer Rspack-family build tools when possible, including Rsbuild and Rspress for app and documentation surfaces.
 - Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default. Existing documented exceptions remain valid until their project contract changes.
+- Backend services under `servers/` should deploy to Railway as Docker images by default.
 - File handling should default to Cloudflare R2 object storage plus signed URLs for upload and download access unless a project contract documents another storage or access pattern.
 
 ## Documentation-First Policy
@@ -199,5 +202,6 @@
 
 - [Documentation catalog](docs/README.md) lists project indexes and domain contracts. Project indexes own canonical paths, stable project IDs and cross-domain invariants.
 - [Repository workflow](docs/repository-workflow-contract.md) owns CI, release, allocation-validation records and validation procedures.
+- [Repository deployment](docs/repository-deployment-contract.md) owns production deployment workflows, GitHub environments and the component dependency order.
 - [Environment ownership](docs/repository-environment-contract.md) owns development selectors, service configuration, child environments and shutdown.
 - Read scoped instructions in every affected domain, including cross-domain consumers.

@@ -15,6 +15,7 @@ Repository-owned source, package metadata and future release artifacts use Apach
 - When a new project does not specify its primary language, default to Golang.
 - Build tooling should prefer the Rspack family when it fits the runtime and deployment target, including Rsbuild and Rspress for app and documentation surfaces.
 - Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default. Any exception must be documented in its project contract.
+- Backend services under `servers/` should deploy to Railway as Docker images by default. Any exception must be documented in its project contract.
 - File handling should use Cloudflare R2 for object storage plus signed URLs for upload and download access by default. Use another storage or access pattern only when the project contract documents the reason, trust boundary, and migration considerations.
 
 ## Repository-Wide Rules
@@ -39,11 +40,12 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
 - Root `pnpm install` must support linked worktrees when the effective Git hooks path resolves to the repository's shared common-directory hooks directory, without overriding an unrelated custom hooks path. Source archives and other workspaces without Git metadata skip hook installation without running project preparation.
-- The registered projects are the static sites `delino-site` and `delino-docs`, and the account and billing project `delino-accounts`. The public documentation application is `delino-docs`. The repository has no release workflows yet. New projects must define their own development, validation and publication contracts before implementation.
+- The registered projects are the static sites `delino-site` and `delino-docs`, and the account and billing project `delino-accounts`. The public documentation application is `delino-docs`. The repository has no release workflows yet. Production deployment uses exactly two GitHub environments, `static-sites` and `servers`, and deploys components in dependency order according to `docs/repository-deployment-contract.md`. New projects must define their own development, validation and publication contracts before implementation.
 
 ## References
 
 - `docs/README.md`
+- `docs/repository-deployment-contract.md`
 - `docs/repository-auth-contract.md`
 - `docs/repository-billing-contract.md`
 - `docs/project-template.md`

@@ -8,6 +8,7 @@ This contract owns the `accounts-api` component of [`delino-accounts`](project-d
 - `servers/accounts-api/internal/config/`: environment configuration loading and validation.
 - `servers/accounts-api/internal/server/`: HTTP handler, routes and middleware.
 - `servers/accounts-api/.env.example`: configuration names and safe loopback defaults.
+- `servers/accounts-api/Dockerfile`: production container image, built with the repository root as the build context.
 - `servers/accounts-api/package.json` and `turbo.json`: workspace task wiring.
 
 The API server is the system of record for account and billing information. It is licensed under `FSL-1.1-ALv2` according to the [license contract](repository-license-contract.md).
@@ -17,7 +18,10 @@ The API server is the system of record for account and billing information. It i
 - Language: Go, in the repository root module `github.com/delinoio/mono`. The import path of the server packages is `github.com/delinoio/mono/servers/accounts-api/...`. The `go` directive in the root `go.mod` selects the toolchain version.
 - Runtime: one long-running HTTP server process. It uses only the Go standard library in the current scaffold.
 - Logging: `log/slog`.
-- Deployment target: not selected. Record the target, its configuration source and its TLS termination in this contract before the first deployment.
+- Deployment target: Railway service `accounts-api` in the `production` environment of the shared Railway project, deployed through the `servers` GitHub environment according to the [deployment contract](repository-deployment-contract.md).
+- Container image: `servers/accounts-api/Dockerfile` builds a static binary with `CGO_ENABLED=0` in `golang:1.26.1-alpine` and runs it as the non-root user of `gcr.io/distroless/static-debian13:nonroot`. The image sets `ADDR=:8080` and exposes port `8080`.
+- TLS termination: Railway terminates TLS for the custom domain `accounts.api.delino.io` and forwards plain HTTP to the container port.
+- Configuration source: the image `ENV` values and the Railway service variables below. Secrets are Railway service variables and never appear in the repository.
 
 ## Users and Operators
 
@@ -54,7 +58,18 @@ The API server is the system of record for account and billing information. It i
 | `LOG_LEVEL` | no       | `info`           | `debug`, `info`, `warn`, `error` |
 
 - The server validates the configuration at startup and exits with a non-zero status when a value is not valid.
-- Production must set `ADDR` explicitly for its deployment target. The default listens on loopback only.
+- Production must set `ADDR` explicitly for its deployment target. The default listens on loopback only. The container image sets `ADDR=:8080`, which listens on every interface.
+- Railway service settings:
+
+| Setting                            | Value                             |
+| ---------------------------------- | --------------------------------- |
+| Source                             | none (no connected GitHub source) |
+| Variable `RAILWAY_DOCKERFILE_PATH` | `servers/accounts-api/Dockerfile` |
+| Variable `PORT`                    | `8080`                            |
+| Health check path                  | `/healthz`                        |
+| Custom domain                      | `accounts.api.delino.io`          |
+
+- `PORT` must equal the port in the image `ADDR` value. Railway uses `PORT` for the health check and public routing; the server itself reads only `ADDR`.
 - Logto settings (`planned`): the tenant endpoint and the API resource indicator. Add them to this table and to `.env.example` in the same change that adds token validation.
 
 ## Storage
@@ -86,7 +101,9 @@ Run from the repository root:
 
 Go tasks are uncached in Turbo because the Go toolchain and module cache are not declared task inputs. Remove `servers/accounts-api/dist/` after validation.
 
-CI runs the repository Go checks in the root Go module when Go sources or Go module files change: `gofmt` check, `go vet ./...` and `go test ./...`. See the [workflow contract](repository-workflow-contract.md). CI does not build container images or deploy the server.
+CI runs the repository Go checks in the root Go module when Go sources or Go module files change: `gofmt` check, `go vet ./...` and `go test ./...`. See the [workflow contract](repository-workflow-contract.md). Pull request CI does not build container images. The deployment workflow runs `go vet` and `go test` for `./servers/accounts-api/...` and deploys with `railway up --service accounts-api --ci` on pushes to `main` that change the server or the root Go module files. The job succeeds only after the Railway deployment passes the `/healthz` health check. `delino-accounts-web` deploys after this job. See the [deployment contract](repository-deployment-contract.md).
+
+To check the image locally, run `docker build -f servers/accounts-api/Dockerfile .` from the repository root.
 
 ## Dependencies and Integrations
 
@@ -99,7 +116,7 @@ CI runs the repository Go checks in the root Go module when Go sources or Go mod
 - Update [project-delino-accounts.md](project-delino-accounts.md) when the origin, component IDs, deployment target or open decisions change.
 - Update [apps-delino-accounts-foundation.md](apps-delino-accounts-foundation.md) when an API capability or allowed browser origin changes.
 - Add a `protos-delino-accounts-*` contract with the first Connect RPC schema.
-- Update [repository-workflow-contract.md](repository-workflow-contract.md) when Go validation or deployment workflows change.
+- Update [repository-workflow-contract.md](repository-workflow-contract.md) when Go validation changes. Update the [deployment contract](repository-deployment-contract.md) when the deployment, Railway service settings or deployment dependencies change.
 - Update `servers/AGENTS.md` only under the [instruction-update policy](README.md#instruction-update-policy).
 
 ## References
@@ -111,4 +128,5 @@ CI runs the repository Go checks in the root Go module when Go sources or Go mod
 - [repository-environment-contract.md](repository-environment-contract.md)
 - [repository-license-contract.md](repository-license-contract.md)
 - [repository-workflow-contract.md](repository-workflow-contract.md)
+- [repository-deployment-contract.md](repository-deployment-contract.md)
 - [Connect for Go](https://connectrpc.com/docs/go/getting-started)

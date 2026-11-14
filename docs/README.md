@@ -6,6 +6,7 @@
 
 - [Technology defaults](repository-defaults.md)
 - [Development and CI](repository-workflow-contract.md)
+- [Production deployment](repository-deployment-contract.md)
 - [Configuration and secrets](repository-environment-contract.md)
 - [Licensing](repository-license-contract.md)
 - [Dependency security](repository-dependency-security-contract.md)

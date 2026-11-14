@@ -6,3 +6,5 @@
 - Use the `changes` job outputs to select affected validation. Update the planner inputs when shared validation dependencies change, and include `changes` in `ci-result.needs`.
 - Manual validation uses the selected revision comparison. Do not add a full manual mode.
 - Add release workflows only with an owning project contract and explicit credential boundaries.
+- Follow [the deployment contract](../docs/repository-deployment-contract.md) for deployment workflows. Use only the `static-sites` and `servers` GitHub environments, keep deployment credentials out of pull request workflows, and express component dependencies through job `needs` so dependents deploy only after their dependencies succeed or are skipped.
+- Register each new deployable component in `deploy.yml`, `scripts/ci/deploy-plan.mjs` and the deployment contract in the same change.

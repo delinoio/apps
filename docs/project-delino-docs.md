@@ -23,7 +23,7 @@ The project has one deployable. It has no `cmds`, `servers`, `crates`, `protos` 
 - The canonical production origin is `https://docs.delino.io`. The Rspress `sitemap.siteUrl` value must match it.
 - The site links to [`delino-site`](project-delino-site.md) at `https://delino.io` through absolute URLs only. It must not import source from `apps/delino-site/`.
 - Build output is written to `apps/delino-docs/dist/`, which is ignored generated output.
-- The site follows repository defaults: Rspress toolchain and Cloudflare Pages deployment. There are no deviations.
+- The site follows repository defaults: Rspress toolchain and Cloudflare Pages deployment. There are no deviations. It deploys through the `static-sites` GitHub environment and has no deployment dependencies, according to the [deployment contract](repository-deployment-contract.md).
 
 ## Change Policy
 
@@ -37,5 +37,6 @@ The project has one deployable. It has no `cmds`, `servers`, `crates`, `protos` 
 
 - [repository-defaults.md](repository-defaults.md)
 - [repository-workflow-contract.md](repository-workflow-contract.md)
+- [repository-deployment-contract.md](repository-deployment-contract.md)
 - [project-delino-site.md](project-delino-site.md)
 - [project-template.md](project-template.md)

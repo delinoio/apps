@@ -45,7 +45,7 @@ The site has no persistent storage, user uploads or server-side cache. All conte
 
 - The site is public. Content must not include secrets, internal hostnames, repository-internal paths or operational internals.
 - The build requires no secrets or environment variables.
-- Cloudflare Pages deployment credentials are not stored in the repository.
+- Cloudflare Pages deployment credentials are not stored in the repository. They exist only in the `static-sites` GitHub environment.
 
 ## Logging
 
@@ -61,19 +61,19 @@ Run from the repository root:
 - `pnpm exec turbo run typecheck --filter=delino-docs`: TypeScript and MDX type check.
 - `pnpm --filter delino-docs preview`: serve the production build locally.
 
-Remove `apps/delino-docs/dist/` after validation. CI does not build or deploy this site yet; add the build check to the workflow and its planner when the site enters CI.
+Remove `apps/delino-docs/dist/` after validation. Pull request CI does not build this site. The deployment workflow runs `typecheck`, `test` and `build` for this package and uploads `apps/delino-docs/dist` on pushes to `main` that change it, according to the [deployment contract](repository-deployment-contract.md). The site has no deployment dependencies.
 
 ## Dependencies and Integrations
 
 - `@rspress/core`, `react` and `react-dom`, pinned in `apps/delino-docs/package.json`.
-- Cloudflare Pages: static hosting for `docs.delino.io`. Configure the Pages project with build command `pnpm exec turbo run build --filter=delino-docs` and output directory `apps/delino-docs/dist`.
+- Cloudflare Pages: static hosting for `docs.delino.io` through the Direct Upload project `delino-docs` with production branch `main`. GitHub Actions builds the site and uploads the output; the Pages project has no Git integration or build command. See the [deployment contract](repository-deployment-contract.md).
 - [`delino-site`](project-delino-site.md): linked by absolute URL `https://delino.io`.
 
 ## Change Triggers
 
 - Update [project-delino-docs.md](project-delino-docs.md) when paths, the production origin or deployables change.
 - Update [project-delino-site.md](project-delino-site.md) and its foundation contract when cross-site links change.
-- Update [repository-workflow-contract.md](repository-workflow-contract.md) when this site enters CI or a deployment workflow.
+- Update [repository-workflow-contract.md](repository-workflow-contract.md) when this site enters pull request CI. Update the [deployment contract](repository-deployment-contract.md) when its deployment, Pages project or dependencies change.
 - Update `apps/AGENTS.md` only under the [instruction-update policy](README.md#instruction-update-policy).
 
 ## References
@@ -81,4 +81,5 @@ Remove `apps/delino-docs/dist/` after validation. CI does not build or deploy th
 - [project-delino-docs.md](project-delino-docs.md)
 - [repository-defaults.md](repository-defaults.md)
 - [repository-workflow-contract.md](repository-workflow-contract.md)
+- [repository-deployment-contract.md](repository-deployment-contract.md)
 - [Rspress documentation](https://rspress.rs/)

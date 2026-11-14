@@ -67,20 +67,20 @@ Run from the repository root:
 - `pnpm exec turbo run test --filter=delino-accounts`: Rstest unit tests.
 - `pnpm --filter delino-accounts preview`: serve the production build locally.
 
-`turbo.json` declares `PUBLIC_API_ORIGIN` and local `.env*` files as build inputs. Remove `apps/delino-accounts/dist/` after validation. CI does not build, test or deploy this app yet; add those checks to the workflow and its planner when the app enters CI.
+`turbo.json` declares `PUBLIC_API_ORIGIN` and local `.env*` files as build inputs. Remove `apps/delino-accounts/dist/` after validation. Pull request CI does not build or test this app. The deployment workflow runs `typecheck`, `test` and `build` for this package and uploads `apps/delino-accounts/dist` on pushes to `main` that change it. It deploys only after `accounts-api` deployed successfully in the same run or was not selected, according to the [deployment contract](repository-deployment-contract.md). The production build leaves `PUBLIC_API_ORIGIN` unset and uses the production API origin.
 
 ## Dependencies and Integrations
 
 - `@rsbuild/core`, `@rsbuild/plugin-react`, `react`, `react-dom` and `@rstest/core`, pinned in `apps/delino-accounts/package.json`.
 - [`accounts-api`](servers-accounts-api-foundation.md) at `https://accounts.api.delino.io`.
 - Logto shared tenant, according to the [authentication contract](repository-auth-contract.md).
-- Cloudflare Pages: static hosting for `accounts.delino.io`. Configure the Pages project with build command `pnpm exec turbo run build --filter=delino-accounts` and output directory `apps/delino-accounts/dist`.
+- Cloudflare Pages: static hosting for `accounts.delino.io` through the Direct Upload project `delino-accounts` with production branch `main`. GitHub Actions builds the app and uploads the output; the Pages project has no Git integration or build command. See the [deployment contract](repository-deployment-contract.md).
 
 ## Change Triggers
 
 - Update [project-delino-accounts.md](project-delino-accounts.md) when paths, the production origin or the web-to-API boundary change.
 - Update [servers-accounts-api-foundation.md](servers-accounts-api-foundation.md) when the app needs a new API capability or a new allowed browser origin.
-- Update [repository-workflow-contract.md](repository-workflow-contract.md) when this app enters CI or a deployment workflow.
+- Update [repository-workflow-contract.md](repository-workflow-contract.md) when this app enters pull request CI. Update the [deployment contract](repository-deployment-contract.md) when its deployment, Pages project or dependencies change.
 - Update `apps/AGENTS.md` only under the [instruction-update policy](README.md#instruction-update-policy).
 
 ## References
@@ -90,6 +90,7 @@ Run from the repository root:
 - [repository-auth-contract.md](repository-auth-contract.md)
 - [repository-billing-contract.md](repository-billing-contract.md)
 - [repository-workflow-contract.md](repository-workflow-contract.md)
+- [repository-deployment-contract.md](repository-deployment-contract.md)
 - [Rsbuild documentation](https://rsbuild.rs/)
 - [Rstest documentation](https://rstest.rs/)
 - [Connect-Query](https://github.com/connectrpc/connect-query-es)

@@ -26,6 +26,7 @@ Declare runtime and primary language.
 If unspecified for a new project, the default primary language is Golang.
 For build tooling, prefer Rspack-family tools when they fit the runtime and deployment target.
 Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default unless documented otherwise.
+Backend services under `servers/` should deploy to Railway as Docker images by default unless documented otherwise. Record the deployment environment and deployment dependencies according to `docs/repository-deployment-contract.md`.
 
 ## Users and Operators
 
