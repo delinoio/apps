@@ -25,5 +25,5 @@
 - [Authentication](../docs/repository-auth-contract.md)
 - [Billing currency and precision](../docs/repository-billing-contract.md)
 - [Repository licensing](../docs/repository-license-contract.md)
-- `servers/delino-accounts-api/`: [project index](../docs/project-delino-accounts.md) and [API server foundation contract](../docs/servers-delino-accounts-api-foundation.md)
+- `servers/accounts-api/`: [project index](../docs/project-delino-accounts.md) and [API server foundation contract](../docs/servers-accounts-api-foundation.md)
 - Register each new project and its domain contracts in [the documentation catalog](../docs/README.md) before implementation.

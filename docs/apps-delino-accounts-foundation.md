@@ -43,7 +43,7 @@ This contract owns the `delino-accounts-web` component of [`delino-accounts`](pr
 
 ## Storage
 
-The app has no server-side storage. All account and billing state belongs to the [API server](servers-delino-accounts-api-foundation.md). Browser storage is limited to the Logto SDK session data and per-user display preferences. Static assets larger than 512 KiB require Git LFS according to the repository workflow contract.
+The app has no server-side storage. All account and billing state belongs to the [API server](servers-accounts-api-foundation.md). Browser storage is limited to the Logto SDK session data and per-user display preferences. Static assets larger than 512 KiB require Git LFS according to the repository workflow contract.
 
 ## Security
 
@@ -72,14 +72,14 @@ Run from the repository root:
 ## Dependencies and Integrations
 
 - `@rsbuild/core`, `@rsbuild/plugin-react`, `react`, `react-dom` and `@rstest/core`, pinned in `apps/delino-accounts/package.json`.
-- [`delino-accounts-api`](servers-delino-accounts-api-foundation.md) at `https://accounts.api.delino.io`.
+- [`accounts-api`](servers-accounts-api-foundation.md) at `https://accounts.api.delino.io`.
 - Logto shared tenant, according to the [authentication contract](repository-auth-contract.md).
 - Cloudflare Pages: static hosting for `accounts.delino.io`. Configure the Pages project with build command `pnpm exec turbo run build --filter=delino-accounts` and output directory `apps/delino-accounts/dist`.
 
 ## Change Triggers
 
 - Update [project-delino-accounts.md](project-delino-accounts.md) when paths, the production origin or the web-to-API boundary change.
-- Update [servers-delino-accounts-api-foundation.md](servers-delino-accounts-api-foundation.md) when the app needs a new API capability or a new allowed browser origin.
+- Update [servers-accounts-api-foundation.md](servers-accounts-api-foundation.md) when the app needs a new API capability or a new allowed browser origin.
 - Update [repository-workflow-contract.md](repository-workflow-contract.md) when this app enters CI or a deployment workflow.
 - Update `apps/AGENTS.md` only under the [instruction-update policy](README.md#instruction-update-policy).
 

@@ -21,7 +21,7 @@ This contract defines user authentication and identity for every project and dom
 Every service uses [`delino-accounts`](project-delino-accounts.md) for account management.
 
 - User-facing profile and account settings live in the `delino-accounts` web app at `https://accounts.delino.io`. Other services link to it. They must not build their own account management pages.
-- Services read shared account data from the `delino-accounts` API at `https://accounts.api.delino.io`. Record each consuming service in the [API server contract](servers-delino-accounts-api-foundation.md) before it calls the API.
+- Services read shared account data from the `delino-accounts` API at `https://accounts.api.delino.io`. Record each consuming service in the [API server contract](servers-accounts-api-foundation.md) before it calls the API.
 - Sign-in, sign-up and sign-in method management stay in Logto, according to the identity provider rules above.
 
 ## Token validation

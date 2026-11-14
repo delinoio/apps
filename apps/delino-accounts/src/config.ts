@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/** Production origin of delino-accounts-api. */
+/** Production origin of accounts-api. */
 export const DEFAULT_ACCOUNTS_API_ORIGIN = "https://accounts.api.delino.io";
 
 /**
