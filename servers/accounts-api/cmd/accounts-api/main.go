@@ -49,7 +49,6 @@ func run() error {
 	srv := &http.Server{
 		Handler:           server.NewHandler(logger),
 		ReadHeaderTimeout: 10 * time.Second,
-		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 
 	logger.Info("server_started", slog.String("addr", listener.Addr().String()), slog.String("log_level", string(cfg.LogLevel)))
@@ -59,7 +58,18 @@ func run() error {
 // serve runs srv on listener until Serve fails or ctx is done, then shuts the
 // server down within timeout. It takes the shutdown trigger as a context so
 // tests can drive it without OS signals.
+//
+// Request contexts derive from a server-lifetime context that is deliberately
+// not ctx: cancelling ctx only starts the drain, so in-flight handlers that
+// honour r.Context() can finish within timeout. The server-lifetime context is
+// cancelled once the drain has ended, which cuts off handlers that outlived
+// the timeout. serve sets srv.BaseContext and must not be called twice for the
+// same srv.
 func serve(ctx context.Context, srv *http.Server, listener net.Listener, logger *slog.Logger, timeout time.Duration) error {
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
+	srv.BaseContext = func(net.Listener) context.Context { return baseCtx }
+
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- srv.Serve(listener)
