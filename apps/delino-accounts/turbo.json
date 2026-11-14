@@ -1,0 +1,10 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "env": ["PUBLIC_DELINO_ACCOUNTS_API_ORIGIN"],
+      "inputs": ["$TURBO_DEFAULT$", ".env", ".env.*"]
+    }
+  }
+}
