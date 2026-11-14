@@ -71,6 +71,23 @@ export function allFormatFiles(cwd) {
     });
 }
 
+// Staged deletions are excluded by --diff-filter, so every selected path is a
+// staged addition, modification, rename or type change. Such a path that is
+// missing from the working tree (removed after `git add`, or outside a sparse
+// checkout) has a staged blob that `--write` would never format. Fail naming the
+// path instead of silently skipping it, so the commit cannot bypass formatting.
+function stagedRegularFile(cwd, name) {
+  try {
+    return isRegularFile(cwd, name, false);
+  } catch (error) {
+    if (!goneCodes.has(error.code)) throw error;
+    throw new Error(
+      `Staged path is missing from the working tree (${error.code}) and cannot be formatted: ${name}. Restore the file, or unstage it with "git restore --staged -- <path>" (or "git rm --cached -- <path>" to commit its deletion), then commit again.`,
+      { cause: error },
+    );
+  }
+}
+
 export function stagedFormatFiles(cwd) {
   return git(
     cwd,
@@ -85,7 +102,7 @@ export function stagedFormatFiles(cwd) {
     .split("\0")
     .filter((name) => {
       if (!extensions.has(extname(name))) return false;
-      return isRegularFile(cwd, name);
+      return stagedRegularFile(cwd, name);
     })
     .sort();
 }
