@@ -3,7 +3,6 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, extname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const require = createRequire(import.meta.url);
@@ -246,10 +245,10 @@ export function main(env = process.env) {
   return status;
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+// import.meta.main needs Node 24.2+ (Rstack already requires 24.3+). Unlike
+// comparing process.argv[1] with the module URL, it also holds when the script
+// path goes through a symlink.
+if (import.meta.main) {
   try {
     process.exitCode = main();
   } catch (error) {

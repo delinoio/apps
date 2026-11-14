@@ -642,3 +642,27 @@ test("root package.json declares the ES module type used by rstack.config.ts", (
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.equal(manifest.type, "module");
 });
+
+test("formatter CLI runs main through a symlinked script path", (t) => {
+  const f = fixture(t);
+  f.write("unformatted.ts", "const value={answer:42}\n");
+  f.git("add", "unformatted.ts");
+  const links = mkdtempSync(join(tmpdir(), "rstack-format-link-"));
+  t.after(() => rmSync(links, { recursive: true, force: true }));
+  symlinkSync(
+    join(root, "scripts/ci"),
+    join(links, "ci"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  for (const script of [
+    join(root, "scripts/ci/format-changed.mjs"),
+    join(links, "ci/format-changed.mjs"),
+  ]) {
+    const result = spawnSync(process.execPath, [script, "--staged"], {
+      cwd: f.cwd,
+      env: f.env,
+      encoding: "utf8",
+    });
+    assert.match(result.stderr + result.stdout, /"event":"ci_format/, script);
+  }
+});

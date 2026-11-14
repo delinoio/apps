@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { main, plan } from "./plan.mjs";
+
+const root = fileURLToPath(new URL("../..", import.meta.url));
 
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), "ci-plan-"));
@@ -222,4 +226,43 @@ test("planner accepts more than 1 MiB of changed paths", (t) => {
     fixtures: false,
     go: false,
   });
+});
+
+test("planner CLI runs through physical and symlinked script paths", (t) => {
+  const f = fixture(t);
+  f.write("docs/guide.md");
+  const head = f.commit();
+  const links = mkdtempSync(join(tmpdir(), "ci-plan-link-"));
+  t.after(() => rmSync(links, { recursive: true, force: true }));
+  symlinkSync(
+    join(root, "scripts/ci"),
+    join(links, "ci"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  for (const script of [
+    join(root, "scripts/ci/plan.mjs"),
+    join(links, "ci/plan.mjs"),
+  ]) {
+    const output = join(f.cwd, "cli-output");
+    const summary = join(f.cwd, "cli-summary");
+    rmSync(output, { force: true });
+    const result = spawnSync(process.execPath, [script], {
+      cwd: f.cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CI_BASE: f.base,
+        CI_HEAD: head,
+        GITHUB_OUTPUT: output,
+        GITHUB_STEP_SUMMARY: summary,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /"event":"ci_plan"/, script);
+    assert.equal(
+      readFileSync(output, "utf8"),
+      "quality=true\nformat=true\nfixtures=false\ngo=false\n",
+      script,
+    );
+  }
 });
