@@ -2,7 +2,7 @@
 
 ## Scope
 
-The repository contains shared instructions, skills, documentation templates, formatting infrastructure, two static Rspress sites ([`delino-site`](project-delino-site.md) and [`delino-docs`](project-delino-docs.md)) and the [`delino-accounts`](project-delino-accounts.md) project with an Rsbuild web app and a Go API server, and the shared React UI component package [`delino-ui`](project-delino-ui.md). It has no native build workspace, generated protocol bindings, deployment workflows or release credentials.
+The repository contains shared instructions, skills, documentation templates, formatting infrastructure, two static Rspress sites ([`delino-site`](project-delino-site.md) and [`delino-docs`](project-delino-docs.md)) and the [`delino-accounts`](project-delino-accounts.md) project with an Rsbuild web app and a Go API server, and the shared React UI component package [`delino-ui`](project-delino-ui.md). It has no native build workspace, generated protocol bindings, deployment workflows or release credentials. Deployment workflows must use the [deployment environments](#deployment-environments) below.
 
 ## Agent skills
 
@@ -43,6 +43,19 @@ The `changes` job resolves that comparison and runs `scripts/ci/plan.mjs` withou
 Each CI run records the validation revision, comparison revisions, commands and results in its logs and job summary. Runtime and platform acceptance must be added with the owning project. CI runs the e2e suites of `delino-site`, `delino-docs` and `delino-accounts` against their development servers. CI does not build or deploy these apps yet, and it does not run the `delino-accounts` or `delino-ui` unit tests. Passing shared fixtures does not establish runtime or release acceptance.
 
 The `ci-result` job aggregates validation through `needs`, including `changes`, `quality`, `go` and `e2e`. It runs with `always()` so dependency failures do not skip the aggregate check. Failed or cancelled dependencies fail `ci-result`. The `changes` job must succeed; a skipped `quality`, `go` or `e2e` job passes only when the planner did not select it. Successful dependencies and other skipped dependencies pass. Every new PR validation job must be included in `ci-result.needs`. The aggregate job runs on Ubuntu for the same PR, main-push and manual-dispatch events.
+
+## Deployment environments
+
+The repository allows exactly two GitHub deployment environments. Do not create more environments, and do not split an environment by app, server, stage or branch.
+
+| Environment    | Deploys                                                                  |
+| -------------- | ------------------------------------------------------------------------ |
+| `static-sites` | Every static site under `apps/`, including Cloudflare Pages deployments. |
+| `servers`      | Every backend service under `servers/`.                                  |
+
+Each deployment job sets `environment` to the environment of its deployable kind. A workflow that deploys both kinds uses separate jobs. Store deployment credentials as secrets of the matching environment, not as repository secrets. PR validation jobs do not reference a deployment environment. A new deployable joins the existing environment of its kind; a deployable of another kind needs a change to this contract first.
+
+The environments do not exist yet because there are no deployment workflows. Create each environment together with the first deployment workflow that uses it, and record its protection rules in that change.
 
 ## Assets and licensing
 
