@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { constants } from "node:os";
 import { dirname, extname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -141,7 +142,54 @@ export function changedFormatFiles(cwd, base, head, local = false) {
     .sort();
 }
 
-export function runFormatter(cwd, paths, mode = Mode.Check) {
+// Signals that stop the formatter. They are forwarded to the Rstack child so an
+// external `kill`, `timeout` or supervisor cannot leave it running (and, in
+// write mode, rewriting files) after this process is gone. A terminal Ctrl-C
+// also reaches the child through the foreground process group, so it receives
+// SIGINT twice; real Rstack tolerates that, and skipping the forward on a TTY
+// would orphan the child when only this process is signalled with `kill`.
+const ForwardedSignal = Object.freeze({
+  Hangup: "SIGHUP",
+  Interrupt: "SIGINT",
+  Terminate: "SIGTERM",
+});
+const signalExitCode = (signal) => 128 + constants.signals[signal];
+
+// Runs one Rstack batch. Resolves after the child has exited with its status
+// and the first forwarded signal received meanwhile (null when none). The
+// handlers are removed on every exit path so batches never stack listeners.
+function runBatch(cwd, args) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, args, {
+      cwd,
+      stdio: "inherit",
+      shell: false,
+    });
+    let received = null;
+    const handlers = Object.values(ForwardedSignal).map((signal) => {
+      const handler = () => {
+        received ??= signal;
+        console.error(JSON.stringify({ event: "ci_format_signal", signal }));
+        child.kill(signal);
+      };
+      process.on(signal, handler);
+      return [signal, handler];
+    });
+    const cleanup = () => {
+      for (const [signal, handler] of handlers) process.off(signal, handler);
+    };
+    child.once("error", (error) => {
+      cleanup();
+      reject(error);
+    });
+    child.once("close", (code) => {
+      cleanup();
+      resolvePromise({ status: code ?? 2, signal: received });
+    });
+  });
+}
+
+export async function runFormatter(cwd, paths, mode = Mode.Check) {
   if (!Object.values(Mode).includes(mode))
     throw new Error("Unknown formatting mode");
   if (!paths.length) return 0;
@@ -152,20 +200,18 @@ export function runFormatter(cwd, paths, mode = Mode.Check) {
   // Bound argv size and prefix paths so leading dashes and negation characters
   // cannot become CLI flags or exclusion patterns. Rstack resolves files first.
   for (let index = 0; index < paths.length; index += 50) {
-    const result = spawnSync(
-      process.execPath,
-      [
-        entry,
-        "fmt",
-        `--${mode}`,
-        "--no-cache",
-        "--no-error-on-unmatched-pattern",
-        ...paths.slice(index, index + 50).map((name) => `./${name}`),
-      ],
-      { cwd, stdio: "inherit", shell: false },
-    );
-    if (result.error) throw result.error;
-    status = Math.max(status, result.status ?? 2);
+    const { status: batchStatus, signal } = await runBatch(cwd, [
+      entry,
+      "fmt",
+      `--${mode}`,
+      "--no-cache",
+      "--no-error-on-unmatched-pattern",
+      ...paths.slice(index, index + 50).map((name) => `./${name}`),
+    ]);
+    // A stopped run must not start another batch; report the shell convention
+    // for the received signal instead of the child's own status.
+    if (signal) return signalExitCode(signal);
+    status = Math.max(status, batchStatus);
   }
   return status;
 }
@@ -178,7 +224,7 @@ export function ciEnabled(env = process.env) {
   return value !== undefined && value !== "" && value !== "false";
 }
 
-export function main(env = process.env) {
+export async function main(env = process.env) {
   const { values } = parseArgs({
     options: {
       write: { type: "boolean" },
@@ -234,7 +280,7 @@ export function main(env = process.env) {
       local: !explicit,
     }),
   );
-  const status = runFormatter(cwd, paths, mode);
+  const status = await runFormatter(cwd, paths, mode);
   console.log(
     JSON.stringify({
       event: "ci_format_result",
@@ -250,7 +296,7 @@ export function main(env = process.env) {
 // path goes through a symlink.
 if (import.meta.main) {
   try {
-    process.exitCode = main();
+    process.exitCode = await main();
   } catch (error) {
     console.error(
       JSON.stringify({ event: "ci_format_error", message: error.message }),
