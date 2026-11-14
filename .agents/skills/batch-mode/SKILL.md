@@ -33,6 +33,5 @@ Use the issue identifiers in this list for the `Closes DELI-<number>` and `Refs 
 - Use the existing PR's automatic CI.
 - Retrying a failed CI run is allowed.
 - Never modify `.github/workflows/CI.yml`.
-- Prioritize issues assigned to Batch group 1 over issues assigned to Batch group 2.
 
 This skill gives the batch issue list and adds instructions only. It does not fix issues or create PRs by itself; the batch work does that for each issue in the list.
