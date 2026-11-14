@@ -58,6 +58,7 @@
 - `packages/`: Shared generated and runtime packages.
 - `packaging/`: Package-manager template assets for release automation.
 - `.agents/skills/`: Workspace-local Codex skills and reusable agent workflows.
+- `.claude/skills`: Tracked symlink to `.agents/skills/` so Claude Code loads the same skills. Add or edit skills only in `.agents/skills/`.
 - `scripts/`: Shared development, CI, installation and release tooling.
 - `.github/`: GitHub workflows and shared actions.
 
