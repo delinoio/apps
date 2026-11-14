@@ -99,9 +99,18 @@ func shutdownContext() (context.Context, context.CancelFunc) {
 // "OPTIONS *" request itself, which would bypass Handler and the request log.
 // server.NewHandler answers and logs that request instead; a Handler passed to
 // newServer must do the same if it needs to serve "OPTIONS *".
+//
+// net/http rejects a request with an unsupported Expect header with 417 before
+// it calls Handler, so the request logger inside Handler never sees it. serve
+// wraps the listener with server.ObserveListener, which logs that rejection,
+// and ConnContext here pairs each connection with its observer.
+// MaxHeaderBytes is set explicitly because the observer derives its own head
+// limit from the same constant.
 func newServer(handler http.Handler, logger *slog.Logger) *http.Server {
 	return &http.Server{
 		Handler:                      handler,
+		ConnContext:                  server.ConnContext,
+		MaxHeaderBytes:               server.MaxHeaderBytes,
 		DisableGeneralOptionsHandler: true,
 		ReadHeaderTimeout:            readHeaderTimeout,
 		ReadTimeout:                  readTimeout,
@@ -132,9 +141,12 @@ func serve(ctx context.Context, stop func(), srv *http.Server, listener net.List
 	defer cancelBase()
 	srv.BaseContext = func(net.Listener) context.Context { return baseCtx }
 
+	// Log requests that net/http rejects before the handler runs (417 for an
+	// unsupported Expect header); see newServer.
+	observed := server.ObserveListener(listener, logger)
 	serveErr := make(chan error, 1)
 	go func() {
-		serveErr <- srv.Serve(listener)
+		serveErr <- srv.Serve(observed)
 	}()
 	return awaitServe(ctx, stop, srv, serveErr, logger, timeout)
 }

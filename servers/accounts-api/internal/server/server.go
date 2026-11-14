@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -120,6 +121,12 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		// Tell the connection observer that net/http dispatched a request, so it
+		// can tell it from one that net/http rejects before the handler.
+		if obs := observerFrom(r.Context()); obs != nil {
+			obs.handlerStarted()
+			defer obs.handlerFinished()
+		}
 		recorder := &statusRecorder{
 			ResponseWriter: w,
 			status:         http.StatusOK,
@@ -139,15 +146,22 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 				// net/http will not send a response; record it as a failure.
 				status = http.StatusInternalServerError
 			}
-			logger.InfoContext(r.Context(), "http_request",
-				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
-				slog.Int("status", status),
-				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
-				slog.Int("bytes", recorder.bytes),
-			)
+			logRequest(r.Context(), logger, r.Method, r.URL.Path, status, time.Since(start), recorder.bytes)
 		}()
 		next.ServeHTTP(recorder, r)
 		returned = true
 	})
+}
+
+// logRequest writes the http_request record. It is the only place that defines
+// the record shape, shared by the request logger and by the observer that logs
+// requests net/http rejects before the handler runs.
+func logRequest(ctx context.Context, logger *slog.Logger, method, path string, status int, duration time.Duration, bytes int) {
+	logger.InfoContext(ctx, "http_request",
+		slog.String("method", method),
+		slog.String("path", path),
+		slog.Int("status", status),
+		slog.Int64("duration_ms", duration.Milliseconds()),
+		slog.Int("bytes", bytes),
+	)
 }
