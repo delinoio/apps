@@ -35,7 +35,7 @@ This contract owns the `delino-site` marketing site at `apps/delino-site/`:
 
 ## Storage
 
-The site has no persistent storage, user uploads or server-side cache. All content is committed source. Static assets larger than 512 KiB require Git LFS according to the repository workflow contract.
+The site has no persistent storage, user uploads or server-side cache. All content is committed source. Static assets of at least 512 KiB require Git LFS according to the repository workflow contract.
 
 ## Security
 
