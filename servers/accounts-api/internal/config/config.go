@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 
-// Package config loads and validates the delino-accounts-api configuration
+// Package config loads and validates the accounts-api configuration
 // from environment variables.
 package config
 
@@ -14,8 +14,8 @@ import (
 
 // Environment variable names read by the server.
 const (
-	EnvAddr     = "DELINO_ACCOUNTS_API_ADDR"
-	EnvLogLevel = "DELINO_ACCOUNTS_API_LOG_LEVEL"
+	EnvAddr     = "ADDR"
+	EnvLogLevel = "LOG_LEVEL"
 )
 
 // DefaultAddr listens on loopback only so that a local run is never exposed

@@ -120,36 +120,22 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      # Modules that require a newer toolchain switch automatically through
-      # the default GOTOOLCHAIN=auto behavior.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: servers/delino-accounts-api/go.mod
+          go-version-file: go.mod
           cache: false
-      - name: Check Go modules
+      - name: Check Go module
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -d '' modules < <(git ls-files -z -- ':(glob)servers/**/go.mod' ':(glob)cmds/**/go.mod')
-          status=0
-          for module in "${modules[@]}"; do
-            dir="$(dirname -- "$module")"
-            echo "::group::$dir"
-            result=success
-            unformatted="$(cd "$dir" && gofmt -l .)"
-            if [[ -n "$unformatted" ]]; then
-              echo "::error::gofmt reports unformatted files in $dir"
-              echo "$unformatted"
-              result=failure
-            fi
-            if ! (cd "$dir" && go vet ./... && go test ./...); then
-              result=failure
-            fi
-            echo "::endgroup::"
-            echo "Go module $dir: $result" >> "$GITHUB_STEP_SUMMARY"
-            if [[ "$result" != success ]]; then status=1; fi
-          done
-          exit "$status"
+          unformatted="$(git ls-files -z -- '*.go' | xargs -0 --no-run-if-empty gofmt -l)"
+          if [[ -n "$unformatted" ]]; then
+            echo "::error::gofmt reports unformatted files"
+            echo "$unformatted"
+            exit 1
+          fi
+          go vet ./...
+          go test ./...
       - name: Record validation result
         if: always()
         env:
@@ -158,7 +144,7 @@ jobs:
           COMPARISON_HEAD: ${{ needs.changes.outputs.head }}
         run: |
           echo "Comparison: $COMPARISON_BASE..$COMPARISON_HEAD" >> "$GITHUB_STEP_SUMMARY"
-          echo 'Commands per Go module under servers/ and cmds/: gofmt -l .; go vet ./...; go test ./...' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Commands in the root Go module: gofmt -l on tracked .go files; go vet ./...; go test ./...' >> "$GITHUB_STEP_SUMMARY"
           echo "Result: $RESULT" >> "$GITHUB_STEP_SUMMARY"
           echo 'Runtime, deployment and release acceptance: not performed.' >> "$GITHUB_STEP_SUMMARY"
   ci-result:

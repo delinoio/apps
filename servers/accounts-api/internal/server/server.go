@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 
-// Package server builds the delino-accounts-api HTTP handler.
+// Package server builds the accounts-api HTTP handler.
 package server
 
 import (

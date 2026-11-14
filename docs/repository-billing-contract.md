@@ -25,7 +25,7 @@ Every service uses [`delino-accounts`](project-delino-accounts.md) for billing.
 
 - `delino-accounts` owns payment methods, billing contacts, the payment-provider integration, balances, credits, charges and invoices. It is the only component that calls a payment provider.
 - Other services must not integrate a payment provider directly, store payment methods or keep their own balances or credits.
-- Other services report billable usage or charges to the `delino-accounts` API at `https://accounts.api.delino.io`. Each service owns the pricing of its own products and documents it in its domain contract. Record each consuming service in the [API server contract](servers-delino-accounts-api-foundation.md) before it calls the API.
+- Other services report billable usage or charges to the `delino-accounts` API at `https://accounts.api.delino.io`. Each service owns the pricing of its own products and documents it in its domain contract. Record each consuming service in the [API server contract](servers-accounts-api-foundation.md) before it calls the API.
 - User-facing billing management lives in the `delino-accounts` web app at `https://accounts.delino.io`. Other services link to it. They must not build their own payment or invoice pages.
 
 ## References

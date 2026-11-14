@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/** Production origin of delino-accounts-api. */
+/** Production origin of accounts-api. */
 export const DEFAULT_ACCOUNTS_API_ORIGIN = "https://accounts.api.delino.io";
 
 /**
@@ -14,16 +14,14 @@ export function resolveAccountsApiOrigin(value: string | undefined): string {
   try {
     url = new URL(raw);
   } catch {
-    throw new Error(`PUBLIC_DELINO_ACCOUNTS_API_ORIGIN is not a URL: ${raw}`);
+    throw new Error(`PUBLIC_API_ORIGIN is not a URL: ${raw}`);
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error(
-      `PUBLIC_DELINO_ACCOUNTS_API_ORIGIN must use http or https: ${raw}`,
-    );
+    throw new Error(`PUBLIC_API_ORIGIN must use http or https: ${raw}`);
   }
   if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
     throw new Error(
-      `PUBLIC_DELINO_ACCOUNTS_API_ORIGIN must be an origin without a path, query or fragment: ${raw}`,
+      `PUBLIC_API_ORIGIN must be an origin without a path, query or fragment: ${raw}`,
     );
   }
   return url.origin;

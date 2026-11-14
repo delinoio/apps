@@ -11,7 +11,7 @@ Provide one place where Delino users manage their account information and their 
 ## Domain Ownership Map
 
 - `apps/delino-accounts/`: Rsbuild React web app served at `https://accounts.delino.io`.
-- `servers/delino-accounts-api/`: Go API server served at `https://accounts.api.delino.io`.
+- `servers/accounts-api/`: Go API server served at `https://accounts.api.delino.io`.
 - `protos/delino/accounts/` (`planned`): Connect RPC schemas for the account and billing APIs.
 
 The project has two deployables. The web app is a static single-page application with no server runtime. The API server owns all account and billing state. The project has no `cmds`, `crates` or `packages` paths.
@@ -19,18 +19,18 @@ The project has two deployables. The web app is a static single-page application
 ## Domain Contract Documents
 
 - [apps-delino-accounts-foundation.md](apps-delino-accounts-foundation.md)
-- [servers-delino-accounts-api-foundation.md](servers-delino-accounts-api-foundation.md)
+- [servers-accounts-api-foundation.md](servers-accounts-api-foundation.md)
 
 ## Cross-Domain Invariants
 
 - Component IDs:
 
-| Component ID          | Path                           | Production origin                |
-| --------------------- | ------------------------------ | -------------------------------- |
-| `delino-accounts-web` | `apps/delino-accounts/`        | `https://accounts.delino.io`     |
-| `delino-accounts-api` | `servers/delino-accounts-api/` | `https://accounts.api.delino.io` |
+| Component ID          | Path                    | Production origin                |
+| --------------------- | ----------------------- | -------------------------------- |
+| `delino-accounts-web` | `apps/delino-accounts/` | `https://accounts.delino.io`     |
+| `accounts-api`        | `servers/accounts-api/` | `https://accounts.api.delino.io` |
 
-- The web app calls the API server only through its absolute origin. The web app reads the origin from `PUBLIC_DELINO_ACCOUNTS_API_ORIGIN` and uses `https://accounts.api.delino.io` when the value is not set. The web app must not import source from `servers/`.
+- The web app calls the API server only through its absolute origin. The web app reads the origin from `PUBLIC_API_ORIGIN` and uses `https://accounts.api.delino.io` when the value is not set. The web app must not import source from `servers/`.
 - Business flows between the web app and the API server use Connect RPC. The schemas will live in `protos/delino/accounts/`. The web app will use `@connectrpc/connect-query` with React Query for server state. Plain HTTP endpoints are limited to operational endpoints such as health checks.
 - Authentication follows the [repository authentication contract](repository-auth-contract.md). The web app is a Logto single-page application. The API server is a Logto API resource with the indicator `https://accounts.api.delino.io` and validates Logto access tokens. The Logto user ID (`sub`) is the owner key of all account and billing records.
 - Billing amounts follow the [repository billing contract](repository-billing-contract.md): USD only, signed 64-bit integers in micro-USD with a `_usd_micros` suffix.
@@ -41,7 +41,7 @@ The project has two deployables. The web app is a static single-page application
 
 ## Change Policy
 
-- Update [apps-delino-accounts-foundation.md](apps-delino-accounts-foundation.md), [servers-delino-accounts-api-foundation.md](servers-delino-accounts-api-foundation.md) and this index together when origins, component IDs or the web-to-API boundary change.
+- Update [apps-delino-accounts-foundation.md](apps-delino-accounts-foundation.md), [servers-accounts-api-foundation.md](servers-accounts-api-foundation.md) and this index together when origins, component IDs or the web-to-API boundary change.
 - Add a `protos-delino-accounts-*` contract and change the `planned` protos path to an actual path in the same change that adds the first Connect RPC schema.
 - Update the [documentation catalog](README.md) when contracts are added, renamed or removed.
 - Update `apps/AGENTS.md` and `servers/AGENTS.md` only when development procedures, directory ownership or development rules change; follow the [instruction-update policy](README.md#instruction-update-policy).

@@ -39,6 +39,7 @@
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
 - Do not guess; rather search for the web.
 - Follow `docs/repository-dependency-security-contract.md` for dependency security updates, validation evidence, and unresolved upstream constraints. Keep unresolved advisories visible; a fixed runtime pin or an unavailable patch is not a vulnerability fix.
+- All Go code belongs to the single root Go module `github.com/delinoio/mono` defined in root `go.mod`. Do not add nested `go.mod` or `go.work` files.
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
 - Prefer React Query for frontend server-state management when it is available.
 - When using React Query with Connect RPC, use `@connectrpc/connect-query` from `https://github.com/connectrpc/connect-query-es`.

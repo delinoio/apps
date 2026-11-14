@@ -1,20 +1,20 @@
-# servers-delino-accounts-api foundation contract
+# servers-accounts-api foundation contract
 
 ## Scope
 
-This contract owns the `delino-accounts-api` component of [`delino-accounts`](project-delino-accounts.md) at `servers/delino-accounts-api/`:
+This contract owns the `accounts-api` component of [`delino-accounts`](project-delino-accounts.md) at `servers/accounts-api/`:
 
-- `servers/delino-accounts-api/cmd/delino-accounts-api/`: process entry point.
-- `servers/delino-accounts-api/internal/config/`: environment configuration loading and validation.
-- `servers/delino-accounts-api/internal/server/`: HTTP handler, routes and middleware.
-- `servers/delino-accounts-api/.env.example`: configuration names and safe loopback defaults.
-- `servers/delino-accounts-api/package.json` and `turbo.json`: workspace task wiring.
+- `servers/accounts-api/cmd/accounts-api/`: process entry point.
+- `servers/accounts-api/internal/config/`: environment configuration loading and validation.
+- `servers/accounts-api/internal/server/`: HTTP handler, routes and middleware.
+- `servers/accounts-api/.env.example`: configuration names and safe loopback defaults.
+- `servers/accounts-api/package.json` and `turbo.json`: workspace task wiring.
 
 The API server is the system of record for account and billing information. It is licensed under `FSL-1.1-ALv2` according to the [license contract](repository-license-contract.md).
 
 ## Runtime and Language
 
-- Language: Go, module `github.com/delinoio/mono/servers/delino-accounts-api`. The `go` directive in `go.mod` selects the toolchain version.
+- Language: Go, in the repository root module `github.com/delinoio/mono`. The import path of the server packages is `github.com/delinoio/mono/servers/accounts-api/...`. The `go` directive in the root `go.mod` selects the toolchain version.
 - Runtime: one long-running HTTP server process. It uses only the Go standard library in the current scaffold.
 - Logging: `log/slog`.
 - Deployment target: not selected. Record the target, its configuration source and its TLS termination in this contract before the first deployment.
@@ -48,13 +48,13 @@ The API server is the system of record for account and billing information. It i
 
 ## Configuration
 
-| Variable                        | Required | Default          | Values                           |
-| ------------------------------- | -------- | ---------------- | -------------------------------- |
-| `DELINO_ACCOUNTS_API_ADDR`      | no       | `127.0.0.1:8100` | `host:port` listen address       |
-| `DELINO_ACCOUNTS_API_LOG_LEVEL` | no       | `info`           | `debug`, `info`, `warn`, `error` |
+| Variable    | Required | Default          | Values                           |
+| ----------- | -------- | ---------------- | -------------------------------- |
+| `ADDR`      | no       | `127.0.0.1:8100` | `host:port` listen address       |
+| `LOG_LEVEL` | no       | `info`           | `debug`, `info`, `warn`, `error` |
 
 - The server validates the configuration at startup and exits with a non-zero status when a value is not valid.
-- Production must set `DELINO_ACCOUNTS_API_ADDR` explicitly for its deployment target. The default listens on loopback only.
+- Production must set `ADDR` explicitly for its deployment target. The default listens on loopback only.
 - Logto settings (`planned`): the tenant endpoint and the API resource indicator. Add them to this table and to `.env.example` in the same change that adds token validation.
 
 ## Storage
@@ -79,14 +79,14 @@ The scaffold has no persistent storage. The database is not selected. Before the
 
 Run from the repository root:
 
-- `pnpm --filter delino-accounts-api dev`: run the server with `go run`.
-- `pnpm exec turbo run build --filter=delino-accounts-api`: build the binary into `servers/delino-accounts-api/dist/`.
-- `pnpm exec turbo run lint --filter=delino-accounts-api`: `go vet ./...`.
-- `pnpm exec turbo run test --filter=delino-accounts-api`: `go test ./...`.
+- `pnpm --filter accounts-api dev`: run the server with `go run`.
+- `pnpm exec turbo run build --filter=accounts-api`: build the binary into `servers/accounts-api/dist/`.
+- `pnpm exec turbo run lint --filter=accounts-api`: `go vet ./...`.
+- `pnpm exec turbo run test --filter=accounts-api`: `go test ./...`.
 
-Go tasks are uncached in Turbo because the Go toolchain and module cache are not declared task inputs. Remove `servers/delino-accounts-api/dist/` after validation.
+Go tasks are uncached in Turbo because the Go toolchain and module cache are not declared task inputs. Remove `servers/accounts-api/dist/` after validation.
 
-CI runs the repository Go checks for every Go module under `servers/` and `cmds/` when Go sources or Go module files change: `gofmt` check, `go vet ./...` and `go test ./...`. See the [workflow contract](repository-workflow-contract.md). CI does not build container images or deploy the server.
+CI runs the repository Go checks in the root Go module when Go sources or Go module files change: `gofmt` check, `go vet ./...` and `go test ./...`. See the [workflow contract](repository-workflow-contract.md). CI does not build container images or deploy the server.
 
 ## Dependencies and Integrations
 

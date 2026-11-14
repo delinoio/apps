@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 
-// Command delino-accounts-api serves the Delino account and billing API.
+// Command accounts-api serves the Delino account and billing API.
 package main
 
 import (
@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/delinoio/mono/servers/delino-accounts-api/internal/config"
-	"github.com/delinoio/mono/servers/delino-accounts-api/internal/server"
+	"github.com/delinoio/mono/servers/accounts-api/internal/config"
+	"github.com/delinoio/mono/servers/accounts-api/internal/server"
 )
 
 const shutdownTimeout = 10 * time.Second
