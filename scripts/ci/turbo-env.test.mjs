@@ -126,7 +126,14 @@ function devTaskProblems(dry) {
   if (dry.envMode !== "strict") {
     problems.push(`envMode is ${dry.envMode}, expected strict`);
   }
-  const tasks = new Map(dry.tasks.map((task) => [task.taskId, task]));
+  // Turbo lists a `dev` task for every workspace package, and reports the
+  // command `<NONEXISTENT>` for a package without a `dev` script, such as a
+  // library. Such a task never runs, so the contract does not cover it.
+  const tasks = new Map(
+    dry.tasks
+      .filter((task) => task.command !== "<NONEXISTENT>")
+      .map((task) => [task.taskId, task]),
+  );
   for (const [taskId, expected] of Object.entries(expectedPassThroughEnv)) {
     const definition = tasks.get(taskId)?.resolvedTaskDefinition;
     if (!definition) {

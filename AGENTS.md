@@ -29,7 +29,7 @@
 - When introducing a workaround, leave sufficient comments that explain why it exists, its scope, and the conditions for removing it.
 - Prefer enum types over strings whenever possible.
 - If you modified Rust code, run `cargo test` from the root directory before finishing your task.
-- If you modified frontend code, run `pnpm test` from the root directory before finishing your task; only `apps/delino-accounts` defines frontend tests today, so `apps/delino-docs` and `apps/delino-site` are covered by their `typecheck` and `build` scripts instead.
+- If you modified frontend code, run `pnpm test` from the root directory before finishing your task; only `apps/delino-accounts` and `packages/delino-ui` define frontend tests today, so `apps/delino-docs` and `apps/delino-site` are covered by their `typecheck` and `build` scripts instead.
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.

@@ -12,4 +12,5 @@
 
 - [Repository defaults](../docs/repository-defaults.md)
 - [Repository workflow](../docs/repository-workflow-contract.md)
+- `packages/delino-ui/`: [project index](../docs/project-delino-ui.md) and [foundation contract](../docs/packages-delino-ui-foundation.md)
 - Register each new project and its domain contracts in [the documentation catalog](../docs/README.md) before implementation.
