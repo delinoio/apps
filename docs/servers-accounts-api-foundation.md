@@ -9,6 +9,7 @@ This contract owns the `accounts-api` component of [`delino-accounts`](project-d
 - `servers/accounts-api/internal/server/`: HTTP handler, routes and middleware.
 - `servers/accounts-api/.env.example`: configuration names and safe loopback defaults.
 - `servers/accounts-api/package.json` and `turbo.json`: workspace task wiring.
+- `servers/accounts-api/scripts/`: development launcher (`dev.mjs`) and its process-level tests.
 
 The API server is the system of record for account and billing information. It is licensed under `FSL-1.1-ALv2` according to the [license contract](repository-license-contract.md).
 
@@ -86,20 +87,32 @@ The scaffold has no persistent storage. The database is not selected. Before the
 
 Run from the repository root:
 
-- `pnpm --filter accounts-api dev`: run the server with `go run`.
+- `pnpm --filter accounts-api dev`: run the server through the development launcher `scripts/dev.mjs` (see [Development Launcher](#development-launcher)).
 - `pnpm exec turbo run build --filter=accounts-api`: build the binary into `servers/accounts-api/dist/`.
 - `pnpm exec turbo run lint --filter=accounts-api`: `go vet ./...`.
-- `pnpm exec turbo run test --filter=accounts-api`: `go test ./...`.
+- `pnpm exec turbo run test --filter=accounts-api`: `go test ./...` followed by the launcher tests, `node --test "scripts/*.test.mjs"`.
 
 The `build` script passes `-buildvcs=false`, so the binary carries no VCS stamping (`vcs.revision`, `vcs.time` and `vcs.modified` build settings). This is a workaround with the following boundaries:
 
 - Reason: Go's default `-buildvcs=auto` discovery recognizes only a `.git` directory. In a linked Git worktree, where `.git` is a file, it walks up to an ancestor `.git` directory. When that ancestor is not a valid repository, `go build` fails with `error obtaining VCS status`; when it is a valid but unrelated repository, the binary is stamped with the wrong revision.
-- Scope: the `accounts-api` `build` script only. The `dev`, `lint` and `test` scripts do not stamp binaries and are unchanged.
+- Scope: the `accounts-api` `build` script and the `go build` step of the development launcher. The `lint` and `test` scripts do not stamp binaries and are unchanged.
 - Removal condition: remove the flag when the Go toolchain recognizes the linked-worktree `.git` file, or when release builds move to a normal-clone job that needs VCS stamping.
 
 Go tasks are uncached in Turbo because the Go toolchain and module cache are not declared task inputs. Remove `servers/accounts-api/dist/` after validation.
 
 CI runs the repository Go checks in the root Go module when Go sources or Go module files change: `gofmt` check, `go vet ./...` and `go test ./...`. See the [workflow contract](repository-workflow-contract.md). CI does not build container images or deploy the server.
+
+### Development Launcher
+
+`scripts/dev.mjs` replaces `go run ./cmd/accounts-api`. `go run` forwards only `SIGINT` and `SIGQUIT` to the compiled server and does not tie the server's lifetime to its own, so a `SIGTERM` sent to the `go run` process (`kill`, `timeout`, a supervisor, pnpm or Turbo) left the server listening without a graceful shutdown.
+
+- The launcher builds the server with `go build -buildvcs=false -o <temporary directory>/accounts-api ./cmd/accounts-api`, then runs the binary as its direct child. The temporary directory is created under the operating system temporary directory and removed after the last child has exited, on every exit path.
+- Child processes use explicit argument arrays and `shell: false`. The working directory is `servers/accounts-api/`; standard streams and the environment, including `ADDR` and `LOG_LEVEL`, reach the server unchanged. The server configuration, its logs and `/healthz` are unchanged, and the production binary is built by the `build` script, not by the launcher.
+- The launcher forwards `SIGINT` and `SIGTERM` to the active child (the build or the server) and writes an `accounts_api_dev_signal` JSON event to standard error. It does not handle `SIGHUP`. It waits for the child to exit, so the server drains and logs `server_shutdown_started` and `server_shutdown_completed` before the launcher completes.
+- A signal received during the build stops the launcher after the build exits, even when the build succeeded. The server never starts after a termination request.
+- Exit status: the status of the failed build, the server's own status (non-zero for an invalid configuration or an occupied port), or `128` plus the signal number after a forwarded signal (`130` for `SIGINT`, `143` for `SIGTERM`).
+- The launcher tests build and run the real server with a free loopback port. They cover a `SIGTERM` to the launcher alone, a process-group `SIGINT`, an occupied port, an invalid `LOG_LEVEL`, a build failure and a `SIGTERM` during the build. They use POSIX signals and are skipped on Windows.
+- The `go build` step carries the same `-buildvcs=false` workaround and removal condition as the `build` script above.
 
 ## Dependencies and Integrations
 
