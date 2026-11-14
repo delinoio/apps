@@ -1,0 +1,82 @@
+:root {
+  --color-text: #191f28;
+  --color-text-muted: #4e5968;
+  --color-background: #f2f4f6;
+  --color-surface: #ffffff;
+  --color-accent: #3182f6;
+  --color-accent-surface: #e8f3ff;
+
+  color-scheme: light dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  color: var(--color-text);
+  background: var(--color-background);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-text: #f9fafb;
+    --color-text-muted: #b0b8c1;
+    --color-background: #101013;
+    --color-surface: #1e1e24;
+    --color-accent: #4593fc;
+    --color-accent-surface: #1b2a40;
+  }
+}
+
+body {
+  margin: 0;
+}
+
+.page {
+  box-sizing: border-box;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 20px;
+}
+
+.page-header h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
+}
+
+.page-header p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.sections {
+  display: grid;
+  gap: 12px;
+  margin: 32px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.section {
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--color-surface);
+}
+
+.section h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.section p {
+  margin: 0 0 12px;
+  color: var(--color-text-muted);
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--color-accent);
+  background: var(--color-accent-surface);
+}

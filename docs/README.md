@@ -30,6 +30,12 @@
 - [Project index](project-delino-docs.md)
 - [Documentation site foundation](apps-delino-docs-foundation.md)
 
+### delino-accounts
+
+- [Project index](project-delino-accounts.md)
+- [Web app foundation](apps-delino-accounts-foundation.md)
+- [API server foundation](servers-delino-accounts-api-foundation.md)
+
 Before implementing a new project, add `project-<id>.md`, at least one `<domain>-<project-or-component>-<contract>.md`, and their links here. Use lowercase kebab-case IDs and domain prefixes `apps`, `cmds`, `servers`, `crates`, `protos`, or `packages`.
 
 ## Instruction update policy

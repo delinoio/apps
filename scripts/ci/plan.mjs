@@ -16,6 +16,11 @@ const fixtureInputs = new Set([
   "scripts/install-git-hooks.sh",
 ]);
 
+// Go sources and module files select the repository Go checks.
+export function isGoInput(path) {
+  return path.endsWith(".go") || /(^|\/)go\.(mod|sum)$/.test(path);
+}
+
 export function plan(cwd, base, head) {
   // Reuse the formatter's revision validation and literal-path selection.
   const format = changedFormatFiles(cwd, base, head).length > 0;
@@ -27,7 +32,8 @@ export function plan(cwd, base, head) {
   const fixtures = paths.some(
     (path) => fixtureInputs.has(path) || path.startsWith("scripts/ci/"),
   );
-  return { quality: format || fixtures, format, fixtures };
+  const go = paths.some(isGoInput);
+  return { quality: format || fixtures, format, fixtures, go };
 }
 
 export function main(env = process.env, cwd = process.cwd()) {

@@ -16,6 +16,7 @@
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 
 - Write Go code and comments in English; use `log/slog` structured logging and never log secrets or sensitive payloads.
+- Each server is its own Go module with a workspace `package.json` whose scripts wrap the Go toolchain. Run `gofmt`, `go vet ./...` and `go test ./...` in each changed module before finishing.
 
 ## Owning contracts
 
@@ -24,4 +25,5 @@
 - [Authentication](../docs/repository-auth-contract.md)
 - [Billing currency and precision](../docs/repository-billing-contract.md)
 - [Repository licensing](../docs/repository-license-contract.md)
+- `servers/delino-accounts-api/`: [project index](../docs/project-delino-accounts.md) and [API server foundation contract](../docs/servers-delino-accounts-api-foundation.md)
 - Register each new project and its domain contracts in [the documentation catalog](../docs/README.md) before implementation.

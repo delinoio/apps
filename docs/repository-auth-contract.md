@@ -13,7 +13,16 @@ This contract defines user authentication and identity for every project and dom
 ## User identity
 
 - The Logto user ID (the `sub` claim) is the canonical user identifier across all services. Store it as the foreign reference for user-owned data; do not derive user identity from email addresses, usernames or display names.
-- Services may keep local profile or preference records keyed by the Logto user ID. Logto remains the source of truth for credentials and sign-in identities.
+- Logto remains the source of truth for credentials and sign-in identities. [`delino-accounts`](project-delino-accounts.md) is the source of truth for the shared account profile and account settings.
+- Services may keep service-specific preference records keyed by the Logto user ID. They must not copy the shared account profile into their own storage as a source of truth.
+
+## Account management
+
+Every service uses [`delino-accounts`](project-delino-accounts.md) for account management.
+
+- User-facing profile and account settings live in the `delino-accounts` web app at `https://accounts.delino.io`. Other services link to it. They must not build their own account management pages.
+- Services read shared account data from the `delino-accounts` API at `https://accounts.api.delino.io`. Record each consuming service in the [API server contract](servers-delino-accounts-api-foundation.md) before it calls the API.
+- Sign-in, sign-up and sign-in method management stay in Logto, according to the identity provider rules above.
 
 ## Token validation
 
@@ -40,3 +49,4 @@ Log authentication results with structured fields such as the Logto user ID, the
 - [Logto documentation](https://docs.logto.io/)
 - [Validate access tokens](https://docs.logto.io/authorization/validate-access-tokens)
 - [Environment contract](repository-environment-contract.md)
+- [delino-accounts project index](project-delino-accounts.md)

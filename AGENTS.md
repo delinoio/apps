@@ -141,14 +141,16 @@
 - Logto is the only identity provider. All services share one Logto tenant per deployment environment; do not add service-local password storage, sign-up flows or another identity provider.
 - Use the Logto user ID (`sub`) as the canonical user identifier across services.
 - Backend services must validate Logto access tokens (signature, issuer, expiration, audience and required scopes) and must not accept ID tokens as API credentials.
-- Follow `docs/repository-auth-contract.md`.
+- Use `delino-accounts` for account management in every service. Link users to `https://accounts.delino.io` for profile and account settings, and read shared account data from `https://accounts.api.delino.io`. Do not build service-local account management pages or duplicate the shared account profile.
+- Follow `docs/repository-auth-contract.md` and `docs/project-delino-accounts.md`.
 
 ## Billing Rules
 
 - Charge users in USD only.
 - Store and compute prices, usage costs, credits and balances with 0.000001 USD (micro-USD) precision as signed 64-bit integers named with a `_usd_micros` suffix. Never use binary floating-point types for monetary values.
 - Document rounding at payment-provider boundaries and in sub-micro-USD calculations in the owning domain contract; round only for display.
-- Follow `docs/repository-billing-contract.md`.
+- Use `delino-accounts` for billing in every service. `delino-accounts` owns payment methods, payment-provider integration, balances, credits, charges and invoices. Other services report billable usage or charges to `https://accounts.api.delino.io` and link users to `https://accounts.delino.io` for billing management. Do not integrate a payment provider directly or keep a service-local balance.
+- Follow `docs/repository-billing-contract.md` and `docs/project-delino-accounts.md`.
 
 ## GitHub Pull Request Title Contract
 
