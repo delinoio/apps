@@ -8,17 +8,9 @@ The repository contains shared instructions, skills, documentation templates and
 
 Use Node.js 24 from `.nvmrc` and pnpm 10.26.2 from `package.json`. Run `pnpm install --frozen-lockfile`. The prepare script installs Lefthook through `scripts/install-git-hooks.sh`. Archives without Git metadata skip hook installation. Linked worktrees may use their shared Git hooks directory; unrelated custom hook paths remain protected.
 
-## Private servers
-
-`servers/` is a Git submodule for the private `delinoio/servers` repository, registered with the relative URL `../servers.git`. Public contributors do not need it: clones, installs, formatting and CI work without initializing it. Maintainers with access use `git clone --recurse-submodules` or `git submodule update --init servers`.
-
-Server source, server-internal contracts, infrastructure details and private CI live in the submodule repository. Public documentation, issues, pull requests and CI logs must not describe server internals. Shared protocol schemas belong in public `protos/`. Public packages must not depend on server code.
-
-Commit and push submodule changes to `delinoio/servers` `main` first, then update the `servers` gitlink here in a separate commit. Public CI does not check out the submodule.
-
 ## Task orchestration
 
-The pinned `turbo` dependency and root `turbo.json` orchestrate packages selected by `pnpm-workspace.yaml`: `apps/*` and `packages/*`. The private `servers/` submodule is excluded from the public workspace and lockfile. There are no runtime packages yet; commands only run tasks that exist in package scripts.
+The pinned `turbo` dependency and root `turbo.json` orchestrate packages selected by `pnpm-workspace.yaml`: `apps/*`, `packages/*` and `servers/*`. There are no runtime packages yet; commands only run tasks that exist in package scripts.
 
 Root `pnpm build`, `pnpm dev`, `pnpm lint` and `pnpm typecheck` delegate to `turbo run`. Root `pnpm test` runs workspace tests and the repository-wide `test:tooling` task. The latter runs the existing formatter and hook fixtures directly and is registered as `//#test:tooling`. It is uncached so each invocation checks the current Git and hook environment. `prepare`, `format` and `format:check` remain direct commands: hook installation has side effects, and formatting depends on Git revisions, staged changes and untracked files rather than package inputs.
 

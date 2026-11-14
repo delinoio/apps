@@ -17,7 +17,7 @@
 - Do not add issue or pull-request links or identifying numbers to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, issues or CI records instead.
 
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
-- License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
+- License repository-owned source and future distributions under Apache-2.0, except `servers/`, which uses FSL-1.1-ALv2 with an Apache-2.0 future license. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
 - All repository-wide rules must be defined in the appropriate AGENTS.md.
 - Every repository-owned directory named `dist` is ignored generated output and must never be tracked. Generate required `dist` content explicitly before compilation, testing, or packaging, and remove generated `dist` directories from the final worktree.
 - Track repository asset files of at least 512 KiB through exact-path Git LFS attributes. Checkouts that compile, test, or package those assets must hydrate LFS objects first; preserve source licenses and notices. Follow `docs/repository-workflow-contract.md`.
@@ -52,7 +52,7 @@
 - `apps/`: User-facing apps and documentation web surfaces.
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command tools for workflow orchestration.
-- `servers/`: Private Git submodule (`delinoio/servers`) for proprietary backend services. See `servers/AGENTS.md` when initialized.
+- `servers/`: Backend services, licensed under FSL-1.1-ALv2.
 - `protos/`: Versioned protocol schemas and committed Go bindings.
 - `packages/`: Shared generated and runtime packages.
 - `packaging/`: Package-manager template assets for release automation.
@@ -70,15 +70,6 @@
 - `docs/repository-dependency-security-contract.md`: Dependency security validation.
 - `docs/project-template.md`: Project index template.
 - `docs/domain-template.md`: Domain contract template.
-
-## Private Server Submodule
-
-- This repository is open source. Backend service source is proprietary and lives only in the private `delinoio/servers` repository, mounted at `servers/` as a Git submodule.
-- Never copy server source, server-internal contracts, internal endpoints, infrastructure details or server secrets into this repository, its issues, pull requests or CI logs. Keep them in the submodule repository.
-- Project indexes in `docs/` may list `servers/` paths and public interfaces, but server domain contracts live in the submodule's `docs/`.
-- Shared protocol schemas belong in `protos/`. Public apps and packages must not depend on server code.
-- Public clones, installs, formatting and CI must keep working without the submodule. Do not add `servers/*` to the public pnpm workspace or lockfile.
-- Commit and push server changes in the submodule first, then update the `servers` gitlink in a separate commit. Follow `docs/repository-workflow-contract.md`.
 
 ## Repository Default Technology Choices
 
