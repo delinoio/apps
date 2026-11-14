@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { changedFormatFiles } from "./format-changed.mjs";
 
 const fixtureInputs = new Set([
@@ -62,9 +60,7 @@ export function main(env = process.env, cwd = process.cwd()) {
   );
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+// import.meta.main needs Node 24.2+; it also holds for symlinked script paths.
+if (import.meta.main) {
   main();
 }
