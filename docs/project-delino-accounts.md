@@ -30,7 +30,7 @@ The project has two deployables. The web app is a static single-page application
 | `delino-accounts-web` | `apps/delino-accounts/` | `https://accounts.delino.io`     |
 | `accounts-api`        | `servers/accounts-api/` | `https://accounts.api.delino.io` |
 
-- The web app calls the API server only through its absolute origin. The web app reads the origin from `PUBLIC_DELINO_ACCOUNTS_API_ORIGIN` and uses `https://accounts.api.delino.io` when the value is not set. The web app must not import source from `servers/`.
+- The web app calls the API server only through its absolute origin. The web app reads the origin from `PUBLIC_API_ORIGIN` and uses `https://accounts.api.delino.io` when the value is not set. The web app must not import source from `servers/`.
 - Business flows between the web app and the API server use Connect RPC. The schemas will live in `protos/delino/accounts/`. The web app will use `@connectrpc/connect-query` with React Query for server state. Plain HTTP endpoints are limited to operational endpoints such as health checks.
 - Authentication follows the [repository authentication contract](repository-auth-contract.md). The web app is a Logto single-page application. The API server is a Logto API resource with the indicator `https://accounts.api.delino.io` and validates Logto access tokens. The Logto user ID (`sub`) is the owner key of all account and billing records.
 - Billing amounts follow the [repository billing contract](repository-billing-contract.md): USD only, signed 64-bit integers in micro-USD with a `_usd_micros` suffix.

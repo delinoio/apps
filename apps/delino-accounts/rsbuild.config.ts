@@ -5,7 +5,7 @@ import { resolveAccountsApiOrigin } from "./src/config.ts";
 
 // Fail the build and the dev server early when the API origin is not valid.
 // The Rsbuild CLI loads `.env*` files into `process.env` before this file.
-resolveAccountsApiOrigin(process.env.PUBLIC_DELINO_ACCOUNTS_API_ORIGIN);
+resolveAccountsApiOrigin(process.env.PUBLIC_API_ORIGIN);
 
 export default defineConfig({
   plugins: [pluginReact()],

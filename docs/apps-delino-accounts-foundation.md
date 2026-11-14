@@ -36,7 +36,7 @@ This contract owns the `delino-accounts-web` component of [`delino-accounts`](pr
 
 - `public/_redirects` rewrites every unknown path to `/index.html` with status `200`, so client-side routes load on direct navigation.
 - `public/_headers` sets Cloudflare Pages response headers: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and `X-Frame-Options: DENY`.
-- API origin: `src/config.ts` resolves the API server origin from the build-time variable `PUBLIC_DELINO_ACCOUNTS_API_ORIGIN`. An unset or empty value selects `https://accounts.api.delino.io`. The value must be an `http` or `https` origin with no path, query or fragment; the build fails for other values.
+- API origin: `src/config.ts` resolves the API server origin from the build-time variable `PUBLIC_API_ORIGIN`. An unset or empty value selects `https://accounts.api.delino.io`. The value must be an `http` or `https` origin with no path, query or fragment; the build fails for other values.
 - API calls (`planned`): Connect RPC through `@connectrpc/connect-query` and React Query. The app must not call the API through Tauri-specific or ad-hoc bindings.
 - Authentication (`planned`): the app is registered as a Logto single-page application in the shared tenant and requests access tokens for the API resource `https://accounts.api.delino.io`. Sign-in redirect URIs use the `https://accounts.delino.io` origin in production and the loopback development origin locally.
 - Monetary values from the API are `bigint` micro-USD amounts. The app formats them for display only and never converts them to `number` for arithmetic.
@@ -67,7 +67,7 @@ Run from the repository root:
 - `pnpm exec turbo run test --filter=delino-accounts`: Rstest unit tests.
 - `pnpm --filter delino-accounts preview`: serve the production build locally.
 
-`turbo.json` declares `PUBLIC_DELINO_ACCOUNTS_API_ORIGIN` and local `.env*` files as build inputs. Remove `apps/delino-accounts/dist/` after validation. CI does not build, test or deploy this app yet; add those checks to the workflow and its planner when the app enters CI.
+`turbo.json` declares `PUBLIC_API_ORIGIN` and local `.env*` files as build inputs. Remove `apps/delino-accounts/dist/` after validation. CI does not build, test or deploy this app yet; add those checks to the workflow and its planner when the app enters CI.
 
 ## Dependencies and Integrations
 

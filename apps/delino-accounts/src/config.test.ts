@@ -29,8 +29,6 @@ describe("resolveAccountsApiOrigin", () => {
     "https://accounts.api.delino.io/?debug=1",
     "https://accounts.api.delino.io/#top",
   ])("rejects %s", (value) => {
-    expect(() => resolveAccountsApiOrigin(value)).toThrow(
-      "PUBLIC_DELINO_ACCOUNTS_API_ORIGIN",
-    );
+    expect(() => resolveAccountsApiOrigin(value)).toThrow("PUBLIC_API_ORIGIN");
   });
 });

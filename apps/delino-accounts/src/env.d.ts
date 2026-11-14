@@ -2,5 +2,5 @@
 /// <reference types="@rsbuild/core/types" />
 
 interface ImportMetaEnv {
-  readonly PUBLIC_DELINO_ACCOUNTS_API_ORIGIN?: string;
+  readonly PUBLIC_API_ORIGIN?: string;
 }

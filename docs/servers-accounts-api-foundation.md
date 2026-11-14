@@ -48,13 +48,13 @@ The API server is the system of record for account and billing information. It i
 
 ## Configuration
 
-| Variable                 | Required | Default          | Values                           |
-| ------------------------ | -------- | ---------------- | -------------------------------- |
-| `ACCOUNTS_API_ADDR`      | no       | `127.0.0.1:8100` | `host:port` listen address       |
-| `ACCOUNTS_API_LOG_LEVEL` | no       | `info`           | `debug`, `info`, `warn`, `error` |
+| Variable    | Required | Default          | Values                           |
+| ----------- | -------- | ---------------- | -------------------------------- |
+| `ADDR`      | no       | `127.0.0.1:8100` | `host:port` listen address       |
+| `LOG_LEVEL` | no       | `info`           | `debug`, `info`, `warn`, `error` |
 
 - The server validates the configuration at startup and exits with a non-zero status when a value is not valid.
-- Production must set `ACCOUNTS_API_ADDR` explicitly for its deployment target. The default listens on loopback only.
+- Production must set `ADDR` explicitly for its deployment target. The default listens on loopback only.
 - Logto settings (`planned`): the tenant endpoint and the API resource indicator. Add them to this table and to `.env.example` in the same change that adds token validation.
 
 ## Storage
