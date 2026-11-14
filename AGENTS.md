@@ -4,7 +4,7 @@
 
 - Ordinary feature additions, bug fixes, tests and behavior-contract changes do not by themselves require an AGENTS.md update. Update instructions only when development procedures, directory ownership or repository/domain development rules change. Keep feature requirements in the owning contract; do not duplicate them in AGENTS.md.
 - Do not add issue-specific feature paragraphs to instruction files. Read the owning project index and domain contracts before implementation.
-- Record new implementation status, validation results and unresolved limits in pull requests, issues and CI logs/artifacts. Include the source revision, commands, results and unperformed checks; distinguish fixtures, builds and packaging from actual native/account/platform acceptance. Exclude secrets, user state and raw native content. Preserve existing validation records.
+- Record new implementation status, validation results and unresolved limits in pull requests, Linear issues and CI logs/artifacts. Include the source revision, commands, results and unperformed checks; distinguish fixtures, builds and packaging from actual native/account/platform acceptance. Exclude secrets, user state and raw native content. Preserve existing validation records.
 
 ## Task navigation
 
@@ -14,7 +14,7 @@
 
 ## Instructions
 
-- Do not add issue or pull-request links or identifying numbers to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, issues or CI records instead.
+- Do not add issue or pull-request links or identifying numbers, including Linear `DELI-<number>` identifiers, to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, Linear issues or CI records instead.
 
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
 - License repository-owned source and future distributions under Apache-2.0, except `servers/`, which uses FSL-1.1-ALv2 with an Apache-2.0 future license. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
@@ -25,7 +25,7 @@
 - For documentation authoring and editing tasks, do not arbitrarily omit, delete, or simplify requested or source-backed content; if content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret; update or create the relevant `AGENTS.md` in the same change only when development procedures, directory ownership or repository/domain development rules change.
 - Public documentation surfaces must not document repository-internal implementation details. Keep internal source-of-truth contracts, architecture notes, repo-local paths, and operational internals in `docs/`; curate public docs in their owning application around user-facing behavior, supported workflows, stable public interfaces, and maintainer-facing paths only when those paths are explicitly part of the public contract.
 - Write all code and comments in English.
-- Write GitHub issue titles and explanatory body text in English. Preserve exact code, commands, paths, diagnostic messages, search queries, direct quotations and localized UI strings when their original text is required; explain non-English evidence in English. Translate existing non-English issue prose without changing requirements, evidence, references, attachments or issue state.
+- Write Linear issue titles and explanatory body text in English. Preserve exact code, commands, paths, diagnostic messages, search queries, direct quotations and localized UI strings when their original text is required; explain non-English evidence in English. Translate existing non-English issue prose without changing requirements, evidence, references, attachments or issue state.
 - When introducing a workaround, leave sufficient comments that explain why it exists, its scope, and the conditions for removing it.
 - Prefer enum types over strings whenever possible.
 - If you modified Rust code, run `cargo test` from the root directory before finishing your task.
@@ -68,6 +68,7 @@
 - `docs/repository-environment-contract.md`: Configuration and secrets.
 - `docs/repository-license-contract.md`: Licensing and imported material.
 - `docs/repository-dependency-security-contract.md`: Dependency security validation.
+- `docs/repository-issue-tracker-contract.md`: Issue tracking and pull request references.
 - `docs/project-template.md`: Project index template.
 - `docs/domain-template.md`: Domain contract template.
 
@@ -109,9 +110,16 @@
 - Use `repository-<topic>-contract.md` for repository-level contract docs that span project or domain ownership.
 - Use enum-like canonical identifiers in documents where values must remain stable.
 
-## GitHub Issue Style Contract
+## Issue Tracker Contract
 
-- Apply this contract to all open/new GitHub issues.
+- Use the Linear team `DELI` (Mono) at https://linear.app/delinoio/team/DELI/ as the primary issue tracker for all development work, including bugs, features, tasks, chores, investigations and review, QA or analysis follow-ups.
+- Use GitHub Issues in this repository for customer support only. Do not create GitHub issues for development work.
+- In pull request descriptions, add a standalone `Closes DELI-<number>` line for each fully resolved Linear issue and a standalone `Refs DELI-<number>` line for each partially addressed or related Linear issue. Do not use both for the same issue.
+- Follow `docs/repository-issue-tracker-contract.md`.
+
+## Linear Issue Style Contract
+
+- Apply this contract to all open/new Linear issues in the `DELI` team.
 - Use issue titles in the format `<domain>: <description>`.
 - `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `tooling`, `docs`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.

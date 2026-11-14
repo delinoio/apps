@@ -9,6 +9,7 @@
 - [Configuration and secrets](repository-environment-contract.md)
 - [Licensing](repository-license-contract.md)
 - [Dependency security](repository-dependency-security-contract.md)
+- [Issue tracking](repository-issue-tracker-contract.md)
 
 ## Templates
 
@@ -21,4 +22,4 @@ No projects are registered. Before implementation, add `project-<id>.md`, at lea
 
 ## Instruction update policy
 
-Keep feature behavior in its owning contract. Update `AGENTS.md` only when development procedures, directory ownership or development rules change. Keep validation evidence and issue or pull request traceability in GitHub records and CI logs, rather than instruction files or documentation. See [root instructions](../AGENTS.md).
+Keep feature behavior in its owning contract. Update `AGENTS.md` only when development procedures, directory ownership or development rules change. Keep validation evidence and issue or pull request traceability in pull requests, Linear issues and CI logs, rather than instruction files or documentation. See [root instructions](../AGENTS.md).
