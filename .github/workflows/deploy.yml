@@ -1,0 +1,144 @@
+# Production deployment. See docs/repository-deployment-contract.md.
+# Jobs follow the component dependency graph: a component deploys only after
+# every component it depends on deployed successfully or was not selected.
+name: Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+# Deployments queue instead of cancelling an in-progress deployment. A queued
+# run that GitHub replaces is covered by the next run, which plans against
+# the last fully successful deployment run.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+jobs:
+  plan:
+    name: Plan deployment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      delino_site: ${{ steps.plan.outputs.delino_site }}
+      delino_docs: ${{ steps.plan.outputs.delino_docs }}
+      delino_accounts_web: ${{ steps.plan.outputs.delino_accounts_web }}
+      accounts_api: ${{ steps.plan.outputs.accounts_api }}
+    steps:
+      - name: Require the main branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Production deployments run only from refs/heads/main."
+          exit 1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Resolve last deployed revision
+        id: deployed
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // ""')"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Last successful deployment run revision: ${sha:-none}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Select components
+        id: plan
+        env:
+          DEPLOY_EVENT: ${{ github.event_name }}
+          DEPLOY_BASE: ${{ steps.deployed.outputs.sha }}
+          DEPLOY_HEAD: ${{ github.sha }}
+        run: node scripts/ci/deploy-plan.mjs
+
+  accounts-api:
+    name: Deploy accounts-api
+    needs: plan
+    if: needs.plan.outputs.accounts_api == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: servers
+      url: https://accounts.api.delino.io
+    env:
+      # Pinned Railway CLI. `railway up --ci` exits only after the deployment
+      # reaches SUCCESS (health check passed), FAILED or CRASHED.
+      RAILWAY_CLI_VERSION: 5.71.0
+      RAILWAY_SERVICE: accounts-api
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Validate server
+        run: |
+          go vet ./servers/accounts-api/...
+          go test ./servers/accounts-api/...
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm install --global "@railway/cli@$RAILWAY_CLI_VERSION"
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service "$RAILWAY_SERVICE" --ci --message "$GITHUB_SHA"
+      - name: Record deployment result
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+        run: |
+          echo "Revision: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Railway service: $RAILWAY_SERVICE; origin: https://accounts.api.delino.io" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commands: go vet ./servers/accounts-api/...; go test ./servers/accounts-api/...; railway@$RAILWAY_CLI_VERSION up --service $RAILWAY_SERVICE --ci" >> "$GITHUB_STEP_SUMMARY"
+          echo "Result: $RESULT" >> "$GITHUB_STEP_SUMMARY"
+
+  delino-accounts-web:
+    name: Deploy delino-accounts-web
+    # Depends on accounts-api: the web app calls it.
+    needs: [plan, accounts-api]
+    if: >-
+      !cancelled()
+      && needs.plan.result == 'success'
+      && needs.plan.outputs.delino_accounts_web == 'true'
+      && (needs.accounts-api.result == 'success' || needs.accounts-api.result == 'skipped')
+    uses: ./.github/workflows/deploy-cloudflare-pages.yml
+    with:
+      package: delino-accounts
+      pages-project: delino-accounts
+      output-directory: apps/delino-accounts/dist
+      url: https://accounts.delino.io
+    secrets: inherit
+
+  delino-site:
+    name: Deploy delino-site
+    needs: plan
+    if: needs.plan.outputs.delino_site == 'true'
+    uses: ./.github/workflows/deploy-cloudflare-pages.yml
+    with:
+      package: delino-site
+      pages-project: delino-site
+      output-directory: apps/delino-site/dist
+      url: https://delino.io
+    secrets: inherit
+
+  delino-docs:
+    name: Deploy delino-docs
+    needs: plan
+    if: needs.plan.outputs.delino_docs == 'true'
+    uses: ./.github/workflows/deploy-cloudflare-pages.yml
+    with:
+      package: delino-docs
+      pages-project: delino-docs
+      output-directory: apps/delino-docs/dist
+      url: https://docs.delino.io
+    secrets: inherit
