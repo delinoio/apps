@@ -42,12 +42,14 @@ test("planner skips empty comparisons and non-validation paths", (t) => {
     quality: false,
     format: false,
     fixtures: false,
+    go: false,
   });
   f.write("assets/image.svg");
   assert.deepEqual(plan(f.cwd, f.base, f.commit()), {
     quality: false,
     format: false,
     fixtures: false,
+    go: false,
   });
 });
 
@@ -58,6 +60,7 @@ test("documentation changes select formatting without fixtures", (t) => {
     quality: true,
     format: true,
     fixtures: false,
+    go: false,
   });
 });
 
@@ -84,6 +87,33 @@ test("every shared fixture input selects tests", async (t) => {
   }
 });
 
+test("Go sources and module files select Go checks", async (t) => {
+  for (const path of [
+    "servers/example/main.go",
+    "servers/example/go.mod",
+    "cmds/example/go.sum",
+    "go.mod",
+  ]) {
+    await t.test(path, (t) => {
+      const f = fixture(t);
+      f.write(path);
+      assert.equal(plan(f.cwd, f.base, f.commit()).go, true);
+    });
+  }
+  const f = fixture(t);
+  f.write("servers/example/README.md");
+  f.write("servers/example/go.mod.example");
+  assert.equal(plan(f.cwd, f.base, f.commit()).go, false);
+});
+
+test("deleted Go files still select Go checks", (t) => {
+  const f = fixture(t);
+  f.write("servers/example/old.go");
+  const base = f.commit();
+  f.git("rm", "--quiet", "servers/example/old.go");
+  assert.equal(plan(f.cwd, base, f.commit()).go, true);
+});
+
 test("deleted inputs and renamed paths still select affected fixtures", (t) => {
   const f = fixture(t);
   f.write("scripts/ci/old.mjs");
@@ -95,6 +125,7 @@ test("deleted inputs and renamed paths still select affected fixtures", (t) => {
     quality: true,
     format: true,
     fixtures: true,
+    go: false,
   });
 });
 
@@ -107,6 +138,7 @@ test("deleted documentation has no remaining formatting input", (t) => {
     quality: false,
     format: false,
     fixtures: false,
+    go: false,
   });
 });
 
@@ -134,7 +166,7 @@ test("planner publishes booleans and records exact comparison and checkout", (t)
   );
   assert.equal(
     readFileSync(output, "utf8"),
-    "quality=true\nformat=true\nfixtures=false\n",
+    "quality=true\nformat=true\nfixtures=false\ngo=false\n",
   );
   const record = JSON.parse(
     readFileSync(summary, "utf8").slice("CI plan: ".length),
