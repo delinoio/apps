@@ -14,9 +14,14 @@ export default defineConfig({
   logo: "/icon.svg",
   logoText: "Delino",
   // The marketing site has no documentation search; docs.delino.io owns it.
+  // This type-valid option still stops Rspress from indexing pages for search,
+  // but it does not hide the search UI; see `themeConfig.search` below.
   search: false,
   sitemap: { siteUrl: "https://delino.io" },
   themeConfig: {
+    // Documents the intent; the visible search UI is removed by the `Search`
+    // override in `theme/index.tsx` until the default theme honours this flag.
+    search: false,
     nav: [
       { text: "Docs", link: "https://docs.delino.io" },
       { text: "GitHub", link: "https://github.com/delinoio" },
