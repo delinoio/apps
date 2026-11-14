@@ -8,6 +8,7 @@
 
 - Source under `servers/` is licensed under FSL-1.1-ALv2 (`servers/LICENSE`), not the repository-wide Apache-2.0 license. Each version becomes available under Apache-2.0 on the second anniversary of its release.
 - Use `SPDX-License-Identifier: FSL-1.1-ALv2` in server source headers and `FSL-1.1-ALv2` in server package manifests that declare a license.
+- Root `LICENSE-FSL` is a scoped copy of `servers/LICENSE`. When `servers/LICENSE` changes, update the text after the `LICENSE-FSL` scope statement in the same change.
 - Code shared with apps or packages belongs outside `servers/` under Apache-2.0. Do not move server code into Apache-2.0 directories without an explicit relicensing decision. Follow `docs/repository-license-contract.md`.
 
 ## Development and validation
