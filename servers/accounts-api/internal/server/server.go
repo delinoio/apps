@@ -5,16 +5,62 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
 )
 
+// maxOptionsBodyBytes bounds the body read for a server-wide "OPTIONS *"
+// request, matching net/http's built-in handler.
+const maxOptionsBodyBytes = 4 << 10
+
 // NewHandler returns the root HTTP handler with request logging applied.
+//
+// The handler answers a server-wide "OPTIONS *" request itself, inside the
+// request logger. net/http answers that request before it consults the
+// configured Handler unless http.Server.DisableGeneralOptionsHandler is set, so
+// the production server must set it (see newServer in cmd/accounts-api);
+// otherwise the request is neither routed here nor logged.
 func NewHandler(logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz(logger))
-	return logRequests(logger, mux)
+	return logRequests(logger, withGeneralOptions(mux))
+}
+
+// withGeneralOptions answers "OPTIONS *" and passes every other request to
+// next. It reproduces net/http's built-in handler: 200 with Content-Length 0,
+// reading at most maxOptionsBodyBytes of request body.
+func withGeneralOptions(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodOptions || r.RequestURI != "*" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Length", "0")
+		if r.ContentLength != 0 {
+			// http.MaxBytesReader tells the server to close the connection
+			// after an oversized body through an unexported method of the
+			// ResponseWriter that net/http created. Wrappers such as
+			// statusRecorder only embed the http.ResponseWriter interface and
+			// do not promote that method, so the reader must be given the
+			// unwrapped writer or the connection would be kept alive.
+			body := http.MaxBytesReader(unwrapResponseWriter(w), r.Body, maxOptionsBodyBytes)
+			_, _ = io.Copy(io.Discard, body)
+		}
+	})
+}
+
+// unwrapResponseWriter returns the innermost writer reachable through Unwrap
+// methods, which is the one net/http created for the request.
+func unwrapResponseWriter(w http.ResponseWriter) http.ResponseWriter {
+	for {
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return w
+		}
+		w = u.Unwrap()
+	}
 }
 
 type healthResponse struct {
