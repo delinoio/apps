@@ -28,7 +28,7 @@
 - Write Linear issue titles and explanatory body text in English. Preserve exact code, commands, paths, diagnostic messages, search queries, direct quotations and localized UI strings when their original text is required; explain non-English evidence in English. Translate existing non-English issue prose without changing requirements, evidence, references, attachments or issue state.
 - When introducing a workaround, leave sufficient comments that explain why it exists, its scope, and the conditions for removing it.
 - Prefer enum types over strings whenever possible.
-- If you modified Rust code, run `cargo test` from the root directory before finishing your task.
+- If you modified Rust code and a root `Cargo.toml` workspace exists, run `cargo test` from the root directory before finishing your task. The repository has no Rust workspace yet; the first crate change creates it and adds the crate as an explicit member in the same change, as described in `crates/AGENTS.md`.
 - If you modified frontend code, run `pnpm test` from the root directory before finishing your task; only `apps/delino-accounts` defines frontend tests today, so `apps/delino-docs` and `apps/delino-site` are covered by their `typecheck` and `build` scripts instead.
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
