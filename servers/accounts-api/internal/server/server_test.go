@@ -5,6 +5,9 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +19,23 @@ func newTestHandler(t *testing.T) (http.Handler, *bytes.Buffer) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	return NewHandler(logger), &logs
+}
+
+// decodeRecords parses every JSON log line written to logs.
+func decodeRecords(t *testing.T, logs *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var records []map[string]any
+	for _, line := range bytes.Split(bytes.TrimSpace(logs.Bytes()), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatalf("decode log record %q: %v", line, err)
+		}
+		records = append(records, record)
+	}
+	return records
 }
 
 func TestHealthz(t *testing.T) {
@@ -37,10 +57,11 @@ func TestHealthz(t *testing.T) {
 		t.Errorf("status field = %q, want ok", body.Status)
 	}
 
-	var record map[string]any
-	if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
-		t.Fatalf("decode log record: %v", err)
+	records := decodeRecords(t, logs)
+	if len(records) != 1 {
+		t.Fatalf("got %d log records, want exactly 1: %v", len(records), records)
 	}
+	record := records[0]
 	if record["msg"] != "http_request" || record["path"] != "/healthz" || record["status"] != float64(http.StatusOK) {
 		t.Errorf("unexpected request log: %v", record)
 	}
@@ -142,5 +163,101 @@ func TestStatusRecorderWroteHeader(t *testing.T) {
 				t.Errorf("wroteHeader = %v, want %v", r.wroteHeader, tc.want)
 			}
 		})
+	}
+}
+
+// serveRequest sends one GET to handler behind the request logger on a real
+// HTTP server and returns the client error (nil when a response arrived), the
+// client-observed status (0 on error) and the decoded log records. net/http's
+// own panic trace is discarded to keep test output quiet.
+func serveRequest(t *testing.T, handler http.HandlerFunc) (clientErr error, clientStatus int, records []map[string]any) {
+	t.Helper()
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	ts := httptest.NewUnstartedServer(logRequests(logger, handler))
+	ts.Config.ErrorLog = log.New(io.Discard, "", 0)
+	ts.Start()
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/probe")
+	if err == nil {
+		clientStatus = resp.StatusCode
+		resp.Body.Close()
+	}
+	// Close waits for in-flight handlers, so every log record is complete.
+	ts.Close()
+	return err, clientStatus, decodeRecords(t, &logs)
+}
+
+func TestRequestLogOnPanic(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		handler    http.HandlerFunc
+		wantStatus int
+		wantBytes  int
+	}{
+		{"before any write", func(http.ResponseWriter, *http.Request) {
+			panic("boom")
+		}, http.StatusInternalServerError, 0},
+		{"after committed status", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+			panic("boom")
+		}, http.StatusAccepted, 0},
+		{"after body write", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("partial"))
+			panic("boom")
+		}, http.StatusOK, len("partial")},
+		{"abort handler", func(http.ResponseWriter, *http.Request) {
+			panic(http.ErrAbortHandler)
+		}, http.StatusInternalServerError, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clientErr, clientStatus, records := serveRequest(t, tc.handler)
+			// net/http recovers the re-raised panic by closing the connection
+			// without sending a response, so the client sees an error rather
+			// than a 500 status.
+			if clientErr == nil {
+				t.Errorf("client status = %d, want a transport error from the aborted connection", clientStatus)
+			}
+			if len(records) != 1 {
+				t.Fatalf("got %d log records, want exactly 1: %v", len(records), records)
+			}
+			record := records[0]
+			if record["msg"] != "http_request" || record["method"] != http.MethodGet || record["path"] != "/probe" {
+				t.Errorf("unexpected request log: %v", record)
+			}
+			if record["status"] != float64(tc.wantStatus) {
+				t.Errorf("logged status = %v, want %d", record["status"], tc.wantStatus)
+			}
+			if record["bytes"] != float64(tc.wantBytes) {
+				t.Errorf("logged bytes = %v, want %d", record["bytes"], tc.wantBytes)
+			}
+			if duration, ok := record["duration_ms"].(float64); !ok || duration < 0 {
+				t.Errorf("duration_ms = %v, want a non-negative number", record["duration_ms"])
+			}
+		})
+	}
+}
+
+func TestRequestLogRepanicsSamePanicValue(t *testing.T) {
+	sentinel := errors.New("sentinel")
+	for _, value := range []any{sentinel, http.ErrAbortHandler} {
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, nil))
+		handler := logRequests(logger, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			panic(value)
+		}))
+
+		var recovered any
+		func() {
+			defer func() { recovered = recover() }()
+			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/probe", nil))
+		}()
+		if recovered != value {
+			t.Errorf("recovered %v, want the original panic value %v", recovered, value)
+		}
+		if got := len(decodeRecords(t, &logs)); got != 1 {
+			t.Errorf("panic %v: got %d log records, want exactly 1", value, got)
+		}
 	}
 }

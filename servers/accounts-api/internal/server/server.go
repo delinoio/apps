@@ -69,13 +69,27 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		// The record is written from a defer so a panicking handler is logged
+		// too. The panic is deliberately not recovered here: net/http keeps its
+		// connection-level recovery (including http.ErrAbortHandler handling)
+		// and the client sees the aborted connection.
+		returned := false
+		defer func() {
+			status := recorder.status
+			if !returned && !recorder.wroteHeader {
+				// The handler did not return and nothing was committed, so
+				// net/http will not send a response; record it as a failure.
+				status = http.StatusInternalServerError
+			}
+			logger.InfoContext(r.Context(), "http_request",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.Int("status", status),
+				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+				slog.Int("bytes", recorder.bytes),
+			)
+		}()
 		next.ServeHTTP(recorder, r)
-		logger.InfoContext(r.Context(), "http_request",
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.Int("status", recorder.status),
-			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
-			slog.Int("bytes", recorder.bytes),
-		)
+		returned = true
 	})
 }
