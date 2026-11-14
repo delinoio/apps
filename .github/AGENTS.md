@@ -6,3 +6,4 @@
 - Use the `changes` job outputs to select affected validation. Update the planner inputs when shared validation dependencies change, and include `changes` in `ci-result.needs`.
 - Manual validation uses the selected revision comparison. Do not add a full manual mode.
 - Add release workflows only with an owning project contract and explicit credential boundaries.
+- Keep exactly two GitHub deployment environments: `static-sites` for static sites under `apps/` and `servers` for services under `servers/`. Do not add per-app, per-server, per-stage or per-branch environments. Follow [the workflow contract](../docs/repository-workflow-contract.md#deployment-environments).
